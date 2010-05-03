@@ -1,0 +1,192 @@
+#summary Describes all configurable options
+#labels Featured
+
+<pre>
+mongoose(1)		  BSD General Commands Manual		   mongoose(1)
+
+NAME
+     mongoose - lightweight web server
+
+SYNOPSIS
+     mongoose [options] [config_file]
+     mongoose -A htpasswd_file domain_name user_name password
+
+DESCRIPTION
+     mongoose is small, fast and easy to use web server with CGI, SSL, Digest
+     Authorization support.
+
+     mongoose does not detach from terminal, and uses current working direc-
+     tory as the web root, unless -root option is specified.
+
+     It is possible to specify multiple ports to listen on. For example, to
+     make mongoose listen on HTTP port 80 and HTTPS port 443, one should start
+     it as ``mongoose -ssl_cert cert.pem -ports 80,443s''.
+
+     Options may be specified in any order, with one exception: if SSL listen-
+     ing port is specified in the -ports option, then -ssl_cert option must be
+     set before -ports option.
+
+     Unlike other web servers, mongoose does not expect CGI scripts to be put
+     in a special directory. CGI scripts may be anywhere. CGI files are recog-
+     nized by the file extension.
+
+     SSI files are also recognized by extension. Unknown SSI directives are
+     silently ignored. Currently, two SSI directives supported, "include" and
+     "exec". For the "include" directive, included file name can be specified
+     in three different ways. Below is the summary of supported SSI direc-
+     tives:
+
+     o	 <!--#exec "shell command"--> Execute shell command.
+
+     o	 <!--#include "path"--> File path must be relative to the current doc-
+	 ument.
+
+     o	 <!--#include virtual="path"--> File path must be relative to the doc-
+	 ument root.
+
+     o	 <!--#include file="path"--> File path must be the absolute path.
+
+     mongoose can use the configuration file. By default, it is "mon-
+     goose.conf", and if it is present in the same directory where mongoose
+     lives, the command line options are read from it. Alternatively, the con-
+     figuration file may be specified as a last argument. The format of the
+     configuration file is exactly the same as for the command line options,
+     the only difference is that the command line options must be specified on
+     separate lines, and leading dashes for option names must be omitted.
+     Lines beginning with '#' are regarded as comments and ignored.
+
+OPTIONS
+     -A htpasswd_file domain_name user_name password
+	     Add/edit user's password in the passwords file. Deleting users
+	     can be done with any text editor. Functionality similar to
+	     Apache's htdigest utility.
+
+     -access_log file
+	     Access log file. Default: not set, no logging is done.
+
+     -acl (+|-)x.x.x.x[/x],...
+	     Specify access control list (ACL). ACL is a comma separated list
+	     of IP subnets, each subnet is prepended by '-' or '+' sign. Plus
+	     means allow, minus means deny. If subnet mask is omitted, like
+	     "-1.2.3.4", then it means single IP address. Mask may vary from 0
+	     to 32 inclusive. On each request, full list is traversed, and
+	     last match wins. Default: not set, allow all.
+
+     -admin_uri uri
+	     If set, mongoose creates special administrative URI where options
+	     may be changed at runtime.  This URI probably wants to be pass-
+	     word-protected, look at -protect option, and in the EXAMPLES sec-
+	     tion on how to do it. Default: not set.
+
+     -aliases list
+	     This options gives an ability to serve the directories outside
+	     web root by sort of symbolic linking to certain URI. The list
+	     must be comma-separated list of URI=PATH pairs, like this:
+	     "/etc/=/my_etc,/tmp=/my_tmp". Default: not set.
+
+     -auth_PUT file
+	     PUT and DELETE passwords file. This must be specified if PUT or
+	     DELETE methods are used. Default: not set.
+
+     -auth_gpass file
+	     Location of global passwords file. When set, per-directory
+	     .htpasswd files are ignored, and all accessed must be authorised
+	     against global passwords file.  Default: not set.
+
+     -auth_realm domain_name
+	     Authorization realm. Default: "mydomain.com".
+
+     -cgi_env list
+	     Pass environment variables to the CGI script in addition to stan-
+	     dard ones.  The list must be comma-separated list of X=Y pairs,
+	     like this: "VARIABLE1=VALUE1,VARIABLE2=VALUE2".  Default: not
+	     set.
+
+     -cgi_ext list
+	     Comma-separated list of CGI extensions.  All files having these
+	     extensions are treated as CGI scripts. Default: "cgi,pl,php"
+
+     -cgi_interp file
+	     Force file to be a CGI interpreter for all CGI scripts. By
+	     default this option is not set, and mongoose decides which inter-
+	     preter to use by looking at the first line of CGI script.
+
+     -dir_list yes|no
+	     Enable/disable directory listing. Default: "1" (enabled).
+
+     -error_log file
+	     Error log file. Default: not set, no errors are logged.
+
+     -idle_time num_seconds
+	     Number of seconds worker thread waits for some work before exit.
+	     Default: 10
+
+     -index_files list
+             Comma-separated list of files to be treated as directory index
+             files.  Default: index.html,index.htm,index.cgi
+
+     -max_threads number
+	     Maximum number of worker threads to start. Default: 100
+
+     -mime_types list
+	     Additional to builtin mime types, in form "exten-
+	     sion1=type1,extension2=type2,...". Extension must include dot.
+
+     -ports port_list
+	     Comma-separated list of ports to listen on. If the port is SSL, a
+	     letter 's' must be appeneded, for example, "-ports 80,443s" will
+	     open port 80 and port 443, and connections on port 443 will be
+	     SSL-ed. It is possible to specify an IP address to bind to. In
+	     this case, an IP address and a colon must be prepended to the
+	     port number, for example, "-ports 127.0.0.1:8080". Note that if
+	     SSL listening port is requested, then -ssl_cert option must spec-
+	     ified BEFORE -ports option. Default: 8080
+
+     -protect list
+	     Comma separated list of URI=PATH pairs, specifying that given
+	     URIs must be protected with respected password files. Default:
+	     not set.
+
+     -root directory
+	     Location of the WWW root directory. Default: working directory
+	     from which mongoose has been started.
+
+     -ssi_ext list
+	     Comma separated list of SSI extensions. Default: "shtml,shtm".
+
+     -ssl_cert pem_file
+	     Location of SSL certificate file. Default: not set.
+
+     -uid login
+	     Switch to given user after startup. Default: not set.
+
+EMBEDDING
+     mongoose was designed to be embeddable into C/C++ applications. Since the
+     source code is contained in single C file, it is fairly easy to embed it,
+     and to follow the updates. Please refer to http://code.google.com/p/mon-
+     goose for details.
+
+EXAMPLES
+     mongoose -root /var/www -ssl_cert /etc/cert.pem -ports 8080,8043s
+	     -aliases /aa=/tmp,/bb=/etc
+	     Start listening on port 8080 for HTTP, and 8043 for HTTPS connec-
+	     tions.  Use /etc/cert.pem as SSL certificate file. Web root is
+	     /var/www. In addition, map directory /tmp to URI /aa, directory
+	     /etc to URI /bb.
+
+     mongoose -acl -0.0.0.0/0,+10.0.0.0/8,+1.2.3.4
+	     Deny connections from everywhere, allow only IP address 1.2.3.4
+	     and all IP addresses from 10.0.0.0/8 subnet to connect.
+
+     mongoose -admin_uri /ctl -protect /ctl=/tmp/passwords.txt
+	     Create an administrative URI "/ctl" where options may be changed
+	     at runtime, and protect that URI with authorization.
+
+COPYRIGHT
+     mongoose is licensed under the terms of the MIT license.
+
+AUTHOR
+     Sergey Lyubka <valenok@gmail.com>.
+
+BSD				  May 22, 2009				   BSD
+</pre>
