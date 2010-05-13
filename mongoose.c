@@ -3304,30 +3304,44 @@ static void
 put_file(struct mg_connection *conn, const char *path)
 {
 	struct mgstat	st;
-	FILE		*fp;
 	int		rc;
+        const char *hdr;
+        uint64_t r1, r2,total;
+        FILE*             fd;
+	int n;
 
 	conn->request_info.status_code = mg_stat(path, &st) == 0 ? 200 : 201;
 
-	if (mg_get_header(conn, "Range")) {
-		send_error(conn, 501, "Not Implemented",
-		    "%s", "Range support for PUT requests is not implemented");
-	} else if ((rc = put_dir(path)) == 0) {
-		(void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
-		    conn->request_info.status_code);
+        if ((rc = put_dir(path)) == 0) {
+                send_error(conn, 200, "OK", "");
 	} else if (rc == -1) {
 		send_error(conn, 500, http_500_error,
 		    "put_dir(%s): %s", path, strerror(ERRNO));
-	} else if ((fp = mg_fopen(path, "wb+")) == NULL) {
+        } else if ((fd = mg_fopen(path,"wb+")) == NULL) {
 		send_error(conn, 500, http_500_error,
-		    "fopen(%s): %s", path, strerror(ERRNO));
+                    "open(%s): %s", path, strerror(ERRNO));
 	} else {
-		set_close_on_exec(fileno(fp));
-		if (handle_request_body(conn, fp))
-			(void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
-			    conn->request_info.status_code);
-		(void) fclose(fp);
+
+
+                conn->request_info.status_code = 200;
+                set_close_on_exec(fileno(fd));
+
+                /* If Range: header specified, act accordingly */
+                r1 = r2 = 0;
+                total = 0;
+                hdr = mg_get_header(conn, "Content-Range");
+                if (hdr != NULL && (n = sscanf(hdr,
+                    "bytes=%" UINT64_FMT "u-%" UINT64_FMT "u/%" UINT64_FMT "u", &r1, &r2, &total)) > 0) {
+                        conn->request_info.status_code = 206;
+                        (void) lseek(fileno(fd), (long) r1, SEEK_SET);
 	}
+
+                if (handle_request_body(conn, fd))
+                        send_error(conn, conn->request_info.status_code,
+                                  "OK", "");
+                (void) fclose(fd);
+        }
+
 }
 
 #if !defined(NO_SSI)
