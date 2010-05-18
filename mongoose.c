@@ -2690,6 +2690,14 @@ send_opened_file_stream(struct mg_connection *conn, FILE *fp, int64_t len)
 	}
 }
 
+static int
+parse_range_header(const char *hdr, int64_t *r1, int64_t *r2)
+{
+        int64_t total;
+        return  sscanf(hdr,
+         "bytes=%" INT64_FMT "u-%" INT64_FMT "u/%" INT64_FMT "u", r1, r2, &total);
+}
+
 /*
  * Send regular file contents.
  */
@@ -2719,8 +2727,7 @@ send_file(struct mg_connection *conn, const char *path, struct mgstat *stp)
 	/* If Range: header specified, act accordingly */
 	r1 = r2 = 0;
 	hdr = mg_get_header(conn, "Range");
-	if (hdr != NULL && (n = sscanf(hdr,
-	    "bytes=%" INT64_FMT "-%" INT64_FMT, &r1, &r2)) > 0) {
+	if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
 		conn->request_info.status_code = 206;
 		(void) fseeko(fp, (off_t) r1, SEEK_SET);
 		cl = n == 2 ? r2 - r1 + 1: cl - r1;
@@ -3303,38 +3310,34 @@ put_dir(const char *path)
 static void
 put_file(struct mg_connection *conn, const char *path)
 {
-	struct mgstat	st;
-	int		rc;
+        struct mgstat   st;
+        int rc;
         const char *hdr;
-        uint64_t r1, r2,total;
-        FILE*             fd;
-	int n;
+        int64_t r1, r2;
+        FILE *fd;
 
-	conn->request_info.status_code = mg_stat(path, &st) == 0 ? 200 : 201;
+        conn->request_info.status_code = mg_stat(path, &st) == 0 ? 200 : 201;
 
         if ((rc = put_dir(path)) == 0) {
-                send_error(conn, 200, "OK", "");
-	} else if (rc == -1) {
-		send_error(conn, 500, http_500_error,
-		    "put_dir(%s): %s", path, strerror(ERRNO));
+                 (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
+                    conn->request_info.status_code);
+        } else if (rc == -1) {
+                send_error(conn, 500, http_500_error,
+                    "put_dir(%s): %s", path, strerror(ERRNO));
         } else if ((fd = mg_fopen(path,"wb+")) == NULL) {
-		send_error(conn, 500, http_500_error,
+                send_error(conn, 500, http_500_error,
                     "open(%s): %s", path, strerror(ERRNO));
-	} else {
-
-
+        } else {
                 conn->request_info.status_code = 200;
                 set_close_on_exec(fileno(fd));
-
                 /* If Range: header specified, act accordingly */
                 r1 = r2 = 0;
-                total = 0;
                 hdr = mg_get_header(conn, "Content-Range");
-                if (hdr != NULL && (n = sscanf(hdr,
-                    "bytes=%" UINT64_FMT "u-%" UINT64_FMT "u/%" UINT64_FMT "u", &r1, &r2, &total)) > 0) {
+                if (hdr != NULL && parse_range_header(hdr, &r1, &r2) > 0) {
                         conn->request_info.status_code = 206;
-                        (void) lseek(fileno(fd), (long) r1, SEEK_SET);
-	}
+                        (void) fseeko(fd, (off_t) r1, SEEK_SET);
+                         /* TODO: handle seek error */
+                }
 
                 if (handle_request_body(conn, fd))
                         send_error(conn, conn->request_info.status_code,
