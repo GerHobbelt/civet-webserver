@@ -272,6 +272,10 @@ struct ssl_func {
 #define ERR_get_error() (* (unsigned long (*)(void)) ssl_sw[15].ptr)()
 #define ERR_error_string(x, y) (* (char * (*)(unsigned long, char *)) ssl_sw[16].ptr)((x), (y))
 #define SSL_load_error_strings() (* (void (*)(void)) ssl_sw[17].ptr)()
+#define SSLv2_server_method()	(* (SSL_METHOD * (*)(void)) ssl_sw[18].ptr)()
+#define SSLv3_server_method()	(* (SSL_METHOD * (*)(void)) ssl_sw[19].ptr)()
+#define TLSv1_server_method()	(* (SSL_METHOD * (*)(void)) ssl_sw[20].ptr)()
+#define SSL_CTX_set_cipher_list(x, y)		(* (int (*)(SSL_CTX *, const char *)) ssl_sw[21].ptr)(x, y)
 
 #define CRYPTO_num_locks() (* (int (*)(void)) crypto_sw[0].ptr)()
 #define CRYPTO_set_locking_callback(x)					\
@@ -305,6 +309,10 @@ static struct ssl_func	ssl_sw[] = {
 	{"ERR_get_error",		NULL},
 	{"ERR_error_string",	NULL},
 	{"SSL_load_error_strings", NULL},
+	{"SSLv2_server_method", NULL},
+	{"SSLv3_server_method", NULL},
+	{"TLSv1_server_method", NULL},
+	{"SSL_CTX_set_cipher_list", NULL},
 	{NULL,				NULL}
 };
 
@@ -373,7 +381,7 @@ enum mg_option_index {
 	OPT_AUTH_GPASSWD, OPT_AUTH_PUT, OPT_ACCESS_LOG, OPT_ERROR_LOG,
 	OPT_SSL_CERTIFICATE, OPT_ALIASES, OPT_ACL, OPT_UID, OPT_PROTECT,
 	OPT_SERVICE, OPT_HIDE, OPT_ADMIN_URI, OPT_MAX_THREADS, OPT_IDLE_TIME,
-	OPT_MIME_TYPES,
+	OPT_MIME_TYPES, OPT_SSL_METHOD, OPT_SSL_CIPHERS,
 	NUM_OPTIONS
 };
 
@@ -3832,6 +3840,7 @@ set_uid_option(struct mg_context *ctx, const char *uid)
 
 #if !defined(NO_SSL)
 static pthread_mutex_t *ssl_mutexes;
+static bool_t ssl_loaded = FALSE;
 
 static void
 ssl_locking_callback(int mode, int mutex_num, const char *file, int line)
@@ -3886,6 +3895,101 @@ load_dll(struct mg_context *ctx, const char *dll_name, struct ssl_func *sw)
 	return (TRUE);
 }
 
+static enum mg_error_t load_ssl(struct mg_context *ctx) {
+	if (ssl_loaded) return MG_SUCCESS;
+	
+	if (load_dll(ctx, SSL_LIB, ssl_sw) == FALSE ||
+		load_dll(ctx, CRYPTO_LIB, crypto_sw) == FALSE)
+		return (MG_ERROR);
+
+	/* Initialize SSL crap */
+	SSL_library_init();
+	SSL_load_error_strings();
+
+	ssl_loaded = TRUE;
+	return MG_SUCCESS;
+}
+
+/*
+ * Retrieve the appropriate SSL method constructor by name (e.g., "ssl2"
+ * or "tlsv1").  Be forgiving on input.  Return NULL if an invalid
+ * method name is supplied.
+ * 
+ * If a NULL method name is supplied, perform the lookup based upon
+ * the "ssl_method" option value.
+ */
+SSL_METHOD *get_ssl_method_constructor
+(struct mg_context *ctx, const char *method)
+{
+	char buf[8];
+	if (method == NULL) {
+		if (mg_get_option(ctx, "ssl_method", buf, 8) != MG_SUCCESS) {
+			cry(fc(ctx), "%s: no ssl method set.", __func__);
+			return NULL;
+		}
+		method = buf;
+	}
+
+	if (!mg_strcasecmp(method, "SSLv2")
+		|| !mg_strcasecmp(method, "SSL2")) {
+		return SSLv2_server_method();
+	} else if (!mg_strcasecmp(method, "SSLv3")
+		|| !mg_strcasecmp(method, "SSL3")) {
+	    return SSLv3_server_method();
+	} else if (!mg_strcasecmp(method, "SSLv23")
+		|| !mg_strcasecmp(method, "SSL23")
+		|| !mg_strcasecmp(method, "SSL")) {
+	    return SSLv23_server_method();
+	} else if (!mg_strcasecmp(method, "TLSv1")
+		|| !mg_strcasecmp(method, "TLS1")
+		|| !mg_strcasecmp(method, "TLS")) {
+	    return TLSv1_server_method();
+	}
+	
+	cry(fc(ctx),
+		"%s: invalid ssl method '%s'.  Specify sslv2, sslv3, sslv23, or tlsv1.",
+		__func__, method);
+	return NULL;
+}
+
+/*
+ * Validate the ssl method name.  Method is retrieved from options
+ * when certificate is loaded.
+ */
+static enum mg_error_t
+set_ssl_method(struct mg_context *ctx, const char *method)
+{
+	if (ctx->ssl_ctx != NULL) {
+		cry(fc(ctx), 
+			"%s: ssl method must be specified before the ssl certificate.",
+			__func__);
+		return MG_ERROR;
+	}
+	load_ssl(ctx);
+	return (get_ssl_method_constructor(ctx, method) == NULL)
+			? MG_ERROR : MG_SUCCESS;
+}
+
+/*
+ * Cipher list is retrieved from options when certificate is loaded.
+ * 
+ * See <http://www.openssl.org/docs/apps/ciphers.html> for cipher
+ * list format.
+ */
+static enum mg_error_t
+set_ssl_ciphers(struct mg_context *ctx, const char *ciphers)
+{
+	if (ctx->ssl_ctx != NULL) {
+		cry(fc(ctx), 
+			"%s: ssl ciphers must be specified before the ssl certificate.",
+			__func__);
+		return MG_ERROR;
+	}
+	load_ssl(ctx);
+	ciphers = ciphers; /* get rid of unused var compiler warning */
+	return MG_SUCCESS;
+}
+
 /*
  * Dynamically load SSL library. Set up ctx->ssl_ctx pointer.
  */
@@ -3894,16 +3998,11 @@ set_ssl_option(struct mg_context *ctx, const char *pem)
 {
 	SSL_CTX		*CTX;
 	int		i, size;
-
-	if (load_dll(ctx, SSL_LIB, ssl_sw) == FALSE ||
-	    load_dll(ctx, CRYPTO_LIB, crypto_sw) == FALSE)
-		return (MG_ERROR);
-
-	/* Initialize SSL crap */
-	SSL_library_init();
-	SSL_load_error_strings();
-
-	if ((CTX = SSL_CTX_new(SSLv23_server_method())) == NULL)
+	char cipherbuf[4096];
+	
+	load_ssl(ctx);
+	
+	if ((CTX = SSL_CTX_new(get_ssl_method_constructor(ctx, NULL))) == NULL)
 		ssl_cry(fc(ctx), "SSL_CTX_new error");
 	else if (ctx->callbacks[MG_EVENT_SSL_PASSWORD] != NULL)
 		SSL_CTX_set_default_passwd_cb(CTX,
@@ -3917,6 +4016,13 @@ set_ssl_option(struct mg_context *ctx, const char *pem)
 	    CTX, pem, SSL_FILETYPE_PEM) == 0) {
 		ssl_cry(fc(ctx), "%s: cannot open %s", NULL, pem);
 		return (MG_ERROR);
+	}
+
+	if (mg_get_option(ctx, "ssl_ciphers", cipherbuf, 4096) == MG_SUCCESS) {
+		if (SSL_CTX_set_cipher_list(CTX, cipherbuf) == 0) {
+			ssl_cry(fc(ctx), "%s: no matching ciphers available for '%s'", __func__, cipherbuf);
+			return (MG_ERROR);
+		}
 	}
 
 	/*
@@ -3997,6 +4103,10 @@ static const struct mg_option known_options[] = {
 #if !defined(NO_SSL)
 	{"ssl_cert", "SSL certificate file", NULL,
 		OPT_SSL_CERTIFICATE, &set_ssl_option},
+	{"ssl_method", "SSL method/protocol version", "ssl23",
+		OPT_SSL_METHOD, &set_ssl_method},
+	{"ssl_ciphers", "SSL cipher preference list", "DEFAULT",
+		OPT_SSL_CIPHERS, &set_ssl_ciphers},
 #endif /* !NO_SSL */
 	{"ports", "Listening ports", NULL,
 		OPT_PORTS, &set_ports_option},
