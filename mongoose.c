@@ -23,6 +23,10 @@
  * $Id: mongoose.c 517 2010-05-03 12:54:59Z valenok $
  */
 
+#if defined(USE_POSIX_FEATURES)
+#include <unistd.h>				/* Should be first to get test macros. */
+#endif
+
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS	/* Disable deprecation warning in VS2005 */
 #else
@@ -164,7 +168,16 @@ typedef struct DIR {
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+
+#if defined(USE_POSIX_FEATURES)
+#if defined(_POSIX_MAPPED_FILES)
 #include <sys/mman.h>
+#endif
+#if _POSIX_VERSION >= 200112L
+#include <dlfcn.h>
+#endif
+#endif	/* USE_POSIX_FEATURES */
+
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -174,7 +187,6 @@ typedef struct DIR {
 #include <pwd.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <dlfcn.h>
 #include <pthread.h>
 #define	SSL_LIB			"libssl.so"
 #define	CRYPTO_LIB		"libcrypto.so"
@@ -308,6 +320,7 @@ static struct ssl_func	ssl_sw[] = {
 	{NULL,				NULL}
 };
 
+#if !defined(NO_SSL)
 /*
  * Similar array as ssl_sw. These functions could be located in different lib.
  */
@@ -317,6 +330,7 @@ static struct ssl_func	crypto_sw[] = {
 	{"CRYPTO_set_id_callback",	NULL},
 	{NULL,				NULL}
 };
+#endif
 
 /*
  * Month names
