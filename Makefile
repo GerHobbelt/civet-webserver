@@ -15,6 +15,7 @@ all:
 # -DCONFIG_FILE=\"file\" - use `file' as the default config file
 # -DNO_SSI		- disable SSI support (-4kb)
 # -DHAVE_STRTOUI64	- use system strtoui64() function for strtoull()
+# -DNO_DL -lcrypto -lssl		- link with openssl rather than load it dynamically
 
 
 ##########################################################################

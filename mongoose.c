@@ -198,6 +198,11 @@ typedef int SOCKET;
 
 #endif /* End of Windows and UNIX specific includes */
 
+#if defined( NO_DL)
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif /* NO_DL */
+
 #include "mongoose.h"
 
 #define	MONGOOSE_VERSION	"2.9"
@@ -229,6 +234,8 @@ typedef int bool_t;
 typedef void * (*mg_thread_func_t)(void *);
 
 static const char *http_500_error = "Internal Server Error";
+
+#ifndef NO_DL
 
 /*
  * Snatched from OpenSSL includes. I put the prototypes here to be independent
@@ -320,6 +327,8 @@ static struct ssl_func	crypto_sw[] = {
 	{"CRYPTO_set_id_callback",	NULL},
 	{NULL,				NULL}
 };
+
+#endif /* NO_DL */
 
 /*
  * Month names
@@ -3771,6 +3780,7 @@ ssl_id_callback(void)
 	return ((unsigned long) pthread_self());
 }
 
+#ifndef NO_DL
 static bool_t
 load_dll(struct mg_context *ctx, const char *dll_name, struct ssl_func *sw)
 {
@@ -3805,6 +3815,7 @@ load_dll(struct mg_context *ctx, const char *dll_name, struct ssl_func *sw)
 
 	return (TRUE);
 }
+#endif /* NO_DL */
 
 /*
  * Dynamically load SSL library. Set up ctx->ssl_ctx pointer.
@@ -3819,9 +3830,11 @@ set_ssl_option(struct mg_context *ctx)
 	if (pem == NULL)
 		return (MG_SUCCESS);
 
+#ifndef NO_DL
 	if (load_dll(ctx, SSL_LIB, ssl_sw) == FALSE ||
 	    load_dll(ctx, CRYPTO_LIB, crypto_sw) == FALSE)
 		return (MG_ERROR);
+#endif /* NO_DL */		
 
 	/* Initialize SSL crap */
 	SSL_library_init();

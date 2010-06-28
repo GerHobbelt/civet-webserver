@@ -29,6 +29,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#if defined( NO_DL)	
+#include <openssl/ssl.h>
+#endif /* NO_DL */
+
 struct mg_context;	/* Handle for the HTTP service itself	*/
 struct mg_connection;	/* Handle for the individual connection	*/
 
@@ -111,7 +115,11 @@ struct mg_config {
 	mg_callback_t new_request_handler;
 	mg_callback_t http_error_handler;
 	mg_callback_t event_log_handler;
+#if defined( NO_DL)	
+	pem_password_cb *ssl_password_handler;
+#else
 	mg_callback_t ssl_password_handler;
+#endif
 };
 
 
