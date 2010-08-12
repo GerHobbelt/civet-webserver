@@ -103,6 +103,7 @@ static struct option_descriptor {
 	{"root", "\tWeb root directory", OFFSET(document_root)},
 	{"index_files",	"Index files", OFFSET(index_files)},
 	{"ssl_cert", "SSL certificate file", OFFSET(ssl_certificate)},
+	{"ssl_chain", "SSL chain file", OFFSET(ssl_chain)},
 	{"ports", "Listening ports", OFFSET(listening_ports)},
 	{"dir_list", "Directory listing", OFFSET(enable_directory_listing)},
 	{"protect", "URI to htpasswd mapping", OFFSET(protect)},

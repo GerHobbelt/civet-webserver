@@ -254,6 +254,8 @@ struct ssl_func {
         const char *, int)) ssl_sw[11].ptr)((x), (y), (z))
 #define SSL_CTX_use_certificate_file(x,y,z) (* (int (*)(SSL_CTX *, \
         const char *, int)) ssl_sw[12].ptr)((x), (y), (z))
+#define SSL_CTX_use_certificate_chain_file(x,y,z) (* (int (*)(SSL_CTX *, \
+        const char *, int)) ssl_sw[18].ptr)((x), (y), (z))
 #define SSL_CTX_set_default_passwd_cb(x,y) \
   (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[13].ptr)((x),(y))
 #define SSL_CTX_free(x) (* (void (*)(SSL_CTX *)) ssl_sw[14].ptr)(x)
@@ -291,6 +293,7 @@ static struct ssl_func ssl_sw[] = {
   {"ERR_get_error",  NULL},
   {"ERR_error_string", NULL},
   {"SSL_load_error_strings", NULL},
+  {"SSL_CTX_use_certificate_chain_file", NULL},
   {NULL,    NULL}
 };
 
@@ -3366,6 +3369,7 @@ static enum mg_error_t set_ssl_option(struct mg_context *ctx) {
   SSL_CTX *CTX;
   int i, size;
   const char *pem = ctx->config->ssl_certificate;
+  const char *chain = ctx->config->ssl_chain;
 
   if (pem == NULL) {
     return MG_SUCCESS;
@@ -3393,6 +3397,12 @@ static enum mg_error_t set_ssl_option(struct mg_context *ctx) {
   } else if (CTX != NULL && SSL_CTX_use_PrivateKey_file(CTX, pem,
         SSL_FILETYPE_PEM) == 0) {
     cry(fc(ctx), "%s: cannot open %s: %s", NULL, pem, ssl_error());
+    return MG_ERROR;
+  }
+
+  if(CTX != NULL && chain != NULL && SSL_CTX_use_certificate_chain_file(CTX, chain,
+	SSL_FILETYPE_PEM) == 0) {
+    cry(fc(ctx), "%s: cannot open %s: %s", NULL, chain, ssl_error());
     return MG_ERROR;
   }
 
