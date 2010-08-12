@@ -95,6 +95,7 @@ struct mg_config {
   char *mime_types;
   char *enable_directory_listing;
   char *num_threads;
+  char *ssl_chain;
 
   mg_callback_t new_request_handler;
   mg_callback_t http_error_handler;
