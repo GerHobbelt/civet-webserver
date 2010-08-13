@@ -254,14 +254,14 @@ struct ssl_func {
         const char *, int)) ssl_sw[11].ptr)((x), (y), (z))
 #define SSL_CTX_use_certificate_file(x,y,z) (* (int (*)(SSL_CTX *, \
         const char *, int)) ssl_sw[12].ptr)((x), (y), (z))
-#define SSL_CTX_use_certificate_chain_file(x,y,z) (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[18].ptr)((x), (y), (z))
 #define SSL_CTX_set_default_passwd_cb(x,y) \
   (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[13].ptr)((x),(y))
 #define SSL_CTX_free(x) (* (void (*)(SSL_CTX *)) ssl_sw[14].ptr)(x)
 #define ERR_get_error() (* (unsigned long (*)(void)) ssl_sw[15].ptr)()
 #define ERR_error_string(x, y) (* (char * (*)(unsigned long, char *)) ssl_sw[16].ptr)((x), (y))
 #define SSL_load_error_strings() (* (void (*)(void)) ssl_sw[17].ptr)()
+#define SSL_CTX_use_certificate_chain_file(x,y,z) (* (int (*)(SSL_CTX *, \
+        const char *, int)) ssl_sw[18].ptr)((x), (y), (z))
 
 #define CRYPTO_num_locks() (* (int (*)(void)) crypto_sw[0].ptr)()
 #define CRYPTO_set_locking_callback(x)     \
