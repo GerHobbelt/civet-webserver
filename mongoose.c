@@ -639,8 +639,9 @@ static void send_http_error(struct mg_connection *conn, int status,
     /* Errors 1xx, 204 and 304 MUST NOT send a body */
     if (status > 199 && status != 204 && status != 304) {
       len = mg_snprintf(conn, buf, sizeof(buf),
-          "Error %d: %s\n", status, reason);
+          "Error %d: %s", status, reason);
       cry(conn, "%s", buf);
+      buf[len++]='\n';
 
       va_start(ap, fmt);
       len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len,
