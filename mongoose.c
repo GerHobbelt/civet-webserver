@@ -600,7 +600,6 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-#if !defined(NO_CGI)
 static bool_t match_extension(const char *path, const char *ext_list) {
   struct vec ext_vec;
   size_t path_len;
@@ -615,7 +614,6 @@ static bool_t match_extension(const char *path, const char *ext_list) {
 
   return FALSE;
 }
-#endif // !NO_CGI
 
 static void send_http_error(struct mg_connection *conn, int status,
                             const char *reason, const char *fmt, ...) {
