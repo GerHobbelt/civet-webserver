@@ -1,6 +1,9 @@
 #summary Covers API functions
 #labels Featured
 
+*NOTE: THIS COVERS 2.8, not 2.9! TODO: update for 2.9.*
+
+
 *NOTE:* _This page covers the head revision of the library. There could be differences with the latest released version._
 
 When Mongoose is embedded, there are two distinct steps that happen at run time. For these two steps, different set of functions exist:
