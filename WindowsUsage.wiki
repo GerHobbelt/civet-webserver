@@ -8,6 +8,62 @@ Sections: <wiki:toc max_depth== >
 be posted at [http://code.google.com/p/mongoose/issues/list Bugs],
 comments involving Linux, etc., should go in the proper Wiki.*
 
+== Important instructions for installing version 2.9 as a Windows Service ==
+
+{{{
+WARNING!
+
+Installing and uninstalling mongoose may destroy important  files,
+even if they have nothing directly to  do  with  mongoose.  Follow
+these instructions carefully to avoid data loss.
+
+Assume that "root" is your server root directory, containing files
+such as CGI interpreters, their configuration files, any files  to
+be served by mongoose in the root  directory  "/",  documentation,
+log files, etc. Your actual file  layout  may  be  different  from
+this, but let's  just  assume  this  layout  for  simplicity.  The
+important point here is that we don't want to lose  any  of  these
+files.
+
+When installing a new version of mongoose, it is a  good  idea  to
+uninstall the previous version, especially if it was running as  a
+Windows Service. When doing this, be sure to  save  any  important
+files, such as the mongoose configuration file.
+
+To install mongoose:
+
+1. Create an empty root\mongoose folder. NEVER keep any useful
+	files in folder "mongoose" other than as instructed here.
+2. Copy mongoose-2.9.install.exe into "mongoose".
+3. Run mongoose-2.9.install.exe to install mongoose into that
+	folder. Be very careful not to install mongoose into "root",
+	only "mongoose".
+4. After installation, copy your real mongoose.conf from "root"
+	into "mongoose", overwriting the sample mongoose.conf file
+	that was part of the installation.
+5. Restart service "mongoose-2.9". You can do that with system
+	program 'services.msc' or just a 'restart.cmd' file
+	containing these lines:
+
+@echo off
+Net stop "Mongoose 2.9"
+Net start "Mongoose 2.9"
+
+6. If your mongoose.conf file is correct, mongoose is now
+	running and ready to serve Web requests. Caution: mongoose
+	does not detect most errors in mongoose.conf (it may exit
+	silently), so some experimentation may be necessary.
+
+
+To uninstall mongoose:
+
+1. Copy mongoose.conf and anything else important back to "root" folder.
+2. Run root\mongoose\uninstall.exe.
+3. Note: the entire mongoose subfolder will be deleted!
+}}}
+
+== Installing and configuring Mongoose on Windows in general ==
+
 To install Mongoose on Windows, download and run the Mongoose [http://code.google.com/p/mongoose/downloads/list installer]. By default, the installer tries to setup Mongoose as [http://en.wikipedia.org/wiki/Windows_service Windows service] to start automatically when Windows starts. Administrator privileges are required for that. Alternatively, this can be disabled by unchecking appropriate checkbox on the installer's first page. In this case, Mongoose can be started as Windows console application.
 
 After Mongoose is installed, you can start your browser and type in the address http://127.0.0.1 . This is the address of your own machine. You must see the content of disk C:.
