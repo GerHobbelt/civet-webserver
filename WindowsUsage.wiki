@@ -144,6 +144,7 @@ date.timezone=US/Eastern (Change to your time zone)
  * Create the text file `mongoose.conf` containing your desired server settings. For PHP, be sure to include:
 
 {{{
+(Warning--2.8 syntax)
 cgi_interp      php-cgi.exe
 cgi_ext         php
 }}}
@@ -151,7 +152,7 @@ cgi_ext         php
  * For testing and debugging, create the text file `info.php` containing:
 
 {{{
-<?
+<?php
 phpinfo();
 ?>
 
