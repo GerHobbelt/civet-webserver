@@ -431,8 +431,9 @@ struct mg_context {
   struct socket queue[20];   // Accepted sockets
   int sq_head;               // Head of the socket queue
   int sq_tail;               // Tail of the socket queue
-  pthread_cond_t sq_full;    // Singaled when socket is produced
+  pthread_cond_t sq_full;    // Signaled when socket is produced
   pthread_cond_t sq_empty;   // Signaled when socket is consumed
+  void *user_pointer;        // User pointer
 };
 
 struct mg_connection {
@@ -3969,6 +3970,19 @@ static void free_context(struct mg_context *ctx) {
   // Deallocate context itself
   free(ctx);
 }
+
+void mg_set_user_pointer(struct mg_context *ctx, void *user_pointer) {
+  ctx->user_pointer = user_pointer;
+}
+
+void *mg_get_user_pointer(const struct mg_context *ctx) {
+  return ctx->user_pointer;
+}
+
+void *mg_conn_get_user_pointer(const struct mg_connection *conn) {
+  return conn->ctx->user_pointer;
+}
+
 
 void mg_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;

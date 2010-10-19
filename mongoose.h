@@ -109,6 +109,27 @@ struct mg_context *mg_start(mg_callback_t callback, const char **options);
 void mg_stop(struct mg_context *);
 
 
+// Attach a user data pointer to context.
+//
+// This pointer is not interpreted by mongoose, but is available by calling
+// mg_get_user_pointer or mg_conn_get_user_pointer.
+void mg_set_user_pointer(struct mg_context *ctx, void *user_pointer);
+
+
+// Retrieve the user data pointer from context.
+//
+// If no prior call to mg_set_user_pointer has occurred for
+// this context, the result will be NULL.
+void *mg_get_user_pointer(const struct mg_context *ctx);
+
+
+// Retrieve the user data pointer from a connection.
+//
+// If no prior call to mg_set_user_pointer has occurred for
+// this context, the result will be NULL.
+void *mg_conn_get_user_pointer(const struct mg_connection *conn);
+
+
 // Get the value of particular configuration parameter.
 // The value returned is read-only. Mongoose does not allow changing
 // configuration at run time.
