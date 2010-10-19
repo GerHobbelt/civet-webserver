@@ -101,19 +101,17 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 struct mg_context *mg_start(mg_callback_t callback, const char **options);
 
 
+// Same as above, but with a user_pointer that can be retrieved via
+// mg_get_user_pointer or mg_conn_get_user_pointer.
+struct mg_context *mg_start_with_user_pointer(mg_callback_t callback, const char **options, void *user_pointer);
+
+
 // Stop the web server.
 //
 // Must be called last, when an application wants to stop the web server and
 // release all associated resources. This function blocks until all Mongoose
 // threads are stopped. Context pointer becomes invalid.
 void mg_stop(struct mg_context *);
-
-
-// Attach a user data pointer to context.
-//
-// This pointer is not interpreted by mongoose, but is available by calling
-// mg_get_user_pointer or mg_conn_get_user_pointer.
-void mg_set_user_pointer(struct mg_context *ctx, void *user_pointer);
 
 
 // Retrieve the user data pointer from context.

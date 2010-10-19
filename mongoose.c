@@ -3971,10 +3971,6 @@ static void free_context(struct mg_context *ctx) {
   free(ctx);
 }
 
-void mg_set_user_pointer(struct mg_context *ctx, void *user_pointer) {
-  ctx->user_pointer = user_pointer;
-}
-
 void *mg_get_user_pointer(const struct mg_context *ctx) {
   return ctx->user_pointer;
 }
@@ -3998,7 +3994,13 @@ void mg_stop(struct mg_context *ctx) {
 #endif // _WIN32
 }
 
+
 struct mg_context *mg_start(mg_callback_t user_callback, const char **options) {
+	return mg_start_with_user_pointer(user_callback, options, NULL);
+}
+
+
+struct mg_context *mg_start_with_user_pointer(mg_callback_t user_callback, const char **options, void *user_pointer) {
   struct mg_context *ctx;
   const char *name, *value, *default_value;
   int i;
@@ -4012,6 +4014,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, const char **options) {
   // TODO(lsm): do proper error handling here.
   ctx = calloc(1, sizeof(*ctx));
   ctx->user_callback = user_callback;
+  ctx->user_pointer = user_pointer;
 
   while (options && (name = *options++) != NULL) {
     if ((i = get_option_index(name)) == -1) {
