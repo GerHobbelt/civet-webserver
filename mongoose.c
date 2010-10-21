@@ -44,7 +44,13 @@
 #include <stdio.h>
 
 #if defined(_WIN32)  // Windows specific #includes and #defines
-#define _WIN32_WINNT 0x0400 // To make it link in VS2005
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT _WIN32_WINNT_WIN2K // Set Windows 2000 as the oldest version
+#else
+#if _WIN32_WINNT < _WIN32_WINNT_WIN2K
+#error Windows version may be too low! (check your definition of _WIN32_WINNT)
+#endif
+#endif
 #include <windows.h>
 
 #ifndef PATH_MAX
