@@ -131,7 +131,7 @@ static void verify_document_root(const char *root) {
 
   path = root;
   if ((p = strchr(root, ',')) != NULL && (size_t) (p - root) < sizeof(buf)) {
-    strncpy(buf, root, p - root);
+    strncpy(buf, root, (size_t)(p - root));
     path = buf;
   }
 

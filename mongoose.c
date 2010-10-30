@@ -1315,8 +1315,8 @@ static int pull(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int len) {
 }
 
 int mg_read(struct mg_connection *conn, void *buf, size_t len) {
-  int n, buffered_len, nread;
-  const char *buffered;
+  int n = 0, buffered_len = 0, nread = 0;
+  const char *buffered = NULL;
 
   // Handle the case where no "Content-Length" header was supplied by the 
   // caller, such as during chunked transfer encoding.  
@@ -1440,7 +1440,8 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
                char *dst, size_t dst_len) {
   const char *p, *e, *s;
-  size_t name_len, len;
+  size_t name_len;
+  int len = -1;
 
   name_len = strlen(name);
   e = buf + buf_len;
@@ -1464,7 +1465,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
       // Decode variable into destination buffer
       if ((size_t) (s - p) < dst_len) {
-        len = url_decode(p, (size_t)(s - p), dst, dst_len, 1);
+        len = (int)url_decode(p, (size_t)(s - p), dst, dst_len, 1);
       }
       break;
     }
@@ -2689,7 +2690,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
       nread = pull(NULL, conn->client.sock, conn->ssl, buf, to_read);
-      if (nread <= 0 || push(fp, sock, ssl, buf, nread) != nread) {
+      if (nread <= 0 || push(fp, sock, ssl, buf, (int64_t)nread) != nread) {
         break;
       }
       conn->consumed_content += nread;
