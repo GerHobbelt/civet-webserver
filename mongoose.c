@@ -1318,6 +1318,27 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   int n, buffered_len, nread;
   const char *buffered;
 
+  // Handle the case where no "Content-Length" header was supplied by the 
+  // caller, such as during chunked transfer encoding.  
+  // 
+  // Note that this isn't completely safe, since (if we can't detect the 
+  // end of the content internally) we could wind up blocking indefinitely, 
+  // but it's better than simply having "abort()" invoked if we have no 
+  // idea of the actual content length.
+  if (conn->content_len == -1) {        // apparently, 
+      while (len > 0) {
+        n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
+        if (n <= 0) {
+          break;
+        }
+        buf = (char *) buf + n;
+        conn->consumed_content += n;
+        nread += n;
+        len -= n;
+      }
+      return nread;
+  }
+
   assert(conn->content_len >= conn->consumed_content);
   DEBUG_TRACE(("%p %zu %lld %lld", buf, len,
                conn->content_len, conn->consumed_content));
