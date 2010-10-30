@@ -21,6 +21,11 @@ all:
 ##########################################################################
 
 CFLAGS=		-W -Wall -std=c99 -pedantic -O2 -fomit-frame-pointer $(COPT)
+
+CFLAGS +=   -Wextra \
+            -Wundef -Wcast-qual -Wcast-align -Wconversion \
+            -Wmissing-declarations -Wreturn-type
+
 MAC_SHARED=	-flat_namespace -bundle -undefined suppress
 LINFLAGS=	-ldl -pthread $(CFLAGS)
 LIB=		_$(PROG).so
