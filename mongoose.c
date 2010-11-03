@@ -2878,7 +2878,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
-  char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
+  char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *temp;
+  const char * p = NULL;
   struct mg_request_info ri;
   struct cgi_env_block blk;
   FILE *in, *out;
@@ -2890,11 +2891,12 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // directory containing executable program, 'p' must point to the
   // executable program name relative to 'dir'.
   (void) mg_snprintf(conn, dir, sizeof(dir), "%s", prog);
-  if ((p = strrchr(dir, DIRSEP)) != NULL) {
-    *p++ = '\0';
+  if ((temp = strrchr(dir, DIRSEP)) != NULL) {
+    *temp++ = '\0';
+    p = temp;
   } else {
     dir[0] = '.', dir[1] = '\0';
-    p = (char *) prog;
+    p = prog;
   }
 
   pid = (pid_t) -1;
