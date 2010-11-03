@@ -1325,18 +1325,37 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   // end of the content internally) we could wind up blocking indefinitely, 
   // but it's better than simply having "abort()" invoked if we have no 
   // idea of the actual content length.
-  if (conn->content_len == -1) {        // apparently, 
-      while (len > 0) {
-        n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
-        if (n <= 0) {
-          break;
-        }
-        buf = (char *) buf + n;
-        conn->consumed_content += n;
-        nread += n;
-        len -= n;
+  if (conn->content_len == -1) {
+    // How many bytes of data we have buffered in the request buffer?
+    buffered = conn->buf + conn->request_len + conn->consumed_content;
+    buffered_len = conn->data_len - conn->request_len;
+    assert(buffered_len >= 0);
+
+    // Return buffered data back if we haven't done that yet.
+    if (conn->consumed_content < (int64_t) buffered_len) {
+      buffered_len -= (int) conn->consumed_content;
+      if (len < (size_t) buffered_len) {
+        buffered_len = len;
       }
-      return nread;
+      memcpy(buf, buffered, (size_t)buffered_len);
+      len -= buffered_len;
+      buf = (char *) buf + buffered_len;
+      conn->consumed_content += buffered_len;
+      nread = buffered_len;
+    }
+
+    // Finish by reading from the actual connection
+    while (len > 0) {
+      n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
+      if (n <= 0) {
+        break;
+      }
+      buf = (char *) buf + n;
+      conn->consumed_content += n;
+      nread += n;
+      len -= n;
+    }
+    return nread;
   }
 
   assert(conn->content_len >= conn->consumed_content);
@@ -1353,7 +1372,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
 
     // How many bytes of data we have buffered in the request buffer?
-    buffered = conn->buf + conn->request_len;
+    buffered = conn->buf + conn->request_len + conn->consumed_content;
     buffered_len = conn->data_len - conn->request_len;
     assert(buffered_len >= 0);
 
