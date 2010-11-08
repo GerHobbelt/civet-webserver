@@ -147,7 +147,7 @@ static void test_fd(struct mg_connection *conn,
   if (f) {
     fprintf(f, "%s", standard_reply);
     fprintf(f, "Writing file successful.\n");
-    fclose(f);
+    fflush(f);
   } else {
     printf("test_fd: failed\n");
     /* Even if opening failed, consider the test to succeed: it could be SSL. */
