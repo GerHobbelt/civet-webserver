@@ -1370,6 +1370,14 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
       (const char *) buf, (int64_t) len);
 }
 
+FILE * mg_open(struct mg_connection *conn)
+{
+  if (conn->ssl)
+    return NULL;
+  else
+    return fdopen(conn->client.sock, "wb");
+}
+
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
   char buf[BUFSIZ];
   int len;
