@@ -1319,8 +1319,48 @@ static int pull(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int len) {
 }
 
 int mg_read(struct mg_connection *conn, void *buf, size_t len) {
-  int n, buffered_len, nread;
-  const char *buffered;
+  int n = 0, buffered_len = 0, nread = 0;
+  const char *buffered = NULL;
+
+  // Handle the case where no "Content-Length" header was supplied by the 
+  // caller, such as during chunked transfer encoding.  
+  // 
+  // Note that this isn't completely safe, since (if we can't detect the 
+  // end of the content internally) we could wind up blocking indefinitely, 
+  // but it's better than simply having "abort()" invoked if we have no 
+  // idea of the actual content length.
+  if (conn->content_len == -1) {
+    // How many bytes of data we have buffered in the request buffer?
+    buffered = conn->buf + conn->request_len + conn->consumed_content;
+    buffered_len = conn->data_len - conn->request_len;
+    assert(buffered_len >= 0);
+
+    // Return buffered data back if we haven't done that yet.
+    if (conn->consumed_content < (int64_t) buffered_len) {
+      buffered_len -= (int) conn->consumed_content;
+      if (len < (size_t) buffered_len) {
+        buffered_len = len;
+      }
+      memcpy(buf, buffered, (size_t)buffered_len);
+      len -= buffered_len;
+      buf = (char *) buf + buffered_len;
+      conn->consumed_content += buffered_len;
+      nread = buffered_len;
+    }
+
+    // Finish by reading from the actual connection
+    while (len > 0) {
+      n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
+      if (n <= 0) {
+        break;
+      }
+      buf = (char *) buf + n;
+      conn->consumed_content += n;
+      nread += n;
+      len -= n;
+    }
+    return nread;
+  }
 
   assert(conn->content_len >= conn->consumed_content);
   DEBUG_TRACE(("%p %zu %lld %lld", buf, len,
@@ -1423,7 +1463,8 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
                char *dst, size_t dst_len) {
   const char *p, *e, *s;
-  size_t name_len, len;
+  size_t name_len;
+  int len = -1;
 
   name_len = strlen(name);
   e = buf + buf_len;
@@ -1447,7 +1488,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
       // Decode variable into destination buffer
       if ((size_t) (s - p) < dst_len) {
-        len = url_decode(p, (size_t)(s - p), dst, dst_len, 1);
+        len = (int)url_decode(p, (size_t)(s - p), dst, dst_len, 1);
       }
       break;
     }
@@ -2672,7 +2713,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
       nread = pull(NULL, conn->client.sock, conn->ssl, buf, to_read);
-      if (nread <= 0 || push(fp, sock, ssl, buf, nread) != nread) {
+      if (nread <= 0 || push(fp, sock, ssl, buf, (int64_t)nread) != nread) {
         break;
       }
       conn->consumed_content += nread;
@@ -2840,7 +2881,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
-  char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
+  char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *temp;
+  const char * p = NULL;
   struct mg_request_info ri;
   struct cgi_env_block blk;
   FILE *in, *out;
@@ -2852,11 +2894,12 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // directory containing executable program, 'p' must point to the
   // executable program name relative to 'dir'.
   (void) mg_snprintf(conn, dir, sizeof(dir), "%s", prog);
-  if ((p = strrchr(dir, DIRSEP)) != NULL) {
-    *p++ = '\0';
+  if ((temp = strrchr(dir, DIRSEP)) != NULL) {
+    *temp++ = '\0';
+    p = temp;
   } else {
     dir[0] = '.', dir[1] = '\0';
-    p = (char *) prog;
+    p = prog;
   }
 
   pid = (pid_t) -1;
