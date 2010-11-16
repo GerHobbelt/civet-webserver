@@ -1281,7 +1281,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     if (ssl != NULL) {
       n = SSL_write(ssl, buf + sent, k);
     } else if (fp != NULL) {
-      n = fwrite(buf + sent, 1, (size_t)k, fp);
+      n = fwrite(buf + sent, (size_t)1, (size_t)k, fp);
       if (ferror(fp))
         n = -1;
     } else {
@@ -1594,11 +1594,11 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
     sin.sin_family = AF_INET;
     sin.sin_port = htons((uint16_t) port);
     sin.sin_addr = * (struct in_addr *) he->h_addr_list[0];
-    if (connect(sock, (struct sockaddr *) &sin, sizeof(sin)) != 0) {
+    if (connect(sock, (struct sockaddr *) &sin, (socklen_t)sizeof(sin)) != 0) {
       cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
           strerror(ERRNO));
       closesocket(sock);
-    } else if ((newconn = calloc(1, sizeof(*newconn))) == NULL) {
+    } else if ((newconn = calloc((size_t)1, sizeof(*newconn))) == NULL) {
       cry(conn, "%s: calloc: %s", __func__, strerror(ERRNO));
       closesocket(sock);
     } else {
@@ -2080,7 +2080,7 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   const char *auth_header;
 
   if ((auth_header = mg_get_header(conn, "Authorization")) == NULL ||
-      mg_strncasecmp(auth_header, "Digest ", 7) != 0) {
+      mg_strncasecmp(auth_header, "Digest ", (size_t)7) != 0) {
     return 0;
   }
 
@@ -2148,7 +2148,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
   }
 
   // Loop over passwords file
-  while (fgets(line, sizeof(line), fp) != NULL) {
+  while (fgets(line, (int)sizeof(line), fp) != NULL) {
     if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
       continue;
     }
@@ -2257,7 +2257,7 @@ int mg_modify_passwords_file(struct mg_context *ctx, const char *fname,
   }
 
   // Copy the stuff to temporary file
-  while (fgets(line, sizeof(line), fp) != NULL) {
+  while (fgets(line, (int)sizeof(line), fp) != NULL) {
     if (sscanf(line, "%[^:]:%[^:]:%*s", u, d) != 2) {
       continue;
     }
@@ -2477,7 +2477,7 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
       to_read = (int) len;
 
     // Read from file, exit the loop on error
-    if ((num_read = fread(buf, 1, (size_t)to_read, fp)) == 0)
+    if ((num_read = fread(buf, (size_t)1, (size_t)to_read, fp)) == 0)
       break;
 
     // Send read bytes to the client, exit the loop on error
@@ -2590,7 +2590,7 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
   ri->http_version = skip(&buf, "\r\n");
 
   if (is_valid_http_method(ri->request_method) &&
-      strncmp(ri->http_version, "HTTP/", 5) == 0) {
+      strncmp(ri->http_version, "HTTP/", (size_t)5) == 0) {
     ri->http_version += 5;   /* Skip "HTTP/" */
     parse_http_headers(&buf, ri);
     status = 1;
@@ -2941,7 +2941,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // HTTP headers.
   data_len = 0;
   headers_len = read_request(out, INVALID_SOCKET, NULL,
-      buf, sizeof(buf), &data_len);
+      buf, (int)sizeof(buf), &data_len);
   if (headers_len <= 0) {
     send_http_error(conn, 500, http_500_error,
                     "CGI program sent malformed HTTP headers: [%.*s]",
@@ -2962,7 +2962,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     mg_printf(conn, "%s: %s\r\n",
               ri.http_headers[i].name, ri.http_headers[i].value);
   }
-  (void) mg_write(conn, "\r\n", 2);
+  (void) mg_write(conn, "\r\n", (size_t)2);
 
   // Send chunk of data that may be read after the headers
   conn->num_bytes_sent += mg_write(conn, buf + headers_len,
@@ -3145,14 +3145,14 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       buf[len++] = (char) ch;
       buf[len] = '\0';
       assert(len <= (int) sizeof(buf));
-      if (len < 6 || memcmp(buf, "<!--#", 5) != 0) {
+      if (len < 6 || memcmp(buf, "<!--#", (size_t)5) != 0) {
         // Not an SSI tag, pass it
         (void) mg_write(conn, buf, (size_t)len);
       } else {
-        if (!memcmp(buf + 5, "include", 7)) {
+        if (!memcmp(buf + 5, "include", (size_t)7)) {
           do_ssi_include(conn, path, buf + 12, include_level);
 #if !defined(NO_POPEN)
-        } else if (!memcmp(buf + 5, "exec", 4)) {
+        } else if (!memcmp(buf + 5, "exec", (size_t)4)) {
           do_ssi_exec(conn, buf + 9);
 #endif // !NO_POPEN
         } else {
@@ -3161,7 +3161,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       }
       len = 0;
     } else if (in_ssi_tag) {
-      if (len == 5 && memcmp(buf, "<!--#", 5) != 0) {
+      if (len == 5 && memcmp(buf, "<!--#", (size_t)5) != 0) {
         // Not an SSI tag
         in_ssi_tag = 0;
       } else if (len == (int) sizeof(buf) - 2) {
@@ -3351,7 +3351,7 @@ static int set_ports_option(struct mg_context *ctx) {
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, strerror(ERRNO));
       success = 0;
-    } else if ((listener = calloc(1, sizeof(*listener))) == NULL) {
+    } else if ((listener = calloc((size_t)1, sizeof(*listener))) == NULL) {
       closesocket(sock);
       cry(fc(ctx), "%s: %s", __func__, strerror(ERRNO));
       success = 0;
@@ -3660,7 +3660,7 @@ static void close_socket_gracefully(SOCKET sock) {
   // when server decide to close the connection; then when client
   // does recv() it gets no data back.
   do {
-    n = pull(NULL, sock, NULL, buf, sizeof(buf));
+    n = pull(NULL, sock, NULL, buf, (int)sizeof(buf));
   } while (n > 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
@@ -3705,7 +3705,7 @@ static int parse_url(const char *url, char *host, int *port) {
     return 0;
   };
 
-  if (!strncmp(url, "http://", 7)) {
+  if (!strncmp(url, "http://", (size_t)7)) {
     url += 7;
   }
 
@@ -3748,7 +3748,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
               ri->http_headers[i].value);
   }
   // End of headers, final newline
-  mg_write(conn->peer, "\r\n", 2);
+  mg_write(conn->peer, "\r\n", (size_t)2);
 
   // Read and forward body data if any
   if (!strcmp(ri->request_method, "POST")) {
@@ -3757,7 +3757,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
 
   // Read data from the target and forward it to the client
   while ((n = pull(NULL, conn->peer->client.sock, conn->peer->ssl,
-                   buf, sizeof(buf))) > 0) {
+                   buf, (int)sizeof(buf))) > 0) {
     if (mg_write(conn, buf, (size_t)n) != n) {
       break;
     }
@@ -3860,7 +3860,7 @@ static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn;
   int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
 
-  conn = calloc(1, sizeof(*conn) + buf_size);
+  conn = calloc((size_t)1, sizeof(*conn) + buf_size);
   conn->buf_size = buf_size;
   conn->buf = (char *) (conn + 1);
   assert(conn != NULL);
@@ -4050,7 +4050,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
-  ctx = calloc(1, sizeof(*ctx));
+  ctx = calloc((size_t)1, sizeof(*ctx));
   ctx->user_callback = user_callback;
   ctx->user_data = user_data;
 
