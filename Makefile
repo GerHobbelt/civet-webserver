@@ -20,7 +20,7 @@ all:
 ###                 UNIX build: linux, bsd, mac, rtems
 ##########################################################################
 
-CFLAGS=		-W -Wall -std=c99 -pedantic -O2 -fomit-frame-pointer $(COPT)
+CFLAGS=		-W -Wall -std=c99 -pedantic -O2 $(COPT)
 
 CFLAGS +=   -Wextra \
             -Wundef -Wcast-qual -Wcast-align -Wconversion \
