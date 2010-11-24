@@ -159,6 +159,8 @@ typedef struct DIR {
   struct dirent  result;
 } DIR;
 
+CRITICAL_SECTION g_cs;
+
 #else    // UNIX  specific
 #include <sys/wait.h>
 #include <sys/socket.h>
@@ -506,7 +508,11 @@ static void cry(struct mg_connection *conn, const char *fmt, ...) {
       mg_fopen(conn->ctx->config[ERROR_LOG_FILE], "a+");
 
     if (fp != NULL) {
+#ifdef _WIN32
+      EnterCriticalSection(&g_cs);
+#else
       flockfile(fp);
+#endif
       timestamp = time(NULL);
 
       (void) fprintf(fp,
@@ -522,7 +528,13 @@ static void cry(struct mg_connection *conn, const char *fmt, ...) {
 
       (void) fprintf(fp, "%s", buf);
       fputc('\n', fp);
+
+#ifdef _WIN32
+      LeaveCriticalSection(&g_cs);
+#else
       funlockfile(fp);
+#endif
+
       if (fp != stderr) {
         fclose(fp);
       }
@@ -3694,7 +3706,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
     }
     conn->peer->client.is_ssl = is_ssl;
   }
-  
+
   // Forward client's request to the target
   mg_printf(conn->peer, "%s %s HTTP/%s\r\n", ri->request_method, ri->uri + len,
             ri->http_version);
@@ -4003,7 +4015,12 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 #if defined(_WIN32)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
+
+  //Need not Finalize this critical section as it will
+  //be used for entire lifetime of the Mongoose process.
+  InitializeCriticalSection(&g_cs);
 #endif // _WIN32
+
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
