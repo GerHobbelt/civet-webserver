@@ -141,6 +141,24 @@ static void test_post(struct mg_connection *conn,
   }
 }
 
+static void test_fd(struct mg_connection *conn,
+                    const struct mg_request_info *ri) {
+  FILE * f;
+
+  f = mg_open(conn);
+  if (f) {
+    fprintf(f, "%s", standard_reply);
+    fprintf(f, "Writing file successful.\n");
+    fflush(f);
+  } else {
+    printf("test_fd: failed\n");
+    /* Even if opening failed, consider the test to succeed: it could be SSL. */
+    mg_printf(conn, "%s", standard_reply);
+    mg_printf(conn, "%s", "Failed to open connection as file.\n");
+  }
+}
+
+
 static const struct test_config {
   enum mg_event event;
   const char *uri;
@@ -150,6 +168,7 @@ static const struct test_config {
   {MG_NEW_REQUEST, "/test_get_var", &test_get_var},
   {MG_NEW_REQUEST, "/test_get_request_info", &test_get_request_info},
   {MG_NEW_REQUEST, "/test_post", &test_post},
+  {MG_NEW_REQUEST, "/test_fd", &test_fd},
   {MG_HTTP_ERROR, "", &test_error},
   {0, NULL, NULL}
 };

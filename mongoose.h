@@ -141,6 +141,20 @@ const char **mg_get_valid_option_names(void);
 int mg_modify_passwords_file(struct mg_context *ctx, 
     const char *passwords_file_name, const char *user, const char *password);
 
+// Open the connection as a file pointer.
+//
+// This function allows an application to treat a connection as a file.
+// The file pointer is writable (not readable), in binary mode.
+// This function cannot be used for SSL connections.
+//
+// Since the file is buffered, it should be flushed before returning
+// from the handler.  Mongoose will close the file descriptor without
+// flushing, so the data is lost of the file is not flushed first.
+//
+// Return:
+//   A writable file pointer, or NULL (if not connected or if SSL).
+FILE * mg_open(struct mg_connection *conn);
+
 // Send data to the client.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 

@@ -429,6 +429,9 @@ sub do_embedded_test {
   o("GET /test_get_var?my_var=one%2btwo&b=two%2b HTTP/1.0\n\n",
     'Value: \[one\+two\]', 'mg_get_var 8', 0);
 
+  o("GET /test_fd HTTP/1.0\n\n",
+    'HTTP/1.1 200 OK', 'mg_open', 0);
+
   # + in form data MUST be decoded to space
   o("POST /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
     "my_var=b+c", 'Value: \[b c\]', 'mg_get_var 9', 0);

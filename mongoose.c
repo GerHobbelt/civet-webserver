@@ -1376,6 +1376,14 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
       (const char *) buf, (int64_t) len);
 }
 
+FILE * mg_open(struct mg_connection *conn)
+{
+  if (conn->ssl)
+    return NULL;
+  else
+    return fdopen(conn->client.sock, "wb");
+}
+
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
   char buf[BUFSIZ];
   int len;
@@ -3021,6 +3029,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
   }
 }
 
+#if !defined(NO_SSI)
 static void send_ssi_file(struct mg_connection *, const char *, FILE *, int);
 
 static void do_ssi_include(struct mg_connection *conn, const char *ssi,
@@ -3167,6 +3176,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     (void) fclose(fp);
   }
 }
+#endif /* NO_SSI */
 
 // This is the heart of the Mongoose's logic.
 // This function is called when the request is read, parsed and validated,
@@ -3232,8 +3242,10 @@ static void handle_request(struct mg_connection *conn) {
     } else {
       handle_cgi_request(conn, path);
     }
+#if !defined(NO_SSI)
   } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
     handle_ssi_file_request(conn, path);
+#endif
   } else if (is_not_modified(conn, &st)) {
     send_http_error(conn, 304, "Not Modified", "");
   } else {
