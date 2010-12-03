@@ -14,6 +14,8 @@ all:
 # -DNO_SSL		- disable SSL functionality (-2kb)
 # -DCONFIG_FILE=\"file\" - use `file' as the default config file
 # -DHAVE_STRTOUI64	- use system strtoui64() function for strtoull()
+# -DSSL_LIB=\"libssl.so.<version>\" - use system versioned SSL shared object
+# -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 
 
 ##########################################################################
@@ -30,22 +32,26 @@ MAC_SHARED=	-flat_namespace -bundle -undefined suppress
 LINFLAGS=	-ldl -pthread $(CFLAGS)
 LIB=		_$(PROG).so
 
+# Make sure that the compiler flags come last in the compilation string.
+# If not so, this can break some on some Linux distros which use
+# "-Wl,--as-needed" turned on by default  in cc command.
+# Also, this is turned in many other distros in static linkage builds.
 linux:
-	$(CC) $(LINFLAGS) mongoose.c -shared -fPIC -fpic -o $(LIB)
-	$(CC) $(LINFLAGS) mongoose.c main.c -o $(PROG)
+	$(CC) mongoose.c -shared -fPIC -fpic -o $(LIB) $(LINFLAGS)
+	$(CC) mongoose.c main.c -o $(PROG) $(LINFLAGS)
 
 bsd:
-	$(CC) $(CFLAGS) mongoose.c -shared -pthread -fpic -fPIC -o $(LIB)
-	$(CC) $(CFLAGS) mongoose.c main.c -pthread -o $(PROG)
+	$(CC) mongoose.c -shared -pthread -fpic -fPIC -o $(LIB) $(CFLAGS)
+	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 mac:
-	$(CC) $(CFLAGS) $(MAC_SHARED) mongoose.c -pthread -o $(LIB)
-	$(CC) $(CFLAGS) mongoose.c main.c -pthread -o $(PROG)
+	$(CC) mongoose.c -pthread -o $(LIB) $(MAC_SHARED) $(CFLAGS)
+	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 solaris:
-	gcc $(CFLAGS) mongoose.c -pthread -lnsl \
-		-lsocket -fpic -fPIC -shared -o $(LIB)
-	gcc $(CFLAGS) mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG)
+	gcc mongoose.c -pthread -lnsl \
+		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
+	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
 
 
 ##########################################################################
@@ -131,7 +137,7 @@ do_test:
 	perl test/test.pl $(TEST)
 
 release: clean
-	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar --exclude \*.hg --exclude \*.svn --exclude \*.swp --exclude \*.nfs\* --exclude win32 -czf x mongoose && mv x mongoose/$$F
+	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar --exclude \*.hg --exclude \*.svn --exclude \*.swp --exclude \*.nfs\* -czf x mongoose && mv x mongoose/$$F
 
 clean:
 	rm -rf *.o *.core $(PROG) *.obj $(PROG).txt *.dSYM *.tgz

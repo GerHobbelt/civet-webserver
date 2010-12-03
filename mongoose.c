@@ -181,8 +181,12 @@ typedef struct DIR {
 #define SSL_LIB   "libssl.dylib"
 #define CRYPTO_LIB  "libcrypto.dylib"
 #else
+#if !defined(SSL_LIB)
 #define SSL_LIB   "libssl.so"
+#endif
+#if !defined(CRYPTO_LIB)
 #define CRYPTO_LIB  "libcrypto.so"
+#endif
 #endif
 #define DIRSEP   '/'
 #define IS_DIRSEP_CHAR(c) ((c) == '/')
@@ -635,23 +639,55 @@ static int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 // Skip the characters until one of the delimiters characters found.
-// 0-terminate resulting word. Skip the rest of the delimiters if any.
+// 0-terminate resulting word. Skip the delimiter and following whitespaces if any.
 // Advance pointer to buffer to the next word. Return found 0-terminated word.
-static char *skip(char **buf, const char *delimiters) {
-  char *p, *begin_word, *end_word, *end_delimiters;
+// Delimiters can be quoted with quotechar.
+static char *skip_quoted(char **buf, const char *delimiters, const char *whitespace, char quotechar) {
+  char *p, *begin_word, *end_word, *end_whitespace;
 
   begin_word = *buf;
   end_word = begin_word + strcspn(begin_word, delimiters);
-  end_delimiters = end_word + strspn(end_word, delimiters);
 
-  for (p = end_word; p < end_delimiters; p++) {
-    *p = '\0';
+  /* Check for quotechar */
+  if (end_word > begin_word) {
+    p = end_word - 1;
+    while (*p == quotechar) {
+      /* If there is anything beyond end_word, copy it */
+      if (*end_word == '\0') {
+        *p = '\0';
+        break;
+      } else {
+        size_t end_off = strcspn(end_word + 1, delimiters);
+        memmove (p, end_word, end_off + 1);
+        p += end_off; /* p must correspond to end_word - 1 */
+        end_word += end_off + 1;
+      }
+    }
+    for (p++; p < end_word; p++) {
+      *p = '\0';
+    }
   }
 
-  *buf = end_delimiters;
+  if (*end_word == '\0') {
+    *buf = end_word;
+  } else {
+    end_whitespace = end_word + 1 + strspn(end_word + 1, whitespace);
+
+    for (p = end_word; p < end_whitespace; p++) {
+      *p = '\0';
+    }
+
+    *buf = end_whitespace;
+  }
 
   return begin_word;
 }
+
+// Simplified version of skip_quoted without quote char and whitespace == delimiters
+static char *skip(char **buf, const char *delimiters) {
+  return skip_quoted(buf, delimiters, delimiters, 0);
+}
+
 
 // Return HTTP header value, or NULL if not found.
 static const char *get_header(const struct mg_request_info *ri,
@@ -1366,8 +1402,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   DEBUG_TRACE(("%p %zu %lld %lld", buf, len,
                conn->content_len, conn->consumed_content));
   nread = 0;
-  if (strcmp(conn->request_info.request_method, "POST") == 0 &&
-      conn->consumed_content < conn->content_len) {
+  if (conn->consumed_content < conn->content_len) {
 
     // Adjust number of bytes to read.
     int64_t to_read = conn->content_len - conn->consumed_content;
@@ -2021,6 +2056,12 @@ static int check_password(const char *method, const char *ha1, const char *uri,
                           const char *qop, const char *response) {
   char ha2[32 + 1], expected_response[32 + 1];
 
+  // Some of the parameters may be NULL
+  if (method == NULL || nonce == NULL || nc == NULL || cnonce == NULL || 
+      qop == NULL || response == NULL) {
+    return 0;
+  }
+
   // NOTE(lsm): due to a bug in MSIE, we do not compare the URI
   // TODO(lsm): check for authentication timeout
   if (// strcmp(dig->uri, c->ouri) != 0 ||
@@ -2090,26 +2131,26 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   s = buf;
   (void) memset(ah, 0, sizeof(*ah));
 
-  // Gobble initial spaces
-  while (isspace(* (unsigned char *) s)) {
-    s++;
-  }
-
   // Parse authorization header
   for (;;) {
-    name = skip(&s, "=");
-    value = skip(&s, " ");
-
-    // Handle commas: Digest username="a", realm="b", ...
-    if (value[strlen(value) - 1] == ',') {
-      value[strlen(value) - 1] = '\0';
+    // Gobble initial spaces
+    while (isspace(* (unsigned char *) s)) {
+      s++;
     }
-
-    // Trim double quotes around values
-    if (*value == '"') {
-      value++;
-      value[strlen(value) - 1] = '\0';
-    } else if (*value == '\0') {
+    name = skip_quoted(&s, "=", " ", 0);
+    /* Value is either quote-delimited, or ends at first comma or space. */
+    if (s[0] == '\"') {
+      s++;
+      value = skip_quoted(&s, "\"", " ", '\\');
+      if (s[0] == ',') {
+        s++;
+      }
+    }
+    else
+    {
+      value = skip_quoted(&s, ", ", " ", 0);  // IE uses commas, FF uses spaces
+    }
+    if (*name == '\0') {
       break;
     }
 
@@ -2133,6 +2174,8 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   // CGI needs it as REMOTE_USER
   if (ah->user != NULL) {
     conn->request_info.remote_user = mg_strdup(ah->user);
+  } else {
+    return 0;
   }
 
   return 1;
@@ -2562,7 +2605,7 @@ static void parse_http_headers(char **buf, struct mg_request_info *ri) {
   int i;
 
   for (i = 0; i < (int) ARRAY_SIZE(ri->http_headers); i++) {
-    ri->http_headers[i].name = skip(buf, ": ");
+    ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
     ri->http_headers[i].value = skip(buf, "\r\n");
     if (ri->http_headers[i].name[0] == '\0')
       break;
@@ -3227,10 +3270,10 @@ static void handle_request(struct mg_connection *conn) {
   convert_uri_to_file_name(conn, ri->uri, path, sizeof(path));
 
   DEBUG_TRACE(("%s", ri->uri));
-  if (call_user(conn, MG_NEW_REQUEST) != NULL) {
-    // Do nothing, callback has served the request
-  } else if (!check_authorization(conn, path)) {
+  if (!check_authorization(conn, path)) {
     send_authorization_request(conn);
+  } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
+    // Do nothing, callback has served the request
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
     send_http_error(conn, 403, "Forbidden", "Access Forbidden");
@@ -3770,6 +3813,12 @@ static void handle_proxy_request(struct mg_connection *conn) {
   }
 }
 
+static int is_valid_uri(const char *uri) {
+  // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
+  // URI can be an asterisk (*) or should start with slash.
+  return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
+}
+
 static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   int keep_alive_enabled;
@@ -3796,7 +3845,7 @@ static void process_new_connection(struct mg_connection *conn) {
     // Nul-terminate the request cause parse_http_request() uses sscanf
     conn->buf[conn->request_len - 1] = '\0';
     if (!parse_http_request(conn->buf, ri) ||
-        (!conn->client.is_proxy && ri->uri[0] != '/')) {
+        (!conn->client.is_proxy && !is_valid_uri(ri->uri))) {
       // Do not put garbage in the access log, just send it back to the client
       send_http_error(conn, 400, "Bad Request",
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
@@ -3955,8 +4004,8 @@ static void master_thread(struct mg_context *ctx) {
       add_to_set(sp->sock, &read_set, &max_fd);
     }
 
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
+    tv.tv_sec = 0;
+    tv.tv_usec = 200 * 1000;
 
     if (select(max_fd + 1, &read_set, NULL, NULL, &tv) < 0) {
 #ifdef _WIN32
