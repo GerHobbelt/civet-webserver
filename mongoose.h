@@ -56,6 +56,8 @@ enum mg_event {
   MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
   MG_INIT_SSL,      // Mongoose initializes SSL. Instead of mg_connection *,
                     // SSL context is passed to the callback function.
+  MG_START_THREAD,  // Called when a thread is created
+  MG_STOP_THREAD    // Called when a thread is stopped
 };
 
 // Prototype for the user-defined function. Mongoose calls this function
@@ -212,6 +214,21 @@ const char *mg_version(void);
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
 
+
+// get thread data
+// Each connection has a void pointer that can be used by callbacks for
+// storing data on a per-connection/thread basis.
+// Return:
+//  The thread_data value in the connection structure.
+void *mg_get_thread_data(struct mg_connection *conn);
+
+// set thread data
+// Each connection has a void pointer that can be used by callbacks for
+// storing data on a per-connection/thread basis.
+// This call replaces any previous value with a new value.
+// Return:
+//  The previous thread_data value in the connection structure.
+void *mg_set_thread_data(struct mg_connection *conn, void *data);
 
 #ifdef __cplusplus
 }

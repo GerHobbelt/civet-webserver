@@ -455,12 +455,21 @@ struct mg_connection {
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
+  void *thread_data;            // User data allocated per thread	
 };
 
 const char **mg_get_valid_option_names(void) {
   return config_options;
 }
 
+void *mg_get_thread_data(struct mg_connection *conn) {
+	return conn->thread_data;
+}
+void *mg_set_thread_data(struct mg_connection *conn, void *data) {
+	void *p =  conn->thread_data;
+	conn->thread_data = data;
+	return p;
+}
 static void *call_user(struct mg_connection *conn, enum mg_event event) {
   conn->request_info.user_data = conn->ctx->user_data;
   return conn->ctx->user_callback == NULL ? NULL :
@@ -3867,13 +3876,15 @@ static void worker_thread(struct mg_context *ctx) {
   int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
 
   conn = calloc(1, sizeof(*conn) + buf_size);
-  conn->buf_size = buf_size;
-  conn->buf = (char *) (conn + 1);
   assert(conn != NULL);
 
+  conn->buf_size = buf_size;
+  conn->buf = (char *) (conn + 1);
+  conn->ctx = ctx;
+
+  call_user (conn, MG_START_THREAD);
   while (ctx->stop_flag == 0 && consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
-    conn->ctx = ctx;
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
@@ -3891,6 +3902,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     close_connection(conn);
   }
+  call_user (conn, MG_STOP_THREAD);
   free(conn);
 
   // Signal master that we're done with connection and exiting
