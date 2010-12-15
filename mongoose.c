@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
+// posix_spawn()
 #include <spawn.h>
 #endif // !_WIN32_WCE
 
@@ -1208,7 +1209,7 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
 
 #ifndef NO_CGI
 
-
+#ifndef USEFORK
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
                            int fd_stdout, const char *dir) {
@@ -1235,9 +1236,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 	}
 	(void) close(fd_stdin);
 	(void) close(fd_stdout);
-        return pid;
+    return pid;
 }
-
+#endif
 
 
 #ifdef USEFORK
