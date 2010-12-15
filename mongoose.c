@@ -31,8 +31,9 @@
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
-// posix_spawn()
+#ifndef USEFORK
 #include <spawn.h>
+#endif
 #endif // !_WIN32_WCE
 
 #include <time.h>
@@ -1210,6 +1211,7 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
 #ifndef NO_CGI
 
 #ifndef USEFORK
+
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
                            int fd_stdout, const char *dir) {
@@ -1219,24 +1221,19 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 	int ret;
 	char path[256];
 
-	envblk = NULL; // Unused
-	if (chdir(dir) != 0) {
-		cry(conn, "%s: chdir(%s): %s", __func__, dir, strerror(ERRNO));
-	}
-	else {
-		posix_spawn_file_actions_init(&actions);
-		posix_spawn_file_actions_adddup2(&actions, fd_stdin, 0);
-		posix_spawn_file_actions_adddup2(&actions, fd_stdout,1);
-		sprintf(path, "%s/%s", dir, prog);
-		ret = posix_spawn(&pid, path, &actions, NULL, NULL, envp);
-		posix_spawn_file_actions_destroy(&actions);
-		if (ret) {
-    			send_http_error(conn, 500, http_500_error, "posix_spawn(): %s", strerror(ERRNO));
-		}
-	}
+  	envblk = NULL; // Unused
+
+	posix_spawn_file_actions_init(&actions);
+	posix_spawn_file_actions_adddup2(&actions, fd_stdin, 0);
+	posix_spawn_file_actions_adddup2(&actions, fd_stdout,1);
+	sprintf(path, "%s/%s", dir, prog);
+	ret = posix_spawn(&pid, path, &actions, NULL, NULL, envp);
+	posix_spawn_file_actions_destroy(&actions);
+	if (ret)
+		send_http_error(conn, 500, http_500_error, "posix_spawn(): %s", strerror(ERRNO));
 	(void) close(fd_stdin);
 	(void) close(fd_stdout);
-    return pid;
+        return pid;
 }
 #endif
 
@@ -1267,6 +1264,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       (void) close(fd_stdout);
 
       // Execute CGI program. No need to lock: new process
+
       interp = conn->ctx->config[CGI_INTERPRETER];
       if (interp == NULL) {
         (void) execle(prog, prog, NULL, envp);
@@ -1611,6 +1609,7 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
 //   >0  actual request length, including last \r\n\r\n
 static int get_request_len(const char *buf, int buflen) {
   const char *s, *e;
+
   int len = 0;
 
   DEBUG_TRACE(("buf: %p, len: %d", buf, buflen));
