@@ -349,6 +349,8 @@ static const char *month_names[] = {
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
+struct mg_allocs *mg_allocators = NULL;
+
 // Unified socket address. For IPv6 support, add IPv6 address structure
 // in the union u.
 struct usa {
@@ -565,6 +567,47 @@ static int lowercase(const char *s) {
   return tolower(* (const unsigned char *) s);
 }
 
+void mg_set_allocs( struct mg_allocs *allocs )
+{
+  mg_allocators = allocs;
+}
+
+void *mg_calloc(size_t nmemb, size_t size)
+{
+  if( mg_allocators && mg_allocators->calloc ) {
+    return( mg_allocators->calloc(nmemb, size) );
+  } else {
+    return( calloc(nmemb, size) );
+  }
+}
+
+void *mg_malloc(size_t size)
+{
+  if( mg_allocators && mg_allocators->malloc ) {
+    return( mg_allocators->malloc(size) );
+  } else {
+    return( malloc(size) );
+  }
+}
+
+void mg_free(void *ptr)
+{
+  if( mg_allocators && mg_allocators->free ) {
+    mg_allocators->free(ptr);
+  } else {
+    free(ptr);
+  }
+}
+
+void *mg_realloc(void *ptr, size_t size)
+{
+  if( mg_allocators && mg_allocators->realloc ) {
+    return( mg_allocators->realloc(ptr, size) );
+  } else {
+    return( realloc(ptr, size) );
+  }
+}
+
 static int mg_strncasecmp(const char *s1, const char *s2, size_t len) {
   int diff = 0;
 
@@ -589,7 +632,7 @@ static int mg_strcasecmp(const char *s1, const char *s2) {
 static char * mg_strndup(const char *ptr, size_t len) {
   char *p;
 
-  if ((p = (char *) malloc(len + 1)) != NULL) {
+  if ((p = (char *) mg_malloc(len + 1)) != NULL) {
     mg_strlcpy(p, ptr, len + 1);
   }
 
@@ -1042,7 +1085,7 @@ static DIR * opendir(const char *name) {
 
   if (name == NULL) {
     SetLastError(ERROR_BAD_ARGUMENTS);
-  } else if ((dir = (DIR *) malloc(sizeof(*dir))) == NULL) {
+  } else if ((dir = (DIR *) mg_malloc(sizeof(*dir))) == NULL) {
     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
   } else {
     to_unicode(name, wpath, ARRAY_SIZE(wpath));
@@ -1592,7 +1635,7 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
       cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
           strerror(ERRNO));
       closesocket(sock);
-    } else if ((newconn = calloc(1, sizeof(*newconn))) == NULL) {
+    } else if ((newconn = mg_calloc(1, sizeof(*newconn))) == NULL) {
       cry(conn, "%s: calloc: %s", __func__, strerror(ERRNO));
       closesocket(sock);
     } else {
@@ -2411,7 +2454,7 @@ static void handle_directory_request(struct mg_connection *conn,
 
     if (entries == NULL || num_entries >= arr_size) {
       arr_size *= 2;
-      entries = (struct de *) realloc(entries,
+      entries = (struct de *) mg_realloc(entries,
           arr_size * sizeof(entries[0]));
     }
 
@@ -2459,9 +2502,9 @@ static void handle_directory_request(struct mg_connection *conn,
   qsort(entries, (size_t)num_entries, sizeof(entries[0]), compare_dir_entries);
   for (i = 0; i < num_entries; i++) {
     print_dir_entry(&entries[i]);
-    free(entries[i].file_name);
+    mg_free(entries[i].file_name);
   }
-  free(entries);
+  mg_free(entries);
 
   conn->num_bytes_sent += mg_printf(conn, "%s", "</table></body></html>");
   conn->request_info.status_code = 200;
@@ -3286,7 +3329,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
   for (sp = ctx->listening_sockets; sp != NULL; sp = tmp) {
     tmp = sp->next;
     (void) closesocket(sp->sock);
-    free(sp);
+    mg_free(sp);
   }
 }
 
@@ -3351,7 +3394,7 @@ static int set_ports_option(struct mg_context *ctx) {
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, strerror(ERRNO));
       success = 0;
-    } else if ((listener = calloc(1, sizeof(*listener))) == NULL) {
+    } else if ((listener = mg_calloc(1, sizeof(*listener))) == NULL) {
       closesocket(sock);
       cry(fc(ctx), "%s: %s", __func__, strerror(ERRNO));
       success = 0;
@@ -3600,7 +3643,7 @@ static int set_ssl_option(struct mg_context *ctx) {
   // Initialize locking callbacks, needed for thread safety.
   // http://www.openssl.org/support/faq.html#PROG1
   size = sizeof(pthread_mutex_t) * CRYPTO_num_locks();
-  if ((ssl_mutexes = (pthread_mutex_t *) malloc((size_t)size)) == NULL) {
+  if ((ssl_mutexes = (pthread_mutex_t *) mg_malloc((size_t)size)) == NULL) {
     cry(fc(ctx), "%s: cannot allocate mutexes: %s", __func__, ssl_error());
     return 0;
   }
@@ -3635,7 +3678,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
   if (ri->remote_user != NULL) {
-    free((void *) ri->remote_user);
+    mg_free((void *) ri->remote_user);
   }
   ri->remote_user = ri->request_method = ri->uri = ri->http_version = NULL;
   ri->num_headers = 0;
@@ -3765,7 +3808,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
 
   if (!conn->peer->client.is_ssl) {
     close_connection(conn->peer);
-    free(conn->peer);
+    mg_free(conn->peer);
     conn->peer = NULL;
   }
 }
@@ -3866,7 +3909,7 @@ static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn;
   int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
 
-  conn = calloc(1, sizeof(*conn) + buf_size);
+  conn = mg_calloc(1, sizeof(*conn) + buf_size);
   conn->buf_size = buf_size;
   conn->buf = (char *) (conn + 1);
   assert(conn != NULL);
@@ -3891,7 +3934,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     close_connection(conn);
   }
-  free(conn);
+  mg_free(conn);
 
   // Signal master that we're done with connection and exiting
   (void) pthread_mutex_lock(&ctx->mutex);
@@ -4012,7 +4055,7 @@ static void free_context(struct mg_context *ctx) {
   // Deallocate config parameters
   for (i = 0; i < NUM_OPTIONS; i++) {
     if (ctx->config[i] != NULL)
-      free(ctx->config[i]);
+      mg_free(ctx->config[i]);
   }
 
   // Deallocate SSL context
@@ -4021,12 +4064,12 @@ static void free_context(struct mg_context *ctx) {
   }
 #ifndef NO_SSL
   if (ssl_mutexes != NULL) {
-    free(ssl_mutexes);
+    mg_free(ssl_mutexes);
   }
 #endif // !NO_SSL
 
   // Deallocate context itself
-  free(ctx);
+  mg_free(ctx);
 }
 
 void mg_stop(struct mg_context *ctx) {
@@ -4056,7 +4099,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
-  ctx = calloc(1, sizeof(*ctx));
+  ctx = mg_calloc(1, sizeof(*ctx));
   ctx->user_callback = user_callback;
   ctx->user_data = user_data;
 

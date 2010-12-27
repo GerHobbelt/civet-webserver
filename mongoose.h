@@ -58,6 +58,18 @@ enum mg_event {
                     // SSL context is passed to the callback function.
 };
 
+// Struct to define custom memory allocator routines
+struct mg_allocs {
+  void *(*calloc)(size_t nmemb, size_t size);
+  void *(*malloc)(size_t size);
+  void *(free)(void *ptr);
+  void *(*realloc)(void *ptr, size_t size);
+};
+
+// Setup the memory allocators.  If they haven't been set, the default is to
+// use the calloc/malloc/free/realloc from libc
+void mg_set_allocs( struct mg_allocs *allocs );
+
 // Prototype for the user-defined function. Mongoose calls this function
 // on every event mentioned above.
 //
