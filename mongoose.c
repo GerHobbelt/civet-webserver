@@ -1353,6 +1353,7 @@ static int pull(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int len) {
 	  fd_set fdset;   
 	  struct timeval st_timeout;
 	  st_timeout.tv_sec = 0;
+	  //300 ms
 	  st_timeout.tv_usec = 300000;
 	  FD_ZERO(&fdset);
 	  FD_SET(sock, &fdset);
