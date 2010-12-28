@@ -1348,7 +1348,24 @@ static int pull(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int len) {
     if (ferror(fp))
       nread = -1;
   } else {
-    nread = recv(sock, buf, (size_t) len, 0);
+	  //make sure all data is recv. For slow browser or slow conntion, one recv can not 
+	  //get all tcp data.
+	  fd_set fdset;   
+	  struct timeval st_timeout;
+	  st_timeout.tv_sec = 0;
+	  st_timeout.tv_usec = 300000;
+	  FD_ZERO(&fdset);
+	  FD_SET(sock, &fdset);
+
+
+	  if(select(sock + 1, &fdset, NULL, NULL, &st_timeout) > 0)
+	  {  
+		  nread = recv(sock, buf, (size_t) len, 0);
+	  }
+	  else
+	  {
+		  return 0;
+	  }
   }
 
   return nread;
