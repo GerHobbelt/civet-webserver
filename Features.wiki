@@ -1,9 +1,10 @@
 #summary Descriptions of Mongoose Features
 
-Below you will find a description of several of the features included in the Mongoose web server.  Along with the description, most also contain a simple usage of the feature being described.
+Below you will find a description of several of the features included in the Mongoose web server.  Along with the description, most also contain a simple usage of the feature being described.<br/>
 
 ==Table of Contents==
 <wiki:toc max_depth="1" />
+<br/>
 
 =SSI Support=
 
