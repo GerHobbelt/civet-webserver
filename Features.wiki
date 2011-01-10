@@ -4,7 +4,6 @@ Below you will find a description of several of the features included in the Mon
 
 ==Table of Contents==
 <wiki:toc max_depth="1" />
-<br/>
 
 =SSI Support=
 
