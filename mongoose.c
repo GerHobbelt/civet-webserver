@@ -642,7 +642,7 @@ static int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 // 0-terminate resulting word. Skip the delimiter and following whitespaces if any.
 // Advance pointer to buffer to the next word. Return found 0-terminated word.
 // Delimiters can be quoted with quotechar.
-static char *skip_quoted(char **buf, const char *delimiters, const char *whitespace, char quotechar) {
+static char *skip_quoted(char **buf, const char *delimiters, const char *whitespace, int quotechar) {
   char *p, *begin_word, *end_word, *end_whitespace;
 
   begin_word = *buf;
@@ -651,7 +651,7 @@ static char *skip_quoted(char **buf, const char *delimiters, const char *whitesp
   /* Check for quotechar */
   if (end_word > begin_word) {
     p = end_word - 1;
-    while (*p == quotechar) {
+    while (*p == (char)quotechar) {
       /* If there is anything beyond end_word, copy it */
       if (*end_word == '\0') {
         *p = '\0';
@@ -685,7 +685,7 @@ static char *skip_quoted(char **buf, const char *delimiters, const char *whitesp
 
 // Simplified version of skip_quoted without quote char and whitespace == delimiters
 static char *skip(char **buf, const char *delimiters) {
-  return skip_quoted(buf, delimiters, delimiters, 0);
+  return skip_quoted(buf, delimiters, delimiters, '\0');
 }
 
 
@@ -2137,7 +2137,7 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
     while (isspace(* (unsigned char *) s)) {
       s++;
     }
-    name = skip_quoted(&s, "=", " ", 0);
+    name = skip_quoted(&s, "=", " ", '\0');
     /* Value is either quote-delimited, or ends at first comma or space. */
     if (s[0] == '\"') {
       s++;
@@ -2148,7 +2148,7 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
     }
     else
     {
-      value = skip_quoted(&s, ", ", " ", 0);  // IE uses commas, FF uses spaces
+      value = skip_quoted(&s, ", ", " ", '\0');  // IE uses commas, FF uses spaces
     }
     if (*name == '\0') {
       break;
@@ -2605,7 +2605,7 @@ static void parse_http_headers(char **buf, struct mg_request_info *ri) {
   int i;
 
   for (i = 0; i < (int) ARRAY_SIZE(ri->http_headers); i++) {
-    ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
+    ri->http_headers[i].name = skip_quoted(buf, ":", " ", '\0');
     ri->http_headers[i].value = skip(buf, "\r\n");
     if (ri->http_headers[i].name[0] == '\0')
       break;
