@@ -26,6 +26,7 @@ extern "C" {
 #endif // __cplusplus
 
 #include <stdlib.h>    // size_t
+#include <stdarg.h>
 
 struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
@@ -150,10 +151,17 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // Send data to the browser using printf() semantics.
 //
 // Works exactly like mg_write(), but allows to do message formatting.
-// Note that mg_printf() uses internal buffer of size IO_BUF_SIZE
-// (8 Kb by default) as temporary message storage for formatting. Do not
-// print data that is bigger than that, otherwise it will be truncated.
+// Note that mg_printf() uses internal buffer of size 4 Kb as temporary 
+// message storage for formatting. Do not print data that is bigger than that, 
+// otherwise it will be truncated.
 int mg_printf(struct mg_connection *, const char *fmt, ...);
+    
+
+// Send data to the browser using a variable argument list.
+//
+// Just like mg_printf, except without the varargs in the parameter list. This
+// is supplied so that clients can implement their own versions of mg_printf.
+int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 
 // Read data from the remote end, return number of bytes read.

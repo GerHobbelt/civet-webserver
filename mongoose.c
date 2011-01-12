@@ -35,7 +35,6 @@
 
 #include <time.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <assert.h>
 #include <string.h>
 #include <ctype.h>
@@ -604,7 +603,7 @@ static char * mg_strdup(const char *str) {
 // that is larger than a supplied buffer.
 // Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
 // in his audit report.
-static int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
+int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
                         const char *fmt, va_list ap) {
   int n;
 
