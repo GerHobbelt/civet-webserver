@@ -123,3 +123,23 @@ If directory listing is turned off and a user attempts to view a directory, they
 Error 403: Directory Listing Denied
 Directory listing denied
 }}}
+
+----
+
+=Default Index File List=
+
+The user may set the list of default index files for the Mongoose Web Server using the “*-i*" option at runtime or the “*i*" variable in the config file. To set the list of default index files at runtime, start the web server similar to the following:
+
+{{{
+./mongoose -i index.html,index.htm,index.php,index.cgi
+}}}
+
+To set the list from the config file, use a line similar to the one below.
+
+{{{
+i    index.html,index.htm,index.php,index.cgi
+}}}
+
+Since it is possible to define a list of default index pages, the Mongoose Web Server will use the first default file that it finds in the list that exists in the web directory as the index page it shows to the user.  
+
+Using the above lists as an example, if there is both an index.html and index.htm file in the root of the web server, index.html will be used because it comes first in the default file list and therefore has a higher priority than index.htm.
