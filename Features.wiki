@@ -105,3 +105,21 @@ On OS X, this will place the “*php-cgi*" program in the "*/usr/local/bin*" dir
 }}}
 
 After starting the web server, you can test if PHP is working by browsing to any PHP file which is located under your web server root directory.
+
+----
+
+=Directory Listing=
+
+Directory listing can be enabled or disabled in the Mongoose Web Server either at runtime using the *-d* option, or through the config file using the "*d*" variable.  By default, directory listing is turned on. Examples of turning off directory listing are shown below:
+
+{{{
+./mongoose -d no      [ Runtime ]
+d    no               [ Config File ]
+}}}
+
+If directory listing is turned off and a user attempts to view a directory, they will see a message similar to the following:
+
+{{{
+Error 403: Directory Listing Denied
+Directory listing denied
+}}}
