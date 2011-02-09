@@ -19,7 +19,7 @@ all:
 
 
 ## FIXME: do not merge this line, that's just my own options.
-COPT = -m32
+COPT = -m32 -DNO_CGI
 
 
 ##########################################################################

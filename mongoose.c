@@ -746,7 +746,6 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-#if !defined(NO_CGI)
 static int match_extension(const char *path, const char *ext_list) {
   struct vec ext_vec;
   size_t path_len;
@@ -761,7 +760,6 @@ static int match_extension(const char *path, const char *ext_list) {
 
   return 0;
 }
-#endif // !NO_CGI
 
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
@@ -3264,6 +3262,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
+#if !defined(NO_CGI)
   } else if (match_extension(path, conn->ctx->config[CGI_EXTENSIONS])) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -3272,6 +3271,7 @@ static void handle_request(struct mg_connection *conn) {
     } else {
       handle_cgi_request(conn, path);
     }
+#endif
   } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
