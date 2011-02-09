@@ -32,6 +32,9 @@ LINFLAGS=	-ldl -pthread $(CFLAGS)
 LIB=		_$(PROG).so
 STATICLIB=	lib$(PROG).a
 
+# Installation root directory, for install target.
+INSTALL ?= /usr/local
+
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -58,6 +61,15 @@ solaris:
 	gcc mongoose.c -pthread -lnsl \
 		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
 	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
+
+
+install: linux linux-static
+	mkdir -p $(INSTALL)/include/mongoose
+	mkdir -p $(INSTALL)/lib
+	cp mongoose.h $(INSTALL)/include/mongoose/
+	cp _$(PROG).so $(INSTALL)/lib/libmongoose.so
+	cp lib$(PROG).a $(INSTALL)/lib/libmongoose.a
+	cp LICENSE $(INSTALL)/LICENSE
 
 
 ##########################################################################
