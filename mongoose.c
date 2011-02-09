@@ -3875,6 +3875,10 @@ static void worker_thread(struct mg_context *ctx) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
 
+    // Fill in the local port so that we can identify which port a request has
+    // been received on.
+    conn->request_info.local_port = ntohs(conn->client.lsa.u.sin.sin_port);
+
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
     // Thanks to Johannes Winkelmann for the patch.
