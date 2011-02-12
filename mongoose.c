@@ -439,6 +439,9 @@ struct mg_context {
   int sq_tail;               // Tail of the socket queue
   pthread_cond_t sq_full;    // Singaled when socket is produced
   pthread_cond_t sq_empty;   // Signaled when socket is consumed
+  
+  int dynamic_client_port;   // bind(0) is dynamic; here lies the real port
+
 };
 
 struct mg_connection {
@@ -488,6 +491,11 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   } else {
     return ctx->config[i];
   }
+}
+
+int mg_get_dynamic_client_port(const struct mg_context *ctx)
+{
+  return ctx->dynamic_client_port;
 }
 
 // Print error message to the opened error log stream.
@@ -3292,7 +3300,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
 
 // Valid listening port specification is: [ip_address:]port[s|p]
 // Examples: 80, 443s, 127.0.0.1:3128p, 1.2.3.4:8080sp
-static int parse_port_string(const struct vec *vec, struct socket *so) {
+static int parse_port_string(const struct vec *vec, struct socket *so, int* outPort) {
   struct usa *usa = &so->lsa;
   int a, b, c, d, port, len;
 
@@ -3319,8 +3327,22 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   usa->len = sizeof(usa->u.sin);
   usa->u.sin.sin_family = AF_INET;
   usa->u.sin.sin_port = htons((uint16_t) port);
-
+  *outPort = port;
+  
   return 1;
+}
+
+static int update_port(struct mg_context *ctx, int sock, int port) {
+  if( port == 0 ) {
+    struct sockaddr addrOut;
+    socklen_t sockSize = sizeof( addrOut );
+    // struct sockaddr_in addrOut;
+    memset( &addrOut, 0, sizeof( addrOut ) );
+    getsockname( sock, & addrOut, &sockSize );
+    if( addrOut.sa_family == AF_INET )
+      ctx->dynamic_client_port = ntohs( ((struct sockaddr_in *) &addrOut )->sin_port );
+  }
+  return 0;
 }
 
 static int set_ports_option(struct mg_context *ctx) {
@@ -3329,9 +3351,10 @@ static int set_ports_option(struct mg_context *ctx) {
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;
-
+  int port;
+  
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
-    if (!parse_port_string(&vec, &so)) {
+    if (!parse_port_string(&vec, &so, &port)) {
       cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
           __func__, vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|p]");
       success = 0;
@@ -3346,6 +3369,7 @@ static int set_ports_option(struct mg_context *ctx) {
                           sizeof(reuseaddr)) != 0 ||
 #endif // !_WIN32
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
+               update_port( ctx, sock, port ) ||
                listen(sock, 20) != 0) {
       closesocket(sock);
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
