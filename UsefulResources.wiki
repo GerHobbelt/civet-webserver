@@ -7,7 +7,7 @@ This page is designed to be a collection of useful and informative resources abo
 ----
 
 *Creating secure web based user interfaces for Embedded Devices*<br/>
-By: Arnout Vandecappelle (mind.be)<br/>
+By: Arnout Vandecappelle ([http://www.mind.be/ Essensium/Mind])<br/>
 Presented at FOSDEM 2011 on February 6th 2011 in Brussels, Belgium
 
 *Abstract:*<br/>
