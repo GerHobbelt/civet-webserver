@@ -13,12 +13,11 @@ sub on_windows { $^O =~ /win32/i; }
 my $port = 23456;
 my $pid = undef;
 my $num_requests;
-my $root = 'test';
 my $dir_separator = on_windows() ? '\\' : '/';
 my $copy_cmd = on_windows() ? 'copy' : 'cp';
 my $test_dir_uri = "test_dir";
+my $root = 'test';
 my $test_dir = $root . $dir_separator. $test_dir_uri;
-my $alias = "/aliased=/etc/,/ta=$test_dir";
 my $config = 'mongoose.conf';
 my $exe = '.' . $dir_separator . 'mongoose';
 my $embed_exe = '.' . $dir_separator . 'embed';
@@ -51,7 +50,7 @@ sub get_num_of_log_entries {
 
 # Send the request to the 127.0.0.1:$port and return the reply
 sub req {
-  my ($request, $inc) = @_;
+  my ($request, $inc, $timeout) = @_;
   my $sock = IO::Socket::INET->new(Proto=>"tcp",
     PeerAddr=>'127.0.0.1', PeerPort=>$port);
   fail("Cannot connect: $!") unless $sock;
@@ -60,8 +59,12 @@ sub req {
     last unless print $sock $byte;
     select undef, undef, undef, .001 if length($request) < 256;
   }
-  my @lines = <$sock>;
-  my $out = join '', @lines;
+  my ($out, $buf) = ('', '');
+  eval {
+    alarm $timeout if $timeout;
+    $out .= $buf while (sysread($sock, $buf, 1024) > 0);
+    alarm 0 if $timeout;
+  };
   close $sock;
 
   $num_requests += defined($inc) ? $inc : 1;
@@ -77,7 +80,7 @@ sub req {
 # Send the request. Compare with the expected reply. Fail if no match
 sub o {
   my ($request, $expected_reply, $message, $num_logs) = @_;
-  print "==> Testing $message ... ";
+  print "==> $message ... ";
   my $reply = req($request, $num_logs);
   if ($reply =~ /$expected_reply/s) {
     print "OK\n";
@@ -89,6 +92,7 @@ sub o {
 # Spawn a server listening on specified port
 sub spawn {
   my ($cmdline) = @_;
+  print 'Executing: ', @_, "\n";
   if (on_windows()) {
     my @args = split /\s+/, $cmdline;
     my $executable = $args[0];
@@ -129,6 +133,7 @@ sub kill_spawned_child {
 
 unlink @files_to_delete;
 $SIG{PIPE} = 'IGNORE';
+$SIG{ALRM} = sub { die "timeout\n" };
 #local $| =1;
 
 # Make sure we export only symbols that start with "mg_", and keep local
@@ -146,8 +151,8 @@ if (scalar(@ARGV) > 0 and $ARGV[0] eq 'embedded') {
 }
 
 # Make sure we load config file if no options are given
-write_file($config, "ports 12345\naccess_log access.log\n");
-spawn($exe);
+write_file($config, "listening_ports 12345\n");
+spawn("$exe -a access.log");
 my $saved_port = $port;
 $port = 12345;
 o("GET /test/hello.txt HTTP/1.0\n\n", 'HTTP/1.1 200 OK', 'Loading config file');
@@ -156,11 +161,14 @@ unlink $config;
 kill_spawned_child();
 
 # Spawn the server on port $port
-my $cmd = "$exe -ports $port -access_log access.log -error_log debug.log ".
-"-cgi_env CGI_FOO=foo,CGI_BAR=bar,CGI_BAZ=baz " .
-"-mime_types .bar=foo/bar,.tar.gz=blah,.baz=foo " .
-"-root test -aliases $alias -admin_uri /hh";
-$cmd .= ' -cgi_interp perl' if on_windows();
+my $cmd = "$exe -listening_ports $port -access_log_file access.log ".
+"-error_log_file debug.log ".
+"-cgi_environment CGI_FOO=foo,CGI_BAR=bar,CGI_BAZ=baz " .
+"-extra_mime_types .bar=foo/bar,.tar.gz=blah,.baz=foo " .
+'-put_delete_passwords_file test/passfile ' .
+'-access_control_list -0.0.0.0/0,+127.0.0.1 ' .
+"-document_root $root,/aiased=/etc/,/ta=$test_dir";
+$cmd .= ' -cgi_interpreter perl' if on_windows();
 spawn($cmd);
 
 # Try to overflow: Send very long request
@@ -171,6 +179,17 @@ o("GET /hello.txt HTTP/1.0\n\n", 'Content-Length: 17\s',
   'GET regular file Content-Length');
 o("GET /%68%65%6c%6c%6f%2e%74%78%74 HTTP/1.0\n\n",
   'HTTP/1.1 200 OK', 'URL-decoding');
+
+# Break CGI reading after 1 second. We must get full output.
+# Since CGI script does sleep, we sleep as well and increase request count
+# manually.
+my $slow_cgi_reply;
+print "==> Slow CGI output ... ";
+fail('Slow CGI output forward reply=', $slow_cgi_reply) unless
+  ($slow_cgi_reply = req("GET /timeout.cgi HTTP/1.0\r\n\r\n", 0, 1)) =~ /Some data/s;
+print "OK\n";
+sleep 3;
+$num_requests++;
 
 # '+' in URI must not be URL-decoded to space
 write_file("$root/a+.txt", '');
@@ -207,8 +226,15 @@ write_file($path, read_file($root . $dir_separator . 'env.cgi'));
 chmod 0755, $path;
 o("GET /$test_dir_uri/x/ HTTP/1.0\n\n", "Content-Type: text/html\r\n\r\n",
   'index.cgi execution');
+o("GET /$test_dir_uri/x/ HTTP/1.0\n\n",
+  "SCRIPT_FILENAME=test/test_dir/x/index.cgi", 'SCRIPT_FILENAME');
 o("GET /ta/x/ HTTP/1.0\n\n", "SCRIPT_NAME=/ta/x/index.cgi",
   'Aliases SCRIPT_NAME');
+#o("GET /hello.txt HTTP/1.1\n\n   GET /hello.txt HTTP/1.0\n\n",
+#  'HTTP/1.1 200.+keep-alive.+HTTP/1.1 200.+close',
+#  'Request pipelining', 2);
+
+o("GET * HTTP/1.0\n\n", "^HTTP/1.1 404", '* URI');
 
 my $mime_types = {
   html => 'text/html',
@@ -280,11 +306,19 @@ o("GET /$test_dir_uri/sort/?dd HTTP/1.0\n\n",
 
 unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   # Check that .htpasswd file existence trigger authorization
-  write_file("$root/.htpasswd", '');
+  write_file("$root/.htpasswd", 'user with space, " and comma:mydomain.com:5deda12442309cbdcdffc6b2737a894f');
   o("GET /hello.txt HTTP/1.1\n\n", '401 Unauthorized',
     '.htpasswd - triggering auth on file request');
   o("GET / HTTP/1.1\n\n", '401 Unauthorized',
     '.htpasswd - triggering auth on directory request');
+
+  # Test various funky things in an authentication header.
+  o("GET /hello.txt HTTP/1.0\nAuthorization: Digest   eq== empty=\"\", empty2=, quoted=\"blah foo bar, baz\\\"\\\" more\\\"\", unterminatedquoted=\" doesn't stop\n\n",
+    '401 Unauthorized', 'weird auth values should not cause crashes');
+  my $auth_header = "Digest username=\"user with space, \\\" and comma\", ".
+    "realm=\"mydomain.com\", nonce=\"1291376417\", uri=\"/\",".
+    "response=\"e8dec0c2a1a0c8a7e9a97b4b5ea6a6e6\", qop=auth, nc=00000001, cnonce=\"1a49b53a47a66e82\"";
+  o("GET /hello.txt HTTP/1.0\nAuthorization: $auth_header\n\n", 'HTTP/1.1 200 OK', 'GET regular file with auth');
   unlink "$root/.htpasswd";
 
   o("GET /env.cgi HTTP/1.0\n\r\n", 'HTTP/1.1 200 OK', 'GET CGI file');
@@ -349,15 +383,14 @@ unless (scalar(@ARGV) > 0 and $ARGV[0] eq "basic_tests") {
   $content =~ /^b:a:\w+$/gs or fail("Bad content of the passwd file");
   unlink $path;
 
-  kill_spawned_child();
   do_PUT_test();
-  #do_embedded_test();
+  kill_spawned_child();
+  do_embedded_test();
 }
 
 sub do_PUT_test {
-  $cmd .= ' -auth_PUT test/passfile';
-  spawn($cmd);
-
+  # This only works because mongoose currently doesn't look at the nonce.
+  # It should really be rejected...
   my $auth_header = "Authorization: Digest  username=guest, ".
   "realm=mydomain.com, nonce=1145872809, uri=/put.txt, ".
   "response=896327350763836180c61d87578037d9, qop=auth, ".
@@ -379,16 +412,14 @@ sub do_PUT_test {
   o("PUT /put.txt HTTP/1.0\nExpect: 100-continue\nContent-Length: 4\n".
     "$auth_header\nabcd",
     "HTTP/1.1 100 Continue.+HTTP/1.1 200", 'PUT 100-Continue');
-  kill_spawned_child();
 }
 
 sub do_embedded_test {
-  my $cmd = "cc -o $embed_exe $root/embed.c mongoose.c -I. ".
-  "-DNO_SSL -lpthread -DLISTENING_PORT=\\\"$port\\\"";
+  my $cmd = "cc -W -Wall -o $embed_exe $root/embed.c mongoose.c -I. ".
+  "-pthread -DNO_SSL -DLISTENING_PORT=\\\"$port\\\"";
   if (on_windows()) {
-    $cmd = "cl $root/embed.c mongoose.c /I. /nologo ".
-    "/DNO_SSL /DLISTENING_PORT=\\\"$port\\\" ".
-    "/link /out:$embed_exe.exe ws2_32.lib ";
+    $cmd = "cl $root/embed.c mongoose.c /I. /nologo /DNO_SSL ".
+    "/DLISTENING_PORT=\\\"$port\\\" /link /out:$embed_exe.exe ws2_32.lib ";
   }
   print $cmd, "\n";
   system($cmd) == 0 or fail("Cannot compile embedded unit test");
@@ -415,42 +446,34 @@ sub do_embedded_test {
 
   # + in form data MUST be decoded to space
   o("POST /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
-    "my_var=b+c", 'Value: \[b c\]', 'mg_get_var 7', 0);
+    "my_var=b+c", 'Value: \[b c\]', 'mg_get_var 9', 0);
 
   # Test that big POSTed vars are not truncated
   my $my_var = 'x' x 64000;
   o("POST /test_get_var HTTP/1.0\nContent-Length: 64007\n\n".
-    "my_var=$my_var", 'Value size: \[64000\]', 'mg_get_var 8', 0);
+    "my_var=$my_var", 'Value size: \[64000\]', 'mg_get_var 10', 0);
 
-  # Test PUT
-  o("PUT /put HTTP/1.0\nContent-Length: 3\n\nabc",
-    '\nabc$', 'put callback', 0);
+  # Other methods should also work
+  o("PUT /test_get_var HTTP/1.0\nContent-Length: 10\n\n".
+    "my_var=foo", 'Value: \[foo\]', 'mg_get_var 11', 0);
 
   o("POST /test_get_request_info?xx=yy HTTP/1.0\nFoo: bar\n".
     "Content-Length: 3\n\na=b",
     'Method: \[POST\].URI: \[/test_get_request_info\].'.
     'HTTP version: \[1.0\].HTTP header \[Foo\]: \[bar\].'.
     'HTTP header \[Content-Length\]: \[3\].'.
-    'Query string: \[xx=yy\].POST data: \[a=b\].'.
+    'Query string: \[xx=yy\].'.
     'Remote IP: \[\d+\].Remote port: \[\d+\].'.
     'Remote user: \[\]'
     , 'request_info', 0);
   o("GET /not_exist HTTP/1.0\n\n", 'Error: \[404\]', '404 handler', 0);
   o("bad request\n\n", 'Error: \[400\]', '* error handler', 0);
-  o("GET /test_user_data HTTP/1.0\n\n",
-    'User data: \[1234\]', 'user data in callback', 0);
 #	o("GET /foo/secret HTTP/1.0\n\n",
 #		'401 Unauthorized', 'mg_protect_uri', 0);
 #	o("GET /foo/secret HTTP/1.0\nAuthorization: Digest username=bill\n\n",
 #		'401 Unauthorized', 'mg_protect_uri (bill)', 0);
 #	o("GET /foo/secret HTTP/1.0\nAuthorization: Digest username=joe\n\n",
 #		'200 OK', 'mg_protect_uri (joe)', 0);
-
-  # Test un-binding the URI
-  o("GET /foo/bar HTTP/1.0\n\n", 'HTTP/1.1 200 OK', '/foo bound', 0);
-  o("GET /test_remove_callback HTTP/1.0\n\n",
-    'Removing callbacks', 'Callback removal', 0);
-  o("GET /foo/bar HTTP/1.0\n\n", 'HTTP/1.1 404', '/foo unbound', 0);
 
   kill_spawned_child();
 }

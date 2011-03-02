@@ -2,19 +2,14 @@ LIBRARY
 EXPORTS
 	mg_start
 	mg_stop
-	mg_get_option
-	mg_set_option
-	mg_set_uri_callback
-	mg_set_error_callback
-	mg_set_auth_callback
-	mg_set_ssl_password_callback
-	mg_set_log_callback
+	mg_read
 	mg_write
 	mg_printf
 	mg_get_header
-	mg_authorize
 	mg_get_var
-	mg_free
+	mg_get_cookie
+	mg_get_option
+	mg_get_valid_option_names
 	mg_version
-	mg_show_usage_string
 	mg_modify_passwords_file
+	mg_md5

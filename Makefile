@@ -13,65 +13,107 @@ all:
 # -DNO_CGI		- disable CGI support (-5kb)
 # -DNO_SSL		- disable SSL functionality (-2kb)
 # -DCONFIG_FILE=\"file\" - use `file' as the default config file
-# -DNO_SSI		- disable SSI support (-4kb)
 # -DHAVE_STRTOUI64	- use system strtoui64() function for strtoull()
+# -DSSL_LIB=\"libssl.so.<version>\" - use system versioned SSL shared object
+# -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 
 
 ##########################################################################
 ###                 UNIX build: linux, bsd, mac, rtems
 ##########################################################################
 
-CFLAGS=		-W -Wall -std=c99 -pedantic -Os -fomit-frame-pointer $(COPT)
+CFLAGS=		-W -Wall -std=c99 -pedantic -O2 $(COPT)
 MAC_SHARED=	-flat_namespace -bundle -undefined suppress
 LINFLAGS=	-ldl -pthread $(CFLAGS)
 LIB=		_$(PROG).so
 
+# Make sure that the compiler flags come last in the compilation string.
+# If not so, this can break some on some Linux distros which use
+# "-Wl,--as-needed" turned on by default  in cc command.
+# Also, this is turned in many other distros in static linkage builds.
 linux:
-	$(CC) $(LINFLAGS) mongoose.c -shared -fPIC -fpic -s -o $(LIB)
-	$(CC) $(LINFLAGS) mongoose.c main.c -s -o $(PROG)
+	$(CC) mongoose.c -shared -fPIC -fpic -o $(LIB) $(LINFLAGS)
+	$(CC) mongoose.c main.c -o $(PROG) $(LINFLAGS)
 
 bsd:
-	$(CC) $(CFLAGS) mongoose.c -shared -pthread -s -fpic -fPIC -o $(LIB)
-	$(CC) $(CFLAGS) mongoose.c main.c -pthread -s -o $(PROG)
+	$(CC) mongoose.c -shared -pthread -fpic -fPIC -o $(LIB) $(CFLAGS)
+	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 mac:
-	$(CC) $(CFLAGS) $(MAC_SHARED) mongoose.c -pthread -o $(LIB)
-	$(CC) $(CFLAGS) mongoose.c main.c -pthread -o $(PROG)
+	$(CC) mongoose.c -pthread -o $(LIB) $(MAC_SHARED) $(CFLAGS)
+	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 solaris:
-	gcc $(CFLAGS) mongoose.c -pthread -lnsl \
-		-lsocket -s -fpic -fPIC -shared -o $(LIB)
-	gcc $(CFLAGS) mongoose.c main.c -pthread -lnsl -lsocket -s -o $(PROG)
+	gcc mongoose.c -pthread -lnsl \
+		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
+	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
 
 
 ##########################################################################
 ###            WINDOWS build: Using Visual Studio or Mingw
 ##########################################################################
 
-# Using Visual Studio Express
-# 1. Download and install Visual Studio Express 2008 to c:\msvc8
-# 2. Download and install Windows SDK to c:\sdk
-# 3. Go to c:\msvc8\vc\bin and start "VIsual Studio 2008 Command prompt"
-#    (or Itanium/amd64 command promt to build x64 version)
-# 4. In the command prompt, go to mongoose directory and do "nmake windows"
+# Using Visual Studio 6.0. To build Mongoose:
+#  o  Set VC variable below to where VS 6.0 is installed on your system
+#  o  Run "PATH_TO_VC6\bin\nmake windows"
 
-#WINDBG=	/Zi /DDEBUG /Od /DDEBUG
-WINDBG=	/DNDEBUG /Os
-WINFLAGS=	/MT /TC /nologo /W4 $(WINDBG) 
+VC=	z:
+CYA=	y:
+#DBG=	/Zi /DDEBUG /Od
+DBG=	/DNDEBUG /O1
+CL=	cl /MD /TC /nologo $(DBG) /Gz /W3 /DNO_SSL_DL
+GUILIB=	user32.lib shell32.lib
+LINK=	/link /incremental:no /libpath:$(VC)\lib /subsystem:windows \
+	ws2_32.lib advapi32.lib cyassl.lib
+
+CYAFL=	/c /I $(CYA)\ctaocrypt\include /I $(CYA)\include /D_LIB
+
+CYASRC= $(CYA)/src/cyassl_int.c \
+	$(CYA)/src/cyassl_io.c \
+	$(CYA)/src/keys.c \
+	$(CYA)/src/tls.c \
+	$(CYA)/ctaocrypt/src/aes.c \
+	$(CYA)/ctaocrypt/src/arc4.c \
+	$(CYA)/ctaocrypt/src/asn.c \
+	$(CYA)/ctaocrypt/src/des3.c \
+	$(CYA)/ctaocrypt/src/dh.c \
+	$(CYA)/ctaocrypt/src/dsa.c \
+	$(CYA)/ctaocrypt/src/hc128.c \
+	$(CYA)/ctaocrypt/src/hmac.c \
+	$(CYA)/ctaocrypt/src/integer.c \
+	$(CYA)/ctaocrypt/src/md4.c \
+	$(CYA)/ctaocrypt/src/md5.c \
+	$(CYA)/ctaocrypt/src/misc.c \
+	$(CYA)/ctaocrypt/src/rabbit.c \
+	$(CYA)/ctaocrypt/src/random.c \
+	$(CYA)/ctaocrypt/src/ripemd.c \
+	$(CYA)/ctaocrypt/src/rsa.c \
+	$(CYA)/ctaocrypt/src/sha.c \
+	$(CYA)/ctaocrypt/src/sha256.c
+
+cyassl:
+	$(CL) $(CYA)/src/ssl.c $(CYA)/ctaocrypt/src/coding.c \
+		$(CYAFL) /DOPENSSL_EXTRA
+	$(CL) $(CYASRC) $(CYAFL)
+	lib *.obj /out:cyassl.lib
+
 windows:
-	cl $(WINFLAGS) mongoose.c /link /incremental:no /DLL \
-		/DEF:win32\dll.def /out:_$(PROG).dll ws2_32.lib
-	cl $(WINFLAGS) mongoose.c main.c /link /incremental:no \
-		/out:$(PROG).exe ws2_32.lib
+	rc win32\res.rc
+	$(CL) main.c mongoose.c /GA $(LINK) win32\res.res \
+		$(GUILIB) /out:$(PROG).exe
+	$(CL) mongoose.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
 #MINGWDBG= -DDEBUG -O0
 MINGWDBG= -DNDEBUG -Os
-MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
+#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
+MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG)
 mingw:
+	windres win32\res.rc win32\res.o
 	gcc $(MINGWOPT) mongoose.c -lws2_32 \
 		-shared -Wl,--out-implib=$(PROG).lib -o _$(PROG).dll
-	gcc $(MINGWOPT) mongoose.c main.c -lws2_32 -ladvapi32 -o $(PROG).exe
+	gcc $(MINGWOPT) mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
+		-o $(PROG).exe
 
 
 ##########################################################################
@@ -79,8 +121,8 @@ mingw:
 ##########################################################################
 
 man:
-	cat mongoose.1 | tbl | groff -man -Tascii | col -b > mongoose.1.txt
-	cat mongoose.1 | tbl | groff -man -Tascii | less
+	groff -man -T ascii mongoose.1 | col -b > mongoose.txt
+	groff -man -T ascii mongoose.1 | less
 
 # "TEST=unit make test" - perform unit test only
 # "TEST=embedded" - test embedded API by building and testing test/embed.c
@@ -90,7 +132,7 @@ do_test:
 	perl test/test.pl $(TEST)
 
 release: clean
-	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar --exclude \*.svn --exclude \*.swp --exclude \*.nfs\* --exclude win32 -czf x mongoose && mv x mongoose/$$F
+	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar --exclude \*.hg --exclude \*.svn --exclude \*.swp --exclude \*.nfs\* -czf x mongoose && mv x mongoose/$$F
 
 clean:
-	rm -rf *.o *.core $(PROG) *.obj $(PROG).1.txt *.dSYM *.tgz
+	rm -rf *.o *.core $(PROG) *.obj $(PROG).txt *.dSYM *.tgz
