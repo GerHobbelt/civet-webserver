@@ -2,7 +2,7 @@ include $(RTEMS_MAKEFILE_PATH)/Makefile.inc
 include $(RTEMS_CUSTOM)
 include $(PROJECT_ROOT)/make/leaf.cfg
 
-CFLAGS+=-Werror -DNO_SSL=1 -DNO_SSI=1 -DUSE_POSIX_FEATURES=1
+CFLAGS+=-Werror -DNO_POPEN=1 -DNO_SSL=1 -DNO_SSI=1 -DUSE_POSIX_FEATURES=1
 
 BASENAME=mongoose
 
