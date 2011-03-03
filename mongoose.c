@@ -411,6 +411,7 @@ enum {
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER,
+  STACKSIZE,
   NUM_OPTIONS
 };
 
@@ -437,6 +438,7 @@ static const char *config_options[] = {
   "s", "ssl_certificate", NULL,
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
+  "z", "stacksize", "0",
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -1248,8 +1250,19 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
 
   (void) pthread_attr_init(&attr);
   (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+#ifndef __linux
   // TODO(lsm): figure out why mongoose dies on Linux if next line is enabled
-  // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
+  {
+    size_t config_stacksize = strtol(ctx->config[STACKSIZE], 0, 0);
+    size_t stacksize = (config_stacksize) ? sizeof(struct mg_connection) * 5 : config_stacksize;
+    (void) pthread_attr_setstacksize(&attr, stacksize);
+  }
+#else
+  if (strtol(ctx->config[STACKSIZE], 0, 0) != 0) {
+    cry(fc(ctx), "%s: stacksize configuration not working on Linux", __func__);
+  }
+#endif // __linux
 
   if ((retval = pthread_create(&thread_id, &attr, func, param)) != 0) {
     cry(fc(ctx), "%s: %s", __func__, strerror(retval));
