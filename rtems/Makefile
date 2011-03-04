@@ -8,6 +8,7 @@ CFLAGS+=\
 	-I. \
 	-Werror \
 	-DNO_POPEN=1 \
+	-DNO_CGI=1 \
 	-DUSE_POSIX_FEATURES=1
 
 BASENAME=mongoose
