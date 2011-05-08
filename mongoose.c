@@ -3333,11 +3333,15 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
+  char buf[BUFSIZ];
+  int buf_len;
   int reuseaddr = 1, success = 1;
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;
 
+  buf[0] = '\0';
+  buf_len = 0;
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
       cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
@@ -3354,6 +3358,7 @@ static int set_ports_option(struct mg_context *ctx) {
                           sizeof(reuseaddr)) != 0 ||
 #endif // !_WIN32
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
+               getsockname(sock, &so.lsa.u.sa, &so.lsa.len) != 0 ||
                listen(sock, 20) != 0) {
       closesocket(sock);
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
@@ -3370,6 +3375,20 @@ static int set_ports_option(struct mg_context *ctx) {
       set_close_on_exec(listener->sock);
       listener->next = ctx->listening_sockets;
       ctx->listening_sockets = listener;
+      if (buf_len > 0) {
+        buf_len += mg_snprintf(fc(ctx), buf + buf_len, sizeof(buf) - buf_len, ", ");
+      }
+      if (so.lsa.u.sin.sin_addr.s_addr != htonl(INADDR_ANY)) {
+        uint32_t n = ntohl(so.lsa.u.sin.sin_addr.s_addr);
+        buf_len += mg_snprintf(fc(ctx), buf + buf_len, sizeof(buf) - buf_len, "%d.%d.%d.%d:", (n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF);
+      }
+      buf_len += mg_snprintf(fc(ctx), buf + buf_len, sizeof(buf) - buf_len, "%d", ntohs(so.lsa.u.sin.sin_port));
+      if (so.is_ssl) {
+        buf_len += mg_snprintf(fc(ctx), buf + buf_len, sizeof(buf) - buf_len, "s");
+      }
+      if (so.is_proxy) {
+        buf_len += mg_snprintf(fc(ctx), buf + buf_len, sizeof(buf) - buf_len, "p");
+      }
     }
   }
 
@@ -3377,6 +3396,8 @@ static int set_ports_option(struct mg_context *ctx) {
     close_all_listening_sockets(ctx);
   }
 
+  free(ctx->config[LISTENING_PORTS]);
+  ctx->config[LISTENING_PORTS] = mg_strdup(buf);
   return success;
 }
 
