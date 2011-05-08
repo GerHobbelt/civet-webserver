@@ -18,6 +18,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#if defined(USE_POSIX_FEATURES)
+#include <unistd.h>				/* Should be first to get test macros. */
+#endif
+
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
 #else
@@ -170,6 +174,19 @@ typedef struct DIR {
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+
+#if defined(USE_POSIX_FEATURES)
+#if defined(_POSIX_MAPPED_FILES)
+#endif
+#if _POSIX_VERSION >= 200112L
+#include <dlfcn.h>
+#endif
+#else
+#if !defined(NO_SSL_DL) && !defined(NO_SSL)
+#include <dlfcn.h>
+#endif
+#endif	/* USE_POSIX_FEATURES */
+
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -180,9 +197,6 @@ typedef struct DIR {
 #include <pwd.h>
 #include <unistd.h>
 #include <dirent.h>
-#if !defined(NO_SSL_DL) && !defined(NO_SSL)
-#include <dlfcn.h>
-#endif
 #include <pthread.h>
 #if defined(__MACH__)
 #define SSL_LIB   "libssl.dylib"
@@ -257,6 +271,11 @@ typedef struct ssl_ctx_st SSL_CTX;
 #define SSL_FILETYPE_PEM 1
 #define CRYPTO_LOCK  1
 
+#if defined(NO_SSL)
+#define SSL_NOTSUP (errno = ENOTSUP, -1)
+#define SSL_read(SSL,V,I) SSL_NOTSUP
+#define SSL_write(SSL,V,I) SSL_NOTSUP
+#else
 #if defined(NO_SSL_DL)
 extern void SSL_free(SSL *);
 extern int SSL_accept(SSL *);
@@ -352,6 +371,7 @@ static struct ssl_func crypto_sw[] = {
   {NULL,    NULL}
 };
 #endif // NO_SSL_DL
+#endif // ! NO_SSL
 
 static const char *month_names[] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -400,6 +420,7 @@ enum {
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER,
+  STACKSIZE,
   NUM_OPTIONS
 };
 
@@ -426,6 +447,7 @@ static const char *config_options[] = {
   "s", "ssl_certificate", NULL,
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
+  "z", "stacksize", "0",
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -542,13 +564,6 @@ static void cry(struct mg_connection *conn, const char *fmt, ...) {
     }
   }
   conn->request_info.log_message = NULL;
-}
-
-// Return OpenSSL error message
-static const char *ssl_error(void) {
-  unsigned long err;
-  err = ERR_get_error();
-  return err == 0 ? "" : ERR_error_string(err, NULL);
 }
 
 // Return fake connection structure. Used for logging, if connection
@@ -756,7 +771,6 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-#if !defined(NO_CGI)
 static int match_extension(const char *path, const char *ext_list) {
   struct vec ext_vec;
   size_t path_len;
@@ -771,7 +785,6 @@ static int match_extension(const char *path, const char *ext_list) {
 
   return 0;
 }
-#endif // !NO_CGI
 
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
@@ -1244,8 +1257,19 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
 
   (void) pthread_attr_init(&attr);
   (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+#ifndef __linux
   // TODO(lsm): figure out why mongoose dies on Linux if next line is enabled
-  // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
+  {
+    size_t config_stacksize = strtol(ctx->config[STACKSIZE], 0, 0);
+    size_t stacksize = (config_stacksize) ? sizeof(struct mg_connection) * 5 : config_stacksize;
+    (void) pthread_attr_setstacksize(&attr, stacksize);
+  }
+#else
+  if (strtol(ctx->config[STACKSIZE], 0, 0) != 0) {
+    cry(fc(ctx), "%s: stacksize configuration not working on Linux", __func__);
+  }
+#endif // __linux
 
   if ((retval = pthread_create(&thread_id, &attr, func, param)) != 0) {
     cry(fc(ctx), "%s: %s", __func__, strerror(retval));
@@ -1576,11 +1600,13 @@ static void convert_uri_to_file_name(struct mg_connection *conn,
   DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) vec.len, vec.ptr));
 }
 
+#if !defined(NO_SSL)
 static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
   return (conn->ssl = SSL_new(conn->ctx->ssl_ctx)) != NULL &&
     SSL_set_fd(conn->ssl, conn->client.sock) == 1 &&
     func(conn->ssl) == 1;
 }
+#endif // ! NO_SSL
 
 static struct mg_connection *mg_connect(struct mg_connection *conn,
                                  const char *host, int port, int use_ssl) {
@@ -1610,9 +1636,11 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
     } else {
       newconn->client.sock = sock;
       newconn->client.rsa.u.sin = sin;
+#if !defined(NO_SSL)
       if (use_ssl) {
         sslize(newconn, SSL_connect);
       }
+#endif // ! NO_SSL
     }
   }
 
@@ -3272,6 +3300,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
+#if !defined(NO_CGI)
   } else if (match_extension(path, conn->ctx->config[CGI_EXTENSIONS])) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -3280,6 +3309,7 @@ static void handle_request(struct mg_connection *conn) {
     } else {
       handle_cgi_request(conn, path);
     }
+#endif // !NO_CGI
   } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
@@ -3511,6 +3541,14 @@ static int set_uid_option(struct mg_context *ctx) {
 #endif // !_WIN32
 
 #if !defined(NO_SSL)
+//
+// Return OpenSSL error message
+static const char *ssl_error(void) {
+  unsigned long err;
+  err = ERR_get_error();
+  return err == 0 ? "" : ERR_error_string(err, NULL);
+}
+
 static pthread_mutex_t *ssl_mutexes;
 
 static void ssl_locking_callback(int mode, int mutex_num, const char *file,
@@ -3681,10 +3719,12 @@ static void close_socket_gracefully(SOCKET sock) {
 }
 
 static void close_connection(struct mg_connection *conn) {
+#if !defined(NO_SSL)
   if (conn->ssl) {
     SSL_free(conn->ssl);
     conn->ssl = NULL;
   }
+#endif // ! NO_SSL
 
   if (conn->client.sock != INVALID_SOCKET) {
     close_socket_gracefully(conn->client.sock);
@@ -3893,10 +3933,14 @@ static void worker_thread(struct mg_context *ctx) {
     conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
     conn->request_info.is_ssl = conn->client.is_ssl;
 
+#if defined(NO_SSL)
+    process_new_connection(conn);
+#else
     if (!conn->client.is_ssl ||
         (conn->client.is_ssl && sslize(conn, SSL_accept))) {
       process_new_connection(conn);
     }
+#endif // NO_SSL
 
     close_connection(conn);
   }
@@ -4024,11 +4068,11 @@ static void free_context(struct mg_context *ctx) {
       free(ctx->config[i]);
   }
 
+#ifndef NO_SSL
   // Deallocate SSL context
   if (ctx->ssl_ctx != NULL) {
     SSL_CTX_free(ctx->ssl_ctx);
   }
-#ifndef NO_SSL
   if (ssl_mutexes != NULL) {
     free(ssl_mutexes);
   }

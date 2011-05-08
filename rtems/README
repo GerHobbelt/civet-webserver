@@ -1,0 +1,32 @@
+This is some RTEMS support, it worked for me, no guarantees.
+
+Peter Dufault
+HD Associates, Inc.
+dufault@hda.com
+March 2011
+
+Be sure you have your RTEMS environment set up and working properly and
+can run the network demos.  I don't know anything about web serving,
+so your best bet is to ask on the Mongoose list.  I can help with your
+RTEMS issues.
+
+You'll need to hack the _init.c to setup your network properly.
+
+Then from the parent (mongoose) directory you can try these targets:
+
+- To build the Mongoose library and the trivial sample in this directory,
+which will make your RTEMS file system available to a browswer:
+prompt% make -f rtems/Makefile
+
+- To build the Mongoose library and the "chat" example application,
+assuming you also have SSL installed and working on RTEMS, edit the
+Makefile and change MAIN to chat, then follow the above instructions.
+
+prompt% make -f rtems/Makefile
+
+NOTE WELL: I never tried the chat example, I just got it to build.
+In particular, you may need to revisit -DPTHREAD_RWLOCK_INITIALIZER=0
+in the Makefile.
+
+- To install the header and library in your project directory:
+prompt# make -f rtems/Makefile install
