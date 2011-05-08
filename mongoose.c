@@ -398,7 +398,7 @@ enum {
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
-  EXTRA_MIME_TYPES, LISTENING_PORTS,
+  EXTRA_MIME_TYPES, LISTENING_PORTS, LISTENING_BACKLOG_SIZE,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER,
   NUM_OPTIONS
 };
@@ -422,6 +422,7 @@ static const char *config_options[] = {
   "M", "max_request_size", "16384",
   "m", "extra_mime_types", NULL,
   "p", "listening_ports", "8080",
+  "b", "listening_backlog_size", "20",
   "r", "document_root",  ".",
   "s", "ssl_certificate", NULL,
   "t", "num_threads", "10",
@@ -3333,6 +3334,7 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
+  int backlog_size = atoi(ctx->config[LISTENING_BACKLOG_SIZE]);
   int reuseaddr = 1, success = 1;
   SOCKET sock;
   struct vec vec;
@@ -3354,7 +3356,7 @@ static int set_ports_option(struct mg_context *ctx) {
                           sizeof(reuseaddr)) != 0 ||
 #endif // !_WIN32
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
-               listen(sock, 20) != 0) {
+               listen(sock, backlog_size) != 0) {
       closesocket(sock);
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, strerror(ERRNO));
