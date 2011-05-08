@@ -473,9 +473,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
 int main(int argc, char *argv[]) {
   init_server_name();
   start_mongoose(argc, argv);
-  printf("%s started on port(s) %s with web root [%s]\n",
+  int dynamic_port = mg_get_dynamic_client_port(ctx);
+  printf("%s started on port(s) %s (%d) with web root [%s]\n",
          server_name, mg_get_option(ctx, "listening_ports"),
-         mg_get_option(ctx, "document_root"));
+         dynamic_port, mg_get_option(ctx, "document_root"));
   while (exit_flag == 0) {
     sleep(1);
   }

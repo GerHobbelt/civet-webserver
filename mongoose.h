@@ -127,6 +127,10 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name);
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);
 
+// if port 0 was specified when starting the server, the system will have
+// chosen a dynamic port address at random.  This function returns
+// that port number, or 0 if the port was not dynamically generated.
+int mg_get_dynamic_client_port(const struct mg_context *ctx);
 
 // Add, edit or delete the entry in the passwords file.
 //
