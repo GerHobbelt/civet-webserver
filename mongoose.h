@@ -42,6 +42,7 @@ struct mg_request_info {
   char *log_message;     // Mongoose error log message
   long remote_ip;        // Client's IP address
   int remote_port;       // Client's port
+  int local_port;        // Server port receiving the request
   int status_code;       // HTTP reply status code
   int is_ssl;            // 1 if SSL-ed, 0 if not
   int num_headers;       // Number of headers

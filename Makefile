@@ -18,6 +18,10 @@ all:
 # -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 
 
+## FIXME: do not merge this line, that's just my own options.
+COPT = -m32 -DNO_CGI
+
+
 ##########################################################################
 ###                 UNIX build: linux, bsd, mac, rtems
 ##########################################################################
@@ -26,6 +30,11 @@ CFLAGS=		-W -Wall -std=c99 -pedantic -O2 $(COPT)
 MAC_SHARED=	-flat_namespace -bundle -undefined suppress
 LINFLAGS=	-ldl -pthread $(CFLAGS)
 LIB=		_$(PROG).so
+STATICLIB=	lib$(PROG).a
+
+# Installation root directory, for install target.
+INSTALL ?= /usr/local
+
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -34,6 +43,11 @@ LIB=		_$(PROG).so
 linux:
 	$(CC) mongoose.c -shared -fPIC -fpic -o $(LIB) $(LINFLAGS)
 	$(CC) mongoose.c main.c -o $(PROG) $(LINFLAGS)
+
+linux-static:
+	$(CC) $(LINFLAGS) mongoose.c -fPIC -fpic -s -c -o mongoose.o
+	ar rc $(STATICLIB) mongoose.o
+	ranlib $(STATICLIB)
 
 bsd:
 	$(CC) mongoose.c -shared -pthread -fpic -fPIC -o $(LIB) $(CFLAGS)
@@ -47,6 +61,15 @@ solaris:
 	gcc mongoose.c -pthread -lnsl \
 		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
 	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
+
+
+install: linux linux-static
+	mkdir -p $(INSTALL)/include/mongoose
+	mkdir -p $(INSTALL)/lib
+	cp mongoose.h $(INSTALL)/include/mongoose/
+	cp _$(PROG).so $(INSTALL)/lib/libmongoose.so
+	cp lib$(PROG).a $(INSTALL)/lib/libmongoose.a
+	cp LICENSE $(INSTALL)/LICENSE
 
 
 ##########################################################################

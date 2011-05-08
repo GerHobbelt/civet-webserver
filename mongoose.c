@@ -756,7 +756,6 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-#if !defined(NO_CGI)
 static int match_extension(const char *path, const char *ext_list) {
   struct vec ext_vec;
   size_t path_len;
@@ -771,7 +770,6 @@ static int match_extension(const char *path, const char *ext_list) {
 
   return 0;
 }
-#endif // !NO_CGI
 
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
@@ -3272,6 +3270,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
+#if !defined(NO_CGI)
   } else if (match_extension(path, conn->ctx->config[CGI_EXTENSIONS])) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -3280,6 +3279,7 @@ static void handle_request(struct mg_connection *conn) {
     } else {
       handle_cgi_request(conn, path);
     }
+#endif
   } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
@@ -3883,6 +3883,10 @@ static void worker_thread(struct mg_context *ctx) {
   while (ctx->stop_flag == 0 && consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
+
+    // Fill in the local port so that we can identify which port a request has
+    // been received on.
+    conn->request_info.local_port = ntohs(conn->client.lsa.u.sin.sin_port);
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
