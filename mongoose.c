@@ -83,7 +83,8 @@ typedef long off_t;
 // Visual Studio 6 does not know __func__ or __FUNCTION__
 // The rest of MS compilers use __FUNCTION__, not C99 __func__
 // Also use _strtoui64 on modern M$ compilers
-#if defined(_MSC_VER) && _MSC_VER < 1300
+#if defined(_MSC_VER)
+#if _MSC_VER < 1300
 #define STRX(x) #x
 #define STR(x) STRX(x)
 #define __func__ "line " STR(__LINE__)
@@ -93,6 +94,7 @@ typedef long off_t;
 #define __func__  __FUNCTION__
 #define strtoull(x, y, z) _strtoui64(x, y, z)
 #define strtoll(x, y, z) _strtoi64(x, y, z)
+#endif // _MSC_VER
 #endif // _MSC_VER
 
 #define ERRNO   GetLastError()
@@ -152,7 +154,7 @@ typedef unsigned int  uint32_t;
 typedef unsigned short  uint16_t;
 typedef unsigned __int64 uint64_t;
 typedef __int64   int64_t;
-#define INT64_MAX  9223372036854775807
+#define INT64_MAX  9223372036854775807LL
 #endif // HAVE_STDINT
 
 // POSIX dirent interface
@@ -3333,7 +3335,10 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
-  int reuseaddr = 1, success = 1;
+#if !defined(_WIN32)
+  int reuseaddr = 1;
+#endif // !_WIN32
+  int success = 1;
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;

@@ -39,8 +39,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <winsvc.h>
+#if defined(_MSC_VER)
 #define PATH_MAX MAX_PATH
 #define S_ISDIR(x) ((x) & _S_IFDIR)
+#endif // _MSC_VER
 #define DIRSEP '\\'
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
@@ -252,7 +254,7 @@ static void start_mongoose(int argc, char *argv[]) {
   }
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(MONGOOSE_AS_SERVICE)
 static SERVICE_STATUS ss;
 static SERVICE_STATUS_HANDLE hStatus;
 static const char *service_magic_argument = "--";
@@ -468,6 +470,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
+  return 0;
 }
 #else
 int main(int argc, char *argv[]) {
