@@ -21,6 +21,8 @@
 #ifndef MONGOOSE_HEADER_INCLUDED
 #define  MONGOOSE_HEADER_INCLUDED
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -57,7 +59,7 @@ enum mg_event {
   MG_NEW_REQUEST,   // New HTTP request has arrived from the client
   MG_HTTP_ERROR,    // HTTP error must be returned to the client
   MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
-  MG_INIT_SSL,      // Mongoose initializes SSL. Instead of mg_connection *,
+  MG_INIT_SSL       // Mongoose initializes SSL. Instead of mg_connection *,
                     // SSL context is passed to the callback function.
 };
 
@@ -95,7 +97,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //     "listening_ports", "80,443s",
 //     NULL
 //   };
-//   struct mg_context *ctx = mg_start(&my_func, options);
+//   struct mg_context *ctx = mg_start(&my_func, NULL, options);
 //
 // Please refer to http://code.google.com/p/mongoose/wiki/MongooseManual
 // for the list of valid option and their possible values.
@@ -141,8 +143,10 @@ const char **mg_get_valid_option_names(void);
 //
 // Return:
 //   1 on success, 0 on error.
-int mg_modify_passwords_file(struct mg_context *ctx, 
-    const char *passwords_file_name, const char *user, const char *password);
+int mg_modify_passwords_file(const char *passwords_file_name,
+                             const char *domain,
+                             const char *user,
+                             const char *password);
 
 // Send data to the client.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
