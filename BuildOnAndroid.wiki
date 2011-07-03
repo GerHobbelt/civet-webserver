@@ -42,3 +42,4 @@ http://i.imgur.com/bgokp.png
   * jni stands for Java Native Interface. Read up on Android NDK if you want to know how to interact with the native C functions of mongoose in Android Java applications.
   * Download android-sdk for the adb tool.
   * TODO: A Java application that interacts with the native binary or a shared library.
+  * There is a [http://code.google.com/p/mongoose/issues/detail?id=217 known issue] with CGI on Android 
