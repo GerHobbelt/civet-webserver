@@ -1,13 +1,33 @@
-#summary One-sentence summary of this page.
+#summary mongoose on Android
 
 = Introduction =
 
-Add your content here.
+This is a small guide to help you run mongoose on Android. Currently it is tested on the HTC Wildfire. If you have managed to run it on other devices as well, please comment or drop an email in the mailing list.
 
+Note: You need to be root to run mongoose.
 
-= Details =
+= Steps =
 
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
+  * Download the source from the Downloads page.
+  * Download the Android NDK from [http://developer.android.com/sdk/ndk/index.html here]
+  * Make a folder (e.g. mongoose) and inside that make a folder named "jni".
+  * Add mongoose.h, mongoose.c and main.c from the source to the jni folder.
+  * Make a new file in the jni folder named "Android.mk". This is the make file for ndk-build.
+
+*Android.mk*
+{{{
+LOCAL_PATH := $(call my-dir)
+include $(CLEAR_VARS)
+
+LOCAL_MODULE    := mongoose
+LOCAL_SRC_FILES := main.c mongoose.c
+
+include $(BUILD_EXECUTABLE)
+}}}
+
+  * Run `./ndk-build -C /path/to/mongoose/'
+
+This should generate mongoose/lib/armeabi/mongoose
+
+Using the adb tool, push the generated mongoose binary to /data/local folder on device. 
+From adb shell, navigate to /data/local and execute ./mongoose. To test if the server is running fine, visit your web-browser and navigate to 127.0.0.1:8080 You should see the Index of / page.
