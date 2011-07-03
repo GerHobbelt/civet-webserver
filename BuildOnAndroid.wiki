@@ -35,6 +35,7 @@ This should generate mongoose/lib/armeabi/mongoose
 To test if the server is running fine, visit your web-browser and navigate to 127.0.0.1:8080 You should see the Index of / page.
 
 Here's a screenshot
+
 http://i.imgur.com/bgokp.png
 
 *Notes*
