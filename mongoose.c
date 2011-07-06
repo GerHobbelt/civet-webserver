@@ -1174,6 +1174,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   interp = conn->ctx->config[CGI_INTERPRETER];
   if (interp == NULL) {
     buf[2] = '\0';
+    mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%c%s", dir, DIRSEP, prog);
     if ((fp = fopen(cmdline, "r")) != NULL) {
       (void) fgets(buf, sizeof(buf), fp);
       if (buf[0] != '#' || buf[1] != '!') {
@@ -2217,6 +2218,7 @@ static void send_authorization_request(struct mg_connection *conn) {
   conn->request_info.status_code = 401;
   (void) mg_printf(conn,
       "HTTP/1.1 401 Unauthorized\r\n"
+      "Content-Length: 0\r\n"
       "WWW-Authenticate: Digest qop=\"auth\", "
       "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
       conn->ctx->config[AUTHENTICATION_DOMAIN],
@@ -2248,7 +2250,7 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   fp = fp2 = NULL;
 
   // Regard empty password as no password - remove user record.
-  if (pass[0] == '\0') {
+  if (pass != NULL && pass[0] == '\0') {
     pass = NULL;
   }
 
@@ -2567,6 +2569,16 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
   }
   (void) fclose(fp);
 }
+
+void mg_send_file(struct mg_connection *conn, const char *path) {
+  struct mgstat st;
+  if (mg_stat(path, &st) == 0) {
+    handle_file_request(conn, path, &st);
+  } else {
+    send_http_error(conn, 404, "Not Found", "%s", "File not found");
+  }
+}
+
 
 // Parse HTTP headers from the given buffer, advance buffer to the point
 // where parsing stopped.
@@ -2984,9 +2996,6 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 done:
   if (pid != (pid_t) -1) {
     kill(pid, SIGKILL);
-#if !defined(_WIN32)
-    do {} while (waitpid(-1, &i, WNOHANG) > 0);
-#endif
   }
   if (fd_stdin[0] != -1) {
     (void) close(fd_stdin[0]);
@@ -3339,6 +3348,7 @@ static int set_ports_option(struct mg_context *ctx) {
   int reuseaddr = 1;
 #endif // !_WIN32
   int success = 1;
+  int on = 1;
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;
@@ -3349,7 +3359,7 @@ static int set_ports_option(struct mg_context *ctx) {
           __func__, vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|p]");
       success = 0;
     } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
-      cry(fc(ctx), "Cannot add SSL socket, is -ssl_cert option set?");
+      cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
       success = 0;
     } else if ((sock = socket(PF_INET, SOCK_STREAM, 6)) == INVALID_SOCKET ||
 #if !defined(_WIN32)
@@ -3358,8 +3368,17 @@ static int set_ports_option(struct mg_context *ctx) {
                setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr,
                           sizeof(reuseaddr)) != 0 ||
 #endif // !_WIN32
+               // Set TCP keep-alive. This is needed because if HTTP-level
+               // keep-alive is enabled, and client resets the connection,
+               // server won't get TCP FIN or RST and will keep the connection
+               // open forever. With TCP keep-alive, next keep-alive
+               // handshake will figure out that the client is down and
+               // will close the server end.
+               // Thanks to Igor Klopov who suggested the patch.
+               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &on,
+                          sizeof(on)) != 0 ||
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
-               listen(sock, 20) != 0) {
+               listen(sock, 100) != 0) {
       closesocket(sock);
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, strerror(ERRNO));
@@ -3635,6 +3654,18 @@ static int set_ssl_option(struct mg_context *ctx) {
 
   return 1;
 }
+
+static void uninitialize_ssl(struct mg_context *ctx) {
+  int i;
+  if (ctx->ssl_ctx != NULL) {
+    CRYPTO_set_locking_callback(NULL);
+    for (i = 0; i < CRYPTO_num_locks(); i++) {
+      pthread_mutex_destroy(&ssl_mutexes[i]);
+    }
+    CRYPTO_set_locking_callback(NULL);
+    CRYPTO_set_id_callback(NULL);
+  }
+}
 #endif // !NO_SSL
 
 static int set_gpass_option(struct mg_context *ctx) {
@@ -3666,7 +3697,14 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 
 static void close_socket_gracefully(SOCKET sock) {
   char buf[BUFSIZ];
+  struct linger linger;
   int n;
+
+  // Set linger option to avoid socket hanging out after close. This prevent
+  // ephemeral port exhaust problem under high QPS.
+  linger.l_onoff = 1;
+  linger.l_linger = 1;
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
@@ -3739,8 +3777,9 @@ static void handle_proxy_request(struct mg_connection *conn) {
   int port, is_ssl, len, i, n;
 
   DEBUG_TRACE(("URL: %s", ri->uri));
-  if (conn->request_info.uri[0] == '/' ||
-      (ri->uri == NULL || (len = parse_url(ri->uri, host, &port))) == 0) {
+  if (ri->uri == NULL ||
+      ri->uri[0] == '/' ||
+      (len = parse_url(ri->uri, host, &port)) == 0) {
     return;
   }
 
@@ -3839,7 +3878,8 @@ static void process_new_connection(struct mg_connection *conn) {
       discard_current_request_from_buffer(conn);
     }
     // conn->peer is not NULL only for SSL-ed proxy connections
-  } while (conn->peer || (keep_alive_enabled && should_keep_alive(conn)));
+  } while (conn->ctx->stop_flag == 0 &&
+           (conn->peer || (keep_alive_enabled && should_keep_alive(conn))));
 }
 
 // Worker threads take accepted socket from the queue
@@ -4014,6 +4054,10 @@ static void master_thread(struct mg_context *ctx) {
   (void) pthread_cond_destroy(&ctx->sq_empty);
   (void) pthread_cond_destroy(&ctx->sq_full);
 
+#if !defined(NO_SSL)
+  uninitialize_ssl(ctx);
+#endif
+
   // Signal mg_stop() that we're done
   ctx->stop_flag = 2;
 
@@ -4118,6 +4162,8 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   // Ignore SIGPIPE signal, so if browser cancels the request, it
   // won't kill the whole process.
   (void) signal(SIGPIPE, SIG_IGN);
+  // Also ignoring SIGCHLD to let the OS to reap zombies properly.
+  (void) signal(SIGCHLD, SIG_IGN);
 #endif // !_WIN32
 
   (void) pthread_mutex_init(&ctx->mutex, NULL);

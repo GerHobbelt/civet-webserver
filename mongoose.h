@@ -88,6 +88,11 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //   options: NULL terminated list of option_name, option_value pairs that
 //            specify Mongoose configuration parameters.
 //
+// Side-effects: on UNIX, ignores SIGCHLD and SIGPIPE signals. If custom
+//    processing is required for these, signal handlers must be set up
+//    after calling mg_start().
+//
+//
 // Example:
 //   const char *options[] = {
 //     "document_root", "/var/www",
@@ -156,6 +161,10 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // (8 Kb by default) as temporary message storage for formatting. Do not
 // print data that is bigger than that, otherwise it will be truncated.
 int mg_printf(struct mg_connection *, const char *fmt, ...);
+
+
+// Send contents of the entire file together with HTTP headers.
+void mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.
