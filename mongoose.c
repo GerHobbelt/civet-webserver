@@ -133,10 +133,12 @@ typedef long off_t;
 #define fileno(x) _fileno(x)
 #endif // !fileno MINGW #defines fileno
 
+#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
+
+#if !defined(HAVE_PTHREAD)
 typedef HANDLE pthread_mutex_t;
 typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
 typedef DWORD pthread_t;
-#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
 
 struct timespec {
   long tv_nsec;
@@ -145,6 +147,10 @@ struct timespec {
 
 static int pthread_mutex_lock(pthread_mutex_t *);
 static int pthread_mutex_unlock(pthread_mutex_t *);
+#else
+#include <pthread.h>
+#endif
+
 static FILE *mg_fopen(const char *path, const char *mode);
 
 #if defined(HAVE_STDINT)
@@ -823,6 +829,9 @@ static void send_http_error(struct mg_connection *conn, int status,
 }
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
+
+#if !defined(HAVE_PTHREAD)
+
 static int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
   unused = NULL;
   *mutex = CreateMutex(NULL, FALSE, NULL);
@@ -872,6 +881,50 @@ static int pthread_cond_destroy(pthread_cond_t *cv) {
 static pthread_t pthread_self(void) {
   return GetCurrentThreadId();
 }
+
+typedef struct {
+	SRWLOCK lock;
+	unsigned rw: 1;
+} pthread_rwlock_t;
+
+typedef void pthread_rwlockattr_t;
+
+static int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
+  InitializeSRWLock(&rwlock->lock);
+  return 0;
+}
+
+#define PTHREAD_RWLOCK_INITIALIZER			{ RTL_SRWLOCK_INIT }
+
+static int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+	// empty
+	return 0;
+}
+
+static int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+	AcquireSRWLockShared(&rwlock->lock);
+	rwlock->rw = 0;
+	return 0;
+}
+
+static int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+	AcquireSRWLockExclusive(&rwlock->lock);
+	rwlock->rw = 1;
+	return 0;
+}
+
+static int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+	if (rwlock->rw) {
+		ReleaseSRWLockExclusive(&rwlock->lock);
+	}
+	else {
+		ReleaseSRWLockShared(&rwlock->lock);
+	}
+	return 0;
+}
+
+#endif
+
 
 // For Windows, change all slashes to backslashes in path names.
 static void change_slashes_to_backslashes(char *path) {
@@ -3550,7 +3603,12 @@ static void ssl_locking_callback(int mode, int mutex_num, const char *file,
 }
 
 static unsigned long ssl_id_callback(void) {
-  return (unsigned long) pthread_self();
+  union {
+      pthread_t pt;
+      unsigned long l;
+  } v = {0};
+  v.pt = pthread_self();
+  return v.l;
 }
 
 #if !defined(NO_SSL_DL)
