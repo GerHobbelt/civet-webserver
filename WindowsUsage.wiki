@@ -1,5 +1,5 @@
+#summary Windows installation, and typical usage on Windows platform
 #labels Featured,Phase-Deploy
-#Windows installation, and typical usage on Windows platform
 
 = Installing and configuring Mongoose on Windows =
 Sections: <wiki:toc max_depth== >
