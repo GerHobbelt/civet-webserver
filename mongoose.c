@@ -3646,7 +3646,6 @@ static int load_dll(struct mg_context *ctx, const char *dll_name,
 
 // Dynamically load SSL library. Set up ctx->ssl_ctx pointer.
 static int set_ssl_option(struct mg_context *ctx) {
-  struct mg_request_info request_info;
   SSL_CTX *CTX;
   int i, size;
   const char *pem = ctx->config[SSL_CERTIFICATE];
@@ -3670,10 +3669,13 @@ static int set_ssl_option(struct mg_context *ctx) {
   if ((CTX = SSL_CTX_new(SSLv23_server_method())) == NULL) {
     cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
   } else if (ctx->user_callback != NULL) {
-    memset(&request_info, 0, sizeof(request_info));
-    request_info.user_data = ctx->user_data;
+	struct mg_connection conn = {0};
+	struct mg_context fake_ctx = *ctx;
+    conn.request_info.user_data = ctx->user_data;
+	conn.ctx = &fake_ctx;
+	fake_ctx.ssl_ctx = CTX;
     ctx->user_callback(MG_INIT_SSL, (struct mg_connection *) CTX,
-                       &request_info);
+                       &conn.request_info);
   }
 
   if (CTX != NULL && SSL_CTX_use_certificate_file(CTX, pem,
@@ -4228,6 +4230,13 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   (void) pthread_cond_init(&ctx->cond, NULL);
   (void) pthread_cond_init(&ctx->sq_empty, NULL);
   (void) pthread_cond_init(&ctx->sq_full, NULL);
+
+  if (ctx->user_callback != NULL) {
+	struct mg_connection conn = {0};
+    conn.request_info.user_data = ctx->user_data;
+	conn.ctx = ctx;
+	ctx->user_callback(MG_INIT0, &conn, &conn.request_info);
+  }
 
   // Start master (listening) thread
   start_thread(ctx, (mg_thread_func_t) master_thread, ctx);
