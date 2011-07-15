@@ -3429,7 +3429,7 @@ static int set_ports_option(struct mg_context *ctx) {
                // handshake will figure out that the client is down and
                // will close the server end.
                // Thanks to Igor Klopov who suggested the patch.
-               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &on,
+               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&on,
                           sizeof(on)) != 0 ||
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
                listen(sock, 100) != 0) {
@@ -3765,7 +3765,7 @@ static void close_socket_gracefully(SOCKET sock) {
   // ephemeral port exhaust problem under high QPS.
   linger.l_onoff = 1;
   linger.l_linger = 1;
-  setsockopt(sock, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *)&linger, sizeof(linger));
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
