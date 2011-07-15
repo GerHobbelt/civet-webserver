@@ -3835,7 +3835,7 @@ static int parse_url(const char *url, char *host, int *port) {
 static void handle_proxy_request(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   char host[1025], buf[BUFSIZ];
-  int port, is_ssl, len, i, n;
+  int port = 0, is_ssl, len, i, n;
 
   DEBUG_TRACE(("URL: %s", ri->uri));
   if (ri->uri == NULL ||
