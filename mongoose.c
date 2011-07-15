@@ -1525,7 +1525,8 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
                char *dst, size_t dst_len) {
   const char *p, *e, *s;
-  size_t name_len, len;
+  size_t name_len;
+  int len;
 
   name_len = strlen(name);
   e = buf + buf_len;
