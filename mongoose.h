@@ -33,7 +33,7 @@ struct mg_connection;  // Handle for the individual connection
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
-  void *user_data;       // User-defined pointer passed to mg_start()
+  void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
   char *request_method;  // "GET", "POST", etc
   char *uri;             // URL-decoded URI
   char *http_version;    // E.g. "1.0", "1.1"
@@ -56,10 +56,10 @@ enum mg_event {
   MG_NEW_REQUEST,   // New HTTP request has arrived from the client
   MG_HTTP_ERROR,    // HTTP error must be returned to the client
   MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
-  MG_INIT_SSL,      // Mongoose initializes SSL. Instead of mg_connection *,
-                    // SSL context is passed to the callback function.
-  MG_INIT0          // Mongoose starts and has just initialized the network
+  MG_INIT_SSL,      // Mongoose initializes SSL. The SSL context is passed to the callback function as part of a 'faked/empty' mg_connection struct (no ugly type casting required any more!)
+  MG_INIT0,         // Mongoose starts and has just initialized the network
                     // stack and is about to start the mongoose threads.
+  MG_EXIT0          // Mongoose terminates and has already terminated its threads. This one is the counterpart of MG_INIT0, so to speak.
 };
 
 // Prototype for the user-defined function. Mongoose calls this function
@@ -83,12 +83,69 @@ typedef void * (*mg_callback_t)(enum mg_event event,
                                 const struct mg_request_info *request_info);
 
 
+// Prototype for the user-defined option decoder/processing function. Mongoose 
+// calls this function for every unidentified option.
+//
+// Parameters:
+//   ctx: the server context.
+//   name: (string) the option identifier.
+//   value: (string, may be NULL) the option value.
+//
+// Return:
+//   If handler returns a non-zero value, that means that handler has processed the
+//   option / value pair; the option has been processed.
+//   If handler returns zero, that means that the handler has not processed
+//   the option.
+typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *name, const char *value);
+
+// Prototype for the final user-defined option processing function. Mongoose 
+// calls this function once after all options have been processed: this callback 
+// is usually used to set the default values for any user options which have not 
+// been configured yet.
+//
+// Parameters:
+//   ctx: the server context.
+//
+// Return:
+//   If handler returns zero, that means that the handler has detected a terminal error.
+typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
+
+// Prototype for the user-defined option fetch function. Mongoose and user code
+// call this function through mg_get_option() to obtain the (string) value of the given option.
+//
+// Parameters:
+//   ctx: the server context.
+//   name: (string) the option identifier.
+//
+// Return:
+//   If handler returns the non-NULL option value string.
+//   If handler returns zero, that means that the handler has not processed
+//   the option.
+typedef const char * (*mg_option_get_callback_t)(const struct mg_context *ctx, const char *name);
+
+// The user-initialized structure carrying the various user defined callback methods
+// and any optional associated user data.
+typedef struct mg_user_class_t {
+  mg_callback_t user_callback;  // User-defined callback function
+  void *user_data;              // Arbitrary user-defined data
+
+  mg_option_decode_callback_t user_option_decode;  // User-defined option decode/processing callback function
+  mg_option_fill_callback_t user_option_fill;      // User-defined option callback function which fills any non-configured options with sensible defaults
+  mg_option_get_callback_t user_option_get;        // User-defined callback function which delivers the value for the given option
+} mg_user_class_t;
+
+
+
+
 // Start web server.
 //
 // Parameters:
-//   callback: user defined event handling function or NULL.
-//   options: NULL terminated list of option_name, option_value pairs that
-//            specify Mongoose configuration parameters.
+//   user_functions: reference to a set of user defined functions and data, 
+//                   including an optional user-defined event handling function.
+//                   Any of the function references listed in this structure 
+//                   may be NULL. The 'user_functions' reference itself may be NULL.
+//   options:        NULL terminated list of option_name, option_value pairs that
+//                   specify Mongoose configuration parameters.
 //
 // Side-effects: on UNIX, ignores SIGCHLD and SIGPIPE signals. If custom
 //    processing is required for these, signal handlers must be set up
@@ -101,14 +158,15 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //     "listening_ports", "80,443s",
 //     NULL
 //   };
-//   struct mg_context *ctx = mg_start(&my_func, NULL, options);
+//   struct mg_user_class_t ufs = { &my_func, NULL };
+//   struct mg_context *ctx = mg_start(&ufs, options);
 //
 // Please refer to http://code.google.com/p/mongoose/wiki/MongooseManual
 // for the list of valid option and their possible values.
 //
 // Return:
 //   web server context, or NULL on error.
-struct mg_context *mg_start(mg_callback_t callback, void *user_data,
+struct mg_context *mg_start(const struct mg_user_class_t *user_functions, 
                             const char **options);
 
 
@@ -129,7 +187,7 @@ void mg_stop(struct mg_context *);
 const char *mg_get_option(const struct mg_context *ctx, const char *name);
 
 
-// Return array of strings that represent valid configuration options.
+// Return array of strings that represent all mongoose configuration options.
 // For each option, a short name, long name, and default value is returned.
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);

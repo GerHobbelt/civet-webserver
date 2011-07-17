@@ -449,8 +449,7 @@ struct mg_context {
   volatile int stop_flag;       // Should we stop event loop
   SSL_CTX *ssl_ctx;             // SSL context
   char *config[NUM_OPTIONS];    // Mongoose configuration parameters
-  mg_callback_t user_callback;  // User-defined callback function
-  void *user_data;              // User-defined data
+  struct mg_user_class_t user_functions; // user-defined callbacks and data
 
   struct socket *listening_sockets;
 
@@ -486,9 +485,50 @@ const char **mg_get_valid_option_names(void) {
 }
 
 static void *call_user(struct mg_connection *conn, enum mg_event event) {
-  conn->request_info.user_data = conn->ctx->user_data;
-  return conn->ctx->user_callback == NULL ? NULL :
-    conn->ctx->user_callback(event, conn, &conn->request_info);
+  if (conn && conn->ctx && conn->ctx->user_functions.user_callback) {
+    return conn->ctx->user_functions.user_callback(event, conn, &conn->request_info);
+  } else {
+    return NULL;
+  }
+}
+
+static void *call_user_over_ctx(struct mg_context *ctx, SSL_CTX *ssl_ctx, enum mg_event event) {
+  if (ctx && ctx->user_functions.user_callback) {
+    struct mg_connection conn = {0};
+    void *rv;
+    SSL_CTX *old_ssl = ctx->ssl_ctx;
+    ctx->ssl_ctx = ssl_ctx;
+	  conn.ctx = ctx;
+    rv = ctx->user_functions.user_callback(event, &conn, &conn.request_info);
+    ctx->ssl_ctx = old_ssl;
+    return rv;
+  } else {
+    return NULL;
+  }
+}
+
+static int call_user_option_decode(struct mg_context *ctx, const char *name, const char *value) {
+  if (ctx && ctx->user_functions.user_option_decode) {
+    return ctx->user_functions.user_option_decode(ctx, name, value);
+  } else {
+    return 0;
+  }
+}
+
+static int call_user_option_fill(struct mg_context *ctx) {
+  if (ctx && ctx->user_functions.user_option_fill) {
+    return ctx->user_functions.user_option_fill(ctx);
+  } else {
+    return !0;
+  }
+}
+
+static const char *call_user_option_get(const struct mg_context *ctx, const char *name) {
+  if (ctx && ctx->user_functions.user_option_get) {
+    return ctx->user_functions.user_option_get(ctx, name);
+  } else {
+    return NULL;
+  }
 }
 
 static int get_option_index(const char *name) {
@@ -506,7 +546,7 @@ static int get_option_index(const char *name) {
 const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   int i;
   if ((i = get_option_index(name)) == -1) {
-    return NULL;
+    return call_user_option_get(ctx, name);
   } else if (ctx->config[i] == NULL) {
     return "";
   } else {
@@ -3724,14 +3764,8 @@ static int set_ssl_option(struct mg_context *ctx) {
 
   if ((CTX = SSL_CTX_new(SSLv23_server_method())) == NULL) {
     mg_cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
-  } else if (ctx->user_callback != NULL) {
-	struct mg_connection conn = {0};
-	struct mg_context fake_ctx = *ctx;
-    conn.request_info.user_data = ctx->user_data;
-	conn.ctx = &fake_ctx;
-	fake_ctx.ssl_ctx = CTX;
-    ctx->user_callback(MG_INIT_SSL, (struct mg_connection *) CTX,
-                       &conn.request_info);
+  } else {
+    call_user_over_ctx(ctx, CTX, MG_INIT_SSL);
   }
 
   if (CTX != NULL && SSL_CTX_use_certificate_file(CTX, pem,
@@ -4210,6 +4244,10 @@ void mg_stop(struct mg_context *ctx) {
   while (ctx->stop_flag != 2) {
     (void) sleep(0);
   }
+  
+  // call the user event handler to make sure the custom code is aware of this termination as well and do some final cleanup:
+  call_user_over_ctx(ctx, ctx->ssl_ctx, MG_EXIT0);
+
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
@@ -4217,7 +4255,7 @@ void mg_stop(struct mg_context *ctx) {
 #endif // _WIN32
 }
 
-struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
+struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
                             const char **options) {
   struct mg_context *ctx;
   const char *name, *value, *default_value;
@@ -4231,19 +4269,28 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
   ctx = (struct mg_context *) calloc(1, sizeof(*ctx));
-  ctx->user_callback = user_callback;
-  ctx->user_data = user_data;
+  if (user_functions) {
+    ctx->user_functions = *user_functions;
+  }
 
   while (options && (name = *options++) != NULL) {
+    value = *options++;
     if ((i = get_option_index(name)) == -1) {
-      mg_cry(fc(ctx), "Invalid option: %s", name);
-      free_context(ctx);
-      return NULL;
-    } else if ((value = *options++) == NULL) {
+      if (!call_user_option_decode(ctx, name, value)) {
+        mg_cry(fc(ctx), "Invalid option: %s", name);
+        free_context(ctx);
+        return NULL;
+      } else {
+        DEBUG_TRACE(("[%s] -> [%s]", name, value));
+        continue;
+      }
+    } else if (value == NULL) {
       mg_cry(fc(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       return NULL;
     }
+	  assert(i < (int)ARRAY_SIZE(ctx->config));
+	  assert(i >= 0);
     ctx->config[i] = mg_strdup(value);
     DEBUG_TRACE(("[%s] -> [%s]", name, value));
   }
@@ -4257,6 +4304,10 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
                    config_options[i * ENTRIES_PER_CONFIG_OPTION + 1],
                    default_value));
     }
+  }
+  if (!call_user_option_fill(ctx)) {
+    free_context(ctx);
+    return NULL;
   }
 
   // NOTE(lsm): order is important here. SSL certificates must
@@ -4287,12 +4338,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   (void) pthread_cond_init(&ctx->sq_empty, NULL);
   (void) pthread_cond_init(&ctx->sq_full, NULL);
 
-  if (ctx->user_callback != NULL) {
-	struct mg_connection conn = {0};
-    conn.request_info.user_data = ctx->user_data;
-	conn.ctx = ctx;
-	ctx->user_callback(MG_INIT0, &conn, &conn.request_info);
-  }
+  call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT0);
 
   // Start master (listening) thread
   start_thread(ctx, (mg_thread_func_t) master_thread, ctx);
