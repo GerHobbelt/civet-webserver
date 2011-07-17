@@ -109,7 +109,7 @@ typedef long off_t;
 #endif // !EWOULDBLOCK
 
 #ifndef ETIMEOUT
-#define ETIMEOUT    666
+#define ETIMEOUT    WSAETIMEDOUT
 #endif
 
 #define _POSIX_
