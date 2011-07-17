@@ -234,6 +234,7 @@ typedef int SOCKET;
 #define CGI_ENVIRONMENT_SIZE 4096
 #define MAX_CGI_ENVIR_VARS 64
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
 
 #if defined(DEBUG)
 #define DEBUG_TRACE(x) do { \
@@ -627,7 +628,7 @@ static int lowercase(const char *s) {
   return tolower(* (const unsigned char *) s);
 }
 
-static int mg_strncasecmp(const char *s1, const char *s2, size_t len) {
+int mg_strncasecmp(const char *s1, const char *s2, size_t len) {
   int diff = 0;
 
   if (len > 0)
@@ -638,7 +639,7 @@ static int mg_strncasecmp(const char *s1, const char *s2, size_t len) {
   return diff;
 }
 
-static int mg_strcasecmp(const char *s1, const char *s2) {
+int mg_strcasecmp(const char *s1, const char *s2) {
   int diff;
 
   do {
@@ -648,7 +649,7 @@ static int mg_strcasecmp(const char *s1, const char *s2) {
   return diff;
 }
 
-static char * mg_strndup(const char *ptr, size_t len) {
+char * mg_strndup(const char *ptr, size_t len) {
   char *p;
 
   if ((p = (char *) malloc(len + 1)) != NULL) {
@@ -658,7 +659,7 @@ static char * mg_strndup(const char *ptr, size_t len) {
   return p;
 }
 
-static char * mg_strdup(const char *str) {
+char * mg_strdup(const char *str) {
   return mg_strndup(str, strlen(str));
 }
 
@@ -666,7 +667,7 @@ static char * mg_strdup(const char *str) {
 // that is larger than a supplied buffer.
 // Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
 // in his audit report.
-static int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
+int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
                         const char *fmt, va_list ap) {
   int n;
 
@@ -688,7 +689,7 @@ static int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
   return n;
 }
 
-static int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
                        const char *fmt, ...) {
   va_list ap;
   int n;

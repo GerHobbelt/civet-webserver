@@ -232,6 +232,32 @@ void mg_md5(char *buf, ...);
 
 // --- helper functions ---
 
+// Compare two strings to a maximum length of n characters; the comparison is case-insensitive.
+// Return the (s1 - s2) last character difference value, which is zero(0) when both strings are equal.
+int mg_strncasecmp(const char *s1, const char *s2, size_t len);
+
+// same as strncasecmp() but without any string length limit
+int mg_strcasecmp(const char *s1, const char *s2);
+
+// Allocate space for a copy of the given string on the heap.
+// The allocated copy will have space for at most 'len' characters (exclusing the NUL sentinel).
+// The returned pointer is either NULL on failure or pointing at the ('len' length bound) copied string.
+char * mg_strndup(const char *str, size_t len);
+
+// Same as strndup() but here the entire input string is copied and the allocated space is large
+// enough contain that number of characters.
+char * mg_strdup(const char *str);
+
+// Like vsnprintf(), but never returns negative value, or the value
+// that is larger than a supplied buffer.
+// Barfs a hairball when a destination buffer would occur (logs a failure message).
+//
+// Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
+// in his audit report.
+int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
+
+// Is to mg_vsnprintf() what printf() is to vprintf().
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...);
 
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...);
