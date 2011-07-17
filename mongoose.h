@@ -238,6 +238,12 @@ void mg_cry(struct mg_connection *conn, const char *fmt, ...);
 // Print formatted error message to the opened error log stream.
 void mg_cry_raw(struct mg_connection *conn, const char *msg);
 
+/*
+Like strerror() but with included support for the same functionality for 
+Win32 system error codes
+*/
+const char *mg_strerror(int errcode);
+
 
 #ifdef __cplusplus
 }

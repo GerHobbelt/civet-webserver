@@ -513,6 +513,39 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
+/*
+Like strerror() but with included support for the same functionality for 
+Win32 system error codes, so that mg_strerror(ERROR) always delivers the 
+best possible description instead of a lot of 'Unknown error' messages.
+
+NOTE: has the mg_ prefix to prevent collisions with system's strerror();
+      it is generally used in constructs like mg_strerror(ERRNO) where 
+      ERRNO is a mongoose-internal #define.
+*/
+const char *mg_strerror(int errcode)
+{
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+
+  const char *s = strerror(errcode);
+  if (!s || !*s || GetLastError() == (DWORD)errcode)
+  {
+    static char msg[256];
+
+    if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, errcode, 0, msg, ARRAY_SIZE(msg), NULL))
+    {
+      snprintf(msg, ARRAY_SIZE(msg), "Unidentified error code %d", errcode);
+    }
+    return msg;
+  }
+  return s;
+
+#else
+
+  return strerror(errcode);
+
+#endif
+}
+
 // Print formatted error message to the opened error log stream.
 void mg_cry_raw(struct mg_connection *conn, const char *msg) {
   FILE *fp;
@@ -1325,7 +1358,7 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
   // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
 
   if ((retval = pthread_create(&thread_id, &attr, func, param)) != 0) {
-    mg_cry(fc(ctx), "%s: %s", __func__, strerror(retval));
+    mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(retval));
   }
 
   return retval;
@@ -1342,15 +1375,15 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 
   if ((pid = fork()) == -1) {
     // Parent
-    send_http_error(conn, 500, http_500_error, "fork(): %s", strerror(ERRNO));
+    send_http_error(conn, 500, http_500_error, "fork(): %s", mg_strerror(ERRNO));
   } else if (pid == 0) {
     // Child
     if (chdir(dir) != 0) {
-      mg_cry(conn, "%s: chdir(%s): %s", __func__, dir, strerror(ERRNO));
+      mg_cry(conn, "%s: chdir(%s): %s", __func__, dir, mg_strerror(ERRNO));
     } else if (dup2(fd_stdin, 0) == -1) {
-      mg_cry(conn, "%s: dup2(%d, 0): %s", __func__, fd_stdin, strerror(ERRNO));
+      mg_cry(conn, "%s: dup2(%d, 0): %s", __func__, fd_stdin, mg_strerror(ERRNO));
     } else if (dup2(fd_stdout, 1) == -1) {
-      mg_cry(conn, "%s: dup2(%d, 1): %s", __func__, fd_stdout, strerror(ERRNO));
+      mg_cry(conn, "%s: dup2(%d, 1): %s", __func__, fd_stdout, mg_strerror(ERRNO));
     } else {
       (void) dup2(fd_stdout, 2);
       (void) close(fd_stdin);
@@ -1360,11 +1393,11 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       interp = conn->ctx->config[CGI_INTERPRETER];
       if (interp == NULL) {
         (void) execle(prog, prog, NULL, envp);
-        mg_cry(conn, "%s: execle(%s): %s", __func__, prog, strerror(ERRNO));
+        mg_cry(conn, "%s: execle(%s): %s", __func__, prog, mg_strerror(ERRNO));
       } else {
         (void) execle(interp, interp, prog, NULL, envp);
         mg_cry(conn, "%s: execle(%s %s): %s", __func__, interp, prog,
-            strerror(ERRNO));
+            mg_strerror(ERRNO));
       }
     }
     exit(EXIT_FAILURE);
@@ -1670,20 +1703,20 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
   if (conn->ctx->ssl_ctx == NULL && use_ssl) {
     mg_cry(conn, "%s: SSL is not initialized", __func__);
   } else if ((he = gethostbyname(host)) == NULL) {
-    mg_cry(conn, "%s: gethostbyname(%s): %s", __func__, host, strerror(ERRNO));
+    mg_cry(conn, "%s: gethostbyname(%s): %s", __func__, host, mg_strerror(ERRNO));
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-    mg_cry(conn, "%s: socket: %s", __func__, strerror(ERRNO));
+    mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
   } else {
     sin.sin_family = AF_INET;
     sin.sin_port = htons((uint16_t) port);
     sin.sin_addr = * (struct in_addr *) he->h_addr_list[0];
     if (connect(sock, (struct sockaddr *) &sin, sizeof(sin)) != 0) {
       mg_cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
-          strerror(ERRNO));
+          mg_strerror(ERRNO));
       closesocket(sock);
     } else if ((newconn = (struct mg_connection *)
                 calloc(1, sizeof(*newconn))) == NULL) {
-      mg_cry(conn, "%s: calloc: %s", __func__, strerror(ERRNO));
+      mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
       closesocket(sock);
     } else {
       newconn->client.sock = sock;
@@ -2141,7 +2174,7 @@ static FILE *open_auth_file(struct mg_connection *conn, const char *path) {
     fp =  mg_fopen(ctx->config[GLOBAL_PASSWORDS_FILE], "r");
     if (fp == NULL)
       mg_cry(fc(ctx), "fopen(%s): %s",
-          ctx->config[GLOBAL_PASSWORDS_FILE], strerror(ERRNO));
+          ctx->config[GLOBAL_PASSWORDS_FILE], mg_strerror(ERRNO));
   } else if (!mg_stat(path, &st) && st.is_directory) {
     (void) mg_snprintf(conn, name, sizeof(name), "%s%c%s",
         path, DIRSEP, PASSWORDS_FILE_NAME);
@@ -2271,7 +2304,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
           filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
-        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, strerror(errno));
+        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(errno));
       }
       break;
     }
@@ -2475,7 +2508,7 @@ static void handle_directory_request(struct mg_connection *conn,
 
   if ((dirp = opendir(dir)) == NULL) {
     send_http_error(conn, 500, "Cannot open directory",
-        "Error: opendir(%s): %s", path, strerror(ERRNO));
+        "Error: opendir(%s): %s", path, mg_strerror(ERRNO));
     return;
   }
 
@@ -2600,7 +2633,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
     send_http_error(conn, 500, http_500_error,
-        "fopen(%s): %s", path, strerror(ERRNO));
+        "fopen(%s): %s", path, mg_strerror(ERRNO));
     return;
   }
   set_close_on_exec(fileno(fp));
@@ -3005,7 +3038,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0) {
     send_http_error(conn, 500, http_500_error,
-        "Cannot create CGI pipe: %s", strerror(ERRNO));
+        "Cannot create CGI pipe: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
           fd_stdin[0], fd_stdout[1], dir)) == (pid_t) -1) {
@@ -3013,7 +3046,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
       (out = fdopen(fd_stdout[0], "rb")) == NULL) {
     send_http_error(conn, 500, http_500_error,
-        "fopen: %s", strerror(ERRNO));
+        "fopen: %s", mg_strerror(ERRNO));
     goto done;
   }
 
@@ -3135,10 +3168,10 @@ static void put_file(struct mg_connection *conn, const char *path) {
     mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n", conn->request_info.status_code);
   } else if (rc == -1) {
     send_http_error(conn, 500, http_500_error,
-        "put_dir(%s): %s", path, strerror(ERRNO));
+        "put_dir(%s): %s", path, mg_strerror(ERRNO));
   } else if ((fp = mg_fopen(path, "wb+")) == NULL) {
     send_http_error(conn, 500, http_500_error,
-        "fopen(%s): %s", path, strerror(ERRNO));
+        "fopen(%s): %s", path, mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
     range = mg_get_header(conn, "Content-Range");
@@ -3191,7 +3224,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
     mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
-        tag, path, strerror(ERRNO));
+        tag, path, mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
     is_ssi = match_extension(path, conn->ctx->config[SSI_EXTENSIONS]);
@@ -3212,7 +3245,7 @@ static void do_ssi_exec(struct mg_connection *conn, char *tag) {
   if (sscanf(tag, " \"%[^\"]\"", cmd) != 1) {
     mg_cry(conn, "Bad SSI #exec: [%s]", tag);
   } else if ((fp = popen(cmd, "r")) == NULL) {
-    mg_cry(conn, "Cannot SSI #exec: [%s]: %s", cmd, strerror(ERRNO));
+    mg_cry(conn, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
   } else {
     send_file_data(conn, fp, INT64_MAX);
     (void) pclose(fp);
@@ -3291,7 +3324,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
     send_http_error(conn, 500, http_500_error, "fopen(%s): %s", path,
-                    strerror(ERRNO));
+                    mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
@@ -3342,7 +3375,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 200, "OK", "");
     } else {
       send_http_error(conn, 500, http_500_error, "remove(%s): %s", path,
-                      strerror(ERRNO));
+                      mg_strerror(ERRNO));
     }
   } else if (mg_stat(path, &st) != 0) {
     send_http_error(conn, 404, "Not Found", "%s", "File not found");
@@ -3456,12 +3489,12 @@ static int set_ports_option(struct mg_context *ctx) {
                listen(sock, 100) != 0) {
       closesocket(sock);
       mg_cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
-          vec.len, vec.ptr, strerror(ERRNO));
+          vec.len, vec.ptr, mg_strerror(ERRNO));
       success = 0;
     } else if ((listener = (struct socket *)
                 calloc(1, sizeof(*listener))) == NULL) {
       closesocket(sock);
-      mg_cry(fc(ctx), "%s: %s", __func__, strerror(ERRNO));
+      mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
       success = 0;
     } else {
       *listener = so;
@@ -3597,9 +3630,9 @@ static int set_uid_option(struct mg_context *ctx) {
     if ((pw = getpwnam(uid)) == NULL) {
       mg_cry(fc(ctx), "%s: unknown user [%s]", __func__, uid);
     } else if (setgid(pw->pw_gid) == -1) {
-      mg_cry(fc(ctx), "%s: setgid(%s): %s", __func__, uid, strerror(errno));
+      mg_cry(fc(ctx), "%s: setgid(%s): %s", __func__, uid, mg_strerror(errno));
     } else if (setuid(pw->pw_uid) == -1) {
-      mg_cry(fc(ctx), "%s: setuid(%s): %s", __func__, uid, strerror(errno));
+      mg_cry(fc(ctx), "%s: setuid(%s): %s", __func__, uid, mg_strerror(errno));
     } else {
       success = 1;
     }
