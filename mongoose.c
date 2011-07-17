@@ -107,6 +107,11 @@ typedef long off_t;
 #if !defined(EWOULDBLOCK)
 #define EWOULDBLOCK  WSAEWOULDBLOCK
 #endif // !EWOULDBLOCK
+
+#ifndef ETIMEOUT
+#define ETIMEOUT    666
+#endif
+
 #define _POSIX_
 #define INT64_FMT  "I64d"
 
@@ -136,6 +141,7 @@ typedef long off_t;
 #define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
 
 #if !defined(HAVE_PTHREAD)
+
 typedef HANDLE pthread_mutex_t;
 typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
 typedef DWORD pthread_t;
@@ -862,6 +868,15 @@ static int pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mutex) {
   ReleaseMutex(*mutex);
   WaitForMultipleObjects(2, handles, FALSE, INFINITE);
   return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
+}
+
+static int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, const struct timespec *abstime) {
+  HANDLE handles[] = {cv->signal, cv->broadcast};
+  DWORD period = abstime->tv_sec * 1000 + abstime->tv_nsec / 1000000;
+  DWORD rv;
+  ReleaseMutex(*mutex);
+  rv = WaitForMultipleObjects(2, handles, FALSE, period);
+  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? (rv == WAIT_TIMEOUT ? ETIMEOUT : 0) : -1;
 }
 
 static int pthread_cond_signal(pthread_cond_t *cv) {
