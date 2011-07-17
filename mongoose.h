@@ -39,7 +39,7 @@ struct mg_request_info {
   char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // \0 - terminated
   char *remote_user;     // Authenticated user
-  char *log_message;     // Mongoose error log message
+  const char *log_message; // Mongoose error log message
   long remote_ip;        // Client's IP address
   int remote_port;       // Client's port
   int status_code;       // HTTP reply status code
@@ -226,6 +226,17 @@ const char *mg_version(void);
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
+
+
+
+
+// --- helper functions ---
+
+
+// Print error message to the opened error log stream.
+void mg_cry(struct mg_connection *conn, const char *fmt, ...);
+// Print formatted error message to the opened error log stream.
+void mg_cry_raw(struct mg_connection *conn, const char *msg);
 
 
 #ifdef __cplusplus
