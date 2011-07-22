@@ -143,3 +143,65 @@ i    index.html,index.htm,index.php,index.cgi
 Since it is possible to define a list of default index pages, the Mongoose Web Server will use the first default file that it finds in the list that exists in the web directory as the index page it shows to the user.  
 
 Using the above lists as an example, if there is both an index.html and index.htm file in the root of the web server, index.html will be used because it comes first in the default file list and therefore has a higher priority than index.htm.
+
+----
+
+=Securing URIs and Directories=
+
+Mongoose allows you to secure URIs and directories under your server web root. This is beneficial when you desire to protect specific directories and limit access to specific users.
+
+===Setting the Authentication Domain===
+
+The authentication domain is the area of a website which will be secured. This is the first thing that needs to be done, and can be set using the *-R* (or *authentication_domain*) option at runtime or in the config file. For example, the following sets the authentication domain to “localhost”:
+
+Set at runtime:
+{{{
+./mongoose -R localhost
+}}}
+
+Set in the config file:
+{{{
+authentication_domain    localhost
+}}}
+
+===Creating the .htpasswd File===
+
+The second thing that needs to be done is that a *.htpasswd* file needs to be created to hold the username and password of the users who will be allowed to enter the restricted URI or directory. To create a .htpasswd file, the mongoose application may be used with the *-A* option. The *-A* option allows usernames and passwords to be added or modified within a given .htpasswd file. Deleting users can be done through a normal text editor and functionality is similar to that of Apache’s htdigest utility. To create a .htpasswd file in the root directory of the web server with the username “admin” and the password “pass”, execute the following command from the web root.
+
+{{{
+ ./mongoose -A ./.htpasswd localhost admin pass
+}}}
+
+This will create the corresponding .htpasswd file in the root directory of the web server.  
+
+===Protecting Specific URIs or Directories===
+
+Now that an authentication domain has been defined and a .htpasswd file has been created, use the *-P* (or *protect_uri*) option at runtime or in the config file to specify which directories and URIs are to be protected. This option is a comma separated list of *URI=path* pairs specifying that the given URI must be protected with the associated password file.
+
+To protect a directory called *secure_area*, the following command would be used:
+
+Set at runtime:
+{{{
+./mongoose -P /secure_area=./.htpasswd
+}}}
+
+Set in the config file:
+{{{
+protect_uri    /secure_area=./.htpasswd
+}}}
+
+===Setting the Global Passwords File===
+
+It’s possible to set a global passwords file in the Mongoose web server.  If this is set, all per-directory .htpasswd files will be ignored and all requests will be authorized through this global .htpasswd file.  To set this, use the *-g* (or *global_passwords_file*) option at runtime or in the config file:
+
+Set at runtime:
+
+{{{
+./mongoose -g ./.htpasswd
+}}}
+
+Set in the config file:
+
+{{{
+global_passwords_file    ./.htpasswd
+}}}
