@@ -29,6 +29,7 @@ extern "C" {
 
 struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
+struct socket;         // Handle for the socket related to a clinet / server connection
 
 
 // This structure contains information about the HTTP request.
@@ -83,7 +84,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
                                 const struct mg_request_info *request_info);
 
 
-// Prototype for the user-defined option decoder/processing function. Mongoose 
+// Prototype for the user-defined option decoder/processing function. Mongoose
 // calls this function for every unidentified option.
 //
 // Parameters:
@@ -98,9 +99,9 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //   the option.
 typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *name, const char *value);
 
-// Prototype for the final user-defined option processing function. Mongoose 
-// calls this function once after all options have been processed: this callback 
-// is usually used to set the default values for any user options which have not 
+// Prototype for the final user-defined option processing function. Mongoose
+// calls this function once after all options have been processed: this callback
+// is usually used to set the default values for any user options which have not
 // been configured yet.
 //
 // Parameters:
@@ -140,9 +141,9 @@ typedef struct mg_user_class_t {
 // Start web server.
 //
 // Parameters:
-//   user_functions: reference to a set of user defined functions and data, 
+//   user_functions: reference to a set of user defined functions and data,
 //                   including an optional user-defined event handling function.
-//                   Any of the function references listed in this structure 
+//                   Any of the function references listed in this structure
 //                   may be NULL. The 'user_functions' reference itself may be NULL.
 //   options:        NULL terminated list of option_name, option_value pairs that
 //                   specify Mongoose configuration parameters.
@@ -166,7 +167,7 @@ typedef struct mg_user_class_t {
 //
 // Return:
 //   web server context, or NULL on error.
-struct mg_context *mg_start(const struct mg_user_class_t *user_functions, 
+struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
                             const char **options);
 
 
@@ -323,7 +324,7 @@ void mg_cry(struct mg_connection *conn, const char *fmt, ...);
 void mg_cry_raw(struct mg_connection *conn, const char *msg);
 
 /*
-Like strerror() but with included support for the same functionality for 
+Like strerror() but with included support for the same functionality for
 Win32 system error codes
 */
 const char *mg_strerror(int errcode);

@@ -51,7 +51,9 @@
 #include <stdio.h>
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0400 // To make it link in VS2005
+#endif
 #include <windows.h>
 
 #ifndef PATH_MAX
@@ -138,8 +140,6 @@ typedef long off_t;
 #define fileno(x) _fileno(x)
 #endif // !fileno MINGW #defines fileno
 
-#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
-
 #if !defined(HAVE_PTHREAD)
 
 typedef HANDLE pthread_mutex_t;
@@ -151,11 +151,18 @@ struct timespec {
   long tv_sec;
 };
 
-static int pthread_mutex_lock(pthread_mutex_t *);
-static int pthread_mutex_unlock(pthread_mutex_t *);
+int pthread_mutex_lock(pthread_mutex_t *);
+int pthread_mutex_unlock(pthread_mutex_t *);
+
 #else
+
 #include <pthread.h>
+
 #endif
+
+#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.  It also overrides the pid_t typedef in pthread.h (--> sched.h) for pthread-win32
+
+
 
 static FILE *mg_fopen(const char *path, const char *mode);
 
@@ -918,39 +925,39 @@ static void send_http_error(struct mg_connection *conn, int status,
 
 #if !defined(HAVE_PTHREAD)
 
-static int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
+int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
   unused = NULL;
   *mutex = CreateMutex(NULL, FALSE, NULL);
   return *mutex == NULL ? -1 : 0;
 }
 
-static int pthread_mutex_destroy(pthread_mutex_t *mutex) {
+int pthread_mutex_destroy(pthread_mutex_t *mutex) {
   return CloseHandle(*mutex) == 0 ? -1 : 0;
 }
 
-static int pthread_mutex_lock(pthread_mutex_t *mutex) {
+int pthread_mutex_lock(pthread_mutex_t *mutex) {
   return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
 }
 
-static int pthread_mutex_unlock(pthread_mutex_t *mutex) {
+int pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return ReleaseMutex(*mutex) == 0 ? -1 : 0;
 }
 
-static int pthread_cond_init(pthread_cond_t *cv, const void *unused) {
+int pthread_cond_init(pthread_cond_t *cv, const void *unused) {
   unused = NULL;
   cv->signal = CreateEvent(NULL, FALSE, FALSE, NULL);
   cv->broadcast = CreateEvent(NULL, TRUE, FALSE, NULL);
   return cv->signal != NULL && cv->broadcast != NULL ? 0 : -1;
 }
 
-static int pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mutex) {
+int pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mutex) {
   HANDLE handles[] = {cv->signal, cv->broadcast};
   ReleaseMutex(*mutex);
   WaitForMultipleObjects(2, handles, FALSE, INFINITE);
   return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
 }
 
-static int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, const struct timespec *abstime) {
+int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, const struct timespec *abstime) {
   HANDLE handles[] = {cv->signal, cv->broadcast};
   DWORD period = abstime->tv_sec * 1000 + abstime->tv_nsec / 1000000;
   DWORD rv;
@@ -959,21 +966,21 @@ static int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, co
   return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? (rv == WAIT_TIMEOUT ? ETIMEOUT : 0) : -1;
 }
 
-static int pthread_cond_signal(pthread_cond_t *cv) {
+int pthread_cond_signal(pthread_cond_t *cv) {
   return SetEvent(cv->signal) == 0 ? -1 : 0;
 }
 
-static int pthread_cond_broadcast(pthread_cond_t *cv) {
+int pthread_cond_broadcast(pthread_cond_t *cv) {
   // Implementation with PulseEvent() has race condition, see
   // http://www.cs.wustl.edu/~schmidt/win32-cv-1.html
   return PulseEvent(cv->broadcast) == 0 ? -1 : 0;
 }
 
-static int pthread_cond_destroy(pthread_cond_t *cv) {
+int pthread_cond_destroy(pthread_cond_t *cv) {
   return CloseHandle(cv->signal) && CloseHandle(cv->broadcast) ? 0 : -1;
 }
 
-static pthread_t pthread_self(void) {
+pthread_t pthread_self(void) {
   return GetCurrentThreadId();
 }
 
@@ -984,31 +991,31 @@ typedef struct {
 
 typedef void pthread_rwlockattr_t;
 
-static int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
+int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
   InitializeSRWLock(&rwlock->lock);
   return 0;
 }
 
 #define PTHREAD_RWLOCK_INITIALIZER			{ RTL_SRWLOCK_INIT }
 
-static int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
 	// empty
 	return 0;
 }
 
-static int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
 	AcquireSRWLockShared(&rwlock->lock);
 	rwlock->rw = 0;
 	return 0;
 }
 
-static int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
 	AcquireSRWLockExclusive(&rwlock->lock);
 	rwlock->rw = 1;
 	return 0;
 }
 
-static int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
 	if (rwlock->rw) {
 		ReleaseSRWLockExclusive(&rwlock->lock);
 	}
