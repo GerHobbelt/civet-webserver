@@ -90,7 +90,7 @@ Using *CGI* (Common Gateway Interface), a web server can communicate with other 
 
 To configure Mongoose to process CGI scripts in a given language, the interpreter for that language must be installed on the server. As an example, we’ll walk through how you would enable PHP to be used with the Mongoose web server.
 
-The first thing you would need to do would be to download PHP if it is not currently installed on your server. The PHP source can be downloaded from the following location: [http://www.php.net/downloads.php]. After it has been downloaded, it should be built and installed. From the php source directory, run the following commands:
+The first thing you need to do is download and install PHP if it is not currently installed on your server. The PHP source can be downloaded from the following location: [http://www.php.net/downloads.php]. To build and install PHP with the Autoconf system, run the following commands:
 
 {{{
 ./configure
@@ -98,7 +98,7 @@ make
 sudo make install
 }}}
 
-On OS X, this will place the “*php-cgi*" program in the "*/usr/local/bin*" directory. OS X is just being used as an example here. Steps will be similar for other operating systems. Now that we have the PHP CGI interpreter, we need to let Mongoose know where it is located. This can be done in two ways (as most options can) and be set at runtime using the -I option, or by adding a similar line to the configuration file. We can also set the -C option, which defines which extensions are treated as CGI scripts. Setting these option at runtime, you would start Mongoose as follows:
+On OS X, for example, this will place the “*php-cgi*" program in the "*/usr/local/bin*" directory. Steps will be similar for other operating systems. Now that the PHP CGI interpreter is installed, let Mongoose know where it is located. This can be done in two ways (as most options can) and be set at runtime using the -I option, or by adding a similar line to the configuration file. The -C option can also be set, which defines which extensions are treated as CGI scripts. Setting these option at runtime, Mongoose would be started as follows:
 
 {{{
 ./mongoose -C cgi,php -I /usr/local/bin/php-cgi
