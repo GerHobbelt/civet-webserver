@@ -23,6 +23,9 @@
 
 #include "mongoose.h"
 
+#include <stdio.h>
+#include <errno.h>
+
 #if defined(_MSC_VER)
 #if !defined(EWOULDBLOCK)
 #define EWOULDBLOCK  WSAEWOULDBLOCK
