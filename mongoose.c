@@ -1428,6 +1428,39 @@ FILE *mg_fopen(const char *path, const char *mode) {
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
   MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
 
+  // resursively create the included path when the file is to be created / appended to:
+  if (wmode[wcscspn(wmode, L"aw")])
+  {
+	  size_t i;
+
+	  // skip UNC path starters like '\\?\'
+	  i = wcsspn(wbuf, L"\\/:?");
+	  // and skip drive specs like 'C:'
+	  if (i == 0 && wbuf[i] && wbuf[i+1] == L':')
+	  {
+		  i = 2;
+		  i += wcsspn(wbuf + i, L"\\/");
+	  }
+	  i += wcscspn(wbuf + i, L"\\/");
+	  while (wbuf[i])
+	  {
+		  int rv;
+
+		  // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
+		  if (wbuf[i - 1] == L'.')
+		  {
+			  wbuf[i++] = L'/';
+			  i += wcscspn(wbuf + i, L"\\/");
+			  continue;
+		  }
+		  wbuf[i] = 0;
+		  rv = _wmkdir(wbuf);
+		  wbuf[i++] = L'/';
+		  if (0 != rv && errno != EEXIST)
+			  break;
+		  i += wcscspn(wbuf + i, L"\\/");
+	  }
+  }
   return _wfopen(wbuf, wmode);
 }
 
@@ -1651,6 +1684,46 @@ FILE *mg_fopen(const char *path, const char *mode) {
 	  return stderr;
   }
 
+  // resursively create the included path when the file is to be created / appended to:
+  if (mode[strcspn(mode, "aw")])
+  {
+	  size_t i;
+	  char *wbuf = strdup(path);
+
+	  // skip UNC path starters like '\\?\'
+	  i = strspn(wbuf, "\\/:?");
+	  // and skip drive specs like 'C:'
+	  if (i == 0 && wbuf[i] && wbuf[i+1] == ':')
+	  {
+		  i = 2;
+		  i += strspn(wbuf + i, "\\/");
+	  }
+	  i += strcspn(wbuf + i, "\\/");
+	  while (wbuf[i])
+	  {
+		  int rv;
+
+		  // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
+		  if (wbuf[i - 1] == '.')
+		  {
+			  wbuf[i++] = '/';
+			  i += strcspn(wbuf + i, "\\/");
+			  continue;
+		  }
+		  wbuf[i] = 0;
+
+#ifndef S_IRWXU
+#define S_IRWXU   0755
+#endif
+
+		  rv = mkdir(wbuf, S_IRWXU);
+		  wbuf[i++] = '/';
+		  if (0 != rv && errno != EEXIST)
+			  break;
+		  i += strcspn(wbuf + i, "\\/");
+	  }
+	  free(wbuf);
+  }
   return fopen(path, mode);
 }
 
