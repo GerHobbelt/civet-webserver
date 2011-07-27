@@ -39,7 +39,7 @@ extern "C" {
 #endif // __cplusplus
 
 struct socket;          // Handle for the socket related to a clinet / server connection
-struct fd_set;			
+struct fd_set;
 
 
 // Obtain the user-defined data & functions as set up at the start of the thread (i.e. the context)
@@ -75,6 +75,11 @@ void mg_close_connection(struct mg_connection *conn);
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...);
 
 int mg_get_lasterror(void);
+
+
+void mg_flockfile(FILE *fp);
+
+void mg_funlockfile(FILE *fp);
 
 
 

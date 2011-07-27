@@ -101,6 +101,10 @@ void mg_close_connection(struct mg_connection *conn)
 }
 
 
+
+
+
+
 // now here is a prime candidate for C++ polymorphism...
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...)
@@ -115,11 +119,23 @@ void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...)
   mg_cry_raw(fc(ctx), buf);
 }
 
+
+
 int mg_get_lasterror(void)
 {
 	return ERRNO;
 }
 
+
+void mg_flockfile(FILE *fp)
+{
+	flockfile(fp);
+}
+
+void mg_funlockfile(FILE *fp)
+{
+	funlockfile(fp);
+}
 
 
 int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
