@@ -164,7 +164,6 @@ int pthread_mutex_unlock(pthread_mutex_t *);
 
 
 
-static FILE *mg_fopen(const char *path, const char *mode);
 
 #if defined(HAVE_STDINT)
 #include <stdint.h>
@@ -222,7 +221,7 @@ typedef struct DIR {
 #define O_BINARY  0
 #endif // O_BINARY
 #define closesocket(a) close(a)
-#define mg_fopen(x, y) fopen(x, y)
+//#define mg_fopen(x, y) fopen(x, y)
 #define mg_mkdir(x, y) mkdir(x, y)
 #define mg_remove(x) remove(x)
 #define mg_rename(x, y) rename(x, y)
@@ -562,12 +561,12 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
 }
 
 /*
-Like strerror() but with included support for the same functionality for 
-Win32 system error codes, so that mg_strerror(ERROR) always delivers the 
+Like strerror() but with included support for the same functionality for
+Win32 system error codes, so that mg_strerror(ERROR) always delivers the
 best possible description instead of a lot of 'Unknown error' messages.
 
 NOTE: has the mg_ prefix to prevent collisions with system's strerror();
-      it is generally used in constructs like mg_strerror(ERRNO) where 
+      it is generally used in constructs like mg_strerror(ERRNO) where
       ERRNO is a mongoose-internal #define.
 */
 const char *mg_strerror(int errcode)
@@ -1154,8 +1153,15 @@ static int mg_rename(const char* oldname, const char* newname) {
 }
 
 
-static FILE *mg_fopen(const char *path, const char *mode) {
+FILE *mg_fopen(const char *path, const char *mode) {
   wchar_t wbuf[PATH_MAX], wmode[20];
+
+  if (!path || !path[0]) {
+	  return NULL;
+  }
+  if (0 == strcmp("-", path)) {
+	  return stderr;
+  }
 
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
   MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
@@ -1374,6 +1380,18 @@ static int set_non_blocking_mode(SOCKET sock) {
 }
 
 #else
+
+FILE *mg_fopen(const char *path, const char *mode) {
+  if (!path || !path[0]) {
+	  return NULL;
+  }
+  if (0 == strcmp("-", path)) {
+	  return stderr;
+  }
+
+  return fopen(path, mode);
+}
+
 static int mg_stat(const char *path, struct mgstat *stp) {
   struct stat st;
   int ok;
@@ -3947,7 +3965,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
     }
     conn->peer->client.is_ssl = is_ssl;
   }
-  
+
   // Forward client's request to the target
   mg_printf(conn->peer, "%s %s HTTP/%s\r\n", ri->request_method, ri->uri + len,
             ri->http_version);
@@ -4251,7 +4269,7 @@ void mg_stop(struct mg_context *ctx) {
   while (ctx->stop_flag != 2) {
     (void) sleep(0);
   }
-  
+
   // call the user event handler to make sure the custom code is aware of this termination as well and do some final cleanup:
   call_user_over_ctx(ctx, ctx->ssl_ctx, MG_EXIT0);
 

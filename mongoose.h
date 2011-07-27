@@ -318,6 +318,9 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const cha
 // Is to mg_vsnprintf() what printf() is to vprintf().
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...);
 
+// Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
+FILE *mg_fopen(const char *path, const char *mode);
+
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...);
 // Print formatted error message to the opened error log stream.
