@@ -871,6 +871,7 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
   char buf[MG_MAX(BUFSIZ, 2048)];
 
   (void)vsnprintf(buf, sizeof(buf), fmt, args);
+  buf[sizeof(buf) - 1] = 0;
 
   mg_write2log_raw(conn, logfile, timestamp, severity, buf);
 }
@@ -898,6 +899,7 @@ void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args) {
   char buf[MG_MAX(BUFSIZ, 2048)];
 
   (void) vsnprintf(buf, sizeof(buf), fmt, args);
+  buf[sizeof(buf) - 1] = 0;
 
   mg_cry_raw(conn, buf);
 }
@@ -980,6 +982,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
     return 0;
 
   n = vsnprintf(buf, buflen, fmt, ap);
+  buf[buflen - 1] = 0;
 
   if (n < 0) {
     mg_cry(conn, "vsnprintf error");
@@ -1415,7 +1418,7 @@ static int mg_rename(const char* oldname, const char* newname) {
 FILE *mg_fopen(const char *path, const char *mode) {
   wchar_t wbuf[PATH_MAX], wmode[20];
 
-  if (!path || !path[0]) {
+  if (!path || !path[0] || !mode || !mode[0]) {
 	  return NULL;
   }
   if (0 == strcmp("-", path)) {
@@ -1641,7 +1644,7 @@ static int set_non_blocking_mode(SOCKET sock) {
 #else
 
 FILE *mg_fopen(const char *path, const char *mode) {
-  if (!path || !path[0]) {
+  if (!path || !path[0] || !mode || !mode[0]) {
 	  return NULL;
   }
   if (0 == strcmp("-", path)) {
