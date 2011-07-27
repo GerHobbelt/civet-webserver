@@ -19,9 +19,11 @@
 // THE SOFTWARE.
 
 #ifndef MONGOOSE_HEADER_INCLUDED
-#define  MONGOOSE_HEADER_INCLUDED
+#define MONGOOSE_HEADER_INCLUDED
 
 #include <stddef.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +42,10 @@ struct mg_request_info {
   char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // \0 - terminated
   char *remote_user;     // Authenticated user
-  const char *log_message; // Mongoose error log message
+  const char *log_message; // Mongoose error/warn/... log message
+  const char *log_severity; // Mongoose log severity: error, warning, ...
+  const char *log_dstfile; // Mongoose preferred log file path
+  time_t log_timestamp;  // log timestamp (UTC)
   long remote_ip;        // Client's IP address
   int remote_port;       // Client's port
   int status_code;       // HTTP reply status code
@@ -323,8 +328,34 @@ FILE *mg_fopen(const char *path, const char *mode);
 
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...);
+// Print error message to the opened error log stream.
+void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args);
 // Print formatted error message to the opened error log stream.
 void mg_cry_raw(struct mg_connection *conn, const char *msg);
+
+// Convert a given filepath template to a file path.
+//
+// replace %[P] with client port number
+//         %[C] with client IP (sanitized for filesystem paths)
+//         %[p] with server port number
+//         %[s] with server IP (sanitized for filesystem paths)
+//         %[U] with the request URI path section (sanitized for filesystem paths)
+//         %[Q] with the request URI query section (sanitized for filesystem paths)
+//
+//         Any other % parameter is processed by strftime(3).
+const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp);
+
+// Obtain a reference to the logfile designated to this connection (logfile CAN be connection specific but do NOT HAVE TO be).
+const char *mg_get_default_logfile_path(struct mg_connection *conn);
+
+// Write arbitrary formatted string to the specified logfile.
+int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg);
+
+// Print log message to the opened error log stream.
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...);
+
+// Print log message to the opened error log stream.
+void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args);
 
 /*
 Like strerror() but with included support for the same functionality for

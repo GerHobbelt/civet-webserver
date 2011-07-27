@@ -484,6 +484,8 @@ struct mg_connection {
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
+
+  char logfile_path[MAX_PATH+1]; // cached value: path to the logfile designated to this connection/CTX
 };
 
 const char **mg_get_valid_option_names(void) {
@@ -593,56 +595,313 @@ const char *mg_strerror(int errcode)
 #endif
 }
 
-// Print formatted error message to the opened error log stream.
-void mg_cry_raw(struct mg_connection *conn, const char *msg) {
-  FILE *fp;
-  time_t timestamp;
+const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp)
+{
+	char fnbuf[PATH_MAX+1];
+	char *d;
+	const char *s;
+	struct tm *tp;
 
+	if (!logfile_template)
+	{
+		logfile_template = conn->ctx->config[ERROR_LOG_FILE];
+	}
+	if (!dst || dst_maxsize < 1)
+	{
+		return NULL;
+	}
+	if (!logfile_template || !*logfile_template || dst_maxsize <= 1)
+	{
+		dst[0] = 0;
+		return NULL;
+	}
+
+	// replace %[P] with client port number
+	//         %[C] with client IP (sanitized for filesystem paths)
+	//         %[p] with server port number
+	//         %[s] with server IP (sanitized for filesystem paths)
+	//         %[U] with the request URI path section (sanitized for filesystem paths)
+	//         %[Q] with the request URI query section (sanitized for filesystem paths)
+	//
+	//         any other % parameter is processed by strftime.
+
+	d = fnbuf;
+	d[MAX_PATH] = 0;  // sentinel for odd moments with strncpy et al
+	s = logfile_template;
+	while (d - fnbuf < MAX_PATH)
+	{
+		switch (*s)
+		{
+		case 0:
+			break;
+
+		case '%':
+			if (s[1] == '[' && s[2] && s[3] == ']')
+			{
+				size_t len = MAX_PATH - (d - fnbuf);
+				const char *u;
+
+				*d = 0;
+				switch (s[2])
+				{
+				case 'P':
+					if (len > 0 && conn && conn->client.rsa.u.sin.sin_port != 0)
+					{
+						(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.rsa.u.sin.sin_port));
+						d += strlen(d);
+					}
+					s += 4;
+					continue;
+
+				case 'C':
+					if (len > 0 && conn && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
+					{
+						u = inet_ntoa(conn->client.rsa.u.sin.sin_addr);
+						goto copy_partial2dst;
+					}
+					continue;
+
+				case 'p':
+					if (len > 0 && conn && conn->client.lsa.u.sin.sin_port != 0)
+					{
+						(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.lsa.u.sin.sin_port));
+						d += strlen(d);
+					}
+					s += 4;
+					continue;
+
+				case 's':
+					if (len > 0 && conn && conn->client.lsa.u.sin.sin_addr.s_addr != 0)
+					{
+						u = inet_ntoa(conn->client.lsa.u.sin.sin_addr);
+						goto copy_partial2dst;
+					}
+					s += 4;
+					continue;
+
+				case 'U':
+				case 'Q':
+					// filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
+					if (len > 0 && conn && conn->request_info.uri)
+					{
+						u = conn->request_info.uri;
+						goto copy_partial2dst;
+					}
+					continue;
+
+copy_partial2dst:
+					if (len > 0 && u)
+					{
+						int break_on_qmark = (s[2] == 'U');
+
+						if (s[2] == 'Q')
+						{
+							const char *q = strchr(u, '?');
+							if (!q)
+							{
+								// empty query section: replace as empty string.
+								q = "";
+							}
+							u = q;
+						}
+
+						// anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
+						for ( ; d - fnbuf < MAX_PATH - 1; u++)
+						{
+							switch (*u)
+							{
+							case 0:
+								break;
+
+							case '%':
+								*d++ = '%';
+								*d++ = '%';
+								continue;
+
+							case ':':
+							case '/':
+							case '.':
+								// don't allow output sequences with multiple dots following one another:
+								if (d == fnbuf || d[-1] != '.')
+								{
+									*d++ = '.';
+								}
+								continue;
+
+							case '?':
+								if (break_on_qmark)
+								{
+									// done!
+									break;
+								}
+								// (fallthrough)
+							default:
+								// be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
+								if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u))
+								{
+									*d++ = *u;
+									continue;
+								}
+								*d++ = '_';
+								continue;
+							}
+							break;
+						}
+					}
+					s += 4;
+					continue;
+
+				default:
+					// illegal format code: keep as is, but add another % to make a literal code:
+					if (len >= 2)
+					{
+						*d++ = '%';
+						*d++ = '%';
+					}
+					s++;
+					continue;
+				}
+			}
+			// keep format code for strftime to struggle with: copy as is for now:
+			//   (fallthrough)
+		default:
+			*d++ = *s++;
+			continue;
+		}
+		break;
+	}
+	*d = 0;
+
+	tp = localtime(&timestamp);
+	if (0 == strftime(dst, dst_maxsize, fnbuf, tp))
+	{
+		// error transforming the template to a filename: fall back to the literal thing.
+		strncpy(dst, fnbuf, dst_maxsize);
+		dst[dst_maxsize] = 0;
+	}
+	return dst;
+}
+
+const char *mg_get_default_logfile_path(struct mg_connection *conn)
+{
+	// Once determined, we stick with the given logfile for the current connection.
+	//
+	// We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
+	if (!conn->logfile_path[0])
+	{
+		return mg_get_logfile_path(conn->logfile_path, ARRAY_SIZE(conn->logfile_path), NULL, conn, conn->birth_time);
+	}
+	return conn->logfile_path;
+}
+
+// write arbitrary formatted string to the specified logfile
+int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg)
+{
+  int rv = 0;
+
+  logfile = (logfile == NULL ? mg_get_default_logfile_path(conn) : logfile);
+  severity = (severity ? severity : "error");
+  conn->request_info.log_severity = severity;
+  conn->request_info.log_dstfile = logfile;
+  conn->request_info.log_timestamp = timestamp;
+  conn->request_info.log_message = msg;
   // Do not lock when getting the callback value, here and below.
   // I suppose this is fine, since function cannot disappear in the
   // same way string option can.
-  conn->request_info.log_message = msg;
-  if (call_user(conn, MG_EVENT_LOG) == NULL) {
-    fp = conn->ctx->config[ERROR_LOG_FILE] == NULL ? NULL :
-      mg_fopen(conn->ctx->config[ERROR_LOG_FILE], "a+");
+  if (call_user(conn, MG_EVENT_LOG) == NULL)
+  {
+    FILE *fp = mg_fopen(logfile, "a+");
 
-    if (fp != NULL) {
+    if (fp != NULL)
+	{
       flockfile(fp);
-      timestamp = time(NULL);
 
-      (void) fprintf(fp,
-          "[%010lu] [error] [client %s] ",
-          (unsigned long) timestamp,
-          inet_ntoa(conn->client.rsa.u.sin.sin_addr));
+	  if (timestamp != 0)
+	  {
+		  char tbuf[40];
 
-      if (conn->request_info.request_method != NULL) {
-        (void) fprintf(fp, "%s %s: ",
-            conn->request_info.request_method,
-            conn->request_info.uri);
+		  rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
+	  }
+      rv += fprintf(fp,
+          "[%s] ",
+		  severity);
+	  if (conn != NULL && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
+	  {
+		  rv += fprintf(fp,
+			  "[client %s] ",
+			  inet_ntoa(conn->client.rsa.u.sin.sin_addr));
+	  }
+
+      if (conn != NULL && conn->request_info.request_method != NULL && conn->request_info.uri != NULL)
+	  {
+			rv += fprintf(fp, "%s %s: ",
+				conn->request_info.request_method,
+				conn->request_info.uri);
       }
 
-      (void) fprintf(fp, "%s", msg);
-      fputc('\n', fp);
+      rv += fprintf(fp, "%s\n", msg);
+	  fflush(fp);
       funlockfile(fp);
       if (fp != stderr) {
         fclose(fp);
       }
     }
   }
+  conn->request_info.log_severity = NULL;
+  conn->request_info.log_dstfile = NULL;
+  conn->request_info.log_timestamp = 0;
   conn->request_info.log_message = NULL;
+
+  return rv;
+}
+
+// Print log message to the opened error log stream.
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  mg_vwrite2log(conn, logfile, timestamp, severity, fmt, ap);
+  va_end(ap);
+}
+
+// Print log message to the opened error log stream.
+void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args)
+{
+  char buf[MG_MAX(BUFSIZ, 2048)];
+
+  (void)vsnprintf(buf, sizeof(buf), fmt, args);
+
+  mg_write2log_raw(conn, logfile, timestamp, severity, buf);
+}
+
+// Print formatted error message to the opened error log stream.
+void mg_cry_raw(struct mg_connection *conn, const char *msg)
+{
+	time_t timestamp = time(NULL);
+	const char *logfile = mg_get_default_logfile_path(conn);
+
+	(void)mg_write2log_raw(conn, logfile, timestamp, NULL, msg);
 }
 
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...) {
-  char buf[MG_MAX(BUFSIZ, 2048)];
   va_list ap;
 
   va_start(ap, fmt);
-  (void) vsnprintf(buf, sizeof(buf), fmt, ap);
+  mg_vcry(conn, fmt, ap);
   va_end(ap);
+}
+
+// Print error message to the opened error log stream.
+void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args) {
+  char buf[MG_MAX(BUFSIZ, 2048)];
+
+  (void) vsnprintf(buf, sizeof(buf), fmt, args);
 
   mg_cry_raw(conn, buf);
 }
+
 
 // Return OpenSSL error message
 static const char *ssl_error(void) {
@@ -4052,6 +4311,8 @@ static void process_new_connection(struct mg_connection *conn) {
       cl = get_header(ri, "Content-Length");
       conn->content_len = cl == NULL ? -1 : strtoll(cl, NULL, 10);
       conn->birth_time = time(NULL);
+  	  // and clear the cached logfile path so it is recalculated on the next log operation:
+	  conn->logfile_path[0] = 0;
       if (conn->client.is_proxy) {
         handle_proxy_request(conn);
       } else {
@@ -4111,6 +4372,8 @@ static void worker_thread(struct mg_context *ctx) {
   while (ctx->stop_flag == 0 && consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
+	// and clear the cached logfile path so it is recalculated on the next log operation:
+	conn->logfile_path[0] = 0;
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
