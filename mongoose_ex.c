@@ -80,11 +80,13 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 
     fake_conn.ctx = ctx;
     conn = mg_connect(&fake_conn, host, port, use_ssl);
-    if (conn != NULL)
+#if 0
+	if (conn != NULL)
     {
 		conn->ctx = ctx;
 		conn->birth_time = time(NULL);
 	}
+#endif
 	return conn;
 }
 

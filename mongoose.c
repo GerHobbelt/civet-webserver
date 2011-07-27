@@ -1785,8 +1785,16 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
       mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
       closesocket(sock);
     } else {
+      newconn->birth_time = time(NULL);
+      newconn->ctx = conn->ctx;
       newconn->client.sock = sock;
       newconn->client.rsa.u.sin = sin;
+	  newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
+	  if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
+	  {
+        mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+	    newconn->client.lsa.len = 0;
+	  }
       if (use_ssl) {
         sslize(newconn, SSL_connect);
       }
