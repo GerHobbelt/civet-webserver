@@ -48,11 +48,11 @@ struct socket *mg_get_client_socket(struct mg_connection *conn)
 int mg_set_nodelay_mode(struct socket *sock, int on)
 {
 #if !defined(SOL_TCP) || (defined(_WIN32) && !defined(__SYMBIAN32__))
-  DWORD v_on = !!on;
-  return setsockopt(sock->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
+	DWORD v_on = !!on;
+	return setsockopt(sock->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
 #else
-  int v_on = !!on;
-  return setsockopt(sock->sock, SOL_TCP, TCP_NODELAY, &v_on, sizeof (v_on));
+	int v_on = !!on;
+	return setsockopt(sock->sock, SOL_TCP, TCP_NODELAY, &v_on, sizeof (v_on));
 #endif
 }
 
@@ -65,7 +65,7 @@ int mg_get_stop_flag(struct mg_context *ctx)
 
 void mg_FD_SET(struct socket *socket, struct fd_set *set, int *max_fd)
 {
-    add_to_set(socket->sock, set, max_fd);
+	add_to_set(socket->sock, set, max_fd);
 }
 
 int mg_FD_ISSET(struct socket *socket, struct fd_set *set)
@@ -75,14 +75,14 @@ int mg_FD_ISSET(struct socket *socket, struct fd_set *set)
 
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl)
 {
-    struct mg_connection fake_conn = {0};
-    struct mg_connection *conn;
+	struct mg_connection fake_conn = {0};
+	struct mg_connection *conn;
 
-    fake_conn.ctx = ctx;
-    conn = mg_connect(&fake_conn, host, port, use_ssl);
+	fake_conn.ctx = ctx;
+	conn = mg_connect(&fake_conn, host, port, use_ssl);
 #if 0
 	if (conn != NULL)
-    {
+	{
 		conn->ctx = ctx;
 		conn->birth_time = time(NULL);
 	}
@@ -92,7 +92,7 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 {
-  return pull(NULL, conn->client.sock, conn->ssl, (char *)buf, (int)max_bufsize);
+	return pull(NULL, conn->client.sock, conn->ssl, (char *)buf, (int)max_bufsize);
 }
 
 void mg_close_connection(struct mg_connection *conn)
@@ -109,14 +109,14 @@ void mg_close_connection(struct mg_connection *conn)
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...)
 {
-  char buf[MG_MAX(BUFSIZ, 2048)];
-  va_list ap;
+	char buf[MG_MAX(BUFSIZ, 2048)];
+	va_list ap;
 
-  va_start(ap, fmt);
-  (void) vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
+	va_start(ap, fmt);
+	(void) vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
 
-  mg_cry_raw(fc(ctx), buf);
+	mg_cry_raw(fc(ctx), buf);
 }
 
 
@@ -143,17 +143,17 @@ int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
 	int rv = start_thread(ctx, func, param);
 	if (rv == 0)
 	{
-      // count this thread too so the master_thread will wait for this one to end as well when we stop.
-      ctx->num_threads++;
+		// count this thread too so the master_thread will wait for this one to end as well when we stop.
+		ctx->num_threads++;
 	}
 	return rv;
 }
 
 void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
 {
-  (void) pthread_mutex_lock(&ctx->mutex);
-  ctx->num_threads--;
-  (void) pthread_cond_signal(&ctx->cond);
-  assert(ctx->num_threads >= 0);
-  (void) pthread_mutex_unlock(&ctx->mutex);
+	(void) pthread_mutex_lock(&ctx->mutex);
+	ctx->num_threads--;
+	(void) pthread_cond_signal(&ctx->cond);
+	assert(ctx->num_threads >= 0);
+	(void) pthread_mutex_unlock(&ctx->mutex);
 }
