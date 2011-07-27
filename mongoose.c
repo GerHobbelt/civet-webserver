@@ -506,7 +506,7 @@ static void *call_user_over_ctx(struct mg_context *ctx, SSL_CTX *ssl_ctx, enum m
     void *rv;
     SSL_CTX *old_ssl = ctx->ssl_ctx;
     ctx->ssl_ctx = ssl_ctx;
-	  conn.ctx = ctx;
+    conn.ctx = ctx;
     rv = ctx->user_functions.user_callback(event, &conn, &conn.request_info);
     ctx->ssl_ctx = old_ssl;
     return rv;
@@ -597,201 +597,201 @@ const char *mg_strerror(int errcode)
 
 const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp)
 {
-	char fnbuf[PATH_MAX+1];
-	char *d;
-	const char *s;
-	struct tm *tp;
+    char fnbuf[PATH_MAX+1];
+    char *d;
+    const char *s;
+    struct tm *tp;
 
-	if (!logfile_template)
-	{
-		logfile_template = conn->ctx->config[ERROR_LOG_FILE];
-	}
-	if (!dst || dst_maxsize < 1)
-	{
-		return NULL;
-	}
-	if (!logfile_template || !*logfile_template || dst_maxsize <= 1)
-	{
-		dst[0] = 0;
-		return NULL;
-	}
+    if (!logfile_template)
+    {
+        logfile_template = conn->ctx->config[ERROR_LOG_FILE];
+    }
+    if (!dst || dst_maxsize < 1)
+    {
+        return NULL;
+    }
+    if (!logfile_template || !*logfile_template || dst_maxsize <= 1)
+    {
+        dst[0] = 0;
+        return NULL;
+    }
 
-	// replace %[P] with client port number
-	//         %[C] with client IP (sanitized for filesystem paths)
-	//         %[p] with server port number
-	//         %[s] with server IP (sanitized for filesystem paths)
-	//         %[U] with the request URI path section (sanitized for filesystem paths)
-	//         %[Q] with the request URI query section (sanitized for filesystem paths)
-	//
-	//         any other % parameter is processed by strftime.
+    // replace %[P] with client port number
+    //         %[C] with client IP (sanitized for filesystem paths)
+    //         %[p] with server port number
+    //         %[s] with server IP (sanitized for filesystem paths)
+    //         %[U] with the request URI path section (sanitized for filesystem paths)
+    //         %[Q] with the request URI query section (sanitized for filesystem paths)
+    //
+    //         any other % parameter is processed by strftime.
 
-	d = fnbuf;
-	d[MAX_PATH] = 0;  // sentinel for odd moments with strncpy et al
-	s = logfile_template;
-	while (d - fnbuf < MAX_PATH)
-	{
-		switch (*s)
-		{
-		case 0:
-			break;
+    d = fnbuf;
+    d[MAX_PATH] = 0;  // sentinel for odd moments with strncpy et al
+    s = logfile_template;
+    while (d - fnbuf < MAX_PATH)
+    {
+        switch (*s)
+        {
+        case 0:
+            break;
 
-		case '%':
-			if (s[1] == '[' && s[2] && s[3] == ']')
-			{
-				size_t len = MAX_PATH - (d - fnbuf);
-				const char *u;
+        case '%':
+            if (s[1] == '[' && s[2] && s[3] == ']')
+            {
+                size_t len = MAX_PATH - (d - fnbuf);
+                const char *u;
 
-				*d = 0;
-				switch (s[2])
-				{
-				case 'P':
-					if (len > 0 && conn && conn->client.rsa.u.sin.sin_port != 0)
-					{
-						(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.rsa.u.sin.sin_port));
-						d += strlen(d);
-					}
-					s += 4;
-					continue;
+                *d = 0;
+                switch (s[2])
+                {
+                case 'P':
+                    if (len > 0 && conn && conn->client.rsa.u.sin.sin_port != 0)
+                    {
+                        (void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.rsa.u.sin.sin_port));
+                        d += strlen(d);
+                    }
+                    s += 4;
+                    continue;
 
-				case 'C':
-					if (len > 0 && conn && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
-					{
-						u = inet_ntoa(conn->client.rsa.u.sin.sin_addr);
-						goto copy_partial2dst;
-					}
-					continue;
+                case 'C':
+                    if (len > 0 && conn && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
+                    {
+                        u = inet_ntoa(conn->client.rsa.u.sin.sin_addr);
+                        goto copy_partial2dst;
+                    }
+                    continue;
 
-				case 'p':
-					if (len > 0 && conn && conn->client.lsa.u.sin.sin_port != 0)
-					{
-						(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.lsa.u.sin.sin_port));
-						d += strlen(d);
-					}
-					s += 4;
-					continue;
+                case 'p':
+                    if (len > 0 && conn && conn->client.lsa.u.sin.sin_port != 0)
+                    {
+                        (void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.lsa.u.sin.sin_port));
+                        d += strlen(d);
+                    }
+                    s += 4;
+                    continue;
 
-				case 's':
-					if (len > 0 && conn && conn->client.lsa.u.sin.sin_addr.s_addr != 0)
-					{
-						u = inet_ntoa(conn->client.lsa.u.sin.sin_addr);
-						goto copy_partial2dst;
-					}
-					s += 4;
-					continue;
+                case 's':
+                    if (len > 0 && conn && conn->client.lsa.u.sin.sin_addr.s_addr != 0)
+                    {
+                        u = inet_ntoa(conn->client.lsa.u.sin.sin_addr);
+                        goto copy_partial2dst;
+                    }
+                    s += 4;
+                    continue;
 
-				case 'U':
-				case 'Q':
-					// filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
-					if (len > 0 && conn && conn->request_info.uri)
-					{
-						u = conn->request_info.uri;
-						goto copy_partial2dst;
-					}
-					continue;
+                case 'U':
+                case 'Q':
+                    // filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
+                    if (len > 0 && conn && conn->request_info.uri)
+                    {
+                        u = conn->request_info.uri;
+                        goto copy_partial2dst;
+                    }
+                    continue;
 
 copy_partial2dst:
-					if (len > 0 && u)
-					{
-						int break_on_qmark = (s[2] == 'U');
+                    if (len > 0 && u)
+                    {
+                        int break_on_qmark = (s[2] == 'U');
 
-						if (s[2] == 'Q')
-						{
-							const char *q = strchr(u, '?');
-							if (!q)
-							{
-								// empty query section: replace as empty string.
-								q = "";
-							}
-							u = q;
-						}
+                        if (s[2] == 'Q')
+                        {
+                            const char *q = strchr(u, '?');
+                            if (!q)
+                            {
+                                // empty query section: replace as empty string.
+                                q = "";
+                            }
+                            u = q;
+                        }
 
-						// anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
-						for ( ; d - fnbuf < MAX_PATH - 1; u++)
-						{
-							switch (*u)
-							{
-							case 0:
-								break;
+                        // anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
+                        for ( ; d - fnbuf < MAX_PATH - 1; u++)
+                        {
+                            switch (*u)
+                            {
+                            case 0:
+                                break;
 
-							case '%':
-								*d++ = '%';
-								*d++ = '%';
-								continue;
+                            case '%':
+                                *d++ = '%';
+                                *d++ = '%';
+                                continue;
 
-							case ':':
-							case '/':
-							case '.':
-								// don't allow output sequences with multiple dots following one another:
-								if (d == fnbuf || d[-1] != '.')
-								{
-									*d++ = '.';
-								}
-								continue;
+                            case ':':
+                            case '/':
+                            case '.':
+                                // don't allow output sequences with multiple dots following one another:
+                                if (d == fnbuf || d[-1] != '.')
+                                {
+                                    *d++ = '.';
+                                }
+                                continue;
 
-							case '?':
-								if (break_on_qmark)
-								{
-									// done!
-									break;
-								}
-								// (fallthrough)
-							default:
-								// be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
-								if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u))
-								{
-									*d++ = *u;
-									continue;
-								}
-								*d++ = '_';
-								continue;
-							}
-							break;
-						}
-					}
-					s += 4;
-					continue;
+                            case '?':
+                                if (break_on_qmark)
+                                {
+                                    // done!
+                                    break;
+                                }
+                                // (fallthrough)
+                            default:
+                                // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
+                                if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u))
+                                {
+                                    *d++ = *u;
+                                    continue;
+                                }
+                                *d++ = '_';
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    s += 4;
+                    continue;
 
-				default:
-					// illegal format code: keep as is, but add another % to make a literal code:
-					if (len >= 2)
-					{
-						*d++ = '%';
-						*d++ = '%';
-					}
-					s++;
-					continue;
-				}
-			}
-			// keep format code for strftime to struggle with: copy as is for now:
-			//   (fallthrough)
-		default:
-			*d++ = *s++;
-			continue;
-		}
-		break;
-	}
-	*d = 0;
+                default:
+                    // illegal format code: keep as is, but add another % to make a literal code:
+                    if (len >= 2)
+                    {
+                        *d++ = '%';
+                        *d++ = '%';
+                    }
+                    s++;
+                    continue;
+                }
+            }
+            // keep format code for strftime to struggle with: copy as is for now:
+            //   (fallthrough)
+        default:
+            *d++ = *s++;
+            continue;
+        }
+        break;
+    }
+    *d = 0;
 
-	tp = localtime(&timestamp);
-	if (0 == strftime(dst, dst_maxsize, fnbuf, tp))
-	{
-		// error transforming the template to a filename: fall back to the literal thing.
-		strncpy(dst, fnbuf, dst_maxsize);
-		dst[dst_maxsize] = 0;
-	}
-	return dst;
+    tp = localtime(&timestamp);
+    if (0 == strftime(dst, dst_maxsize, fnbuf, tp))
+    {
+        // error transforming the template to a filename: fall back to the literal thing.
+        strncpy(dst, fnbuf, dst_maxsize);
+        dst[dst_maxsize] = 0;
+    }
+    return dst;
 }
 
 const char *mg_get_default_logfile_path(struct mg_connection *conn)
 {
-	// Once determined, we stick with the given logfile for the current connection.
-	//
-	// We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
-	if (!conn->logfile_path[0])
-	{
-		return mg_get_logfile_path(conn->logfile_path, ARRAY_SIZE(conn->logfile_path), NULL, conn, conn->birth_time);
-	}
-	return conn->logfile_path;
+    // Once determined, we stick with the given logfile for the current connection.
+    //
+    // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
+    if (!conn->logfile_path[0])
+    {
+        return mg_get_logfile_path(conn->logfile_path, ARRAY_SIZE(conn->logfile_path), NULL, conn, conn->birth_time);
+    }
+    return conn->logfile_path;
 }
 
 // write arbitrary formatted string to the specified logfile
@@ -813,34 +813,34 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
     FILE *fp = mg_fopen(logfile, "a+");
 
     if (fp != NULL)
-	{
+    {
       flockfile(fp);
 
-	  if (timestamp != 0)
-	  {
-		  char tbuf[40];
+      if (timestamp != 0)
+      {
+          char tbuf[40];
 
-		  rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
-	  }
+          rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
+      }
       rv += fprintf(fp,
           "[%s] ",
-		  severity);
-	  if (conn != NULL && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
-	  {
-		  rv += fprintf(fp,
-			  "[client %s] ",
-			  inet_ntoa(conn->client.rsa.u.sin.sin_addr));
-	  }
+          severity);
+      if (conn != NULL && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
+      {
+          rv += fprintf(fp,
+              "[client %s] ",
+              inet_ntoa(conn->client.rsa.u.sin.sin_addr));
+      }
 
       if (conn != NULL && conn->request_info.request_method != NULL && conn->request_info.uri != NULL)
-	  {
-			rv += fprintf(fp, "%s %s: ",
-				conn->request_info.request_method,
-				conn->request_info.uri);
+      {
+            rv += fprintf(fp, "%s %s: ",
+                conn->request_info.request_method,
+                conn->request_info.uri);
       }
 
       rv += fprintf(fp, "%s\n", msg);
-	  fflush(fp);
+      fflush(fp);
       funlockfile(fp);
       if (fp != stderr) {
         fclose(fp);
@@ -879,10 +879,10 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 // Print formatted error message to the opened error log stream.
 void mg_cry_raw(struct mg_connection *conn, const char *msg)
 {
-	time_t timestamp = time(NULL);
-	const char *logfile = mg_get_default_logfile_path(conn);
+    time_t timestamp = time(NULL);
+    const char *logfile = mg_get_default_logfile_path(conn);
 
-	(void)mg_write2log_raw(conn, logfile, timestamp, NULL, msg);
+    (void)mg_write2log_raw(conn, logfile, timestamp, NULL, msg);
 }
 
 // Print error message to the opened error log stream.
@@ -1246,8 +1246,8 @@ pthread_t pthread_self(void) {
 }
 
 typedef struct {
-	SRWLOCK lock;
-	unsigned rw: 1;
+    SRWLOCK lock;
+    unsigned rw: 1;
 } pthread_rwlock_t;
 
 typedef void pthread_rwlockattr_t;
@@ -1260,30 +1260,30 @@ int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *at
 #define PTHREAD_RWLOCK_INITIALIZER			{ RTL_SRWLOCK_INIT }
 
 int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
-	// empty
-	return 0;
+    // empty
+    return 0;
 }
 
 int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
-	AcquireSRWLockShared(&rwlock->lock);
-	rwlock->rw = 0;
-	return 0;
+    AcquireSRWLockShared(&rwlock->lock);
+    rwlock->rw = 0;
+    return 0;
 }
 
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
-	AcquireSRWLockExclusive(&rwlock->lock);
-	rwlock->rw = 1;
-	return 0;
+    AcquireSRWLockExclusive(&rwlock->lock);
+    rwlock->rw = 1;
+    return 0;
 }
 
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
-	if (rwlock->rw) {
-		ReleaseSRWLockExclusive(&rwlock->lock);
-	}
-	else {
-		ReleaseSRWLockShared(&rwlock->lock);
-	}
-	return 0;
+    if (rwlock->rw) {
+        ReleaseSRWLockExclusive(&rwlock->lock);
+    }
+    else {
+        ReleaseSRWLockShared(&rwlock->lock);
+    }
+    return 0;
 }
 
 #endif
@@ -1419,10 +1419,10 @@ FILE *mg_fopen(const char *path, const char *mode) {
   wchar_t wbuf[PATH_MAX], wmode[20];
 
   if (!path || !path[0] || !mode || !mode[0]) {
-	  return NULL;
+      return NULL;
   }
   if (0 == strcmp("-", path)) {
-	  return stderr;
+      return stderr;
   }
 
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
@@ -1431,35 +1431,35 @@ FILE *mg_fopen(const char *path, const char *mode) {
   // resursively create the included path when the file is to be created / appended to:
   if (wmode[wcscspn(wmode, L"aw")])
   {
-	  size_t i;
+      size_t i;
 
-	  // skip UNC path starters like '\\?\'
-	  i = wcsspn(wbuf, L"\\/:?");
-	  // and skip drive specs like 'C:'
-	  if (i == 0 && wbuf[i] && wbuf[i+1] == L':')
-	  {
-		  i = 2;
-		  i += wcsspn(wbuf + i, L"\\/");
-	  }
-	  i += wcscspn(wbuf + i, L"\\/");
-	  while (wbuf[i])
-	  {
-		  int rv;
+      // skip UNC path starters like '\\?\'
+      i = wcsspn(wbuf, L"\\/:?");
+      // and skip drive specs like 'C:'
+      if (i == 0 && wbuf[i] && wbuf[i+1] == L':')
+      {
+          i = 2;
+          i += wcsspn(wbuf + i, L"\\/");
+      }
+      i += wcscspn(wbuf + i, L"\\/");
+      while (wbuf[i])
+      {
+          int rv;
 
-		  // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
-		  if (wbuf[i - 1] == L'.')
-		  {
-			  wbuf[i++] = L'/';
-			  i += wcscspn(wbuf + i, L"\\/");
-			  continue;
-		  }
-		  wbuf[i] = 0;
-		  rv = _wmkdir(wbuf);
-		  wbuf[i++] = L'/';
-		  if (0 != rv && errno != EEXIST)
-			  break;
-		  i += wcscspn(wbuf + i, L"\\/");
-	  }
+          // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
+          if (wbuf[i - 1] == L'.')
+          {
+              wbuf[i++] = L'/';
+              i += wcscspn(wbuf + i, L"\\/");
+              continue;
+          }
+          wbuf[i] = 0;
+          rv = _wmkdir(wbuf);
+          wbuf[i++] = L'/';
+          if (0 != rv && errno != EEXIST)
+              break;
+          i += wcscspn(wbuf + i, L"\\/");
+      }
   }
   return _wfopen(wbuf, wmode);
 }
@@ -1678,51 +1678,51 @@ static int set_non_blocking_mode(SOCKET sock) {
 
 FILE *mg_fopen(const char *path, const char *mode) {
   if (!path || !path[0] || !mode || !mode[0]) {
-	  return NULL;
+      return NULL;
   }
   if (0 == strcmp("-", path)) {
-	  return stderr;
+      return stderr;
   }
 
   // resursively create the included path when the file is to be created / appended to:
   if (mode[strcspn(mode, "aw")])
   {
-	  size_t i;
-	  char *wbuf = strdup(path);
+      size_t i;
+      char *wbuf = strdup(path);
 
-	  // skip UNC path starters like '\\?\'
-	  i = strspn(wbuf, "\\/:?");
-	  // and skip drive specs like 'C:'
-	  if (i == 0 && wbuf[i] && wbuf[i+1] == ':')
-	  {
-		  i = 2;
-		  i += strspn(wbuf + i, "\\/");
-	  }
-	  i += strcspn(wbuf + i, "\\/");
-	  while (wbuf[i])
-	  {
-		  int rv;
+      // skip UNC path starters like '\\?\'
+      i = strspn(wbuf, "\\/:?");
+      // and skip drive specs like 'C:'
+      if (i == 0 && wbuf[i] && wbuf[i+1] == ':')
+      {
+          i = 2;
+          i += strspn(wbuf + i, "\\/");
+      }
+      i += strcspn(wbuf + i, "\\/");
+      while (wbuf[i])
+      {
+          int rv;
 
-		  // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
-		  if (wbuf[i - 1] == '.')
-		  {
-			  wbuf[i++] = '/';
-			  i += strcspn(wbuf + i, "\\/");
-			  continue;
-		  }
-		  wbuf[i] = 0;
+          // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
+          if (wbuf[i - 1] == '.')
+          {
+              wbuf[i++] = '/';
+              i += strcspn(wbuf + i, "\\/");
+              continue;
+          }
+          wbuf[i] = 0;
 
 #ifndef S_IRWXU
 #define S_IRWXU   0755
 #endif
 
-		  rv = mkdir(wbuf, S_IRWXU);
-		  wbuf[i++] = '/';
-		  if (0 != rv && errno != EEXIST)
-			  break;
-		  i += strcspn(wbuf + i, "\\/");
-	  }
-	  free(wbuf);
+          rv = mkdir(wbuf, S_IRWXU);
+          wbuf[i++] = '/';
+          if (0 != rv && errno != EEXIST)
+              break;
+          i += strcspn(wbuf + i, "\\/");
+      }
+      free(wbuf);
   }
   return fopen(path, mode);
 }
@@ -2124,12 +2124,12 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
       newconn->ctx = conn->ctx;
       newconn->client.sock = sock;
       newconn->client.rsa.u.sin = sin;
-	  newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
-	  if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
-	  {
+      newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
+      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
+      {
         mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-	    newconn->client.lsa.len = 0;
-	  }
+        newconn->client.lsa.len = 0;
+      }
       if (use_ssl) {
         sslize(newconn, SSL_connect);
       }
@@ -4387,8 +4387,8 @@ static void process_new_connection(struct mg_connection *conn) {
       cl = get_header(ri, "Content-Length");
       conn->content_len = cl == NULL ? -1 : strtoll(cl, NULL, 10);
       conn->birth_time = time(NULL);
-  	  // and clear the cached logfile path so it is recalculated on the next log operation:
-	  conn->logfile_path[0] = 0;
+      // and clear the cached logfile path so it is recalculated on the next log operation:
+      conn->logfile_path[0] = 0;
       if (conn->client.is_proxy) {
         handle_proxy_request(conn);
       } else {
@@ -4448,8 +4448,8 @@ static void worker_thread(struct mg_context *ctx) {
   while (ctx->stop_flag == 0 && consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
-	// and clear the cached logfile path so it is recalculated on the next log operation:
-	conn->logfile_path[0] = 0;
+    // and clear the cached logfile path so it is recalculated on the next log operation:
+    conn->logfile_path[0] = 0;
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
@@ -4661,8 +4661,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
       free_context(ctx);
       return NULL;
     }
-	  assert(i < (int)ARRAY_SIZE(ctx->config));
-	  assert(i >= 0);
+    assert(i < (int)ARRAY_SIZE(ctx->config));
+    assert(i >= 0);
     ctx->config[i] = mg_strdup(value);
     DEBUG_TRACE(("[%s] -> [%s]", name, value));
   }
