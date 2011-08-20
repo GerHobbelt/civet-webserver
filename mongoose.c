@@ -2393,30 +2393,25 @@ static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
   return query_string[1] == 'd' ? -cmp_result : cmp_result;
 }
 
-static void handle_directory_request(struct mg_connection *conn,
-                                     const char *dir) {
+static int read_directory_entries(struct mg_connection *conn,
+                                  const char* dir,
+                                  int* pnum_entries,
+                                  struct de **pentries) {
+
   struct dirent *dp;
   DIR *dirp;
-  struct de *entries = NULL;
+  int num_entries = 0, arr_size = 128;
   char path[PATH_MAX];
-  int i, sort_direction, num_entries = 0, arr_size = 128;
+
+  struct de *entries;
+
+  entries = *pentries;
 
   if ((dirp = opendir(dir)) == NULL) {
-    send_http_error(conn, 500, "Cannot open directory",
-        "Error: opendir(%s): %s", dir, strerror(ERRNO));
-    return;
+    return 0;
   }
 
-  (void) mg_printf(conn, "%s",
-      "HTTP/1.1 200 OK\r\n"
-      "Connection: close\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n\r\n");
-
-  sort_direction = conn->request_info.query_string != NULL &&
-    conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
-
   while ((dp = readdir(dirp)) != NULL) {
-
     // Do not show current dir and passwords file
     if (!strcmp(dp->d_name, ".") ||
         !strcmp(dp->d_name, "..") ||
@@ -2430,10 +2425,9 @@ static void handle_directory_request(struct mg_connection *conn,
     }
 
     if (entries == NULL) {
+      *pentries = entries;
       closedir(dirp);
-      send_http_error(conn, 500, "Cannot open directory",
-          "%s", "Error: cannot allocate memory");
-      return;
+      return 0;
     }
 
     mg_snprintf(conn, path, sizeof(path), "%s%c%s", dir, DIRSEP, dp->d_name);
@@ -2452,6 +2446,33 @@ static void handle_directory_request(struct mg_connection *conn,
     num_entries++;
   }
   (void) closedir(dirp);
+
+  *pnum_entries = num_entries;
+  *pentries = entries;
+
+  return 1;
+}
+
+static void handle_directory_request(struct mg_connection *conn,
+                                     const char *dir) {
+
+  struct de *entries = NULL;
+
+  int i, sort_direction, num_entries = 0;
+
+  if (!read_directory_entries(conn, dir, &num_entries, &entries)) {
+    send_http_error(conn, 500, "Cannot list directory",
+        "Error: %s: %s", dir, strerror(ERRNO));
+    return;
+  }
+
+  (void) mg_printf(conn, "%s",
+      "HTTP/1.1 200 OK\r\n"
+      "Connection: close\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n\r\n");
+
+  sort_direction = conn->request_info.query_string != NULL &&
+    conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
   conn->num_bytes_sent += mg_printf(conn,
       "<html><head><title>Index of %s</title>"
