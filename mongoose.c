@@ -3292,6 +3292,28 @@ static void print_props(struct mg_connection *conn, const char* uri, struct mgst
 }
 
 static void handle_propfind(struct mg_connection *conn, const char* path, struct mgstat* st) {
+  const char* depth_header;
+
+  struct de *entries = NULL;
+  int i, num_entries = 0;
+
+  // Treat a missing depth header as "infinity", according to the spec
+  depth_header = get_header(&conn->request_info, "Depth");
+  if (depth_header == NULL) {
+    depth_header = "infinity";
+  }
+
+  // Disable directory listing if the Depth header is "0". We treat anything
+  // else (e.g. "infinity") as "1".
+  if (st->is_directory && !mg_strcasecmp(conn->ctx->config[ENABLE_DIRECTORY_LISTING], "yes") &&
+      strcmp(depth_header, "0")) {
+    if (!read_directory_entries(conn, path, &num_entries, &entries)) {
+      send_http_error(conn, 500, "Cannot list directory",
+          "Error: %s: %s", path, strerror(ERRNO));
+      return;
+    }
+  }
+
   conn->request_info.status_code = 200;
   (void) mg_printf(conn,
        "HTTP/1.1 207 Multi-Status\r\n"
@@ -3302,7 +3324,18 @@ static void handle_propfind(struct mg_connection *conn, const char* path, struct
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
       "<d:multistatus xmlns:d='DAV:'>");
 
+  // Print properties for the requested resource itself
   print_props(conn, conn->request_info.uri, st);
+
+  for (i = 0; i < num_entries; i++) {
+    char href[PATH_MAX];
+    mg_snprintf(conn, href, sizeof(href), "%s%s", conn->request_info.uri, entries[i].file_name);
+
+    print_props(conn, href, &entries[i].st);
+
+    free(entries[i].file_name);
+  }
+  free(entries);
 
   conn->num_bytes_sent += mg_printf(conn, "</d:multistatus>");
 }
