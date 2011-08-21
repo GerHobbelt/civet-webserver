@@ -223,10 +223,33 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn,
   // Send the systray icon as favicon
   if (event == MG_NEW_REQUEST) {
     if (!strcmp("/favicon.ico", request_info->uri)) {
+      const char *p;
+      const char *root;
+      char path[PATH_MAX];
+      struct stat st;
+
       HMODULE module;
       HRSRC icon;
       DWORD len;
       void *data;
+
+      root = mg_get_option(ctx, "document_root");
+
+      if ((p = strchr(root, ',')) != NULL && (size_t)(p - root + 1) < sizeof(path)) {
+        memcpy(path, root, p - root);
+        path[p - root] = '\0';
+      }
+      else {
+        strncpy(path, root, sizeof(path));
+        path[sizeof(path) - 1] = '\0';
+      }
+
+      strncat(path, request_info->uri, sizeof(path) - 1);
+
+      // An existing favicon takes precedence
+      if (stat(path, &st) == 0) {
+        return NULL;
+      }
 
       module = GetModuleHandle(NULL);
 
@@ -237,7 +260,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn,
       (void) mg_printf(conn,
           "HTTP/1.1 200 OK\r\n"
           "Content-Type: image/x-icon\r\n"
-          "Cache-Control: no-cache\r\n"
           "Content-Length: %d\r\n"
           "Connection: close\r\n\r\n", len);
 
