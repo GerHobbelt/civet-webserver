@@ -39,6 +39,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <winsvc.h>
+#include "resource.h"
 #define PATH_MAX MAX_PATH
 #define S_ISDIR(x) ((x) & _S_IFDIR)
 #define DIRSEP '\\'
@@ -290,7 +291,6 @@ static void WINAPI ServiceMain(void) {
 #define ID_SEPARATOR 103
 #define ID_INSTALL_SERVICE 104
 #define ID_REMOVE_SERVICE 105
-#define ID_ICON 200
 static NOTIFYICONDATA TrayIcon;
 
 static void edit_config_file(void) {
@@ -458,7 +458,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.cbSize = sizeof(TrayIcon);
   TrayIcon.uID = ID_TRAYICON;
   TrayIcon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-  TrayIcon.hIcon = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(ID_ICON),
+  TrayIcon.hIcon = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON),
                              IMAGE_ICON, 16, 16, 0);
   TrayIcon.hWnd = hWnd;
   snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", server_name);
