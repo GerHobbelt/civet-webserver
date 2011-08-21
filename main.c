@@ -216,6 +216,40 @@ static void init_server_name(void) {
            mg_version());
 }
 
+static void *event_callback(enum mg_event event, struct mg_connection *conn,
+    const struct mg_request_info *request_info) {
+
+#ifdef _WIN32
+  // Send the systray icon as favicon
+  if (event == MG_NEW_REQUEST) {
+    if (!strcmp("/favicon.ico", request_info->uri)) {
+      HMODULE module;
+      HRSRC icon;
+      DWORD len;
+      void *data;
+
+      module = GetModuleHandle(NULL);
+
+      icon = FindResource(module, MAKEINTRESOURCE(IDR_FAVICON), RT_RCDATA);
+      data = LockResource(LoadResource(module, icon));
+      len = SizeofResource(module, icon);
+
+      (void) mg_printf(conn,
+          "HTTP/1.1 200 OK\r\n"
+          "Content-Type: image/x-icon\r\n"
+          "Content-Length: %d\r\n"
+          "Connection: close\r\n\r\n", len);
+
+      mg_write(conn, data, len);
+
+      return "";
+    }
+  }
+#endif
+
+  return NULL;
+}
+
 static void start_mongoose(int argc, char *argv[]) {
   char *options[MAX_OPTIONS];
   int i;
@@ -242,7 +276,7 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
   /* Start Mongoose */
-  ctx = mg_start(NULL, NULL, (const char **) options);
+  ctx = mg_start(event_callback, NULL, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }

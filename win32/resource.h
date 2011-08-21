@@ -25,4 +25,6 @@
 
 #define IDI_ICON 200
 
+#define IDR_FAVICON 201
+
 #endif
