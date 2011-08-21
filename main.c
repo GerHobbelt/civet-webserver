@@ -237,6 +237,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn,
       (void) mg_printf(conn,
           "HTTP/1.1 200 OK\r\n"
           "Content-Type: image/x-icon\r\n"
+          "Cache-Control: no-cache\r\n"
           "Content-Length: %d\r\n"
           "Connection: close\r\n\r\n", len);
 
