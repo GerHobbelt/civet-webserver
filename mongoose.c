@@ -869,12 +869,48 @@ void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timest
 // Print log message to the opened error log stream.
 void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args)
 {
-  char buf[MG_MAX(BUFSIZ, 2048)];
+  // handle the special case where there's nothing to do in terms of formatting in order to accept arbitrary input lengths then:
+  if (!strchr(fmt, '%'))
+  {
+	mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
+  }
+  else
+  {
+	char buf[MG_MAX(BUFSIZ, 2048)];
 
-  (void)vsnprintf(buf, sizeof(buf), fmt, args);
-  buf[sizeof(buf) - 1] = 0;
+	int n = vsnprintf(buf, sizeof(buf), fmt, args);
+	buf[sizeof(buf) - 1] = 0;
+	if (strlen(buf) == sizeof(buf) - 1)
+	{
+		// the absolute max we're going to support is a dump of 2MByte of text!
+		size_t bufsize = 2 * 1024 * 1024;
+		char *buf2;
 
-  mg_write2log_raw(conn, logfile, timestamp, severity, buf);
+		strcpy(buf + sizeof(buf) - 1 - 7, " (...)\n"); // mark the string as clipped
+		// make sure the log'line' is NEWLINE terminated (or not) when clipped, depending on the format string input
+		if (fmt[strlen(fmt) - 1] != '\n')
+			buf[sizeof(buf) - 2] = 0;
+
+		// cope with the special case of overflow by using storage on the allocated heap:
+		buf2 = malloc(bufsize);
+		// don't mind when this malloc fails! It's just a matter of 'best effort' here!
+		if (buf2)
+		{
+			n = vsnprintf(buf2, bufsize, fmt, args);
+			buf2[bufsize - 1] = 0;
+			if (strlen(buf2) == bufsize - 1)
+			{
+				strcpy(buf2 + bufsize - 1 - 7, " (...)\n"); // mark the string as clipped
+				if (fmt[strlen(fmt) - 1] != '\n')
+					buf2[bufsize - 2] = 0;
+			}
+			mg_write2log_raw(conn, logfile, timestamp, severity, buf2);
+			free(buf2);
+			return;
+		}
+	}
+	mg_write2log_raw(conn, logfile, timestamp, severity, buf);
+  }
 }
 
 // Print formatted error message to the opened error log stream.
@@ -986,8 +1022,11 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
   buf[buflen - 1] = 0;
 
   if (n < 0) {
-    mg_cry(conn, "vsnprintf error");
-    n = 0;
+    mg_cry(conn, "vsnprintf error / overflow");
+	// MSVC produces -1 on printf("%s", str) for very long 'str'!
+    n = (int) buflen - 1;
+    buf[n] = '\0';
+    n = strlen(buf);
   } else if (n >= (int) buflen) {
     mg_cry(conn, "truncating vsnprintf buffer: [%.*s]",
         n > 200 ? 200 : n, buf);
@@ -4685,12 +4724,18 @@ static void free_context(struct mg_context *ctx) {
   free(ctx);
 }
 
+/*
+May only be invoked from the main thread, i.e. none of the worker threads!
+
+When you want to signal a FULL STOP condition from any of those, call
+mg_signal_stop() instead.
+*/
 void mg_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 
   // Wait until mg_fini() stops
   while (ctx->stop_flag != 2) {
-    (void) sleep(0);
+    (void) sleep(1);
   }
 
   // call the user event handler to make sure the custom code is aware of this termination as well and do some final cleanup:

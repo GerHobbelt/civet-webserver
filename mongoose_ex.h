@@ -56,6 +56,10 @@ struct socket *mg_get_client_socket(struct mg_connection *conn);
 // Return the current 'stop_flag' state value for the given thread context.
 int mg_get_stop_flag(struct mg_context *ctx);
 
+// Indicate that the application should shut down (probably due to a fatal failure?)
+void mg_signal_stop(struct mg_context *ctx);
+
+
 // Disable or enable the Nagle algorithm on a socket.
 int mg_set_nodelay_mode(struct socket *sock, int on);
 
@@ -76,6 +80,9 @@ void mg_close_connection(struct mg_connection *conn);
 
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...);
+void mg_log(struct mg_connection *conn, const char *severity, const char *fmt, ...);
+// Print error message to the opened error log stream.
+void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, va_list args);
 
 int mg_get_lasterror(void);
 

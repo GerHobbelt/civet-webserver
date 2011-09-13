@@ -59,7 +59,12 @@ int mg_set_nodelay_mode(struct socket *sock, int on)
 
 int mg_get_stop_flag(struct mg_context *ctx)
 {
-    return ctx->stop_flag;
+    return ctx && ctx->stop_flag;
+}
+
+void mg_signal_stop(struct mg_context *ctx)
+{
+  ctx->stop_flag = 1;
 }
 
 
@@ -109,14 +114,29 @@ void mg_close_connection(struct mg_connection *conn)
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...)
 {
-    char buf[MG_MAX(BUFSIZ, 2048)];
+    time_t timestamp = time(NULL);
     va_list ap;
 
     va_start(ap, fmt);
-    (void) vsnprintf(buf, sizeof(buf), fmt, ap);
+    mg_vwrite2log(fc(ctx), NULL, timestamp, NULL, fmt, ap);
     va_end(ap);
+}
 
-    mg_cry_raw(fc(ctx), buf);
+void mg_log(struct mg_connection *conn, const char *severity, const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  mg_vlog(conn, severity, fmt, ap);
+  va_end(ap);
+}
+
+// Print error message to the opened error log stream.
+void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, va_list args)
+{
+    time_t timestamp = time(NULL);
+
+	mg_vwrite2log(conn, NULL, timestamp, severity, fmt, args);
 }
 
 
