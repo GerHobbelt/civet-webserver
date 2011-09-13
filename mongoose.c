@@ -1,4 +1,4 @@
-// Copyright (c) 2004-2010 Sergey Lyubka
+// Copyright (c) 2004-2011 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -241,6 +241,7 @@ typedef int SOCKET;
 #define MAX_CGI_ENVIR_VARS 64
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
+
 
 #if defined(DEBUG)
 #define DEBUG_TRACE(x) do { \
@@ -1019,18 +1020,18 @@ static char *skip_quoted(char **buf, const char *delimiters, const char *whitesp
   begin_word = *buf;
   end_word = begin_word + strcspn(begin_word, delimiters);
 
-  /* Check for quotechar */
+  // Check for quotechar
   if (end_word > begin_word) {
     p = end_word - 1;
     while (*p == quotechar) {
-      /* If there is anything beyond end_word, copy it */
+      // If there is anything beyond end_word, copy it
       if (*end_word == '\0') {
         *p = '\0';
         break;
       } else {
         size_t end_off = strcspn(end_word + 1, delimiters);
         memmove (p, end_word, end_off + 1);
-        p += end_off; /* p must correspond to end_word - 1 */
+        p += end_off; // p must correspond to end_word - 1
         end_word += end_off + 1;
       }
     }
@@ -1086,29 +1087,27 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
 static const char *next_option(const char *list, struct vec *val,
                                struct vec *eq_val) {
   if (list == NULL || *list == '\0') {
-    /* End of the list */
+    // End of the list
     list = NULL;
   } else {
     val->ptr = list;
     if ((list = strchr(val->ptr, ',')) != NULL) {
-      /* Comma found. Store length and shift the list ptr */
+      // Comma found. Store length and shift the list ptr
       val->len = list - val->ptr;
       list++;
     } else {
-      /* This value is the last one */
+      // This value is the last one
       list = val->ptr + strlen(val->ptr);
       val->len = list - val->ptr;
     }
 
     if (eq_val != NULL) {
-      /*
-       * Value has form "x=y", adjust pointers and lengths
-       * so that val points to "x", and eq_val points to "y".
-       */
+      // Value has form "x=y", adjust pointers and lengths
+      // so that val points to "x", and eq_val points to "y".
       eq_val->len = 0;
       eq_val->ptr = (const char *) memchr(val->ptr, '=', val->len);
       if (eq_val->ptr != NULL) {
-        eq_val->ptr++;  /* Skip over '=' character */
+        eq_val->ptr++;  // Skip over '=' character
         eq_val->len = val->ptr + val->len - eq_val->ptr;
         val->len = (eq_val->ptr - val->ptr) - 1;
       }
@@ -1118,7 +1117,6 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-#if !defined(NO_CGI)
 static int match_extension(const char *path, const char *ext_list) {
   struct vec ext_vec;
   size_t path_len;
@@ -1133,7 +1131,6 @@ static int match_extension(const char *path, const char *ext_list) {
 
   return 0;
 }
-#endif // !NO_CGI
 
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
@@ -1161,7 +1158,7 @@ static void send_http_error(struct mg_connection *conn, int status,
     buf[0] = '\0';
     len = 0;
 
-    /* Errors 1xx, 204 and 304 MUST NOT send a body */
+    // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
       len = mg_snprintf(conn, buf, sizeof(buf), "Error %d: %s", status, reason);
       mg_cry(conn, "%s", buf);
@@ -1307,7 +1304,7 @@ static void change_slashes_to_backslashes(char *path) {
 // Encode 'path' which is assumed UTF-8 string, into UNICODE string.
 // wbuf and wbuf_len is a target buffer and its length.
 static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
-  char buf[PATH_MAX], *p;
+  char buf[PATH_MAX], buf2[PATH_MAX], *p;
 
   mg_strlcpy(buf, path, sizeof(buf));
   change_slashes_to_backslashes(buf);
@@ -1329,10 +1326,17 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
       *p == 0x2b ||               // No '+'
       (*p & ~0x7f)) {             // And generally no non-ascii chars
     (void) fprintf(stderr, "Rejecting suspicious path: [%s]", buf);
-    buf[0] = '\0';
+    wbuf[0] = L'\0';
+  } else {
+    // Convert to Unicode and back. If doubly-converted string does not
+    // match the original, something is fishy, reject.
+    MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len);
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
+                        NULL, NULL);
+    if (strcmp(buf, buf2) != 0) {
+      wbuf[0] = L'\0';
+    }
   }
-
-  (void) MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len);
 }
 
 #if defined(_WIN32_WCE)
@@ -1350,24 +1354,6 @@ static time_t time(time_t *ptime) {
   }
 
   return t;
-}
-
-static time_t mktime(struct tm *ptm) {
-  SYSTEMTIME st;
-  FILETIME ft, lft;
-
-  st.wYear = ptm->tm_year + 1900;
-  st.wMonth = ptm->tm_mon + 1;
-  st.wDay = ptm->tm_mday;
-  st.wHour = ptm->tm_hour;
-  st.wMinute = ptm->tm_min;
-  st.wSecond = ptm->tm_sec;
-  st.wMilliseconds = 0;
-
-  SystemTimeToFileTime(&st, &ft);
-  LocalFileTimeToFileTime(&ft, &lft);
-  return (time_t) ((MAKEUQUAD(lft.dwLowDateTime, lft.dwHighDateTime) -
-                    EPOCH_DIFF) / RATE_DIFF);
 }
 
 static struct tm *localtime(const time_t *ptime, struct tm *ptm) {
@@ -1395,6 +1381,11 @@ static struct tm *localtime(const time_t *ptime, struct tm *ptm) {
     GetTimeZoneInformation(&tzinfo) == TIME_ZONE_ID_DAYLIGHT ? 1 : 0;
 
   return ptm;
+}
+
+static struct tm *gmtime(const time_t *ptime, struct tm *ptm) {
+  // FIXME(lsm): fix this.
+  return localtime(ptime, ptm);
 }
 
 static size_t strftime(char *dst, size_t dst_size, const char *fmt,
@@ -1572,18 +1563,8 @@ struct dirent * readdir(DIR *dir) {
 
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
-static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
-                        void *param) {
-  HANDLE hThread;
-  ctx = NULL; // Unused
-
-  hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) func, param, 0,
-                         NULL);
-  if (hThread != NULL) {
-    (void) CloseHandle(hThread);
-  }
-
-  return hThread == NULL ? -1 : 0;
+static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
+  return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
 }
 
 static HANDLE dlopen(const char *dll_name, int flags) {
@@ -1667,7 +1648,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 
   return (pid_t) pi.hProcess;
 }
-#endif /* !NO_CGI */
+#endif // !NO_CGI
 
 static int set_non_blocking_mode(SOCKET sock) {
   unsigned long on = 1;
@@ -1832,7 +1813,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
   sent = 0;
   while (sent < len) {
 
-    /* How many bytes we send in this iteration */
+    // How many bytes we send in this iteration
     k = len - sent > INT_MAX ? INT_MAX : (int) (len - sent);
 
     if (ssl != NULL) {
@@ -1968,7 +1949,7 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
     }
   }
 
-  dst[j] = '\0'; /* Null-terminate the destination */
+  dst[j] = '\0'; // Null-terminate the destination
 
   return j;
 }
@@ -2083,7 +2064,7 @@ static void convert_uri_to_file_name(struct mg_connection *conn,
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   change_slashes_to_backslashes(buf);
-#endif /* _WIN32 */
+#endif // _WIN32
 
   DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) vec.len, vec.ptr));
 }
@@ -2164,7 +2145,7 @@ static int get_request_len(const char *buf, int buflen) {
 }
 
 // Convert month to the month number. Return -1 on error, or month number
-static int month_number_to_month_name(const char *s) {
+static int get_month_index(const char *s) {
   size_t i;
 
   for (i = 0; i < ARRAY_SIZE(month_names); i++)
@@ -2174,45 +2155,32 @@ static int month_number_to_month_name(const char *s) {
   return -1;
 }
 
-// Parse date-time string, and return the corresponding time_t value
-static time_t parse_date_string(const char *s) {
-  time_t current_time;
-  struct tm tm, *tmp;
-  char mon[32];
-  int sec, min, hour, mday, month, year;
+// Parse UTC date-time string, and return the corresponding time_t value.
+static time_t parse_date_string(const char *datetime) {
+  static const unsigned short days_before_month[] = {
+    0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+  };
+  char month_str[32];
+  int second, minute, hour, day, month, year, leap_days, days;
+  time_t result = (time_t) 0;
 
-  (void) memset(&tm, 0, sizeof(tm));
-  sec = min = hour = mday = month = year = 0;
-
-  if (((sscanf(s, "%d/%3s/%d %d:%d:%d",
-            &mday, mon, &year, &hour, &min, &sec) == 6) ||
-        (sscanf(s, "%d %3s %d %d:%d:%d",
-                &mday, mon, &year, &hour, &min, &sec) == 6) ||
-        (sscanf(s, "%*3s, %d %3s %d %d:%d:%d",
-                &mday, mon, &year, &hour, &min, &sec) == 6) ||
-        (sscanf(s, "%d-%3s-%d %d:%d:%d",
-                &mday, mon, &year, &hour, &min, &sec) == 6)) &&
-      (month = month_number_to_month_name(mon)) != -1) {
-    tm.tm_mday = mday;
-    tm.tm_mon = month;
-    tm.tm_year = year;
-    tm.tm_hour = hour;
-    tm.tm_min = min;
-    tm.tm_sec = sec;
+  if (((sscanf(datetime, "%d/%3s/%d %d:%d:%d",
+               &day, month_str, &year, &hour, &minute, &second) == 6) ||
+       (sscanf(datetime, "%d %3s %d %d:%d:%d",
+               &day, month_str, &year, &hour, &minute, &second) == 6) ||
+       (sscanf(datetime, "%*3s, %d %3s %d %d:%d:%d",
+               &day, month_str, &year, &hour, &minute, &second) == 6) ||
+       (sscanf(datetime, "%d-%3s-%d %d:%d:%d",
+               &day, month_str, &year, &hour, &minute, &second) == 6)) &&
+      year > 1970 &&
+      (month = get_month_index(month_str)) != -1) {
+    year -= 1970;
+    leap_days = year / 4 - year / 100 + year / 400;
+    days = year * 365 + days_before_month[month] + (day - 1) + leap_days;
+    result = days * 24 * 3600 + hour * 3600 + minute * 60 + second;
   }
 
-  if (tm.tm_year > 1900) {
-    tm.tm_year -= 1900;
-  } else if (tm.tm_year < 70) {
-    tm.tm_year += 100;
-  }
-
-  // Set Daylight Saving Time field
-  current_time = time(NULL);
-  tmp = localtime(&current_time);
-  tm.tm_isdst = tmp->tm_isdst;
-
-  return mktime(&tm);
+  return result;
 }
 
 // Protect against directory disclosure attack by removing '..',
@@ -2278,6 +2246,8 @@ static const struct {
   {".swf", 4, "application/x-shockwave-flash",29},
   {".mpg", 4, "video/mpeg",   10},
   {".mpeg", 5, "video/mpeg",   10},
+  {".mp4", 4, "video/mp4", 9},
+  {".m4v", 4, "video/x-m4v", 11},
   {".asf", 4, "video/x-ms-asf",  14},
   {".avi", 4, "video/x-msvideo",  15},
   {".bmp", 4, "image/bmp",   9},
@@ -2629,7 +2599,7 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
       s++;
     }
     name = skip_quoted(&s, "=", " ", 0);
-    /* Value is either quote-delimited, or ends at first comma or space. */
+    // Value is either quote-delimited, or ends at first comma or space.
     if (s[0] == '\"') {
       s++;
       value = skip_quoted(&s, "\"", " ", '\\');
@@ -2907,65 +2877,87 @@ static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
   return query_string[1] == 'd' ? -cmp_result : cmp_result;
 }
 
-static void handle_directory_request(struct mg_connection *conn,
-                                     const char *dir) {
+static int scan_directory(struct mg_connection *conn, const char *dir,
+                          void *data, void (*cb)(struct de *, void *)) {
+  char path[PATH_MAX];
   struct dirent *dp;
   DIR *dirp;
-  struct de *entries = NULL;
-  char path[PATH_MAX];
-  int i, sort_direction, num_entries = 0, arr_size = 128;
+  struct de de;
 
   if ((dirp = opendir(dir)) == NULL) {
+    return 0;
+  } else {
+    de.conn = conn;
+
+    while ((dp = readdir(dirp)) != NULL) {
+      // Do not show current dir and passwords file
+      if (!strcmp(dp->d_name, ".") ||
+          !strcmp(dp->d_name, "..") ||
+          !strcmp(dp->d_name, PASSWORDS_FILE_NAME))
+        continue;
+
+      mg_snprintf(conn, path, sizeof(path), "%s%c%s", dir, DIRSEP, dp->d_name);
+
+      // If we don't memset stat structure to zero, mtime will have
+      // garbage and strftime() will segfault later on in
+      // print_dir_entry(). memset is required only if mg_stat()
+      // fails. For more details, see
+      // http://code.google.com/p/mongoose/issues/detail?id=79
+      if (mg_stat(path, &de.st) != 0) {
+        memset(&de.st, 0, sizeof(de.st));
+      }
+      de.file_name = dp->d_name;
+
+      cb(&de, data);
+    }
+    (void) closedir(dirp);
+  }
+  return 1;
+}
+
+struct dir_scan_data {
+  struct de *entries;
+  int num_entries;
+  int arr_size;
+};
+
+static void dir_scan_callback(struct de *de, void *data) {
+  struct dir_scan_data *dsd = (struct dir_scan_data *) data;
+
+  if (dsd->entries == NULL || dsd->num_entries >= dsd->arr_size) {
+    dsd->arr_size *= 2;
+    dsd->entries = (struct de *) realloc(dsd->entries, dsd->arr_size *
+                                         sizeof(dsd->entries[0]));
+  }
+  if (dsd->entries == NULL) {
+    // TODO(lsm): propagate an error to the caller
+    dsd->num_entries = 0;
+  } else {
+    dsd->entries[dsd->num_entries].file_name = mg_strdup(de->file_name);
+    dsd->entries[dsd->num_entries].st = de->st;
+    dsd->entries[dsd->num_entries].conn = de->conn;
+    dsd->num_entries++;
+  }
+}
+
+static void handle_directory_request(struct mg_connection *conn,
+                                     const char *dir) {
+  int i, sort_direction;
+  struct dir_scan_data data = { NULL, 0, 128 };
+
+  if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
     send_http_error(conn, 500, "Cannot open directory",
-        "Error: opendir(%s): %s", path, mg_strerror(ERRNO));
+                    "Error: opendir(%s): %s", dir, strerror(ERRNO));
     return;
   }
-
-  (void) mg_printf(conn, "%s",
-      "HTTP/1.1 200 OK\r\n"
-      "Connection: close\r\n"
-      "Content-Type: text/html; charset=utf-8\r\n\r\n");
 
   sort_direction = conn->request_info.query_string != NULL &&
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
-  while ((dp = readdir(dirp)) != NULL) {
-
-    // Do not show current dir and passwords file
-    if (!strcmp(dp->d_name, ".") ||
-        !strcmp(dp->d_name, "..") ||
-        !strcmp(dp->d_name, PASSWORDS_FILE_NAME))
-      continue;
-
-    if (entries == NULL || num_entries >= arr_size) {
-      arr_size *= 2;
-      entries = (struct de *) realloc(entries,
-          arr_size * sizeof(entries[0]));
-    }
-
-    if (entries == NULL) {
-      closedir(dirp);
-      send_http_error(conn, 500, "Cannot open directory",
-          "%s", "Error: cannot allocate memory");
-      return;
-    }
-
-    mg_snprintf(conn, path, sizeof(path), "%s%c%s", dir, DIRSEP, dp->d_name);
-
-    // If we don't memset stat structure to zero, mtime will have
-    // garbage and strftime() will segfault later on in
-    // print_dir_entry(). memset is required only if mg_stat()
-    // fails. For more details, see
-    // http://code.google.com/p/mongoose/issues/detail?id=79
-    if (mg_stat(path, &entries[num_entries].st) != 0) {
-      memset(&entries[num_entries].st, 0, sizeof(entries[num_entries].st));
-    }
-
-    entries[num_entries].conn = conn;
-    entries[num_entries].file_name = mg_strdup(dp->d_name);
-    num_entries++;
-  }
-  (void) closedir(dirp);
+  mg_printf(conn, "%s",
+            "HTTP/1.1 200 OK\r\n"
+            "Connection: close\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n");
 
   conn->num_bytes_sent += mg_printf(conn,
       "<html><head><title>Index of %s</title>"
@@ -2985,12 +2977,13 @@ static void handle_directory_request(struct mg_connection *conn,
       conn->request_info.uri, "..", "Parent directory", "-", "-");
 
   // Sort and print directory entries
-  qsort(entries, (size_t)num_entries, sizeof(entries[0]), compare_dir_entries);
-  for (i = 0; i < num_entries; i++) {
-    print_dir_entry(&entries[i]);
-    free(entries[i].file_name);
+  qsort(data.entries, (size_t) data.num_entries, sizeof(data.entries[0]),
+        compare_dir_entries);
+  for (i = 0; i < data.num_entries; i++) {
+    print_dir_entry(&data.entries[i]);
+    free(data.entries[i].file_name);
   }
-  free(entries);
+  free(data.entries);
 
   conn->num_bytes_sent += mg_printf(conn, "%s", "</table></body></html>");
   conn->request_info.status_code = 200;
@@ -3025,10 +3018,14 @@ static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
   return sscanf(header, "bytes=%" INT64_FMT "-%" INT64_FMT, a, b);
 }
 
+static void gmt_time_string(char *buf, size_t buf_len, time_t *t) {
+  strftime(buf, buf_len, "%a, %d %b %Y %H:%M:%S GMT", gmtime(t));
+}
+
 static void handle_file_request(struct mg_connection *conn, const char *path,
                                 struct mgstat *stp) {
   char date[64], lm[64], etag[64], range[64];
-  const char *fmt = "%a, %d %b %Y %H:%M:%S %Z", *msg = "OK", *hdr;
+  const char *msg = "OK", *hdr;
   time_t curtime = time(NULL);
   int64_t cl, r1, r2;
   struct vec mime_vec;
@@ -3062,9 +3059,10 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
     msg = "Partial Content";
   }
 
-  // Prepare Etag, Date, Last-Modified headers
-  (void) strftime(date, sizeof(date), fmt, localtime(&curtime));
-  (void) strftime(lm, sizeof(lm), fmt, localtime(&stp->mtime));
+  // Prepare Etag, Date, Last-Modified headers. Must be in UTC, according to
+  // http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
+  gmt_time_string(date, sizeof(date), &curtime);
+  gmt_time_string(lm, sizeof(lm), &stp->mtime);
   (void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx",
       (unsigned long) stp->mtime, (unsigned long) stp->size);
 
@@ -3114,7 +3112,8 @@ static void parse_http_headers(char **buf, struct mg_request_info *ri) {
 static int is_valid_http_method(const char *method) {
   return !strcmp(method, "GET") || !strcmp(method, "POST") ||
     !strcmp(method, "HEAD") || !strcmp(method, "CONNECT") ||
-    !strcmp(method, "PUT") || !strcmp(method, "DELETE");
+    !strcmp(method, "PUT") || !strcmp(method, "DELETE") ||
+    !strcmp(method, "OPTIONS") || !strcmp(method, "PROPFIND");
 }
 
 // Parse HTTP request, fill in mg_request_info structure.
@@ -3132,7 +3131,7 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 
   if (is_valid_http_method(ri->request_method) &&
       strncmp(ri->http_version, "HTTP/", 5) == 0) {
-    ri->http_version += 5;   /* Skip "HTTP/" */
+    ri->http_version += 5;   // Skip "HTTP/"
     parse_http_headers(&buf, ri);
     status = 1;
   }
@@ -3381,7 +3380,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 #else
   if ((s = getenv("LD_LIBRARY_PATH")) != NULL)
     addenv(blk, "LD_LIBRARY_PATH=%s", s);
-#endif /* _WIN32 */
+#endif // _WIN32
 
   if ((s = getenv("PERLLIB")) != NULL)
     addenv(blk, "PERLLIB=%s", s);
@@ -3542,26 +3541,31 @@ static int put_dir(const char *path) {
   char buf[PATH_MAX];
   const char *s, *p;
   struct mgstat st;
-  size_t len;
+  int len, res = 1;
 
-  for (s = p = path + 2; (p = strchr(s, '/')) != NULL; s = ++p) {
+  for (s = p = path + 2; (p = strchr(s, DIRSEP)) != NULL; s = ++p) {
     len = p - path;
-    assert(len < sizeof(buf));
-    (void) memcpy(buf, path, len);
+    if (len >= (int) sizeof(buf)) {
+      res = -1;
+      break;
+    }
+    memcpy(buf, path, len);
     buf[len] = '\0';
 
     // Try to create intermediate directory
+    DEBUG_TRACE(("mkdir(%s)", buf));
     if (mg_stat(buf, &st) == -1 && mg_mkdir(buf, 0755) != 0) {
-      return -1;
+      res = -1;
+      break;
     }
 
     // Is path itself a directory?
     if (p[1] == '\0') {
-      return 0;
+      res = 0;
     }
   }
 
-  return 1;
+  return res;
 }
 
 static void put_file(struct mg_connection *conn, const char *path) {
@@ -3744,6 +3748,72 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   }
 }
 
+static void send_options(struct mg_connection *conn) {
+  conn->request_info.status_code = 200;
+
+  (void) mg_printf(conn,
+      "HTTP/1.1 200 OK\r\n"
+      "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS\r\n"
+      "DAV: 1\r\n\r\n");
+}
+
+// Writes PROPFIND properties for a collection element
+static void print_props(struct mg_connection *conn, const char* uri,
+                        struct mgstat* st) {
+  char mtime[64];
+  gmt_time_string(mtime, sizeof(mtime), &st->mtime);
+  conn->num_bytes_sent += mg_printf(conn,
+      "<d:response>"
+       "<d:href>%s</d:href>"
+       "<d:propstat>"
+        "<d:prop>"
+         "<d:resourcetype>%s</d:resourcetype>"
+         "<d:getcontentlength>%" INT64_FMT "</d:getcontentlength>"
+         "<d:getlastmodified>%s</d:getlastmodified>"
+        "</d:prop>"
+        "<d:status>HTTP/1.1 200 OK</d:status>"
+       "</d:propstat>"
+      "</d:response>\n",
+      uri,
+      st->is_directory ? "<d:collection/>" : "",
+      st->size,
+      mtime);
+}
+
+static void print_dav_dir_entry(struct de *de, void *data) {
+  char href[PATH_MAX];
+  struct mg_connection *conn = (struct mg_connection *) data;
+  mg_snprintf(conn, href, sizeof(href), "%s%s",
+              conn->request_info.uri, de->file_name);
+  print_props(conn, href, &de->st);
+}
+
+static void handle_propfind(struct mg_connection *conn, const char* path,
+                            struct mgstat* st) {
+  const char *depth = mg_get_header(conn, "Depth");
+
+  conn->request_info.status_code = 207;
+  mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
+            "Connection: close\r\n"
+            "Content-Type: text/xml; charset=utf-8\r\n\r\n");
+
+  conn->num_bytes_sent += mg_printf(conn,
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+      "<d:multistatus xmlns:d='DAV:'>\n");
+
+  // Print properties for the requested resource itself
+  print_props(conn, conn->request_info.uri, st);
+
+  // If it is a directory, print directory entries too if Depth is not 0
+  if (st->is_directory &&
+      !mg_strcasecmp(conn->ctx->config[ENABLE_DIRECTORY_LISTING], "yes") &&
+      (depth == NULL || strcmp(depth, "0") != 0)) {
+    scan_directory(conn, path, conn, &print_dav_dir_entry);
+  }
+
+  conn->num_bytes_sent += mg_printf(conn, "%s\n", "</d:multistatus>");
+}
+
 // This is the heart of the Mongoose's logic.
 // This function is called when the request is read, parsed and validated,
 // and Mongoose must decide what action to take: serve a file, or
@@ -3758,7 +3828,7 @@ static void handle_request(struct mg_connection *conn) {
     * conn->request_info.query_string++ = '\0';
   }
   uri_len = strlen(ri->uri);
-  (void) url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
+  url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
   remove_double_dots_and_double_slashes(ri->uri);
   convert_uri_to_file_name(conn, ri->uri, path, sizeof(path));
 
@@ -3767,6 +3837,8 @@ static void handle_request(struct mg_connection *conn) {
     send_authorization_request(conn);
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
+  } else if (!strcmp(ri->request_method, "OPTIONS")) {
+    send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
     send_http_error(conn, 403, "Forbidden", "Access Forbidden");
@@ -3792,6 +3864,8 @@ static void handle_request(struct mg_connection *conn) {
     (void) mg_printf(conn,
         "HTTP/1.1 301 Moved Permanently\r\n"
         "Location: %s/\r\n\r\n", ri->uri);
+  } else if (!strcmp(ri->request_method, "PROPFIND")) {
+    handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
              !substitute_index_file(conn, path, sizeof(path), &st)) {
     if (!mg_strcasecmp(conn->ctx->config[ENABLE_DIRECTORY_LISTING], "yes")) {
@@ -3800,6 +3874,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
+#if !defined(NO_CGI)
   } else if (match_extension(path, conn->ctx->config[CGI_EXTENSIONS])) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -3808,6 +3883,7 @@ static void handle_request(struct mg_connection *conn) {
     } else {
       handle_cgi_request(conn, path);
     }
+#endif // !NO_CGI
   } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
@@ -3892,7 +3968,7 @@ static int set_ports_option(struct mg_context *ctx) {
                // handshake will figure out that the client is down and
                // will close the server end.
                // Thanks to Igor Klopov who suggested the patch.
-               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&on,
+               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *) &on,
                           sizeof(on)) != 0 ||
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
                listen(sock, 100) != 0) {
@@ -4095,7 +4171,7 @@ static int load_dll(struct mg_context *ctx, const char *dll_name,
     // dlsym() on UNIX returns void *. ISO C forbids casts of data pointers to
     // function pointers. We need to use a union to make a cast.
     u.p = dlsym(dll_handle, fp->name);
-#endif /* _WIN32 */
+#endif // _WIN32
     if (u.fp == NULL) {
       mg_cry(fc(ctx), "%s: %s: cannot find %s", __func__, dll_name, fp->name);
       return 0;
@@ -4222,7 +4298,7 @@ static void close_socket_gracefully(SOCKET sock) {
   // ephemeral port exhaust problem under high QPS.
   linger.l_onoff = 1;
   linger.l_linger = 1;
-  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *)&linger, sizeof(linger));
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
@@ -4411,29 +4487,25 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
   while (ctx->sq_head == ctx->sq_tail && ctx->stop_flag == 0) {
     pthread_cond_wait(&ctx->sq_full, &ctx->mutex);
   }
-  // Master thread could wake us up without putting a socket.
-  // If this happens, it is time to exit.
-  if (ctx->stop_flag) {
-    (void) pthread_mutex_unlock(&ctx->mutex);
-    return 0;
-  }
-  assert(ctx->sq_head > ctx->sq_tail);
 
-  // Copy socket from the queue and increment tail
-  *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
-  ctx->sq_tail++;
-  DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
+  // If we're stopping, sq_head may be equal to sq_tail.
+  if (ctx->sq_head > ctx->sq_tail) {
+    // Copy socket from the queue and increment tail
+    *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
+    ctx->sq_tail++;
+    DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
 
-  // Wrap pointers if needed
-  while (ctx->sq_tail > (int) ARRAY_SIZE(ctx->queue)) {
-    ctx->sq_tail -= ARRAY_SIZE(ctx->queue);
-    ctx->sq_head -= ARRAY_SIZE(ctx->queue);
+    // Wrap pointers if needed
+    while (ctx->sq_tail > (int) ARRAY_SIZE(ctx->queue)) {
+      ctx->sq_tail -= ARRAY_SIZE(ctx->queue);
+      ctx->sq_head -= ARRAY_SIZE(ctx->queue);
+    }
   }
 
   (void) pthread_cond_signal(&ctx->sq_empty);
   (void) pthread_mutex_unlock(&ctx->mutex);
 
-  return 1;
+  return !ctx->stop_flag;
 }
 
 static void worker_thread(struct mg_context *ctx) {
@@ -4445,7 +4517,9 @@ static void worker_thread(struct mg_context *ctx) {
   conn->buf = (char *) (conn + 1);
   assert(conn != NULL);
 
-  while (ctx->stop_flag == 0 && consume_socket(ctx, &conn->client)) {
+  // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
+  // sq_empty condvar to wake up the master waiting in produce_socket()
+  while (consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
     // and clear the cached logfile path so it is recalculated on the next log operation:
@@ -4484,15 +4558,17 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
   (void) pthread_mutex_lock(&ctx->mutex);
 
   // If the queue is full, wait
-  while (ctx->sq_head - ctx->sq_tail >= (int) ARRAY_SIZE(ctx->queue)) {
+  while (ctx->stop_flag == 0 &&
+         ctx->sq_head - ctx->sq_tail >= (int) ARRAY_SIZE(ctx->queue)) {
     (void) pthread_cond_wait(&ctx->sq_empty, &ctx->mutex);
   }
-  assert(ctx->sq_head - ctx->sq_tail < (int) ARRAY_SIZE(ctx->queue));
 
-  // Copy socket to the queue and increment head
-  ctx->queue[ctx->sq_head % ARRAY_SIZE(ctx->queue)] = *sp;
-  ctx->sq_head++;
-  DEBUG_TRACE(("queued socket %d", sp->sock));
+  if (ctx->sq_head - ctx->sq_tail < (int) ARRAY_SIZE(ctx->queue)) {
+    // Copy socket to the queue and increment head
+    ctx->queue[ctx->sq_head % ARRAY_SIZE(ctx->queue)] = *sp;
+    ctx->sq_head++;
+    DEBUG_TRACE(("queued socket %d", sp->sock));
+  }
 
   (void) pthread_cond_signal(&ctx->sq_full);
   (void) pthread_mutex_unlock(&ctx->mutex);
@@ -4549,7 +4625,7 @@ static void master_thread(struct mg_context *ctx) {
 #endif // _WIN32
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
-        if (FD_ISSET(sp->sock, &read_set)) {
+        if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
           accept_new_connection(sp, ctx);
         }
       }
