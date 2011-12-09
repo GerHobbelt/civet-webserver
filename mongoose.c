@@ -4058,10 +4058,31 @@ static void accept_new_connection(const struct socket *listener,
   struct socket accepted;
   int allowed;
 
+  int keep_alive_timeout = 5; //atoi(ctx->config[KEEP_ALIVE_TIMEOUT]); //reference to add option
+#ifdef _WIN32
+  DWORD timeout;      
+  timeout = keep_alive_timeout * 1000; //milliseconds
+#else
+  struct timeval timeout;      
+  timeout.tv_sec = keep_alive_timeout;
+  timeout.tv_usec = 0;
+#endif
+
   accepted.rsa.len = sizeof(accepted.rsa.u.sin);
   accepted.lsa = listener->lsa;
   accepted.sock = accept(listener->sock, &accepted.rsa.u.sa, &accepted.rsa.len);
   if (accepted.sock != INVALID_SOCKET) {
+  
+    //TODO: already cheked, but double check returned functions to make sure they dont use and discard a timedout socket.
+    if ( (setsockopt (accepted.sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) &&
+			(setsockopt (accepted.sock, SOL_SOCKET, SO_SNDTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) ) {
+        DEBUG_TRACE(("setsockopt timeout set failed on socket: %d", accepted.sock));
+        cry(fc(ctx), "%s: %s failed SO_RCVTIMEO and SO_SNDTIMEO",
+          __func__, inet_ntoa(accepted.rsa.u.sin.sin_addr));
+        (void) closesocket(accepted.sock);
+        return;
+    }
+  
     allowed = check_acl(ctx, &accepted.rsa);
     if (allowed) {
       // Put accepted socket structure into the queue
