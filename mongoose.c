@@ -2042,7 +2042,7 @@ int mg_get_cookie(const struct mg_connection *conn, const char *cookie_name,
 
   dst[0] = '\0';
   if ((s = mg_get_header(conn, "Cookie")) == NULL) {
-    return 0;
+    return -1;
   }
 
   name_len = strlen(cookie_name);
