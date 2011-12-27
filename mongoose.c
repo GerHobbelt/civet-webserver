@@ -419,7 +419,7 @@ enum {
   PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
-  ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
+  ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER,
   NUM_OPTIONS
@@ -440,6 +440,7 @@ static const char *config_options[] = {
   "g", "global_passwords_file", NULL,
   "i", "index_files", "index.html,index.htm,index.cgi",
   "k", "enable_keep_alive", "no",
+  "K", "keep_alive_timeout", "5",
   "l", "access_control_list", NULL,
   "M", "max_request_size", "16384",
   "m", "extra_mime_types", NULL,
@@ -4624,7 +4625,7 @@ static void accept_new_connection(const struct socket *listener,
   struct socket accepted;
   int allowed;
 
-  int keep_alive_timeout = 5; //atoi(ctx->config[KEEP_ALIVE_TIMEOUT]); //reference to add option
+  int keep_alive_timeout = atoi(ctx->config[KEEP_ALIVE_TIMEOUT]);
 #ifdef _WIN32
   DWORD timeout;
   timeout = keep_alive_timeout * 1000; //milliseconds
