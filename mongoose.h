@@ -272,7 +272,7 @@ int mg_get_var(const char *data, size_t data_len,
 //
 // Return:
 //   On success, value length.
-//   On error, 0 (either "Cookie:" header is not present at all, or the
+//   On error, -1 (either "Cookie:" header is not present at all, or the
 //   requested parameter is not found, or destination buffer is too small
 //   to hold the value).
 int mg_get_cookie(const struct mg_connection *,

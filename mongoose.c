@@ -2060,9 +2060,10 @@ int mg_get_cookie(const struct mg_connection *conn, const char *cookie_name,
         s++;
         p--;
       }
-      if ((size_t) (p - s) < dst_size) {
+      if ((size_t) (p - s) <= dst_size) {
         len = (p - s) + 1;
         mg_strlcpy(dst, s, (size_t)len);
+		len--; // don't count the NUL sentinel in the reported length!
       }
       break;
     }
