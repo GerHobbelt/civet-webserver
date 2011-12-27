@@ -418,7 +418,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
         case ID_QUIT:
           mg_stop(ctx);
           Shell_NotifyIcon(NIM_DELETE, &TrayIcon);
-          PostQuitMessage(0);
+          PostQuitMessage(EXIT_SUCCESS);
           break;
         case ID_EDIT_CONFIG:
           edit_config_file(ctx);
@@ -491,7 +491,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
-  return 0;
+
+  // return the WM_QUIT value:
+  return msg.wParam;
 }
 #else
 int main(int argc, char *argv[]) {
