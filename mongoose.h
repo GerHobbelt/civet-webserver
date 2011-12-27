@@ -40,15 +40,15 @@ struct mg_request_info {
   char *request_method;  // "GET", "POST", etc
   char *uri;             // URL-decoded URI
   char *http_version;    // E.g. "1.0", "1.1"
-  char *query_string;    // \0 - terminated
-  char *remote_user;     // Authenticated user
-  const char *log_message; // Mongoose error/warn/... log message
-  const char *log_severity; // Mongoose log severity: error, warning, ...
-  const char *log_dstfile; // Mongoose preferred log file path
-  time_t log_timestamp;  // log timestamp (UTC)
+  char *query_string;    // URL part after '?' (not including '?') or NULL
+  char *remote_user;     // Authenticated user, or NULL if no auth used
+  const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
+  const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
+  const char *log_dstfile; // Mongoose preferred log file path, MG_EVENT_LOG only
+  time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
   long remote_ip;        // Client's IP address
   int remote_port;       // Client's port
-  int status_code;       // HTTP reply status code
+  int status_code;       // HTTP reply status code, e.g. 200
   int is_ssl;            // 1 if SSL-ed, 0 if not
   int num_headers;       // Number of headers
   struct mg_header {
@@ -69,19 +69,19 @@ enum mg_event {
 };
 
 // Prototype for the user-defined function. Mongoose calls this function
-// on every event mentioned above.
+// on every MG_* event.
 //
 // Parameters:
 //   event: which event has been triggered.
 //   conn: opaque connection handler. Could be used to read, write data to the
-//         client, etc. See functions below that accept "mg_connection *".
+//         client, etc. See functions below that have "mg_connection *" arg.
 //   request_info: Information about HTTP request.
 //
 // Return:
 //   If handler returns non-NULL, that means that handler has processed the
 //   request by sending appropriate HTTP reply to the client. Mongoose treats
 //   the request as served.
-//   If callback returns NULL, that means that callback has not processed
+//   If handler returns NULL, that means that handler has not processed
 //   the request. Handler must not send any data to the client in this case.
 //   Mongoose proceeds with request handling as if nothing happened.
 typedef void * (*mg_callback_t)(enum mg_event event,

@@ -57,6 +57,7 @@
 #endif // _WIN32
 
 #define MAX_OPTIONS 40
+#define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
 static volatile int exit_flag;
 static char server_name[40];        // Set by init_server_name()
@@ -154,10 +155,10 @@ static void set_option(char **options, const char *name, const char *value) {
 }
 
 static void process_command_line_arguments(char *argv[], char **options) {
-    char line[512], opt[512], val[512], *p;
-    FILE *fp = NULL;
-    size_t i;
-    int line_no = 0;
+  char line[MAX_CONF_FILE_LINE_SIZE], opt[sizeof(line)], val[sizeof(line)], *p;
+  FILE *fp = NULL;
+  size_t i;
+  int line_no = 0;
 
   options[0] = NULL;
 
