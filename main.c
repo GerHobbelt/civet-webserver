@@ -35,6 +35,7 @@
 #include <stdarg.h>
 
 #include "mongoose.h"
+#include "mongoose_ex.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -57,7 +58,7 @@
 
 #define MAX_OPTIONS 40
 
-static int exit_flag;
+static volatile int exit_flag;
 static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
@@ -79,7 +80,7 @@ static void die(const char *fmt, ...) {
   va_end(ap);
 
 #if defined(_WIN32)
-  MessageBox(NULL, msg, "Error", MB_OK);
+  MessageBoxA(NULL, msg, "Error", MB_OK);
 #else
   fprintf(stderr, "%s\n", msg);
 #endif
@@ -87,9 +88,9 @@ static void die(const char *fmt, ...) {
   exit(EXIT_FAILURE);
 }
 
-static void show_usage_and_exit(void) {
-  const char **names;
-  int i;
+static void show_usage_and_exit(const struct mg_context *ctx) {
+    const char **names;
+    int i;
 
   fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka\n", mg_version());
   fprintf(stderr, "Usage:\n");
@@ -121,18 +122,11 @@ static void verify_document_root(const char *root) {
     path = buf;
   }
 
-  if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-    die("Invalid root directory: [%s]: %s", root, strerror(errno));
-  }
+    if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
+    }
 }
 
-static char *sdup(const char *str) {
-  char *p;
-  if ((p = (char *) malloc(strlen(str) + 1)) != NULL) {
-    strcpy(p, str);
-  }
-  return p;
-}
 
 static void set_option(char **options, const char *name, const char *value) {
   int i;
@@ -141,31 +135,35 @@ static void set_option(char **options, const char *name, const char *value) {
     verify_document_root(value);
   }
 
-  for (i = 0; i < MAX_OPTIONS - 3; i++) {
-    if (options[i] == NULL) {
-      options[i] = sdup(name);
-      options[i + 1] = sdup(value);
-      options[i + 2] = NULL;
-      break;
+    for (i = 0; i < MAX_OPTIONS * 2; i += 2) {
+        // replace option value when it was set before: command line overrules config file, which overrules global defaults.
+        if (options[i] == NULL) {
+            options[i] = mg_strdup(name);
+            options[i + 1] = mg_strdup(value);
+            break;
+        } else if (strcmp(options[i], name) == 0) {
+            free(options[i + 1]);
+            options[i + 1] = mg_strdup(value);
+            break;
+        }
     }
-  }
 
-  if (i == MAX_OPTIONS - 3) {
-    die("%s", "Too many options specified");
-  }
+    if (i > MAX_OPTIONS * 2 - 2) {
+        die("%s", "Too many options specified");
+    }
 }
 
 static void process_command_line_arguments(char *argv[], char **options) {
-  char line[512], opt[512], val[512], *p;
-  FILE *fp = NULL;
-  size_t i, cmd_line_opts_start = 1, line_no = 0;
+    char line[512], opt[512], val[512], *p;
+    FILE *fp = NULL;
+    size_t i;
+    int line_no = 0;
 
   options[0] = NULL;
 
   // Should we use a config file ?
-  if (argv[1] != NULL && argv[1][0] != '-') {
+  if (argv[1] != NULL && argv[2] == NULL) {
     snprintf(config_file, sizeof(config_file), "%s", argv[1]);
-    cmd_line_opts_start = 2;
   } else if ((p = strrchr(argv[0], DIRSEP)) == NULL) {
     // No command line flags specified. Look where binary lives
     snprintf(config_file, sizeof(config_file), "%s", CONFIG_FILE);
@@ -176,10 +174,15 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
   fp = fopen(config_file, "r");
 
-  // If config file was set in command line and open failed, die
-  if (cmd_line_opts_start == 2 && fp == NULL) {
-    die("Cannot open config file %s: %s", config_file, strerror(errno));
-  }
+    // If config file was set in command line and open failed, exit
+    if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
+        die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
+    }
+
+    // use the default values for starters (so that all options have a known reasonable value):
+    for (i = 0; default_options[i]; i += 2) {
+        set_option(options, default_options[i], default_options[i+1]);
+    }
 
   // Load config file settings first
   if (fp != NULL) {
@@ -190,23 +193,33 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
       line_no++;
 
-      // Ignore empty lines and comments
-      if (line[0] == '#' || line[0] == '\n')
+      // Ignore empty lines (with optional, ignored, whitespace) and comments
+      if (line[0] == '#')
         continue;
 
-      if (sscanf(line, "%s %[^\r\n#]", opt, val) != 2) {
-        die("%s: line %d is invalid", config_file, (int) line_no);
+      switch (sscanf(line, "%s %[^\r\n#]", opt, val))
+      {
+      case 0:
+        // empty line!
+        continue;
+
+      case 2:
+        set_option(options, opt, val);
+        continue;
+
+      default:
+        die("%s: line %d is invalid", config_file, line_no);
+        break;
       }
-      set_option(options, opt, val);
     }
 
     (void) fclose(fp);
   }
 
-  // Now handle command line flags. They override config file settings.
-  for (i = cmd_line_opts_start; argv[i] != NULL; i += 2) {
+  // Now handle command line flags. They override config file / default settings.
+  for (i = 1; argv[i] != NULL; i += 2) {
     if (argv[i][0] != '-' || argv[i + 1] == NULL) {
-      show_usage_and_exit();
+      show_usage_and_exit(ctx);
     }
     set_option(options, &argv[i][1], argv[i + 1]);
   }
@@ -218,22 +231,28 @@ static void init_server_name(void) {
 }
 
 static void start_mongoose(int argc, char *argv[]) {
-  char *options[MAX_OPTIONS];
-  int i;
+    char *options[MAX_OPTIONS * 2] = { NULL };
+    int i;
+    struct mg_user_class_t userdef = {
+        &event_handler,
+        &tws_cfg,
+        &option_decode,
+        &option_fill,
+        &option_get
+    };
 
-  // Edit passwords file if -A option is specified
-  if (argc > 1 && !strcmp(argv[1], "-A")) {
-    if (argc != 6) {
-      show_usage_and_exit();
+    /* Edit passwords file if -A option is specified */
+    if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
+        if (argc != 6) {
+            show_usage_and_exit(ctx);
+        }
+        exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
     }
-    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ?
-         EXIT_SUCCESS : EXIT_FAILURE);
-  }
 
-  // Show usage if -h or --help options are specified
-  if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
-    show_usage_and_exit();
-  }
+    /* Show usage if -h or --help options are specified */
+    if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
+        show_usage_and_exit(ctx);
+    }
 
   /* Update config based on command line arguments */
   process_command_line_arguments(argv, options);
@@ -243,7 +262,7 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
   /* Start Mongoose */
-  ctx = mg_start(NULL, NULL, (const char **) options);
+  ctx = mg_start(&userdef, options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
@@ -295,7 +314,7 @@ static void WINAPI ServiceMain(void) {
 #define ID_ICON 200
 static NOTIFYICONDATA TrayIcon;
 
-static void edit_config_file(void) {
+static void edit_config_file(const struct mg_context *ctx) {
   const char **names, *value;
   FILE *fp;
   int i;
@@ -310,7 +329,7 @@ static void edit_config_file(void) {
             "# Lines starting with '#' and empty lines are ignored.\n"
             "# For detailed description of every option, visit\n"
             "# http://code.google.com/p/mongoose/wiki/MongooseManual\n\n");
-    names = mg_get_valid_option_names();
+    names = mg_get_valid_option_names(ctx);
     for (i = 0; names[i] != NULL; i += 3) {
       value = mg_get_option(ctx, names[i]);
       fprintf(fp, "# %s %s\n", names[i + 1], *value ? value : "<value>");
@@ -328,7 +347,7 @@ static void show_error(void) {
                 NULL, GetLastError(),
                 MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                 buf, sizeof(buf), NULL);
-  MessageBox(NULL, buf, "Error", MB_OK);
+  MessageBoxA(NULL, buf, "Error", MB_OK);
 }
 
 static int manage_service(int action) {
@@ -401,7 +420,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           PostQuitMessage(0);
           break;
         case ID_EDIT_CONFIG:
-          edit_config_file();
+          edit_config_file(ctx);
           break;
         case ID_INSTALL_SERVICE:
         case ID_REMOVE_SERVICE:
@@ -480,7 +499,7 @@ int main(int argc, char *argv[]) {
   printf("%s started on port(s) %s with web root [%s]\n",
          server_name, mg_get_option(ctx, "listening_ports"),
          mg_get_option(ctx, "document_root"));
-  while (exit_flag == 0) {
+  while (exit_flag == 0 && !mg_get_stop_flag(ctx)) {
     sleep(1);
   }
   printf("Exiting on signal %d, waiting for all threads to finish...",
@@ -492,3 +511,5 @@ int main(int argc, char *argv[]) {
   return EXIT_SUCCESS;
 }
 #endif /* _WIN32 */
+
+
