@@ -1390,7 +1390,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1 && conn->consumed_content == 0) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %zu %lld %lld", buf, len,
+  DEBUG_TRACE(("%p %zu %ld %ld", buf, len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len) {
@@ -1578,7 +1578,7 @@ static void convert_uri_to_file_name(struct mg_connection *conn,
   change_slashes_to_backslashes(buf);
 #endif // _WIN32
 
-  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) vec.len, vec.ptr));
+  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
 }
 
 static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
