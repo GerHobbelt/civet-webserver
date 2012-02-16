@@ -1,5 +1,5 @@
-#include <stdio.h>
-#include <string.h>
+
+#include "mongoose_sys_porting.h"
 #include "mongoose.h"
 
 static void *callback(enum mg_event event,
@@ -19,8 +19,12 @@ static void *callback(enum mg_event event,
 int main(void) {
   struct mg_context *ctx;
   const char *options[] = {"listening_ports", "8080", NULL};
+  const struct mg_user_class_t ucb = {
+    callback,  // User-defined callback function
+    NULL       // Arbitrary user-defined data
+  };
 
-  ctx = mg_start(&callback, NULL, options);
+  ctx = mg_start(&ucb, options);
   getchar();  // Wait until user hits "enter"
   mg_stop(ctx);
 

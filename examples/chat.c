@@ -10,13 +10,11 @@
  * Mongoose code.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <string.h>
-#include <time.h>
-#include <stdarg.h>
-#include <pthread.h>
+#include "mongoose_sys_porting.h"
+
+#ifdef _WIN32
+#include <winsvc.h>
+#endif
 
 #include "mongoose.h"
 
@@ -368,13 +366,17 @@ static const char *options[] = {
 
 int main(void) {
   struct mg_context *ctx;
+  const struct mg_user_class_t ucb = {
+    event_handler,  // User-defined callback function
+    NULL            // Arbitrary user-defined data
+  };
 
   // Initialize random number generator. It will be used later on for
   // the session identifier creation.
   srand((unsigned) time(0));
 
   // Setup and start Mongoose
-  ctx = mg_start(&event_handler, NULL, options);
+  ctx = mg_start(&ucb, options);
   assert(ctx != NULL);
 
   // Wait until enter is pressed, then exit

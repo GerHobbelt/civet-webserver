@@ -24,11 +24,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#define sleep(x) Sleep((x) * 1000)
+#else
+#include <sys/wait.h>
 #include <unistd.h>
-#endif
+#endif // _WIN32
 
-#include "mongoose.h"
+
+#include "mongoose_ex.h"
 
 #if !defined(LISTENING_PORT)
 #define LISTENING_PORT "23456"
@@ -174,8 +179,19 @@ static void *callback(enum mg_event event,
 int main(void) {
   struct mg_context *ctx;
   const char *options[] = {"listening_ports", LISTENING_PORT, NULL};
+  const struct mg_user_class_t ucb = {
+    callback,  // User-defined callback function
+    NULL       // Arbitrary user-defined data
+  };
 
-  ctx = mg_start(callback, NULL, options);
+  ctx = mg_start(&ucb, options);
+#if !defined(WIN32)
   pause();
+#else
+  while (!mg_get_stop_flag(ctx)) {
+    sleep(1);
+  }
+  mg_stop(ctx);
+#endif
   return 0;
 }

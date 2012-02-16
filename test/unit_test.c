@@ -36,11 +36,7 @@ static void test_remove_double_dots() {
     {"/...///", "/./"},
     {"/a...///", "/a.../"},
     {"/.x", "/.x"},
-#if defined(_WIN32)
-    {"/\\", "/"},
-#else
-    {"/\\", "/\\"},
-#endif
+    {"/\\", "/"},    /* as we have cross-platform code/storage, we do NOT accept the '/' as part of any filename, even in UNIX! */
     {"/a\\", "/a\\"},
   };
   size_t i;
