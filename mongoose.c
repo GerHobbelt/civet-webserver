@@ -21,9 +21,9 @@
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
 #else
-#define _XOPEN_SOURCE 600 // For flockfile() on Linux
-#define _LARGEFILE_SOURCE // Enable 64-bit file offsets
-#define __STDC_FORMAT_MACROS // <inttypes.h> wants this for C++
+#define _XOPEN_SOURCE 600     // For flockfile() on Linux
+#define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
+#define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
 #endif
 
 #if defined(__SYMBIAN32__)
@@ -52,8 +52,10 @@
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0400 // To make it link in VS2005
+#define _WIN32_WINNT 0x0600 // To make it link in VS200x (with IPv6 support from Vista onwards)
 #endif
+// load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
+#include <ws2tcpip.h>
 #include <windows.h>
 
 #ifndef PATH_MAX
@@ -65,7 +67,6 @@
 #include <direct.h>
 #include <io.h>
 #else // _WIN32_WCE
-#include <winsock2.h>
 #define NO_CGI // WinCE has no pipes
 
 typedef long off_t;
@@ -387,6 +388,9 @@ struct usa {
   union {
     struct sockaddr sa;
     struct sockaddr_in sin;
+#if defined(USE_IPV6)
+    struct sockaddr_in6 sin6;
+#endif
   } u;
 };
 
@@ -411,8 +415,19 @@ struct socket {
   struct usa lsa;       // Local socket address
   struct usa rsa;       // Remote socket address
   int is_ssl;           // Is socket SSL-ed
+#if defined(MG_PROXY_SUPPORT)
   int is_proxy;
+#endif
 };
+
+#if defined(MG_PROXY_SUPPORT)
+int mg_is_proxy_conn(const struct socket *sock)
+{
+	return sock->is_proxy;
+}
+#else
+#define mg_is_proxy_conn(sock)		(FALSE)
+#endif
 
 enum {
   CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
@@ -421,18 +436,18 @@ enum {
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
   ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
-  DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER,
+  DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
   NUM_OPTIONS
 };
 
 static const char *config_options[] = {
-  "C", "cgi_extensions", ".cgi,.pl,.php",
+  "C", "cgi_pattern", "**.cgi$|**.pl$|**.php$",
   "E", "cgi_environment", NULL,
   "G", "put_delete_passwords_file", NULL,
   "I", "cgi_interpreter", NULL,
   "P", "protect_uri", NULL,
   "R", "authentication_domain", "mydomain.com",
-  "S", "ssi_extensions", ".shtml,.shtm",
+  "S", "ssi_pattern", "**.shtml$|**.shtm$",
   "a", "access_log_file", NULL,
   "c", "ssl_chain_file", NULL,
   "d", "enable_directory_listing", "yes",
@@ -449,6 +464,7 @@ static const char *config_options[] = {
   "s", "ssl_certificate", NULL,
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
+  "w", "url_rewrite_patterns", NULL,
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -473,7 +489,9 @@ struct mg_context {
 };
 
 struct mg_connection {
+#if defined(MG_PROXY_SUPPORT)
   struct mg_connection *peer; // Remote target in proxy mode
+#endif
   struct mg_request_info request_info;
   struct mg_context *ctx;
   SSL *ssl;                   // SSL descriptor
@@ -563,6 +581,21 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
     return ctx->config[i];
   }
 }
+
+static void sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
+  buf[0] = '\0';
+#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+  inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
+            (void *) &usa->u.sin.sin_addr :
+            (void *) &usa->u.sin6.sin6_addr), buf, len);
+#elif defined(_WIN32) && (!defined(_MSC_VER) || _MSC_VER < 1300)
+  // Only Windoze Vista (and newer) have inet_ntop()
+  strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
+#else
+  inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
+#endif
+}
+
 
 /*
 Like strerror() but with included support for the same functionality for
@@ -1157,19 +1190,43 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-static int match_extension(const char *path, const char *ext_list) {
-  struct vec ext_vec;
-  size_t path_len;
+static int match_prefix(const char *pattern, int pattern_len, const char *str) {
+  const char *or_str;
+  int i, j, len, res;
 
-  path_len = strlen(path);
+  if ((or_str = memchr(pattern, '|', pattern_len)) != NULL) {
+    res = match_prefix(pattern, or_str - pattern, str);
+    return res > 0 ? res :
+        match_prefix(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
+  }
 
-  while ((ext_list = next_option(ext_list, &ext_vec, NULL)) != NULL)
-    if (ext_vec.len < path_len &&
-        mg_strncasecmp(path + path_len - ext_vec.len,
-          ext_vec.ptr, ext_vec.len) == 0)
-      return 1;
-
-  return 0;
+  i = j = 0;
+  res = -1;
+  for (; i < pattern_len; i++, j++) {
+    if (pattern[i] == '?' && str[j] != '\0') {
+      continue;
+    } else if (pattern[i] == '$') {
+      return str[j] == '\0' ? j : -1;
+    } else if (pattern[i] == '*') {
+      i++;
+      if (pattern[i] == '*') {
+        i++;
+        len = strlen(str + j);
+      } else {
+        len = strcspn(str + j, "/");
+      }
+      if (i == pattern_len) {
+        return j + len;
+      }
+      do {
+        res = match_prefix(pattern + i, pattern_len - i, str + j + len);
+      } while (res == -1 && len-- > 0);
+      return res == -1 ? -1 : j + res + len;
+    } else if (pattern[i] != str[j]) {
+      return -1;
+    }
+  }
+  return j;
 }
 
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
@@ -1948,8 +2005,8 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 }
 
 int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
-  return (int) push(NULL, conn->client.sock, conn->ssl,
-      (const char *) buf, (int64_t) len);
+  return (int) push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
+                    (int64_t) len);
 }
 
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
@@ -2071,38 +2128,23 @@ int mg_get_cookie(const struct mg_connection *conn, const char *cookie_name,
   return len;
 }
 
-// Mongoose allows to specify multiple directories to serve,
-// like /var/www,/~bob=/home/bob. That means that root directory depends on URI.
-// This function returns root dir for given URI.
-static int get_document_root(const struct mg_connection *conn,
-                             struct vec *document_root) {
-  const char *root, *uri;
-  int len_of_matched_uri;
-  struct vec uri_vec, path_vec;
-
-  uri = conn->request_info.uri;
-  len_of_matched_uri = 0;
-  root = next_option(conn->ctx->config[DOCUMENT_ROOT], document_root, NULL);
-
-  while ((root = next_option(root, &uri_vec, &path_vec)) != NULL) {
-    if (memcmp(uri, uri_vec.ptr, uri_vec.len) == 0) {
-      *document_root = path_vec;
-      len_of_matched_uri = uri_vec.len;
-      break;
-    }
-  }
-
-  return len_of_matched_uri;
-}
-
 static void convert_uri_to_file_name(struct mg_connection *conn,
                                      const char *uri, char *buf,
                                      size_t buf_len) {
-  struct vec vec;
+  struct vec a, b;
+  const char *rewrite;
   int match_len;
 
-  match_len = get_document_root(conn, &vec);
-  mg_snprintf(conn, buf, buf_len, "%.*s%s", vec.len, vec.ptr, uri + match_len);
+  mg_snprintf(conn, buf, buf_len, "%s%s", conn->ctx->config[DOCUMENT_ROOT],
+              uri);
+
+  rewrite = conn->ctx->config[REWRITE];
+  while ((rewrite = next_option(rewrite, &a, &b)) != NULL) {
+    if ((match_len = match_prefix(a.ptr, a.len, uri)) > 0) {
+      mg_snprintf(conn, buf, buf_len, "%.*s%s", b.len, b.ptr, uri + match_len);
+      break;
+    }
+  }
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   change_slashes_to_backslashes(buf);
@@ -2232,9 +2274,9 @@ static void remove_double_dots_and_double_slashes(char *s) {
 
   while (*s != '\0') {
     *p++ = *s++;
-    if (s[-1] == '/' || s[-1] == '\\') {
+    if (IS_DIRSEP_CHAR(s[-1])) {
       // Skip all following slashes and backslashes
-      while (*s == '/' || *s == '\\') {
+      while (IS_DIRSEP_CHAR(s[0])) {
         s++;
       }
 
@@ -3118,8 +3160,8 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
       "Connection: %s\r\n"
       "Accept-Ranges: bytes\r\n"
       "%s\r\n",
-      conn->request_info.status_code, msg, date, lm, etag,
-      mime_vec.len, mime_vec.ptr, cl, suggest_connection_header(conn), range);
+      conn->request_info.status_code, msg, date, lm, etag, (int) mime_vec.len,
+      mime_vec.ptr, cl, suggest_connection_header(conn), range);
 
   if (strcmp(conn->request_info.request_method, "HEAD") != 0) {
     send_file_data(conn, fp, cl);
@@ -3366,27 +3408,28 @@ static void prepare_cgi_environment(struct mg_connection *conn,
                                     const char *prog,
                                     struct cgi_env_block *blk) {
   const char *s, *slash;
-  struct vec var_vec, root;
-  char *p;
+  struct vec var_vec;
+  char *p, src_addr[20];
   int  i;
 
   blk->len = blk->nvars = 0;
   blk->conn = conn;
-
-  get_document_root(conn, &root);
+  sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
 
   addenv(blk, "SERVER_NAME=%s", conn->ctx->config[AUTHENTICATION_DOMAIN]);
-  addenv(blk, "SERVER_ROOT=%.*s", root.len, root.ptr);
-  addenv(blk, "DOCUMENT_ROOT=%.*s", root.len, root.ptr);
+  addenv(blk, "SERVER_ROOT=%s", conn->ctx->config[DOCUMENT_ROOT]);
+  addenv(blk, "DOCUMENT_ROOT=%s", conn->ctx->config[DOCUMENT_ROOT]);
 
   // Prepare the environment block
   addenv(blk, "%s", "GATEWAY_INTERFACE=CGI/1.1");
   addenv(blk, "%s", "SERVER_PROTOCOL=HTTP/1.1");
   addenv(blk, "%s", "REDIRECT_STATUS=200"); // For PHP
+
+  // TODO(lsm): fix this for IPv6 case
   addenv(blk, "SERVER_PORT=%d", ntohs(conn->client.lsa.u.sin.sin_port));
+
   addenv(blk, "REQUEST_METHOD=%s", conn->request_info.request_method);
-  addenv(blk, "REMOTE_ADDR=%s",
-      inet_ntoa(conn->client.rsa.u.sin.sin_addr));
+  addenv(blk, "REMOTE_ADDR=%s", src_addr);
   addenv(blk, "REMOTE_PORT=%d", conn->request_info.remote_port);
   addenv(blk, "REQUEST_URI=%s", conn->request_info.uri);
 
@@ -3415,10 +3458,15 @@ static void prepare_cgi_environment(struct mg_connection *conn,
     addenv(blk, "PATH=%s", s);
 
 #if defined(_WIN32)
-  if ((s = getenv("COMSPEC")) != NULL)
+  if ((s = getenv("COMSPEC")) != NULL) {
     addenv(blk, "COMSPEC=%s", s);
-  if ((s = getenv("SYSTEMROOT")) != NULL)
+  }
+  if ((s = getenv("SYSTEMROOT")) != NULL) {
     addenv(blk, "SYSTEMROOT=%s", s);
+  }
+  if ((s = getenv("SystemDrive")) != NULL) {
+    addenv(blk, "SystemDrive=%s", s);
+  }
 #else
   if ((s = getenv("LD_LIBRARY_PATH")) != NULL)
     addenv(blk, "LD_LIBRARY_PATH=%s", s);
@@ -3653,18 +3701,14 @@ static void send_ssi_file(struct mg_connection *, const char *, FILE *, int);
 static void do_ssi_include(struct mg_connection *conn, const char *ssi,
                            char *tag, int include_level) {
   char file_name[BUFSIZ], path[PATH_MAX], *p;
-  struct vec root;
-  int is_ssi;
   FILE *fp;
-
-  get_document_root(conn, &root);
 
   // sscanf() is safe here, since send_ssi_file() also uses buffer
   // of size BUFSIZ to get the tag. So strlen(tag) is always < BUFSIZ.
   if (sscanf(tag, " virtual=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver root
-    (void) mg_snprintf(conn, path, sizeof(path), "%.*s%c%s",
-        root.len, root.ptr, DIRSEP, file_name);
+    (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
+        conn->ctx->config[DOCUMENT_ROOT], DIRSEP, file_name);
   } else if (sscanf(tag, " file=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver working directory
     // or it is absolute system path
@@ -3687,8 +3731,8 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
         tag, path, mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
-    is_ssi = match_extension(path, conn->ctx->config[SSI_EXTENSIONS]);
-    if (is_ssi) {
+    if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
+                     strlen(conn->ctx->config[SSI_EXTENSIONS]), path) > 0) {
       send_ssi_file(conn, path, fp, include_level + 1);
     } else {
       send_file_data(conn, fp, INT64_MAX);
@@ -3922,16 +3966,20 @@ static void handle_request(struct mg_connection *conn) {
           "Directory listing denied");
     }
 #if !defined(NO_CGI)
-  } else if (match_extension(path, conn->ctx->config[CGI_EXTENSIONS])) {
+  } else if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
+                          strlen(conn->ctx->config[CGI_EXTENSIONS]),
+                          path) > 0) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
       send_http_error(conn, 501, "Not Implemented",
-          "Method %s is not implemented", ri->request_method);
+                      "Method %s is not implemented", ri->request_method);
     } else {
       handle_cgi_request(conn, path);
     }
 #endif // !NO_CGI
-  } else if (match_extension(path, conn->ctx->config[SSI_EXTENSIONS])) {
+  } else if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
+                          strlen(conn->ctx->config[SSI_EXTENSIONS]),
+                          path) > 0) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
     send_http_error(conn, 304, "Not Modified", "");
@@ -3951,33 +3999,39 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
 
 // Valid listening port specification is: [ip_address:]port[s|p]
 // Examples: 80, 443s, 127.0.0.1:3128p, 1.2.3.4:8080sp
+// TODO(lsm): add parsing of the IPv6 address
 static int parse_port_string(const struct vec *vec, struct socket *so) {
   struct usa *usa = &so->lsa;
   int a, b, c, d, port, len;
 
   // MacOS needs that. If we do not zero it, subsequent bind() will fail.
+  // Also, all-zeroes in the socket address means binding to all addresses
+  // for both IPv4 and IPv6 (INADDR_ANY and IN6ADDR_ANY_INIT).
   memset(so, 0, sizeof(*so));
 
   if (sscanf(vec->ptr, "%d.%d.%d.%d:%d%n", &a, &b, &c, &d, &port, &len) == 5) {
-    // IP address to bind to is specified
-    usa->u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
-  } else if (sscanf(vec->ptr, "%d%n", &port, &len) == 1) {
-    // Only port number is specified. Bind to all addresses
-    usa->u.sin.sin_addr.s_addr = htonl(INADDR_ANY);
-  } else {
-    return 0;
-  }
-  assert(len > 0 && len <= (int) vec->len);
-
-  if (strchr("sp,", vec->ptr[len]) == NULL) {
+    // Bind to a specific IPv4 address
+    so->lsa.u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
+  } else if (sscanf(vec->ptr, "%d%n", &port, &len) != 1 ||
+             len <= 0 ||
+             len > (int) vec->len ||
+             (vec->ptr[len] && strchr("sp,", vec->ptr[len]) == NULL)) {
     return 0;
   }
 
   so->is_ssl = vec->ptr[len] == 's';
+#if defined(MG_PROXY_SUPPORT)
   so->is_proxy = vec->ptr[len] == 'p';
+#endif
+#if defined(USE_IPV6)
   usa->len = sizeof(usa->u.sin);
-  usa->u.sin.sin_family = AF_INET;
-  usa->u.sin.sin_port = htons((uint16_t) port);
+  so->lsa.u.sin6.sin6_family = AF_INET6;
+  so->lsa.u.sin6.sin6_port = htons((uint16_t) port);
+#else
+  usa->len = sizeof(usa->u.sin);
+  so->lsa.u.sin.sin_family = AF_INET;
+  so->lsa.u.sin.sin_port = htons((uint16_t) port);
+#endif
 
   return 1;
 }
@@ -4001,7 +4055,8 @@ static int set_ports_option(struct mg_context *ctx) {
     } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
       mg_cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
       success = 0;
-    } else if ((sock = socket(PF_INET, SOCK_STREAM, 6)) == INVALID_SOCKET ||
+    } else if ((sock = socket(so.lsa.u.sa.sa_family, SOCK_STREAM, IPPROTO_TCP)) ==
+               INVALID_SOCKET ||
 #if !defined(_WIN32)
                // On Windows, SO_REUSEADDR is recommended only for
                // broadcast UDP sockets
@@ -4058,7 +4113,7 @@ static void log_header(const struct mg_connection *conn, const char *header,
 static void log_access(const struct mg_connection *conn) {
   const struct mg_request_info *ri;
   FILE *fp;
-  char date[64];
+  char date[64], src_addr[20];
 
   fp = conn->ctx->config[ACCESS_LOG_FILE] == NULL ?  NULL :
     mg_fopen(conn->ctx->config[ACCESS_LOG_FILE], "a+");
@@ -4073,15 +4128,12 @@ static void log_access(const struct mg_connection *conn) {
 
   flockfile(fp);
 
-  (void) fprintf(fp,
-      "%s - %s [%s] \"%s %s HTTP/%s\" %d %" INT64_FMT,
-      inet_ntoa(conn->client.rsa.u.sin.sin_addr),
-      ri->remote_user == NULL ? "-" : ri->remote_user,
-      date,
-      ri->request_method ? ri->request_method : "-",
-      ri->uri ? ri->uri : "-",
-      ri->http_version,
-      conn->request_info.status_code, conn->num_bytes_sent);
+  sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
+  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %" INT64_FMT,
+          src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
+          ri->request_method ? ri->request_method : "-",
+          ri->uri ? ri->uri : "-", ri->http_version,
+          conn->request_info.status_code, conn->num_bytes_sent);
   log_header(conn, "Referer", fp);
   log_header(conn, "User-Agent", fp);
   (void) fputc('\n', fp);
@@ -4396,6 +4448,7 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
           (size_t) conn->data_len);
 }
 
+#if defined(MG_PROXY_SUPPORT)
 static int parse_url(const char *url, char *host, int *port) {
   int len;
 
@@ -4463,6 +4516,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
     conn->peer = NULL;
   }
 }
+#endif /* proxy support */
 
 static int is_valid_uri(const char *uri) {
   // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
@@ -4496,7 +4550,7 @@ static void process_new_connection(struct mg_connection *conn) {
     // Nul-terminate the request cause parse_http_request() uses sscanf
     conn->buf[conn->request_len - 1] = '\0';
     if (!parse_http_request(conn->buf, ri) ||
-        (!conn->client.is_proxy && !is_valid_uri(ri->uri))) {
+        (!mg_is_proxy_conn(&conn->client) && !is_valid_uri(ri->uri))) {
       // Do not put garbage in the access log, just send it back to the client
       send_http_error(conn, 400, "Bad Request",
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
@@ -4512,17 +4566,29 @@ static void process_new_connection(struct mg_connection *conn) {
       conn->birth_time = time(NULL);
       // and clear the cached logfile path so it is recalculated on the next log operation:
       conn->logfile_path[0] = 0;
-      if (conn->client.is_proxy) {
+#if defined(MG_PROXY_SUPPORT)
+      if (mg_is_proxy_conn(&conn->client)) 
+	  {
         handle_proxy_request(conn);
-      } else {
-        handle_request(conn);
+      } 
+	  else 
+#endif
+	  {
+	    handle_request(conn);
       }
-      log_access(conn);
+	  log_access(conn);
       discard_current_request_from_buffer(conn);
     }
     // conn->peer is not NULL only for SSL-ed proxy connections
   } while (conn->ctx->stop_flag == 0 &&
-           (conn->peer || (keep_alive_enabled && should_keep_alive(conn))));
+#if defined(MG_PROXY_SUPPORT)
+           (conn->peer || 
+#endif
+		    (keep_alive_enabled && should_keep_alive(conn))
+#if defined(MG_PROXY_SUPPORT)
+		   )
+#endif
+		   );
 }
 
 // Worker threads take accepted socket from the queue
@@ -4575,6 +4641,7 @@ static void worker_thread(struct mg_context *ctx) {
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
     // Thanks to Johannes Winkelmann for the patch.
+    // TODO(lsm): Fix IPv6 case
     conn->request_info.remote_port = ntohs(conn->client.rsa.u.sin.sin_port);
     memcpy(&conn->request_info.remote_ip,
            &conn->client.rsa.u.sin.sin_addr.s_addr, 4);
@@ -4624,6 +4691,8 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
 static void accept_new_connection(const struct socket *listener,
                                   struct mg_context *ctx) {
   struct socket accepted;
+  char src_addr[20];
+  socklen_t len;
   int allowed;
 
   int keep_alive_timeout = atoi(ctx->config[KEEP_ALIVE_TIMEOUT]);
@@ -4656,11 +4725,13 @@ static void accept_new_connection(const struct socket *listener,
       // Put accepted socket structure into the queue
       DEBUG_TRACE(("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
+#if defined(MG_PROXY_SUPPORT)
       accepted.is_proxy = listener->is_proxy;
+#endif
       produce_socket(ctx, &accepted);
     } else {
-      mg_cry(fc(ctx), "%s: %s is not allowed to connect",
-          __func__, inet_ntoa(accepted.rsa.u.sin.sin_addr));
+      sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa);
+      mg_cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
       (void) closesocket(accepted.sock);
     }
   }

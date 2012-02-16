@@ -72,7 +72,17 @@ static void WINCDECL signal_handler(int sig_num) {
   exit_flag = sig_num;
 }
 
-static void die(const char *fmt, ...) {
+static const char *default_options[] = {
+    "document_root",         "./html",
+    "listening_ports",       "8081",                         // "8081,8082s"
+    //"ssl_certificate",     "ssl_cert.pem",
+    "num_threads",           "5",
+    "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p].log",
+
+    NULL
+};
+
+void die(const char *fmt, ...) {
   va_list ap;
   char msg[200];
 
@@ -234,13 +244,7 @@ static void init_server_name(void) {
 static void start_mongoose(int argc, char *argv[]) {
     char *options[MAX_OPTIONS * 2] = { NULL };
     int i;
-    struct mg_user_class_t userdef = {
-        &event_handler,
-        &tws_cfg,
-        &option_decode,
-        &option_fill,
-        &option_get
-    };
+	struct mg_user_class_t userdef = {0};
 
     /* Edit passwords file if -A option is specified */
     if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
@@ -505,8 +509,8 @@ int main(int argc, char *argv[]) {
   while (exit_flag == 0 && !mg_get_stop_flag(ctx)) {
     sleep(1);
   }
-  printf("Exiting on signal %d, waiting for all threads to finish...",
-         exit_flag);
+    printf("Exiting on signal %d/%d, waiting for all threads to finish...",
+        exit_flag, mg_get_stop_flag(ctx));
   fflush(stdout);
   mg_stop(ctx);
   printf("%s", " done.\n");
