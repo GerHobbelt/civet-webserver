@@ -113,6 +113,7 @@ typedef long off_t;
 #define PATH_MAX MAX_PATH
 #define S_ISDIR(x) ((x) & _S_IFDIR)
 #define O_NONBLOCK  0
+
 #if !defined(EWOULDBLOCK)
 #define EWOULDBLOCK  WSAEWOULDBLOCK
 #endif // !EWOULDBLOCK
@@ -140,8 +141,11 @@ typedef long off_t;
 #define fdopen(x, y) _fdopen((x), (y))
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile mg_flockfile
-#define funlockfile mg_funlockfile
+
+void mgW32_flockfile(FILE *x);
+void mgW32_funlockfile(FILE *x);
+#define flockfile mgW32_flockfile
+#define funlockfile mgW32_funlockfile
 
 #if !defined(fileno)
 #define fileno(x) _fileno(x)

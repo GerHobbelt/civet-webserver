@@ -26,16 +26,6 @@
 #include <stdio.h>
 #include <errno.h>
 
-#if defined(_MSC_VER)
-#if !defined(EWOULDBLOCK)
-#define EWOULDBLOCK  WSAEWOULDBLOCK
-#endif // !EWOULDBLOCK
-
-#ifndef ETIMEOUT
-#define ETIMEOUT    WSAETIMEDOUT
-#endif
-#endif
-
 
 #ifdef __cplusplus
 extern "C" {
