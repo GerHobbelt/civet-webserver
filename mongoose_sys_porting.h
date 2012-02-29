@@ -140,8 +140,8 @@ typedef long off_t;
 #define fdopen(x, y) _fdopen((x), (y))
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile(x) (void) 0
-#define funlockfile(x) (void) 0
+#define flockfile mg_flockfile
+#define funlockfile mg_funlockfile
 
 #if !defined(fileno)
 #define fileno(x) _fileno(x)
@@ -242,6 +242,18 @@ typedef int SOCKET;
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
+
+/* <bel>: Local fix for some linux sdk headers that do not know these options */
+#ifndef SOL_TCP
+#define SOL_TCP 6
+#endif
+#ifndef TCP_USER_TIMEOUT
+#define TCP_USER_TIMEOUT 18
+#endif
+#ifndef SOMAXCONN
+#define SOMAXCONN 128
+#endif
+/* <bel>: end fix */
 
 
 #if defined(DEBUG)

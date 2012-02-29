@@ -28,6 +28,20 @@
 #define CGI_ENVIRONMENT_SIZE 4096
 #define MAX_CGI_ENVIR_VARS 64
 
+
+#ifdef _WIN32
+static CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+
+void mg_flockfile(FILE *x) {
+  EnterCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+}
+
+void mg_funlockfile(FILE *x) {
+  LeaveCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+}
+#endif
+
+
 typedef void * (*mg_thread_func_t)(void *);
 
 static const char *http_500_error = "Internal Server Error";
@@ -261,6 +275,7 @@ struct mg_connection {
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
+  int must_close;             // <bel>: fix 319: Must close the connection
 
   char logfile_path[MAX_PATH+1]; // cached value: path to the logfile designated to this connection/CTX
 };
@@ -992,6 +1007,10 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
 static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
+
+  if (conn->must_close) return 0; // <bel>: fix 319
+  if (conn->request_info.status_code == 401)	return 0; // <bel>: fix 292
+
   return !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
 			((header == NULL && http_version && !strcmp(http_version, "1.1")) ||
 			(header != NULL && !mg_strcasecmp(header, "keep-alive")));
@@ -1183,6 +1202,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
   } else {
     // Convert to Unicode and back. If doubly-converted string does not
     // match the original, something is fishy, reject.
+    memset(wbuf, 0, wbuf_len*sizeof(wchar_t)); // <bel>: fix otherwise an "uninitialized memory read in WideCharToMultiByte" occurs
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len);
     WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
                         NULL, NULL);
@@ -1676,7 +1696,12 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
       if (ferror(fp))
         n = -1;
     } else {
+#if defined(MSG_NOSIGNAL)
+      /* <bel>: Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
+      n = send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
+#else
       n = send(sock, buf + sent, (size_t)k, 0);
+#endif
     }
 
     if (n < 0)
@@ -3294,6 +3319,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
+  const char *cgi_con; // <bel>: fix 319 / Enhancement for CGI
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri;
   struct cgi_env_block blk;
@@ -3365,13 +3391,29 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   // Make up and send the status line
   if ((status = get_header(&ri, "Status")) != NULL) {
-    conn->request_info.status_code = atoi(status);
+    // <bel>: fix  296 begin
+    char * chknum = 0;
+    conn->request_info.status_code = strtol(status, &chknum, 10);
+    if ((chknum != 0) && (*chknum == ' '))
+      status = chknum + 1;
+    else
+      status = NULL;
+    // <bel>: fix  296 end
   } else if (get_header(&ri, "Location") != NULL) {
     conn->request_info.status_code = 302;
   } else {
     conn->request_info.status_code = 200;
   }
-  (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n", conn->request_info.status_code);
+
+  // <bel>: fix 319 / Enhancement for CGI
+  if ((cgi_con = get_header(&ri, "Connection")) != NULL) {
+     if (mg_strcasecmp(cgi_con, "keep-alive")) {
+        conn->must_close = 1;
+     }
+  }
+  // <bel>: end fix 319 / Enhancement for CGI
+
+  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : "OK"); // <bel>: fix  296
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
@@ -3614,6 +3656,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
                     mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
+    conn->must_close = 1; // <bel>: fix 319
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
@@ -3856,7 +3899,7 @@ static int set_ports_option(struct mg_context *ctx) {
                setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *) &on,
                           sizeof(on)) != 0 ||
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
-               listen(sock, 100) != 0) {
+               listen(sock, SOMAXCONN) != 0) {
       closesocket(sock);
       mg_cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, mg_strerror(ERRNO));
@@ -4376,6 +4419,8 @@ static void process_new_connection(struct mg_connection *conn) {
 		   )
 #endif
 		   );
+
+  reset_per_request_attributes(conn);  // plug minor memory leak (issue #306)
 }
 
 // Worker threads take accepted socket from the queue
@@ -4442,7 +4487,6 @@ static void worker_thread(struct mg_context *ctx) {
 
     close_connection(conn);
   }
-  reset_per_request_attributes(conn);  // plug minor memory leak (issue #306)
   free(conn);
 
   // Signal master that we're done with connection and exiting
@@ -4535,7 +4579,7 @@ static void master_thread(struct mg_context *ctx) {
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #endif
-  
+
 #if defined(ISSUE_317)
   struct sched_param sched_param;
   sched_param.sched_priority = sched_get_priority_max(SCHED_RR);
@@ -4658,6 +4702,10 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   WSAStartup(MAKEWORD(2,2), &data);
 #endif // _WIN32
 
+#ifdef _WIN32
+  InitializeCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+#endif
+
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
   ctx = (struct mg_context *) calloc(1, sizeof(*ctx));
@@ -4746,3 +4794,4 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 
   return ctx;
 }
+
