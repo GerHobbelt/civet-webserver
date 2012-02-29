@@ -3229,7 +3229,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
                                     const char *prog,
                                     struct cgi_env_block *blk) {
   const char *s, *slash;
-  struct vec var_vec;
+  struct vec var_vec = {0};
   char *p, src_addr[20];
   int  i;
 
@@ -3338,7 +3338,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   const char *status;
   const char *cgi_con; // <bel>: fix 319 / Enhancement for CGI
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
-  struct mg_request_info ri;
+  struct mg_request_info ri = {0};
   struct cgi_env_block blk;
   FILE *in, *out;
   pid_t pid;
