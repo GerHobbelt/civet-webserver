@@ -401,6 +401,16 @@ const char *mg_strerror(int errcode)
 #endif
 }
 
+/*
+   Return fake connection structure. Used for logging, if connection
+   is not applicable at the moment of logging.
+*/
+static struct mg_connection *fc(struct mg_context *ctx) {
+  static struct mg_connection fake_connection = {0};
+  fake_connection.ctx = ctx;
+  return &fake_connection;
+}
+
 const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp)
 {
     char fnbuf[PATH_MAX+1];
@@ -465,6 +475,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                         u = inet_ntoa(conn->client.rsa.u.sin.sin_addr);
                         goto copy_partial2dst;
                     }
+                    s += 4;
                     continue;
 
                 case 'p':
@@ -493,6 +504,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                         u = conn->request_info.uri;
                         goto copy_partial2dst;
                     }
+                    s += 4;
                     continue;
 
 copy_partial2dst:
@@ -605,6 +617,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 {
   int rv = 0;
 
+  if (!conn) conn = fc(NULL);
   logfile = (logfile == NULL ? mg_get_default_logfile_path(conn) : logfile);
   severity = (severity ? severity : "error");
   conn->request_info.log_severity = severity;
@@ -697,7 +710,7 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 			buf[sizeof(buf) - 2] = 0;
 
 		// cope with the special case of overflow by using storage on the allocated heap:
-		buf2 = malloc(bufsize);
+		buf2 = (char *)malloc(bufsize);
 		// don't mind when this malloc fails! It's just a matter of 'best effort' here!
 		if (buf2)
 		{
@@ -722,9 +735,8 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 void mg_cry_raw(struct mg_connection *conn, const char *msg)
 {
     time_t timestamp = time(NULL);
-    const char *logfile = mg_get_default_logfile_path(conn);
 
-    (void)mg_write2log_raw(conn, logfile, timestamp, NULL, msg);
+    (void)mg_write2log_raw(conn, NULL, timestamp, NULL, msg);
 }
 
 // Print error message to the opened error log stream.
@@ -752,14 +764,6 @@ static const char *ssl_error(void) {
   unsigned long err;
   err = ERR_get_error();
   return err == 0 ? "" : ERR_error_string(err, NULL);
-}
-
-// Return fake connection structure. Used for logging, if connection
-// is not applicable at the moment of logging.
-static struct mg_connection *fc(struct mg_context *ctx) {
-  static struct mg_connection fake_connection;
-  fake_connection.ctx = ctx;
-  return &fake_connection;
 }
 
 const char *mg_version(void) {
@@ -1211,7 +1215,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
       *p == 0x2b ||               // No '+'
       (*p & ~0x7f)) {             // And generally no non-ascii chars
-    (void) fprintf(stderr, "Rejecting suspicious path: [%s]", buf);
+    mg_cry(NULL, "Rejecting suspicious path: [%s]", buf);
     wbuf[0] = L'\0';
   } else {
     // Convert to Unicode and back. If doubly-converted string does not
@@ -1221,6 +1225,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
     WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
                         NULL, NULL);
     if (strcmp(buf, buf2) != 0) {
+	  mg_cry(NULL, "Rejecting malicious path: [%s]", buf);
       wbuf[0] = L'\0';
     }
   }
@@ -2454,7 +2459,7 @@ static FILE *open_auth_file(struct mg_connection *conn, const char *path) {
     // Use global passwords file
     fp =  mg_fopen(ctx->config[GLOBAL_PASSWORDS_FILE], "r");
     if (fp == NULL)
-      mg_cry(fc(ctx), "fopen(%s): %s",
+      mg_cry(conn, "fopen(%s): %s",
           ctx->config[GLOBAL_PASSWORDS_FILE], mg_strerror(ERRNO));
   } else if (!mg_stat(path, &st) && st.is_directory) {
     (void) mg_snprintf(conn, name, sizeof(name), "%s%c%s",
