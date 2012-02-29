@@ -296,6 +296,8 @@ const char *mg_version(void);
 void mg_md5(char *buf, ...);
 
 
+// Return the HTTP response code string for the given response code
+const char *mg_get_response_code_text(int response_code);
 
 
 // --- helper functions ---
@@ -325,13 +327,21 @@ char * mg_strdup(const char *str);
 int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnprintf() what printf() is to vprintf().
-int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...);
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+#ifdef __GNUC__
+__attribute__((format(printf, 4, 5)))
+#endif
+;
 
 // Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
 FILE *mg_fopen(const char *path, const char *mode);
 
 // Print error message to the opened error log stream.
-void mg_cry(struct mg_connection *conn, const char *fmt, ...);
+void mg_cry(struct mg_connection *conn, const char *fmt, ...)
+#ifdef __GNUC__
+__attribute__((format(printf, 2, 3)))
+#endif
+;
 // Print error message to the opened error log stream.
 void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args);
 // Print formatted error message to the opened error log stream.
@@ -356,8 +366,11 @@ const char *mg_get_default_logfile_path(struct mg_connection *conn);
 int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg);
 
 // Print log message to the opened error log stream.
-void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...);
-
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
+#ifdef __GNUC__
+__attribute__((format(printf, 5, 6)))
+#endif
+;
 // Print log message to the opened error log stream.
 void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args);
 

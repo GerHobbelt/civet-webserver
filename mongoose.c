@@ -44,7 +44,6 @@ void mg_funlockfile(FILE *x) {
 
 typedef void * (*mg_thread_func_t)(void *);
 
-static const char *http_500_error = "Internal Server Error";
 
 // Snatched from OpenSSL includes. I put the prototypes here to be independent
 // from the OpenSSL source installation. Having this, mongoose + SSL can be
@@ -1020,12 +1019,27 @@ static const char *suggest_connection_header(const struct mg_connection *conn) {
   return should_keep_alive(conn) ? "keep-alive" : "close";
 }
 
+/*
+Send HTTP error response headers.
+
+'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
+
+'fmt' + args is the content sent along as error report (request response).
+*/
 static void send_http_error(struct mg_connection *conn, int status,
-                            const char *reason, const char *fmt, ...) {
+                            const char *reason, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 4, 5)))
+#endif
+{
   char buf[BUFSIZ];
   va_list ap;
   int len;
 
+  if (!reason) {
+	reason = mg_get_response_code_text(status);
+  }
+  
   conn->request_info.status_code = status;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
@@ -1630,7 +1644,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 
   if ((pid = fork()) == -1) {
     // Parent
-    send_http_error(conn, 500, http_500_error, "fork(): %s", mg_strerror(ERRNO));
+    send_http_error(conn, 500, NULL, "fork(): %s", mg_strerror(ERRNO));
   } else if (pid == 0) {
     // Child
     if (chdir(dir) != 0) {
@@ -2926,7 +2940,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
   range[0] = '\0';
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
         "fopen(%s): %s", path, mg_strerror(ERRNO));
     return;
   }
@@ -2978,7 +2992,7 @@ void mg_send_file(struct mg_connection *conn, const char *path) {
   if (mg_stat(path, &st) == 0) {
     handle_file_request(conn, path, &st);
   } else {
-    send_http_error(conn, 404, "Not Found", "%s", "File not found");
+    send_http_error(conn, 404, NULL, "File not found");
   }
 }
 
@@ -3114,9 +3128,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   assert(fp != NULL);
 
   if (conn->content_len == -1) {
-    send_http_error(conn, 411, "Length Required", "");
+    send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
-    send_http_error(conn, 417, "Expectation Failed", "");
+    send_http_error(conn, 417, NULL, "");
   } else {
     if (expect != NULL) {
       (void) mg_printf(conn, "%s", "HTTP/1.1 100 Continue\r\n\r\n");
@@ -3153,7 +3167,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
 
     // Each error code path in this function must send an error
     if (!success) {
-      send_http_error(conn, 577, http_500_error, "");
+      send_http_error(conn, 577, NULL, "");
     }
   }
 
@@ -3179,7 +3193,11 @@ struct cgi_env_block {
 
 // Append VARIABLE=VALUE\0 string to the buffer, and add a respective
 // pointer into the vars array.
-static char *addenv(struct cgi_env_block *block, const char *fmt, ...) {
+static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 2, 3)))
+#endif
+{
   int n, space;
   char *added;
   va_list ap;
@@ -3344,7 +3362,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   in = out = NULL;
 
   if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
         "Cannot create CGI pipe: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
@@ -3352,7 +3370,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     goto done;
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
       (out = fdopen(fd_stdout[0], "rb")) == NULL) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
         "fopen: %s", mg_strerror(ERRNO));
     goto done;
   }
@@ -3380,7 +3398,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   headers_len = read_request(out, INVALID_SOCKET, NULL,
       buf, sizeof(buf), &data_len);
   if (headers_len <= 0) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
                     "CGI program sent malformed HTTP headers: [%.*s]",
                     data_len, buf);
     goto done;
@@ -3500,10 +3518,10 @@ static void put_file(struct mg_connection *conn, const char *path) {
   if ((rc = put_dir(path)) == 0) {
     mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n", conn->request_info.status_code);
   } else if (rc == -1) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
         "put_dir(%s): %s", path, mg_strerror(ERRNO));
   } else if ((fp = mg_fopen(path, "wb+")) == NULL) {
-    send_http_error(conn, 500, http_500_error,
+    send_http_error(conn, 500, NULL,
         "fopen(%s): %s", path, mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
@@ -3652,7 +3670,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   FILE *fp;
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
-    send_http_error(conn, 500, http_500_error, "fopen(%s): %s", path,
+    send_http_error(conn, 500, NULL, "fopen(%s): %s", path,
                     mg_strerror(ERRNO));
   } else {
     set_close_on_exec(fileno(fp));
@@ -3758,9 +3776,9 @@ static void handle_request(struct mg_connection *conn) {
     send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
-    send_http_error(conn, 403, "Forbidden", "Access Forbidden");
+    send_http_error(conn, 403, NULL, "Access Forbidden");
   } else if (conn->ctx->config[DOCUMENT_ROOT] == NULL) {
-    send_http_error(conn, 404, "Not Found", "Not Found");
+    send_http_error(conn, 404, NULL, "Not Found");
   } else if ((!strcmp(ri->request_method, "PUT") ||
         !strcmp(ri->request_method, "DELETE")) &&
       (conn->ctx->config[PUT_DELETE_PASSWORDS_FILE] == NULL ||
@@ -3770,13 +3788,13 @@ static void handle_request(struct mg_connection *conn) {
     put_file(conn, path);
   } else if (!strcmp(ri->request_method, "DELETE")) {
     if (mg_remove(path) == 0) {
-      send_http_error(conn, 200, "OK", "");
+      send_http_error(conn, 200, NULL, "");
     } else {
-      send_http_error(conn, 500, http_500_error, "remove(%s): %s", path,
+      send_http_error(conn, 500, NULL, "remove(%s): %s", path,
                       mg_strerror(ERRNO));
     }
   } else if (stat_result != 0) {
-    send_http_error(conn, 404, "Not Found", "%s", "File not found");
+    send_http_error(conn, 404, NULL, "File not found");
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
     (void) mg_printf(conn,
         "HTTP/1.1 301 Moved Permanently\r\n"
@@ -3797,7 +3815,7 @@ static void handle_request(struct mg_connection *conn) {
                           path) > 0) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
-      send_http_error(conn, 501, "Not Implemented",
+      send_http_error(conn, 501, NULL,
                       "Method %s is not implemented", ri->request_method);
     } else {
       handle_cgi_request(conn, path);
@@ -3808,7 +3826,7 @@ static void handle_request(struct mg_connection *conn) {
                           path) > 0) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
-    send_http_error(conn, 304, "Not Modified", "");
+    send_http_error(conn, 304, NULL, "");
   } else {
     handle_file_request(conn, path, &st);
   }
@@ -4368,7 +4386,7 @@ static void process_new_connection(struct mg_connection *conn) {
     }
     assert(conn->data_len >= conn->request_len);
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
-      send_http_error(conn, 413, "Request Too Large", "");
+      send_http_error(conn, 413, NULL, "");
       return;
     } if (conn->request_len <= 0) {
       return;  // Remote end closed the connection
@@ -4382,12 +4400,12 @@ static void process_new_connection(struct mg_connection *conn) {
 #endif
 	   ) {
       // Do not put garbage in the access log, just send it back to the client
-      send_http_error(conn, 400, "Bad Request",
+      send_http_error(conn, 400, NULL,
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
     } else if (strcmp(ri->http_version, "1.0") &&
                strcmp(ri->http_version, "1.1")) {
       // Request seems valid, but HTTP version is strange
-      send_http_error(conn, 505, "HTTP version not supported", "");
+      send_http_error(conn, 505, NULL, "");
       log_access(conn);
     } else {
       // Request is valid, handle it
@@ -4795,3 +4813,71 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   return ctx;
 }
 
+
+const char *mg_get_response_code_text(int response_code)
+{
+	switch (response_code)
+	{
+	case 100:   return "Continue"; // RFC2616 Section 10.1.1: 
+	case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2: 
+	case 200:   return "OK"; // RFC2616 Section 10.2.1: 
+	case 201:   return "Created"; // RFC2616 Section 10.2.2: 
+	case 202:   return "Accepted"; // RFC2616 Section 10.2.3: 
+	case 203:   return "Non-Authoritative Information"; // RFC2616 Section 10.2.4: 
+	case 204:   return "No Content"; // RFC2616 Section 10.2.5: 
+	case 205:   return "Reset Content"; // RFC2616 Section 10.2.6: 
+	case 206:   return "Partial Content"; // RFC2616 Section 10.2.7: 
+	case 300:   return "Multiple Choices"; // RFC2616 Section 10.3.1: 
+	case 301:   return "Moved Permanently"; // RFC2616 Section 10.3.2: 
+	case 302:   return "Found"; // RFC2616 Section 10.3.3: 
+	case 303:   return "See Other"; // RFC2616 Section 10.3.4: 
+	case 304:   return "Not Modified"; // RFC2616 Section 10.3.5: 
+	case 305:   return "Use Proxy"; // RFC2616 Section 10.3.6: 
+	case 307:   return "Temporary Redirect"; // RFC2616 Section 10.3.8: 
+	case 400:   return "Bad Request"; // RFC2616 Section 10.4.1: 
+	case 401:   return "Unauthorized"; // RFC2616 Section 10.4.2: 
+	case 402:   return "Payment Required"; // RFC2616 Section 10.4.3: 
+	case 403:   return "Forbidden"; // RFC2616 Section 10.4.4: 
+	case 404:   return "Not Found"; // RFC2616 Section 10.4.5: 
+	case 405:   return "Method Not Allowed"; // RFC2616 Section 10.4.6: 
+	case 406:   return "Not Acceptable"; // RFC2616 Section 10.4.7: 
+	case 407:   return "Proxy Authentication Required"; // RFC2616 Section 10.4.8: 
+	case 408:   return "Request Time-out"; // RFC2616 Section 10.4.9: 
+	case 409:   return "Conflict"; // RFC2616 Section 10.4.10: 
+	case 410:   return "Gone"; // RFC2616 Section 10.4.11: 
+	case 411:   return "Length Required"; // RFC2616 Section 10.4.12: 
+	case 412:   return "Precondition Failed"; // RFC2616 Section 10.4.13: 
+	case 413:   return "Request Entity Too Large"; // RFC2616 Section 10.4.14: 
+	case 414:   return "Request-URI Too Large"; // RFC2616 Section 10.4.15: 
+	case 415:   return "Unsupported Media Type"; // RFC2616 Section 10.4.16: 
+	case 416:   return "Requested range not satisfiable"; // RFC2616 Section 10.4.17: 
+	case 417:   return "Expectation Failed"; // RFC2616 Section 10.4.18: 
+	case 500:   return "Internal Server Error"; // RFC2616 Section 10.5.1: 
+	case 501:   return "Not Implemented"; // RFC2616 Section 10.5.2: 
+	case 502:   return "Bad Gateway"; // RFC2616 Section 10.5.3: 
+	case 503:   return "Service Unavailable"; // RFC2616 Section 10.5.4: 
+	case 504:   return "Gateway Time-out"; // RFC2616 Section 10.5.5: 
+	case 505:   return "HTTP Version not supported"; // RFC2616 Section 10.5.6: 
+/*
+	case 102:   return "Processing";  // http://www.askapache.com/htaccess/apache-status-code-headers-errordocument.html#m0-askapache3
+	case 207:   return "Multi-Status";
+	case 418:   return "I'm a teapot";
+	case 419:   return "unused";
+	case 420:   return "unused";
+	case 421:   return "unused";
+	case 422:   return "Unproccessable entity";
+	case 423:   return "Locked";
+	case 424:   return "Failed Dependency";
+	case 425:   return "Node code";
+	case 426:   return "Upgrade Required";
+	case 506:   return "Variant Also Negotiates";
+	case 507:   return "Insufficient Storage";
+	case 508:   return "unused";
+	case 509:   return "unused";
+	case 510:   return "Not Extended";
+*/
+	case 577:   return "Mongoose Internal Server Error";
+	
+	default:   return "Unknown Response Code";
+	}
+}
