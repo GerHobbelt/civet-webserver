@@ -32,11 +32,11 @@
 #ifdef _WIN32
 static CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 
-void mg_flockfile(FILE *x) {
+void mgW32_flockfile(FILE *x) {
   EnterCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 }
 
-void mg_funlockfile(FILE *x) {
+void mgW32_funlockfile(FILE *x) {
   LeaveCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 }
 #endif
@@ -1039,7 +1039,7 @@ static void send_http_error(struct mg_connection *conn, int status,
   if (!reason) {
 	reason = mg_get_response_code_text(status);
   }
-  
+
   conn->request_info.status_code = status;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
@@ -1754,7 +1754,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1 && conn->consumed_content == 0) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %zu %lld %lld", buf, len,
+  DEBUG_TRACE(("%p %zu %" INT64_FMT " %" INT64_FMT, buf, len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len) {
@@ -1966,7 +1966,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
-  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) vec.len, vec.ptr));
+  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
 
   return stat_result;
 }
@@ -4818,46 +4818,46 @@ const char *mg_get_response_code_text(int response_code)
 {
 	switch (response_code)
 	{
-	case 100:   return "Continue"; // RFC2616 Section 10.1.1: 
-	case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2: 
-	case 200:   return "OK"; // RFC2616 Section 10.2.1: 
-	case 201:   return "Created"; // RFC2616 Section 10.2.2: 
-	case 202:   return "Accepted"; // RFC2616 Section 10.2.3: 
-	case 203:   return "Non-Authoritative Information"; // RFC2616 Section 10.2.4: 
-	case 204:   return "No Content"; // RFC2616 Section 10.2.5: 
-	case 205:   return "Reset Content"; // RFC2616 Section 10.2.6: 
-	case 206:   return "Partial Content"; // RFC2616 Section 10.2.7: 
-	case 300:   return "Multiple Choices"; // RFC2616 Section 10.3.1: 
-	case 301:   return "Moved Permanently"; // RFC2616 Section 10.3.2: 
-	case 302:   return "Found"; // RFC2616 Section 10.3.3: 
-	case 303:   return "See Other"; // RFC2616 Section 10.3.4: 
-	case 304:   return "Not Modified"; // RFC2616 Section 10.3.5: 
-	case 305:   return "Use Proxy"; // RFC2616 Section 10.3.6: 
-	case 307:   return "Temporary Redirect"; // RFC2616 Section 10.3.8: 
-	case 400:   return "Bad Request"; // RFC2616 Section 10.4.1: 
-	case 401:   return "Unauthorized"; // RFC2616 Section 10.4.2: 
-	case 402:   return "Payment Required"; // RFC2616 Section 10.4.3: 
-	case 403:   return "Forbidden"; // RFC2616 Section 10.4.4: 
-	case 404:   return "Not Found"; // RFC2616 Section 10.4.5: 
-	case 405:   return "Method Not Allowed"; // RFC2616 Section 10.4.6: 
-	case 406:   return "Not Acceptable"; // RFC2616 Section 10.4.7: 
-	case 407:   return "Proxy Authentication Required"; // RFC2616 Section 10.4.8: 
-	case 408:   return "Request Time-out"; // RFC2616 Section 10.4.9: 
-	case 409:   return "Conflict"; // RFC2616 Section 10.4.10: 
-	case 410:   return "Gone"; // RFC2616 Section 10.4.11: 
-	case 411:   return "Length Required"; // RFC2616 Section 10.4.12: 
-	case 412:   return "Precondition Failed"; // RFC2616 Section 10.4.13: 
-	case 413:   return "Request Entity Too Large"; // RFC2616 Section 10.4.14: 
-	case 414:   return "Request-URI Too Large"; // RFC2616 Section 10.4.15: 
-	case 415:   return "Unsupported Media Type"; // RFC2616 Section 10.4.16: 
-	case 416:   return "Requested range not satisfiable"; // RFC2616 Section 10.4.17: 
-	case 417:   return "Expectation Failed"; // RFC2616 Section 10.4.18: 
-	case 500:   return "Internal Server Error"; // RFC2616 Section 10.5.1: 
-	case 501:   return "Not Implemented"; // RFC2616 Section 10.5.2: 
-	case 502:   return "Bad Gateway"; // RFC2616 Section 10.5.3: 
-	case 503:   return "Service Unavailable"; // RFC2616 Section 10.5.4: 
-	case 504:   return "Gateway Time-out"; // RFC2616 Section 10.5.5: 
-	case 505:   return "HTTP Version not supported"; // RFC2616 Section 10.5.6: 
+	case 100:   return "Continue"; // RFC2616 Section 10.1.1:
+	case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2:
+	case 200:   return "OK"; // RFC2616 Section 10.2.1:
+	case 201:   return "Created"; // RFC2616 Section 10.2.2:
+	case 202:   return "Accepted"; // RFC2616 Section 10.2.3:
+	case 203:   return "Non-Authoritative Information"; // RFC2616 Section 10.2.4:
+	case 204:   return "No Content"; // RFC2616 Section 10.2.5:
+	case 205:   return "Reset Content"; // RFC2616 Section 10.2.6:
+	case 206:   return "Partial Content"; // RFC2616 Section 10.2.7:
+	case 300:   return "Multiple Choices"; // RFC2616 Section 10.3.1:
+	case 301:   return "Moved Permanently"; // RFC2616 Section 10.3.2:
+	case 302:   return "Found"; // RFC2616 Section 10.3.3:
+	case 303:   return "See Other"; // RFC2616 Section 10.3.4:
+	case 304:   return "Not Modified"; // RFC2616 Section 10.3.5:
+	case 305:   return "Use Proxy"; // RFC2616 Section 10.3.6:
+	case 307:   return "Temporary Redirect"; // RFC2616 Section 10.3.8:
+	case 400:   return "Bad Request"; // RFC2616 Section 10.4.1:
+	case 401:   return "Unauthorized"; // RFC2616 Section 10.4.2:
+	case 402:   return "Payment Required"; // RFC2616 Section 10.4.3:
+	case 403:   return "Forbidden"; // RFC2616 Section 10.4.4:
+	case 404:   return "Not Found"; // RFC2616 Section 10.4.5:
+	case 405:   return "Method Not Allowed"; // RFC2616 Section 10.4.6:
+	case 406:   return "Not Acceptable"; // RFC2616 Section 10.4.7:
+	case 407:   return "Proxy Authentication Required"; // RFC2616 Section 10.4.8:
+	case 408:   return "Request Time-out"; // RFC2616 Section 10.4.9:
+	case 409:   return "Conflict"; // RFC2616 Section 10.4.10:
+	case 410:   return "Gone"; // RFC2616 Section 10.4.11:
+	case 411:   return "Length Required"; // RFC2616 Section 10.4.12:
+	case 412:   return "Precondition Failed"; // RFC2616 Section 10.4.13:
+	case 413:   return "Request Entity Too Large"; // RFC2616 Section 10.4.14:
+	case 414:   return "Request-URI Too Large"; // RFC2616 Section 10.4.15:
+	case 415:   return "Unsupported Media Type"; // RFC2616 Section 10.4.16:
+	case 416:   return "Requested range not satisfiable"; // RFC2616 Section 10.4.17:
+	case 417:   return "Expectation Failed"; // RFC2616 Section 10.4.18:
+	case 500:   return "Internal Server Error"; // RFC2616 Section 10.5.1:
+	case 501:   return "Not Implemented"; // RFC2616 Section 10.5.2:
+	case 502:   return "Bad Gateway"; // RFC2616 Section 10.5.3:
+	case 503:   return "Service Unavailable"; // RFC2616 Section 10.5.4:
+	case 504:   return "Gateway Time-out"; // RFC2616 Section 10.5.5:
+	case 505:   return "HTTP Version not supported"; // RFC2616 Section 10.5.6:
 /*
 	case 102:   return "Processing";  // http://www.askapache.com/htaccess/apache-status-code-headers-errordocument.html#m0-askapache3
 	case 207:   return "Multi-Status";
@@ -4877,7 +4877,7 @@ const char *mg_get_response_code_text(int response_code)
 	case 510:   return "Not Extended";
 */
 	case 577:   return "Mongoose Internal Server Error";
-	
+
 	default:   return "Unknown Response Code";
 	}
 }
