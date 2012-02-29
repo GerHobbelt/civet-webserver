@@ -2927,7 +2927,7 @@ static void gmt_time_string(char *buf, size_t buf_len, time_t *t) {
 static void handle_file_request(struct mg_connection *conn, const char *path,
                                 struct mgstat *stp) {
   char date[64], lm[64], etag[64], range[64];
-  const char *msg = "OK", *hdr;
+  const char *hdr;
   time_t curtime = time(NULL);
   int64_t cl, r1, r2;
   struct vec mime_vec;
@@ -2958,7 +2958,6 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
         "%" INT64_FMT "-%"
         INT64_FMT "/%" INT64_FMT "\r\n",
         r1, r1 + cl - 1, stp->size);
-    msg = "Partial Content";
   }
 
   // Prepare Etag, Date, Last-Modified headers. Must be in UTC, according to
@@ -2978,7 +2977,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
       "Connection: %s\r\n"
       "Accept-Ranges: bytes\r\n"
       "%s\r\n",
-      conn->request_info.status_code, msg, date, lm, etag, (int) mime_vec.len,
+      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code), date, lm, etag, (int) mime_vec.len,
       mime_vec.ptr, cl, suggest_connection_header(conn), range);
 
   if (strcmp(conn->request_info.request_method, "HEAD") != 0) {
@@ -3431,7 +3430,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
   // <bel>: end fix 319 / Enhancement for CGI
 
-  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : "OK"); // <bel>: fix  296
+  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
