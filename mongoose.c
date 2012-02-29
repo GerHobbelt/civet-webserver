@@ -4442,6 +4442,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     close_connection(conn);
   }
+  reset_per_request_attributes(conn);  // plug minor memory leak (issue #306)
   free(conn);
 
   // Signal master that we're done with connection and exiting
