@@ -1,9 +1,22 @@
 <html>
+
+  <!-- Test case description:                              -->
+  <!-- This test contains 100 small images in a table.     -->
+  <!-- Once a browser opens the html file, it will request -->
+  <!-- all these images from the server very quickly.      -->
+  <!-- Depending on the "keep-alive" settings, it will     -->
+  <!-- either open/close 100 connections quite rapidly     -->
+  <!-- if keep-alive=no, or otherwise establish only a few -->
+  <!-- connections, typically one or two, and reuse them.  -->
+  <!-- If the test succeeds, all 100 images are displayed. -->
+
+  <!-- Bug: I saw cases where more than 40 were missing.   -->
+
   <head>
-    <title>Many images</title>
+    <title>100 images</title>
   </head>
   <body>
-    <h1>A galery of small images:</h1>
+    <h1>A gallery of small images:</h1>
     <p>
       <table>
         <tr>
