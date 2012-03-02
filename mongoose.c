@@ -2469,10 +2469,12 @@ static void handle_directory_request(struct mg_connection *conn,
   sort_direction = conn->request_info.query_string != NULL &&
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
+  conn->must_close = 1;
   mg_printf(conn, "%s",
             "HTTP/1.1 200 OK\r\n"
-            "Connection: close\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n\r\n");
+            "Connection: %s\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n",
+            suggest_connection_header(conn));
 
   conn->num_bytes_sent += mg_printf(conn,
       "<html><head><title>Index of %s</title>"
@@ -3335,9 +3337,11 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   const char *depth = mg_get_header(conn, "Depth");
 
   conn->request_info.status_code = 207;
+  conn->must_close = 1;
   mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
-            "Connection: close\r\n"
-            "Content-Type: text/xml; charset=utf-8\r\n\r\n");
+            "Connection: %s\r\n"
+            "Content-Type: text/xml; charset=utf-8\r\n\r\n", 
+            suggest_connection_header(conn));
 
   conn->num_bytes_sent += mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
