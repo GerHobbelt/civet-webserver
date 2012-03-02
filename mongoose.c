@@ -418,6 +418,7 @@ enum {
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
+  SOCKET_TIMEOUT,
   NUM_OPTIONS
 };
 
@@ -445,6 +446,7 @@ static const char *config_options[] = {
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
   "w", "url_rewrite_patterns", NULL,
+  "T", "client_timeout", "0",  // TODO: this is a new option: Review name and abbr. letter
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -467,7 +469,7 @@ struct mg_context {
   volatile int sq_tail;      // Tail of the socket queue
   pthread_cond_t sq_full;    // Singaled when socket is produced
   pthread_cond_t sq_empty;   // Signaled when socket is consumed
-  unsigned socketTimeOut;    // <bel>: set socket timeout in seconds // TODO: could be a config???
+  unsigned socketTimeOut;    // <bel>: set socket timeout in seconds
 };
 
 struct mg_connection {
@@ -3524,6 +3526,12 @@ static int set_ports_option(struct mg_context *ctx) {
   struct vec vec;
   struct socket so, *listener;
 
+  ctx->socketTimeOut = atoi(ctx->config[SOCKET_TIMEOUT]);
+  if ((ctx->config[SOCKET_TIMEOUT][0] < '0') || (ctx->config[SOCKET_TIMEOUT][0] > '9') || (ctx->socketTimeOut < 0)) {
+     cry(fc(ctx), "Invalid socket timeout");
+     success=0;
+  }
+
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
       cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
@@ -4250,8 +4258,6 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
     ctx->config[i] = mg_strdup(value);
     DEBUG_TRACE(("[%s] -> [%s]", name, value));
   }
-
-  ctx->socketTimeOut = 120; // <bel>: set socket timeout in seconds // TODO: could be a config???
 
   // Set default value if needed
   for (i = 0; config_options[i * ENTRIES_PER_CONFIG_OPTION] != NULL; i++) {
