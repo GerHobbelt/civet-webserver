@@ -53,6 +53,13 @@ void mg_signal_stop(struct mg_context *ctx);
 // Disable or enable the Nagle algorithm on a socket.
 int mg_set_nodelay_mode(struct socket *sock, int on);
 
+// Disable or enable the socket SO_KEEPALIVE option.
+int mg_set_socket_keepalive(struct socket *sock, int on);
+
+// Set the read/write/user timeout on a socket.
+int mg_set_socket_timeout(struct socket *sock, int seconds);
+
+
 // Same as FD_SET() but also keeps track of the maximum handle value in *max_fd for use with, for example, select()
 void mg_FD_SET(struct socket *socket, struct fd_set *set, int *max_fd);
 

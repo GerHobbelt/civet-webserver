@@ -56,6 +56,17 @@ int mg_set_nodelay_mode(struct socket *sock, int on)
 #endif
 }
 
+int mg_set_socket_keepalive(struct socket *sock, int on)
+{
+    BOOL v_on = !!on;
+    return setsockopt(sock->sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&v_on, sizeof(v_on));
+}
+
+int mg_set_socket_timeout(struct socket *sock, int seconds)
+{
+	return set_timeout(sock, seconds);
+}
+
 
 int mg_get_stop_flag(struct mg_context *ctx)
 {
