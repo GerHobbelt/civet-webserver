@@ -969,7 +969,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   const char *or_str;
   int i, j, len, res;
 
-  if ((or_str = memchr(pattern, '|', pattern_len)) != NULL) {
+  if ((or_str = (const char *)memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
         match_prefix(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
@@ -1015,7 +1015,7 @@ static int should_keep_alive(const struct mg_connection *conn) {
           !conn->request_info.status_code != 401 &&
           !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
 			((header == NULL && http_version && !strcmp(http_version, "1.1")) ||
-			(header != NULL && !mg_strcasecmp(header, "keep-alive")));
+			(header != NULL && !mg_strcasecmp(header, "keep-alive"))));
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn) {
@@ -1479,7 +1479,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
   FILE *fp;
-  STARTUPINFOA si = { sizeof(si); };
+  STARTUPINFOA si = { sizeof(si) };
   PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
@@ -3754,7 +3754,7 @@ static void handle_request(struct mg_connection *conn) {
   struct mgstat st;
 
   if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
-    * conn->request_info.query_string++ = '\0';
+    *conn->request_info.query_string++ = '\0';
   }
   uri_len = strlen(ri->uri);
   url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
@@ -3874,6 +3874,40 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   return 1;
 }
 
+/*
+ * a socket-timeout makes the server more robust, in particular if you
+ * unplug a network cable while a request is pending - also required
+ * for wlan/umts
+ */
+static int set_timeout(struct socket *sock, int seconds) {
+#ifdef _WIN32
+  DWORD timeout, user_timeout;
+  user_timeout = timeout = seconds * 1000; //milliseconds
+#else
+  unsigned int user_timeout = seconds * 1000;
+  struct timeval timeout;
+  timeout.tv_sec = seconds;
+  timeout.tv_usec = 0;
+#endif
+
+  if (sock->sock != INVALID_SOCKET && user_timeout > 0) {
+
+    if (setsockopt(sock->sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&timeout, sizeof(timeout)) < 0 &&
+	    setsockopt(sock->sock, SOL_SOCKET, SO_SNDTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) {
+      DEBUG_TRACE(("setsockopt SO_RCVTIMEO and SO_SNDTIMEO timeout %d set failed on socket: %d", seconds, sock->sock));
+	  return -1;
+	}
+
+#if defined(TCP_USER_TIMEOUT)
+    if (setsockopt(sock->sock, SOL_SOCKET, TCP_USER_TIMEOUT, (const void *)&user_timeout, sizeof(user_timeout)) < 0) {
+      DEBUG_TRACE(("setsockopt TCP_USER_TIMEOUT timeout %d set failed on socket: %d", seconds, sock->sock));
+	  return -1;
+	}
+#endif
+  }
+  return 0;
+}
+
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
 #if !defined(_WIN32)
@@ -3884,6 +3918,14 @@ static int set_ports_option(struct mg_context *ctx) {
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;
+  long int num;
+  char * chknum = NULL;
+
+  num = strtol(ctx->config[KEEP_ALIVE_TIMEOUT], &chknum, 10);
+  if ((chknum != NULL && *chknum == ' ') || num < 0 || num >= INT_MAX / 1000) {
+    mg_cry(fc(ctx), "%s: Invalid socket timeout '%s'", __func__, ctx->config[KEEP_ALIVE_TIMEOUT]);
+    success = 0;
+  }
 
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
@@ -3908,7 +3950,7 @@ static int set_ports_option(struct mg_context *ctx) {
                // handshake will figure out that the client is down and
                // will close the server end.
                // Thanks to Igor Klopov who suggested the patch.
-               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *) &on,
+               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const void *) &on,
                           sizeof(on)) != 0 ||
                bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
                listen(sock, SOMAXCONN) != 0) {
@@ -4539,29 +4581,17 @@ static void accept_new_connection(const struct socket *listener,
   socklen_t len;
   int allowed;
 
-  int keep_alive_timeout = atoi(ctx->config[KEEP_ALIVE_TIMEOUT]);
-#ifdef _WIN32
-  DWORD timeout;
-  timeout = keep_alive_timeout * 1000; //milliseconds
-#else
-  struct timeval timeout;
-  timeout.tv_sec = keep_alive_timeout;
-  timeout.tv_usec = 0;
-#endif
-
   accepted.rsa.len = sizeof(accepted.rsa.u.sin);
   accepted.lsa = listener->lsa;
   accepted.sock = accept(listener->sock, &accepted.rsa.u.sa, &accepted.rsa.len);
   if (accepted.sock != INVALID_SOCKET) {
+    int keep_alive_timeout = atoi(ctx->config[KEEP_ALIVE_TIMEOUT]);
 
-    //TODO: already checked, but double check returned functions to make sure they don't use and discard a timed-out socket.
-    if ( (setsockopt (accepted.sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) &&
-			(setsockopt (accepted.sock, SOL_SOCKET, SO_SNDTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) ) {
-        DEBUG_TRACE(("setsockopt timeout set failed on socket: %d", accepted.sock));
-        mg_cry(fc(ctx), "%s: %s failed SO_RCVTIMEO and SO_SNDTIMEO",
+	if (set_timeout(&accepted, keep_alive_timeout)) {
+      mg_cry(fc(ctx), "%s: %s failed to set the socket timeout",
           __func__, inet_ntoa(accepted.rsa.u.sin.sin_addr));
-        (void) closesocket(accepted.sock);
-        return;
+      (void) closesocket(accepted.sock);
+      return;
     }
 
     allowed = check_acl(ctx, &accepted.rsa);
@@ -4615,7 +4645,7 @@ static void master_thread(struct mg_context *ctx) {
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
-      sleep(1);
+        sleep(1);
 #endif // _WIN32
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {

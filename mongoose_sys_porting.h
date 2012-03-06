@@ -248,12 +248,6 @@ typedef int SOCKET;
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
 
 /* <bel>: Local fix for some linux sdk headers that do not know these options */
-#ifndef SOL_TCP
-#define SOL_TCP 6
-#endif
-#ifndef TCP_USER_TIMEOUT
-#define TCP_USER_TIMEOUT 18
-#endif
 #ifndef SOMAXCONN
 #define SOMAXCONN 128
 #endif
