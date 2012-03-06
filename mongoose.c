@@ -4645,12 +4645,13 @@ static void master_thread(struct mg_context *ctx) {
     tv.tv_usec = 200 * 1000;
 
     if (select(max_fd + 1, &read_set, NULL, NULL, &tv) < 0) {
-#ifdef _WIN32
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
+	  //
+	  // [i_a]: always sleep a bit on error, unless the error is due to a stop signal
+	  if (ctx->stop_flag != 0)
         sleep(1);
-#endif // _WIN32
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
