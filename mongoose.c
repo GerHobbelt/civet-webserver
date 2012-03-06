@@ -4803,7 +4803,11 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT0);
 
   // Start master (listening) thread
-  start_thread(ctx, (mg_thread_func_t) master_thread, ctx);
+  if (start_thread(ctx, (mg_thread_func_t) master_thread, ctx) != 0) {
+    mg_cry(fc(ctx), "Cannot start master thread: %d", ERRNO);
+    free_context(ctx);
+    return NULL;
+  }
 
   // Start worker threads
   for (i = 0; i < atoi(ctx->config[NUM_THREADS]); i++) {
