@@ -3753,7 +3753,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
 // a directory, or call embedded function, etcetera.
 static void handle_request(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
-  char path[PATH_MAX];
+  char path[PATH_MAX + 1];
   int stat_result, uri_len;
   struct mgstat st;
 
@@ -3764,6 +3764,7 @@ static void handle_request(struct mg_connection *conn) {
   url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
   remove_double_dots_and_double_slashes(ri->uri);
   stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
+  ri->phys_path = path;
 
   DEBUG_TRACE(("%s", ri->uri));
   if (!check_authorization(conn, path)) {
@@ -3828,6 +3829,8 @@ static void handle_request(struct mg_connection *conn) {
   } else {
     handle_file_request(conn, path, &st);
   }
+  // and reset stack storage reference(s):
+  ri->phys_path = NULL;
 }
 
 static void close_all_listening_sockets(struct mg_context *ctx) {
@@ -4260,7 +4263,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
-  ri->remote_user = ri->request_method = ri->uri = ri->http_version =
+  ri->phys_path = ri->remote_user = ri->request_method = ri->uri = ri->http_version =
     conn->path_info = NULL;
   ri->num_headers = 0;
   ri->status_code = -1;
