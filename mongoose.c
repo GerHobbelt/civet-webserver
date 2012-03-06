@@ -1052,7 +1052,11 @@ static void send_http_error(struct mg_connection *conn, int status,
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
       len = mg_snprintf(conn, buf, sizeof(buf), "Error %d: %s", status, reason);
-      mg_cry(conn, "%s", buf);
+      mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s)",
+			__func__, buf,
+			conn->request_info.http_version,
+			conn->request_info.request_method, conn->request_info.uri,
+			(conn->request_info.query_string ? "?" : ""), conn->request_info.query_string);
       buf[len++] = '\n';
 
       va_start(ap, fmt);
