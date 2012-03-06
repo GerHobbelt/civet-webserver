@@ -271,10 +271,10 @@ struct mg_connection {
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
   char *path_info;            // PATH_INFO part of the URL
+  int must_close;             // 1 if connection must be closed
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
-  int must_close;             // <bel>: fix 319: Must close the connection
 
   char logfile_path[MAX_PATH+1]; // cached value: path to the logfile designated to this connection/CTX
 };
@@ -1011,10 +1011,9 @@ static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  if (conn->must_close) return 0; // <bel>: fix 319
-  if (conn->request_info.status_code == 401)	return 0; // <bel>: fix 292
-
-  return !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
+  return (!conn->must_close &&
+          !conn->request_info.status_code != 401 &&
+          !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
 			((header == NULL && http_version && !strcmp(http_version, "1.1")) ||
 			(header != NULL && !mg_strcasecmp(header, "keep-alive")));
 }
@@ -1480,16 +1479,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
   FILE *fp;
-  STARTUPINFOA si;
-  PROCESS_INFORMATION pi;
+  STARTUPINFOA si = { sizeof(si); };
+  PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
 
-  (void) memset(&si, 0, sizeof(si));
-  (void) memset(&pi, 0, sizeof(pi));
-
   // TODO(lsm): redirect CGI errors to the error log file
-  si.cb  = sizeof(si);
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
 
@@ -2861,6 +2856,7 @@ static void handle_directory_request(struct mg_connection *conn,
   sort_direction = conn->request_info.query_string != NULL &&
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
+  conn->must_close = 1;
   mg_printf(conn, "%s",
             "HTTP/1.1 200 OK\r\n"
             "Connection: close\r\n"
@@ -3341,7 +3337,6 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
-  const char *cgi_con; // <bel>: fix 319 / Enhancement for CGI
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
@@ -3413,27 +3408,22 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   // Make up and send the status line
   if ((status = get_header(&ri, "Status")) != NULL) {
-    // <bel>: fix  296 begin
-    char * chknum = 0;
+    char * chknum = NULL;
     conn->request_info.status_code = strtol(status, &chknum, 10);
-    if ((chknum != 0) && (*chknum == ' '))
+    if ((chknum != NULL) && (*chknum == ' '))
       status = chknum + 1;
     else
       status = NULL;
-    // <bel>: fix  296 end
   } else if (get_header(&ri, "Location") != NULL) {
     conn->request_info.status_code = 302;
   } else {
     conn->request_info.status_code = 200;
   }
 
-  // <bel>: fix 319 / Enhancement for CGI
-  if ((cgi_con = get_header(&ri, "Connection")) != NULL) {
-     if (mg_strcasecmp(cgi_con, "keep-alive")) {
-        conn->must_close = 1;
-     }
+  if (get_header(&ri, "Connection") != NULL &&
+      !mg_strcasecmp(get_header(&ri, "Connection"), "keep-alive")) {
+    conn->must_close = 1;
   }
-  // <bel>: end fix 319 / Enhancement for CGI
 
   (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
 
@@ -3677,8 +3667,8 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     send_http_error(conn, 500, NULL, "fopen(%s): %s", path,
                     mg_strerror(ERRNO));
   } else {
+    conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-    conn->must_close = 1; // <bel>: fix 319
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
@@ -4224,9 +4214,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
-  if (ri->remote_user != NULL) {
-    free((void *) ri->remote_user);
-  }
   ri->remote_user = ri->request_method = ri->uri = ri->http_version =
     conn->path_info = NULL;
   ri->num_headers = 0;
@@ -4235,6 +4222,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->num_bytes_sent = conn->consumed_content = 0;
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
+  conn->must_close = 0;
 }
 
 static void close_socket_gracefully(SOCKET sock) {
@@ -4431,6 +4419,10 @@ static void process_new_connection(struct mg_connection *conn) {
 	  log_access(conn);
       discard_current_request_from_buffer(conn);
     }
+    if (ri->remote_user != NULL) {
+      free((void *) ri->remote_user);
+	  ri->remote_user = NULL;
+    }
     // conn->peer is not NULL only for SSL-ed proxy connections
   } while (conn->ctx->stop_flag == 0 &&
 #if defined(MG_PROXY_SUPPORT)
@@ -4441,8 +4433,6 @@ static void process_new_connection(struct mg_connection *conn) {
 		   )
 #endif
 		   );
-
-  reset_per_request_attributes(conn);  // plug minor memory leak (issue #306)
 }
 
 // Worker threads take accepted socket from the queue
@@ -4722,11 +4712,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
+  InitializeCriticalSection(&traceCS);
 #endif // _WIN32
-
-#ifdef _WIN32
-  InitializeCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
-#endif
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
