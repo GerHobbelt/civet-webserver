@@ -24,6 +24,7 @@
 #define _XOPEN_SOURCE 600     // For flockfile() on Linux
 #define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
 #define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
+#define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
 #endif
 
 #if defined(__SYMBIAN32__)
@@ -124,8 +125,8 @@ typedef long off_t;
 #define fdopen(x, y) _fdopen((x), (y))
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile(x) EnterCriticalSection(&traceCS)  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
-#define funlockfile(x) LeaveCriticalSection(&traceCS)  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+#define flockfile(x) EnterCriticalSection(&global_log_file_lock)
+#define funlockfile(x) LeaveCriticalSection(&global_log_file_lock)
 
 #if !defined(fileno)
 #define fileno(x) _fileno(x)
@@ -184,6 +185,7 @@ typedef struct DIR {
 #include <dlfcn.h>
 #endif
 #include <pthread.h>
+#define PTHREAD_SCHED_POLICY SCHED_RR // <bel> increase priority of master thread for Linux
 #if defined(__MACH__)
 #define SSL_LIB   "libssl.dylib"
 #define CRYPTO_LIB  "libcrypto.dylib"
@@ -234,7 +236,7 @@ typedef int SOCKET;
 /* <bel>: end fix */
 
 #ifdef _WIN32
-CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+static CRITICAL_SECTION global_log_file_lock;
 static pthread_t pthread_self(void) {
   return GetCurrentThreadId();
 }
@@ -418,7 +420,7 @@ enum {
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
-  SOCKET_TIMEOUT,
+  SOCKET_TIMEOUT, // <bel> extention for timeouts
   NUM_OPTIONS
 };
 
@@ -446,7 +448,7 @@ static const char *config_options[] = {
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
   "w", "url_rewrite_patterns", NULL,
-  "T", "client_timeout", "0",  // TODO: this is a new option: Review name and abbr. letter
+  "T", "client_timeout", "0",  // <bel> extention for timeouts
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -483,10 +485,10 @@ struct mg_connection {
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
   char *path_info;            // PATH_INFO part of the URL
+  int must_close;             // 1 if connection must be closed
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
-  int must_close;             // <bel>: fix 319: Must close the connection
 };
 
 const char **mg_get_valid_option_names(void) {
@@ -794,7 +796,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   const char *or_str;
   int i, j, len, res;
 
-  if ((or_str = memchr(pattern, '|', pattern_len)) != NULL) {
+  if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
         match_prefix(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
@@ -836,12 +838,11 @@ static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  if (conn->must_close) return 0; // <bel>: fix 319
-  if (conn->request_info.status_code == 401)	return 0; // <bel>: fix 292
+  // <bel> fix
+  int server_must_close = conn->must_close || (conn->request_info.status_code == 401) || mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes");
+  int client_must_close = (header == NULL) || (http_version == NULL) || strcmp(http_version, "1.1") || mg_strcasecmp(header, "keep-alive");
 
-  return (!mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
-          (header == NULL && http_version && !strcmp(http_version, "1.1"))) ||
-          (header != NULL && !mg_strcasecmp(header, "keep-alive"));
+  return (!server_must_close && !client_must_close);
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn) {
@@ -972,7 +973,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
   } else {
     // Convert to Unicode and back. If doubly-converted string does not
     // match the original, something is fishy, reject.
-    memset(wbuf, 0, wbuf_len*sizeof(wchar_t)); // <bel>: fix otherwise an "uninitialized memory read in WideCharToMultiByte" occurs
+    memset(wbuf, 0, wbuf_len * sizeof(wchar_t));
     MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len);
     WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
                         NULL, NULL);
@@ -1191,16 +1192,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
   FILE *fp;
-  STARTUPINFOA si;
-  PROCESS_INFORMATION pi;
+STARTUPINFOA si = { sizeof(si) };
+PROCESS_INFORMATION pi = {0};
 
   envp = NULL; // Unused
 
-  (void) memset(&si, 0, sizeof(si));
-  (void) memset(&pi, 0, sizeof(pi));
-
   // TODO(lsm): redirect CGI errors to the error log file
-  si.cb  = sizeof(si);
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
 
@@ -1370,7 +1367,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     if (ssl != NULL) {
       n = SSL_write(ssl, buf + sent, k);
     } else if (fp != NULL) {
-      n = fwrite(buf + sent, 1, (size_t)k, fp);
+      n = fwrite(buf + sent, 1, (size_t) k, fp);
       if (ferror(fp))
         n = -1;
     } else {
@@ -1378,7 +1375,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
       /* <bel>: Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
       n = send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
 #else
-      n = send(sock, buf + sent, (size_t)k, 0);
+      n = send(sock, buf + sent, (size_t) k, 0);
 #endif
     }
 
@@ -2474,9 +2471,8 @@ static void handle_directory_request(struct mg_connection *conn,
   conn->must_close = 1;
   mg_printf(conn, "%s",
             "HTTP/1.1 200 OK\r\n"
-            "Connection: %s\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n\r\n",
-            suggest_connection_header(conn));
+            "Connection: close\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n");
 
   conn->num_bytes_sent += mg_printf(conn,
       "<html><head><title>Index of %s</title>"
@@ -2949,8 +2945,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
-  const char *status;
-  const char *cgiCon; // <bel>: fix 319 / Enhancement for CGI
+  const char *status, *status_text;
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri;
   struct cgi_env_block blk;
@@ -3021,28 +3016,24 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   parse_http_headers(&pbuf, &ri);
 
   // Make up and send the status line
+  status_text = "OK";
   if ((status = get_header(&ri, "Status")) != NULL) {
-     // <bel>: fix  296 begin
-    char * chknum = 0;
-    conn->request_info.status_code = strtol(status, &chknum, 10);
-    if ((chknum!=0) && (*chknum==' ')) status = chknum+1;
-    else status = 0;       
-     // <bel>: fix  296 end
+    conn->request_info.status_code = atoi(status);
+    status_text = status;
+    while (isdigit(* (unsigned char *) status_text) || *status_text == ' ') {
+      status_text++;
+    }
   } else if (get_header(&ri, "Location") != NULL) {
     conn->request_info.status_code = 302;
   } else {
     conn->request_info.status_code = 200;
   }
-
-  // <bel>: fix 319 / Enhancement for CGI
-  if ((cgiCon = get_header(&ri, "Connection")) != NULL) {
-     if (mg_strcasecmp(cgiCon,"keep-alive")) {
-        conn->must_close=1;
-     }
+  if (get_header(&ri, "Connection") != NULL &&
+      !mg_strcasecmp(get_header(&ri, "Connection"), "keep-alive")) {
+    conn->must_close = 1;
   }
-  // <bel>: end fix 319 / Enhancement for CGI
-
-  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : "OK"); // <bel>: fix  296
+  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code,
+                   status_text);
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
@@ -3170,7 +3161,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
   } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
     // File name is relative to the currect document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
-    if ((p = strrchr(path, DIRSEP)) != NULL) {
+    if (((p = strrchr(path, DIRSEP)) != NULL) || ((p = strrchr(path, '/')) != NULL)) { // <bel> fix
       p[1] = '\0';
     }
     (void) mg_snprintf(conn, path + strlen(path),
@@ -3284,8 +3275,8 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     send_http_error(conn, 500, http_500_error, "fopen(%s): %s", path,
                     strerror(ERRNO));
   } else {
+    conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-    conn->must_close = 1; // <bel>: fix 319
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
@@ -3339,11 +3330,10 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   const char *depth = mg_get_header(conn, "Depth");
 
   conn->request_info.status_code = 207;
-  conn->must_close = 1;
+  conn->must_close = 1; // <bel> fix
   mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
-            "Connection: %s\r\n"
-            "Content-Type: text/xml; charset=utf-8\r\n\r\n", 
-            suggest_connection_header(conn));
+            "Connection: close\r\n"
+            "Content-Type: text/xml; charset=utf-8\r\n\r\n");
 
   conn->num_bytes_sent += mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
@@ -3526,6 +3516,7 @@ static int set_ports_option(struct mg_context *ctx) {
   struct vec vec;
   struct socket so, *listener;
 
+  // <bel> extention for timeouts
   ctx->socketTimeOut = atoi(ctx->config[SOCKET_TIMEOUT]);
   if ((ctx->config[SOCKET_TIMEOUT][0] < '0') || (ctx->config[SOCKET_TIMEOUT][0] > '9') || (ctx->socketTimeOut < 0)) {
      cry(fc(ctx), "Invalid socket timeout");
@@ -3574,7 +3565,7 @@ static int set_ports_option(struct mg_context *ctx) {
       set_close_on_exec(listener->sock);
       listener->next = ctx->listening_sockets;
       ctx->listening_sockets = listener;
-      set_timeout(ctx, sock);
+      set_timeout(ctx, sock); // <bel> set timeouts
     }
   }
 
@@ -3860,9 +3851,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
-  if (ri->remote_user != NULL) {
-    free((void *) ri->remote_user);
-  }
   ri->remote_user = ri->request_method = ri->uri = ri->http_version =
     conn->path_info = NULL;
   ri->num_headers = 0;
@@ -3871,6 +3859,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->num_bytes_sent = conn->consumed_content = 0;
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
+  conn->must_close = 0;
 }
 
 static void close_socket_gracefully(SOCKET sock) {
@@ -3982,11 +3971,12 @@ static void process_new_connection(struct mg_connection *conn) {
       log_access(conn);
       discard_current_request_from_buffer(conn);
     }
+    if (ri->remote_user != NULL) {
+      free((void *) ri->remote_user);
+    }
   } while (conn->ctx->stop_flag == 0 &&
            keep_alive_enabled &&
            should_keep_alive(conn));
-
-  reset_per_request_attributes(conn); // <bel>: fix 306
 }
 
 // Worker threads take accepted socket from the queue
@@ -4033,7 +4023,7 @@ static void worker_thread(struct mg_context *ctx) {
   while (consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
-    set_timeout(ctx, conn->client.sock);
+    set_timeout(ctx, conn->client.sock);  // <bel> set timeouts
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
@@ -4116,18 +4106,21 @@ static void master_thread(struct mg_context *ctx) {
   struct socket *sp;
   int max_fd;
 
-  /* <bel>: 317 */
-#ifdef LINUX
-  struct sched_param schedprm;
-  /* Any number in the SCHED_FIFO class is higher than SCHED_OTHER, so keep it low. */
-  schedprm.sched_priority = 5;
-  /* If SCHED_FIFO is not available, the function simply fails and all priorities stay the same. */
-  pthread_setschedparam(pthread_self(), SCHED_FIFO, &schedprm);
+  // Increase priority of the master thread
+#if defined(_WIN32)
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #endif
-#ifdef _WIN32 
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+
+// <bel> do not use the most time critical thread in the entire system
+#ifdef PTHREAD_SCHED_POLICY
+  int min_prio = sched_get_priority_min(PTHREAD_SCHED_POLICY);
+  int max_prio = sched_get_priority_max(PTHREAD_SCHED_POLICY);
+  if (min_prio >=0 && max_prio >= 0) {
+    struct sched_param sched_param = {0};
+    sched_param.sched_priority = (max_prio + min_prio*3)/4;
+    pthread_setschedparam(pthread_self(), PTHREAD_SCHED_POLICY, &sched_param);
+  }
 #endif
-  /* <bel>: 317 */
 
   while (ctx->stop_flag == 0) {
     FD_ZERO(&read_set);
@@ -4233,11 +4226,8 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
+  InitializeCriticalSection(&global_log_file_lock);
 #endif // _WIN32
-
-#ifdef _WIN32
-  InitializeCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
-#endif
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
