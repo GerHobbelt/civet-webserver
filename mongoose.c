@@ -838,11 +838,20 @@ static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  // <bel> fix
-  int server_must_close = conn->must_close || (conn->request_info.status_code == 401) || mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes");
-  int client_must_close = (header == NULL) || (http_version == NULL) || strcmp(http_version, "1.1") || mg_strcasecmp(header, "keep-alive");
-
-  return (!server_must_close && !client_must_close);
+  // <bel> fix: close if there is a reason to do so
+  // check all server side reason to close:
+  if (conn->must_close) return 0;
+  if (conn->request_info.status_code == 401) return 0;
+  if (mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes")) return 0;
+  // check client side reason to close:  
+  if (header != NULL) {
+    if (mg_strcasecmp(header, "keep-alive")) return 0;    
+  } else {
+    if (http_version == NULL) return 0;
+    if (strcmp(http_version, "1.1")) return 0;
+  }  
+  // no reason to close found -> should keep alive
+  return 1;
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn) {
@@ -2945,7 +2954,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
-  const char *status, *status_text;
+  const char *status, *status_text, *connection_status;
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri;
   struct cgi_env_block blk;
@@ -3028,9 +3037,10 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   } else {
     conn->request_info.status_code = 200;
   }
-  if (get_header(&ri, "Connection") != NULL &&
-      !mg_strcasecmp(get_header(&ri, "Connection"), "keep-alive")) {
-    conn->must_close = 1;
+  if ((connection_status = get_header(&ri, "Connection")) != NULL) {
+    if (mg_strcasecmp(connection_status, "keep-alive")) {
+      conn->must_close = 1;
+    }
   }
   (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code,
                    status_text);
@@ -3161,7 +3171,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
   } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
     // File name is relative to the currect document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
-    if (((p = strrchr(path, DIRSEP)) != NULL) || ((p = strrchr(path, '/')) != NULL)) { // <bel> fix
+    if (((p = strrchr(path, '/')) != NULL) || ((p = strrchr(path, DIRSEP)) != NULL)) { // <bel> fix
       p[1] = '\0';
     }
     (void) mg_snprintf(conn, path + strlen(path),
