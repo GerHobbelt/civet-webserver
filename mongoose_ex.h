@@ -99,6 +99,30 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx);
 
 
 
+// Match string against wildcard pattern and return -1 when no match is 
+// found or the match length in characters when the string (prefix) matches 
+// the pattern.
+// 
+// Pattern special characters:
+// 
+// $         - matches end of string
+// ?         - matches one arbitrary character
+// *         - matches zero or more characters except the '/', hence matches 
+//             'one directory' when used to match paths
+// **        - matches the remainder of the string
+// |         - a|b matches either pattern a or pattern b
+int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
+
+// Return the set of matching HTTP header values in dst[] and the number of discovered entries as a return value.
+// The dst[] array will be terminated by a NULL sentinel.
+//
+// When dst is NULL, the required number of entries (sans sentinel) is returned nevertheless.
+//
+// Note, hence, that the return value may be larger than the 'dst_buffersize' input value.
+int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_request_info *ri, const char *name);
+
+
+
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 #if !defined(HAVE_PTHREAD)
 #error "You can only use the extended mongoose code when you include the pthread-Win32 pthread.h header as well: it was too much hassle to export the mongoose pthread-internal replacements here."

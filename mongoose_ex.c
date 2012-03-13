@@ -188,3 +188,42 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
     assert(ctx->num_threads >= 0);
     (void) pthread_mutex_unlock(&ctx->mutex);
 }
+
+
+
+
+int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
+{
+	if (!str || !pattern) return -1;
+
+	return match_prefix(pattern, pattern_len, str);
+}
+
+
+static void set_header_ptr(const char **dst, int dstsize, int idx, const char *value)
+{
+	if (dst && idx >= 0 && idx < dstsize)
+	{
+		dst[idx] = value;
+	}
+}
+
+int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_request_info *ri, const char *name) 
+{
+	int i;
+	int cnt = 0;
+
+	set_header_ptr(dst, dst_buffersize, 0, NULL);
+	for (i = 0; i < ri->num_headers; i++)
+	{
+		if (!mg_strcasecmp(name, ri->http_headers[i].name))
+		{
+			set_header_ptr(dst, dst_buffersize, cnt++, ri->http_headers[i].value);
+		}
+	}
+	set_header_ptr(dst, dst_buffersize, cnt, NULL);
+	set_header_ptr(dst, dst_buffersize, dst_buffersize - 1, NULL);
+
+	return cnt;
+}
+
