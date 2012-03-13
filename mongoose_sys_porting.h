@@ -28,6 +28,7 @@
 #define _XOPEN_SOURCE 600     // For PATH_MAX and flockfile() on Linux
 #define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
 #define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
+#define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
 #endif
 
 #if defined(__SYMBIAN32__)
@@ -252,6 +253,10 @@ typedef int SOCKET;
 #define SOMAXCONN 128
 #endif
 /* <bel>: end fix */
+
+#if !defined(MSG_NOSIGNAL)
+#define MSG_NOSIGNAL 0
+#endif
 
 
 #if defined(DEBUG)

@@ -23,7 +23,7 @@
 
 #include "mongoose.h"
 
-#define MONGOOSE_VERSION "3.1"
+#define MONGOOSE_VERSION "3.2"
 #define PASSWORDS_FILE_NAME ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE 4096
 #define MAX_CGI_ENVIR_VARS 64
@@ -969,7 +969,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   const char *or_str;
   int i, j, len, res;
 
-  if ((or_str = (const char *)memchr(pattern, '|', pattern_len)) != NULL) {
+  if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
         match_prefix(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
@@ -1714,12 +1714,8 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
       if (ferror(fp))
         n = -1;
     } else {
-#if defined(MSG_NOSIGNAL)
-      /* <bel>: Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
-      n = send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
-#else
-      n = send(sock, buf + sent, (size_t)k, 0);
-#endif
+      /* Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
+      n = send(sock, buf + sent, (size_t) k, MSG_NOSIGNAL);
     }
 
     if (n < 0)
@@ -3725,6 +3721,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
                             struct mgstat* st) {
   const char *depth = mg_get_header(conn, "Depth");
 
+  conn->must_close = 1;
   conn->request_info.status_code = 207;
   mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
             "Connection: close\r\n"
@@ -4465,6 +4462,7 @@ static void process_new_connection(struct mg_connection *conn) {
 	  {
 	    handle_request(conn);
       }
+      call_user(conn, MG_REQUEST_COMPLETE);
 	  log_access(conn);
       discard_current_request_from_buffer(conn);
     }
@@ -4519,9 +4517,12 @@ static void worker_thread(struct mg_context *ctx) {
   int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
 
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size);
+  if (conn == NULL) {
+    mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
+    return;
+  }
   conn->buf_size = buf_size;
   conn->buf = (char *) (conn + 1);
-  assert(conn != NULL);
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
@@ -4775,6 +4776,9 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
       mg_cry(fc(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       return NULL;
+    }
+    if (ctx->config[i] != NULL) {
+      mg_cry(fc(ctx), "%s: duplicate option", name);
     }
     assert(i < (int)ARRAY_SIZE(ctx->config));
     assert(i >= 0);
