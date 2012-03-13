@@ -31,7 +31,7 @@ extern "C" {
 
 struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
-struct socket;         // Handle for the socket related to a clinet / server connection
+struct socket;         // Handle for the socket related to a client / server connection
 
 
 // This structure contains information about the HTTP request.
@@ -39,7 +39,7 @@ struct mg_request_info {
   void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
   char *request_method;  // "GET", "POST", etc
   char *uri;             // URL-decoded URI
-  char *phys_path;       // the URI transformed to a pysical path. NULL when the transformation has not been done yet.
+  char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet.
   char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // URL part after '?' (not including '?') or NULL
   char *remote_user;     // Authenticated user, or NULL if no auth used

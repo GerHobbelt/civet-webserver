@@ -19,8 +19,8 @@
 // THE SOFTWARE.
 
 
-#ifndef MONGOOSE_PTHREAD_INCLUDE
-#define MONGOOSE_PTHREAD_INCLUDE
+#ifndef MONGOOSE_SYS_PORTING_INCLUDE
+#define MONGOOSE_SYS_PORTING_INCLUDE
 
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
@@ -342,5 +342,5 @@ static size_t strftime(char *dst, size_t dst_size, const char *fmt,
 
 
 
-#endif
+#endif // MONGOOSE_SYS_PORTING_INCLUDE
 

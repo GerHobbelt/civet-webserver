@@ -1848,8 +1848,9 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 
 // Scan given buffer and fetch the value of the given variable.
 // It can be specified in query string, or in the POST data.
-// Return NULL if the variable not found, or allocated 0-terminated value.
-// It is caller's responsibility to free the returned value.
+// Return -1 if the variable not found, or length of the URLdecoded 
+// value stored in dst[].
+// The dst[] buffer is always NUL-terminated, also when -1 is returned.
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
                char *dst, size_t dst_len) {
   const char *p, *e, *s;
@@ -4461,8 +4462,8 @@ static void process_new_connection(struct mg_connection *conn) {
 #endif
 	  {
 	    handle_request(conn);
+		call_user(conn, MG_REQUEST_COMPLETE);
       }
-      call_user(conn, MG_REQUEST_COMPLETE);
 	  log_access(conn);
       discard_current_request_from_buffer(conn);
     }
