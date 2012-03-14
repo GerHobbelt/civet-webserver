@@ -113,7 +113,7 @@ typedef long off_t;
 #define SHUT_WR 1
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
-#define sleep(x) Sleep((x) * 1000)
+#define mg_sleep(x) Sleep(x)
 
 #define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
 #define popen(x, y) _popen(x, y)
@@ -207,6 +207,7 @@ typedef struct DIR {
 #define mg_mkdir(x, y) mkdir(x, y)
 #define mg_remove(x) remove(x)
 #define mg_rename(x, y) rename(x, y)
+#define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
 #define INVALID_SOCKET (-1)
 #define INT64_FMT PRId64
@@ -217,23 +218,11 @@ typedef int SOCKET;
 
 #include "mongoose.h"
 
-#define MONGOOSE_VERSION "3.1"
+#define MONGOOSE_VERSION "3.2"
 #define PASSWORDS_FILE_NAME ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE 4096
 #define MAX_CGI_ENVIR_VARS 64
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-
-/* <bel>: Local fix for some linux sdk headers that do not know these options */
-#ifndef SOL_TCP 
-#define SOL_TCP (6)
-#endif
-#ifndef TCP_USER_TIMEOUT
-#define TCP_USER_TIMEOUT (18)
-#endif
-#ifndef SOMAXCONN
-#define SOMAXCONN 128
-#endif
-/* <bel>: end fix */
 
 #ifdef _WIN32
 static CRITICAL_SECTION global_log_file_lock;
@@ -261,6 +250,21 @@ static pthread_t pthread_self(void) {
 #ifdef NO_SOCKLEN_T
 typedef int socklen_t;
 #endif // NO_SOCKLEN_T
+
+#if !defined(MSG_NOSIGNAL)
+#define MSG_NOSIGNAL 0
+#endif
+/* <bel>: Local fix for some linux sdk headers that do not know these options */
+#ifndef SOL_TCP 
+#define SOL_TCP (6)
+#endif
+#ifndef TCP_USER_TIMEOUT
+#define TCP_USER_TIMEOUT (18)
+#endif
+#ifndef SOMAXCONN
+#define SOMAXCONN 128
+#endif
+/* <bel>: end fix */
 
 typedef void * (*mg_thread_func_t)(void *);
 
@@ -838,7 +842,7 @@ static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  // <bel> fix: close if there is a reason to do so
+  // <bel> fix: check all reasonst to close
   // check all server side reason to close:
   if (conn->must_close) return 0;
   if (conn->request_info.status_code == 401) return 0;
@@ -1201,8 +1205,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
   FILE *fp;
-STARTUPINFOA si = { sizeof(si) };
-PROCESS_INFORMATION pi = {0};
+  STARTUPINFOA si = { sizeof(si) };
+  PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
 
@@ -1380,12 +1384,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
       if (ferror(fp))
         n = -1;
     } else {
-#ifdef LINUX
-      /* <bel>: Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
-      n = send(sock, buf + sent, (size_t)k, MSG_NOSIGNAL);
-#else
-      n = send(sock, buf + sent, (size_t) k, 0);
-#endif
+      n = send(sock, buf + sent, (size_t) k, MSG_NOSIGNAL);
     }
 
     if (n < 0)
@@ -2710,7 +2709,7 @@ static int substitute_index_file(struct mg_connection *conn, char *path,
   while ((list = next_option(list, &filename_vec, NULL)) != NULL) {
 
     // Ignore too long entries that may overflow path buffer
-    if (filename_vec.len > path_len - n)
+    if (filename_vec.len > path_len - (n + 2))
       continue;
 
     // Prepare full path to the index file
@@ -3339,8 +3338,8 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
                             struct mgstat* st) {
   const char *depth = mg_get_header(conn, "Depth");
 
+  conn->must_close = 1;
   conn->request_info.status_code = 207;
-  conn->must_close = 1; // <bel> fix
   mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
             "Connection: close\r\n"
             "Content-Type: text/xml; charset=utf-8\r\n\r\n");
@@ -3978,6 +3977,7 @@ static void process_new_connection(struct mg_connection *conn) {
       conn->content_len = cl == NULL ? -1 : strtoll(cl, NULL, 10);
       conn->birth_time = time(NULL);
       handle_request(conn);
+      call_user(conn, MG_REQUEST_COMPLETE);
       log_access(conn);
       discard_current_request_from_buffer(conn);
     }
@@ -4024,9 +4024,12 @@ static void worker_thread(struct mg_context *ctx) {
   int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
 
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size);
+  if (conn == NULL) {
+    cry(fc(ctx), "%s", "Cannot create new connection struct, OOM");
+    return;
+  }
   conn->buf_size = buf_size;
   conn->buf = (char *) (conn + 1);
-  assert(conn != NULL);
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
@@ -4149,7 +4152,7 @@ static void master_thread(struct mg_context *ctx) {
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
-      sleep(1);
+      mg_sleep(1000);
 #endif // _WIN32
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
@@ -4218,7 +4221,7 @@ void mg_stop(struct mg_context *ctx) {
 
   // Wait until mg_fini() stops
   while (ctx->stop_flag != 2) {
-    (void) sleep(0);
+    mg_sleep(10);
   }
   free_context(ctx);
 
@@ -4254,6 +4257,9 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
       cry(fc(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       return NULL;
+    }
+    if (ctx->config[i] != NULL) {
+      cry(fc(ctx), "%s: duplicate option", name);
     }
     ctx->config[i] = mg_strdup(value);
     DEBUG_TRACE(("[%s] -> [%s]", name, value));
