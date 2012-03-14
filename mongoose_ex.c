@@ -91,19 +91,9 @@ int mg_FD_ISSET(struct socket *socket, struct fd_set *set)
 
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl)
 {
-    struct mg_connection fake_conn = {0};
-    struct mg_connection *conn;
+    struct mg_connection *conn = fc(ctx);
 
-    fake_conn.ctx = ctx;
-    conn = mg_connect(&fake_conn, host, port, use_ssl);
-#if 0
-    if (conn != NULL)
-    {
-        conn->ctx = ctx;
-        conn->birth_time = time(NULL);
-    }
-#endif
-    return conn;
+    return mg_connect(conn, host, port, use_ssl);
 }
 
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)

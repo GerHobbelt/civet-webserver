@@ -384,12 +384,20 @@ const char *mg_strerror(int errcode)
   const char *s = strerror(errcode);
   if (!s || !*s || GetLastError() == (DWORD)errcode)
   {
-    static char msg[256];
+    static __declspec(thread) char msg[256];
 
     if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, errcode, 0, msg, ARRAY_SIZE(msg), NULL))
     {
       snprintf(msg, ARRAY_SIZE(msg), "Unidentified error code %d", errcode);
     }
+	else
+	{
+	  // strip trailing whitespace off the message.
+	  char *p = msg + strlen(msg) - 1;
+	  while (p >= msg && isspace((unsigned char)*p))
+		  p--;
+	  p[1] = 0;
+	}
     return msg;
   }
   return s;
@@ -408,6 +416,9 @@ const char *mg_strerror(int errcode)
 static struct mg_connection *fc(struct mg_context *ctx) {
   static struct mg_connection fake_connection = {0};
   fake_connection.ctx = ctx;
+  if (fake_connection.birth_time == 0) {
+    fake_connection.birth_time = time(NULL);
+  }
   return &fake_connection;
 }
 
@@ -418,7 +429,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
     const char *s;
     struct tm *tp;
 
-    if (!logfile_template)
+    if (!logfile_template && conn && conn->ctx)
     {
         logfile_template = conn->ctx->config[ERROR_LOG_FILE];
     }
@@ -629,7 +640,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
   // same way string option can.
   if (call_user(conn, MG_EVENT_LOG) == NULL)
   {
-    FILE *fp = mg_fopen(logfile, "a+");
+    FILE *fp = mg_fopen((logfile ? logfile : "-"), "a+");
 
     if (fp != NULL)
     {
@@ -1056,7 +1067,8 @@ static void send_http_error(struct mg_connection *conn, int status,
 			__func__, buf,
 			conn->request_info.http_version,
 			conn->request_info.request_method, conn->request_info.uri,
-			(conn->request_info.query_string ? "?" : ""), conn->request_info.query_string);
+			(conn->request_info.query_string ? "?" : ""), 
+			(conn->request_info.query_string ? conn->request_info.query_string : ""));
       buf[len++] = '\n';
 
       va_start(ap, fmt);
@@ -1089,7 +1101,7 @@ int pthread_mutex_destroy(pthread_mutex_t *mutex) {
 }
 
 int pthread_mutex_lock(pthread_mutex_t *mutex) {
-  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
+  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0 ? 0 : -1;
 }
 
 int pthread_mutex_unlock(pthread_mutex_t *mutex) {
@@ -1107,7 +1119,7 @@ int pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *mutex) {
   HANDLE handles[] = {cv->signal, cv->broadcast};
   ReleaseMutex(*mutex);
   WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
+  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0 ? 0 : -1;
 }
 
 int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, const struct timespec *abstime) {
@@ -1116,7 +1128,7 @@ int pthread_cond_timedwait(pthread_cond_t *cv, pthread_mutex_t *mutex, const str
   DWORD rv;
   ReleaseMutex(*mutex);
   rv = WaitForMultipleObjects(2, handles, FALSE, period);
-  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? (rv == WAIT_TIMEOUT ? ETIMEOUT : 0) : -1;
+  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0 ? (rv == WAIT_TIMEOUT ? ETIMEOUT : 0) : -1;
 }
 
 int pthread_cond_signal(pthread_cond_t *cv) {
