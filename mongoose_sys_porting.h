@@ -280,7 +280,8 @@ typedef int SOCKET;
 typedef int socklen_t;
 #endif // NO_SOCKLEN_T
 
-
+/* buffer size that will fit both IPv4 and IPv6 addresses formatted by ntoa() / ntop() */
+#define SOCKADDR_NTOA_BUFSIZE			42
 
 
 

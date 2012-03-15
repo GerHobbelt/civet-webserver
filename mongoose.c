@@ -353,7 +353,7 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
-static void sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
+static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
 #if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
   inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
@@ -365,6 +365,8 @@ static void sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
 #else
   inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
 #endif
+  buf[len - 1] = 0;
+  return buf;
 }
 
 
@@ -467,42 +469,73 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             {
                 size_t len = MAX_PATH - (d - fnbuf);
                 const char *u;
+				char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
                 *d = 0;
                 switch (s[2])
                 {
                 case 'P':
-                    if (len > 0 && conn && conn->client.rsa.u.sin.sin_port != 0)
-                    {
-                        (void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.rsa.u.sin.sin_port));
-                        d += strlen(d);
-                    }
+                    if (len > 0 && conn)
+					{
+#if defined(USE_IPV6)
+						unsigned short int port = (conn->client.rsa.u.sa.sa_family == AF_INET ?
+								conn->client.rsa.u.sin.sin_port :
+								conn->client.rsa.u.sin6.sin6_port);
+#else
+						unsigned int port = conn->client.rsa.u.sin.sin_port;
+#endif
+						if (port != 0)
+						{
+							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(port));
+							d += strlen(d);
+						}
+					}
                     s += 4;
                     continue;
 
                 case 'C':
-                    if (len > 0 && conn && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
-                    {
-                        u = inet_ntoa(conn->client.rsa.u.sin.sin_addr);
-                        goto copy_partial2dst;
+                    if (len > 0 && conn)
+					{
+						sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
+
+						if (addr_buf[0])
+						{
+                          u = addr_buf;
+                          goto copy_partial2dst;
+						}
                     }
                     s += 4;
                     continue;
 
                 case 'p':
-                    if (len > 0 && conn && conn->client.lsa.u.sin.sin_port != 0)
-                    {
-                        (void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(conn->client.lsa.u.sin.sin_port));
-                        d += strlen(d);
-                    }
+                    if (len > 0 && conn)
+					{
+#if defined(USE_IPV6)
+						unsigned short int port = (conn->client.lsa.u.sa.sa_family == AF_INET ?
+								conn->client.lsa.u.sin.sin_port :
+								conn->client.lsa.u.sin6.sin6_port);
+#else
+						unsigned int port = conn->client.lsa.u.sin.sin_port;
+#endif
+						if (port != 0)
+						{
+							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(port));
+							d += strlen(d);
+						}
+					}
                     s += 4;
                     continue;
 
                 case 's':
-                    if (len > 0 && conn && conn->client.lsa.u.sin.sin_addr.s_addr != 0)
+                    if (len > 0 && conn)
                     {
-                        u = inet_ntoa(conn->client.lsa.u.sin.sin_addr);
-                        goto copy_partial2dst;
+						sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.lsa);
+
+						if (addr_buf[0])
+						{
+                          u = addr_buf;
+                          goto copy_partial2dst;
+						}
                     }
                     s += 4;
                     continue;
@@ -648,25 +681,31 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 
       if (timestamp != 0)
       {
-          char tbuf[40];
+        char tbuf[40];
 
-          rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
+        rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
       }
       rv += fprintf(fp,
           "[%s] ",
           severity);
-      if (conn != NULL && conn->client.rsa.u.sin.sin_addr.s_addr != 0)
-      {
+      if (conn != NULL)
+	  {
+		char addr_buf[SOCKADDR_NTOA_BUFSIZE];
+
+		sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
+		if (addr_buf[0])
+        {
           rv += fprintf(fp,
               "[client %s] ",
-              inet_ntoa(conn->client.rsa.u.sin.sin_addr));
-      }
+              addr_buf);
+        }
+	  }
 
       if (conn != NULL && conn->request_info.request_method != NULL && conn->request_info.uri != NULL)
       {
-            rv += fprintf(fp, "%s %s: ",
-                conn->request_info.request_method,
-                conn->request_info.uri);
+        rv += fprintf(fp, "%s %s: ",
+				conn->request_info.request_method,
+				conn->request_info.uri);
       }
 
       rv += fprintf(fp, "%s\n", msg);
@@ -2020,7 +2059,7 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
       newconn->ctx = conn->ctx;
       newconn->client.sock = sock;
       newconn->client.rsa.u.sin = sin;
-      newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
+      newconn->client.lsa.len = sizeof(newconn->client.lsa.u.sa);
       if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
       {
         mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
@@ -3244,7 +3283,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
                                     struct cgi_env_block *blk) {
   const char *s, *slash;
   struct vec var_vec = {0};
-  char *p, src_addr[20];
+  char *p, src_addr[SOCKADDR_NTOA_BUFSIZE];
   int  i;
 
   blk->len = blk->nvars = 0;
@@ -3852,40 +3891,85 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
   }
 }
 
+static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
+#if defined(USE_IPV6)
+  struct in_addr a = {0};
+  struct in6_addr a6 = {0};
+
+  memset(usa, 0, sizeof(*usa));
+  if (inet_pton(AF_INET6, addr_buf, &a6) > 0) {
+    usa->len = sizeof(usa->u.sin6);
+    usa->u.sin6.sin6_family = AF_INET6;
+    usa->u.sin6.sin6_port = htons((uint16_t) port);
+	usa->u.sin6.sin6_addr = a6;
+  } else if (inet_pton(AF_INET, addr_buf, &a) > 0) {
+    usa->len = sizeof(usa->u.sin);
+    usa->u.sin.sin_family = AF_INET;
+    usa->u.sin.sin_port = htons((uint16_t) port);
+	usa->u.sin.sin_addr = a;
+  } else {
+    return 0;
+  }
+#else
+  int a, b, c, d, len;
+
+  memset(usa, 0, sizeof(*usa));
+  if (sscanf(addr_buf, "%d.%d.%d.%d%n", &a, &b, &c, &d, &len) == 4
+	  && len == (int) strlen(addr_buf)) {
+    // Bind to a specific IPv4 address
+    usa->len = sizeof(usa->u.sin);
+    usa->u.sin.sin_family = AF_INET;
+    usa->u.sin.sin_port = htons((uint16_t) port);
+    usa->u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
+  } else {
+    return 0;
+  }
+#endif
+  return 1;
+}
+
 // Valid listening port specification is: [ip_address:]port[s|p]
 // Examples: 80, 443s, 127.0.0.1:3128p, 1.2.3.4:8080sp
-// TODO(lsm): add parsing of the IPv6 address
 static int parse_port_string(const struct vec *vec, struct socket *so) {
   struct usa *usa = &so->lsa;
-  int a, b, c, d, port, len;
+  int port, len;
+  char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
   // MacOS needs that. If we do not zero it, subsequent bind() will fail.
   // Also, all-zeroes in the socket address means binding to all addresses
   // for both IPv4 and IPv6 (INADDR_ANY and IN6ADDR_ANY_INIT).
   memset(so, 0, sizeof(*so));
 
-  if (sscanf(vec->ptr, "%d.%d.%d.%d:%d%n", &a, &b, &c, &d, &port, &len) == 5) {
-    // Bind to a specific IPv4 address
-    so->lsa.u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
+  if (sscanf(vec->ptr, " [%40s]:%d%n", &addr_buf, &port, &len) == 2
+	  && len > 0
+	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
+    // all done: probably IPv6 URI
+  } else if (sscanf(vec->ptr, " %40s:%d%n", &addr_buf, &port, &len) == 2
+	  && len > 0
+	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
+    // all done: probably IPv4 URI
   } else if (sscanf(vec->ptr, "%d%n", &port, &len) != 1 ||
              len <= 0 ||
              len > (int) vec->len ||
              (vec->ptr[len] && strchr("sp,", vec->ptr[len]) == NULL)) {
     return 0;
+  } else {
+#if defined(USE_IPV6)
+    usa->len = sizeof(usa->u.sin6);
+    so->lsa.u.sin6.sin6_family = AF_INET6;
+    so->lsa.u.sin6.sin6_port = htons((uint16_t) port);
+	//so->lsa.u.sin6.sin6_addr = in6addr_loopback;
+#else
+    usa->len = sizeof(usa->u.sin);
+    so->lsa.u.sin.sin_family = AF_INET;
+    so->lsa.u.sin.sin_port = htons((uint16_t) port);
+	//so->lsa.u.sin.sin_addr = htonl(INADDR_LOOPBACK);
+#endif
   }
 
   so->is_ssl = vec->ptr[len] == 's';
 #if defined(MG_PROXY_SUPPORT)
   so->is_proxy = vec->ptr[len] == 'p';
-#endif
-#if defined(USE_IPV6)
-  usa->len = sizeof(usa->u.sin);
-  so->lsa.u.sin6.sin6_family = AF_INET6;
-  so->lsa.u.sin6.sin6_port = htons((uint16_t) port);
-#else
-  usa->len = sizeof(usa->u.sin);
-  so->lsa.u.sin.sin_family = AF_INET;
-  so->lsa.u.sin.sin_port = htons((uint16_t) port);
 #endif
 
   return 1;
@@ -4598,7 +4682,7 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
 static void accept_new_connection(const struct socket *listener,
                                   struct mg_context *ctx) {
   struct socket accepted;
-  char src_addr[20];
+  char src_addr[SOCKADDR_NTOA_BUFSIZE];
   socklen_t len;
   int allowed;
 
@@ -4610,7 +4694,7 @@ static void accept_new_connection(const struct socket *listener,
 
 	if (set_timeout(&accepted, keep_alive_timeout)) {
       mg_cry(fc(ctx), "%s: %s failed to set the socket timeout",
-          __func__, inet_ntoa(accepted.rsa.u.sin.sin_addr));
+          __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa));
       (void) closesocket(accepted.sock);
       return;
     }
