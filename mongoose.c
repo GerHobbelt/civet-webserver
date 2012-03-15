@@ -1241,10 +1241,15 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     interp = buf + 2;
   }
 
+  /* <bel> fix 328
   (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
                      interp, interp[0] == '\0' ? "" : " ", dir, DIRSEP, prog);
+                     */
+  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s",
+                     interp, interp[0] == '\0' ? "" : " ", prog);
+                     
 
-  DEBUG_TRACE(("Running [%s]", cmdline));
+  DEBUG_TRACE(("Running [%s] in [%s]", cmdline, dir));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
         CREATE_NEW_PROCESS_GROUP, envblk, dir, &si, &pi) == 0) {
     cry(conn, "%s: CreateProcess(%s): %d",
@@ -1610,7 +1615,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   }
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-  //change_slashes_to_backslashes(buf);
+  change_slashes_to_backslashes(buf); /* <bel> fix 328 */
 #endif // _WIN32
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
@@ -3170,7 +3175,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
   } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
     // File name is relative to the currect document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
-    if (((p = strrchr(path, '/')) != NULL) || ((p = strrchr(path, DIRSEP)) != NULL)) { // <bel> fix
+    if ((p = strrchr(path, DIRSEP)) != NULL) {
       p[1] = '\0';
     }
     (void) mg_snprintf(conn, path + strlen(path),
