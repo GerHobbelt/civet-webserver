@@ -217,3 +217,70 @@ int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_request
 	return cnt;
 }
 
+
+#include "selectable-socketpair/socketpair.c"
+
+int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
+{
+	int rv = -1;
+	if (conns)
+	{
+		int i;
+#ifdef WIN32
+		SOCKET socks[2];
+#else
+		int socks[2];
+#endif
+
+		conns[0] = (struct mg_connection *)calloc(1, sizeof(*conns[0]));
+		conns[1] = (struct mg_connection *)calloc(1, sizeof(*conns[1]));
+		if (!conns[0] || !conns[1])
+		{
+			mg_cry(fc(ctx), "%s: calloc: %s", __func__, mg_strerror(ERRNO));
+		}
+		else
+		{
+			rv = dumb_socketpair(socks, 0);
+			if (rv)
+			{
+				mg_cry(fc(ctx), "%s: socketpair: %s", __func__, mg_strerror(ERRNO));
+			}
+			else
+			{
+				for (i = 0; i <= 1; i++)
+				{
+					struct mg_connection *newconn = conns[i];
+
+					newconn->birth_time = time(NULL);
+					newconn->ctx = ctx;
+					newconn->client.sock = socks[i];
+					newconn->client.rsa.u.sin.sin_family = AF_INET;
+					newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+					newconn->client.rsa.u.sin.sin_port = 0; 
+					newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
+					newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
+					if (0 != getsockname(socks[i], &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
+					{
+						mg_cry(newconn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+						newconn->client.lsa.len = 0;
+						rv = -1;
+					}
+				}
+
+				if (rv)
+				{
+					closesocket(socks[0]);
+					closesocket(socks[1]);
+				}
+			}
+		}
+
+		if (rv)
+		{
+			free(conns[0]);
+			free(conns[1]);
+			conns[0] = conns[1] = NULL;
+		}
+    }
+	return rv;
+}

@@ -31,7 +31,7 @@
 extern "C" {
 #endif // __cplusplus
 
-struct socket;          // Handle for the socket related to a clinet / server connection
+struct socket;          // Handle for the socket related to a client / server connection
 struct fd_set;
 
 
@@ -68,6 +68,9 @@ int mg_FD_ISSET(struct socket *socket, struct fd_set *set);
 
 // set up a outgoing client connection: connect to the given host/port
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl);
+
+// create a socket pair over local loopback. Used for inter-thread communications.
+int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
 
 // Contrary to mg_read() this one is able to fetch an arbitrary number of bytes from the given connection.
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize);

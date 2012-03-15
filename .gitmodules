@@ -1,0 +1,3 @@
+[submodule "selectable-socketpair"]
+	path = selectable-socketpair
+	url = git@github.com:GerHobbelt/selectable-socketpair.git
