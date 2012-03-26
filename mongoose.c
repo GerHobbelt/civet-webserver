@@ -842,18 +842,21 @@ static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  // <bel> fix: check all reasonst to close
+  // <bel> fix: check all reasons to close.
+
   // check all server side reason to close:
   if (conn->must_close) return 0;
   if (conn->request_info.status_code == 401) return 0;
   if (mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes")) return 0;
+
   // check client side reason to close:  
   if (header != NULL) {
     if (mg_strcasecmp(header, "keep-alive")) return 0;    
   } else {
     if (http_version == NULL) return 0;
     if (strcmp(http_version, "1.1")) return 0;
-  }  
+  }
+
   // no reason to close found -> should keep alive
   return 1;
 }
@@ -1629,7 +1632,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
           // Shift PATH_INFO block one character right, e.g.
           //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
           // conn->path_info is pointing to the local variable "path" declared
-          // in handle_request(), so PATH_INFO not valid aft
+          // in handle_request(), so PATH_INFO not valid after
           // handle_request returns.
           conn->path_info = p + 1;
           memmove(p + 2, p + 1, strlen(p + 1) + 1);  // +1 is for trailing \0
