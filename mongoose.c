@@ -254,17 +254,9 @@ typedef int socklen_t;
 #if !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
 #endif
-/* <bel>: Local fix for some linux sdk headers that do not know these options */
-#ifndef SOL_TCP 
-#define SOL_TCP (6)
-#endif
-#ifndef TCP_USER_TIMEOUT
+#if !defined(TCP_USER_TIMEOUT)
 #define TCP_USER_TIMEOUT (18)
 #endif
-#ifndef SOMAXCONN
-#define SOMAXCONN 128
-#endif
-/* <bel>: end fix */
 
 typedef void * (*mg_thread_func_t)(void *);
 
@@ -424,7 +416,6 @@ enum {
   ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
-  SOCKET_TIMEOUT, // <bel> extention for timeouts
   NUM_OPTIONS
 };
 
@@ -452,7 +443,6 @@ static const char *config_options[] = {
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
   "w", "url_rewrite_patterns", NULL,
-  "T", "client_timeout", "0",  // <bel> extention for timeouts
   NULL
 };
 #define ENTRIES_PER_CONFIG_OPTION 3
@@ -475,7 +465,6 @@ struct mg_context {
   volatile int sq_tail;      // Tail of the socket queue
   pthread_cond_t sq_full;    // Singaled when socket is produced
   pthread_cond_t sq_empty;   // Signaled when socket is consumed
-  unsigned socketTimeOut;    // <bel>: set socket timeout in seconds
 };
 
 struct mg_connection {
@@ -3494,25 +3483,19 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   return 1;
 }
 
-
-/****************************************************************************/
-/* <bel>: a socket-timeout makes the server more robust, in particular if you */ 
-/*      unplug a network cable while a request is pending - also required   */
-/*      for wlan/umts                                                       */
-
-static void set_timeout(struct mg_context *ctx, SOCKET sock) {
+static void set_receive_timeout(SOCKET sock) {
       
-   int socketTimeOut = ctx->socketTimeOut;
-   if (socketTimeOut>0) {
+#ifdef SOCKET_RECEIVE_TIMEOUT
+   if (SOCKET_RECEIVE_TIMEOUT>0) {
 #ifdef _WIN32
-      unsigned long to = socketTimeOut * 1000;
-      unsigned int uto = socketTimeOut * 1000;
+      unsigned long to = SOCKET_RECEIVE_TIMEOUT * 1000;
+      unsigned int uto = SOCKET_RECEIVE_TIMEOUT * 1000;
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&to, sizeof(to));   
       /* TCP_USER_TIMEOUT (according to RFC5482) is not (yet?) supported in win32 ?
       setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));
       */
 #else
-      unsigned int uto = socketTimeOut * 1000;
+      unsigned int uto = SOCKET_RECEIVE_TIMEOUT * 1000;
       struct timeval to;
       to.tv_usec=0;
       to.tv_sec=socketTimeOut;
@@ -3521,10 +3504,8 @@ static void set_timeout(struct mg_context *ctx, SOCKET sock) {
       setsockopt(sock, SOL_TCP, TCP_USER_TIMEOUT, (const void *)&uto, sizeof(uto));
 #endif
    }
+#endif
 }
-/* <bel>: end of fix                                                          */
-/****************************************************************************/
-
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
@@ -3532,13 +3513,6 @@ static int set_ports_option(struct mg_context *ctx) {
   SOCKET sock;
   struct vec vec;
   struct socket so, *listener;
-
-  // <bel> extention for timeouts
-  ctx->socketTimeOut = atoi(ctx->config[SOCKET_TIMEOUT]);
-  if ((ctx->config[SOCKET_TIMEOUT][0] < '0') || (ctx->config[SOCKET_TIMEOUT][0] > '9') || (ctx->socketTimeOut < 0)) {
-     cry(fc(ctx), "Invalid socket timeout");
-     success=0;
-  }
 
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
@@ -3548,7 +3522,7 @@ static int set_ports_option(struct mg_context *ctx) {
     } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
       cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
       success = 0;
-    } else if ((sock = socket(so.lsa.sa.sa_family, SOCK_STREAM, SOL_TCP)) == // <bel>: 6 is SOL_TCP
+    } else if ((sock = socket(so.lsa.sa.sa_family, SOCK_STREAM, 6)) ==
                INVALID_SOCKET ||
 #if !defined(_WIN32)
                // On Windows, SO_REUSEADDR is recommended only for
@@ -3566,7 +3540,7 @@ static int set_ports_option(struct mg_context *ctx) {
                setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (void *) &on,
                           sizeof(on)) != 0 ||
                bind(sock, &so.lsa.sa, sizeof(so.lsa)) != 0 ||
-               listen(sock, SOMAXCONN) != 0) {
+               listen(sock, 100) != 0) {
       closesocket(sock);
       cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
           vec.len, vec.ptr, strerror(ERRNO));
@@ -3582,7 +3556,7 @@ static int set_ports_option(struct mg_context *ctx) {
       set_close_on_exec(listener->sock);
       listener->next = ctx->listening_sockets;
       ctx->listening_sockets = listener;
-      set_timeout(ctx, sock); // <bel> set timeouts
+      set_receive_timeout(sock); // <bel> set timeouts
     }
   }
 
@@ -4044,7 +4018,7 @@ static void worker_thread(struct mg_context *ctx) {
   while (consume_socket(ctx, &conn->client)) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
-    set_timeout(ctx, conn->client.sock);  // <bel> set timeouts
+    set_receive_timeout(conn->client.sock);  // <bel> set timeouts
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
@@ -4129,7 +4103,7 @@ static void master_thread(struct mg_context *ctx) {
 
   // Increase priority of the master thread
 #if defined(_WIN32)
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);  
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #elif defined(MASTER_THREAD_SCHED_PRIORITY)
   // <bel> do not use the most time critical thread in the entire system
   int min_prio = sched_get_priority_min(SCHED_RR);
