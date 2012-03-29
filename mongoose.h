@@ -235,7 +235,7 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // print data that is bigger than that, otherwise it will be truncated.
 int mg_printf(struct mg_connection *, const char *fmt, ...)
 #ifdef __GNUC__
-__attribute__((format(printf, 2, 3)))
+	__attribute__((format(printf, 2, 3)))
 #endif
 ;
 
@@ -336,7 +336,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const cha
 // Is to mg_vsnprintf() what printf() is to vprintf().
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
 #ifdef __GNUC__
-__attribute__((format(printf, 4, 5)))
+	__attribute__((format(printf, 4, 5)))
 #endif
 ;
 
@@ -346,7 +346,7 @@ FILE *mg_fopen(const char *path, const char *mode);
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...)
 #ifdef __GNUC__
-__attribute__((format(printf, 2, 3)))
+	__attribute__((format(printf, 2, 3)))
 #endif
 ;
 // Print error message to the opened error log stream.
@@ -375,7 +375,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 // Print log message to the opened error log stream.
 void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
 #ifdef __GNUC__
-__attribute__((format(printf, 5, 6)))
+	__attribute__((format(printf, 5, 6)))
 #endif
 ;
 // Print log message to the opened error log stream.

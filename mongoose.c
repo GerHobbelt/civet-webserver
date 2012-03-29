@@ -726,6 +726,9 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 
 // Print log message to the opened error log stream.
 void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 5, 6)))
+#endif
 {
   va_list ap;
 
@@ -790,7 +793,11 @@ void mg_cry_raw(struct mg_connection *conn, const char *msg)
 }
 
 // Print error message to the opened error log stream.
-void mg_cry(struct mg_connection *conn, const char *fmt, ...) {
+void mg_cry(struct mg_connection *conn, const char *fmt, ...) 
+#ifdef __GNUC__
+	__attribute__((format(printf, 2, 3)))
+#endif
+{
   va_list ap;
 
   va_start(ap, fmt);
@@ -897,7 +904,11 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
-                       const char *fmt, ...) {
+                       const char *fmt, ...) 
+#ifdef __GNUC__
+	__attribute__((format(printf, 4, 5)))
+#endif
+{
   va_list ap;
   int n;
 
@@ -1854,7 +1865,11 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
                     (int64_t) len);
 }
 
-int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
+int mg_printf(struct mg_connection *conn, const char *fmt, ...) 
+#ifdef __GNUC__
+	__attribute__((format(printf, 2, 3)))
+#endif
+{
   char buf[BUFSIZ];
   int len;
   va_list ap;
