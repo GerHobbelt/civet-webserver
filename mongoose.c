@@ -65,6 +65,7 @@
 #include <io.h>
 #else // _WIN32_WCE
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #define NO_CGI // WinCE has no pipes
 
 typedef long off_t;
@@ -185,7 +186,6 @@ typedef struct DIR {
 #include <dlfcn.h>
 #endif
 #include <pthread.h>
-#define PTHREAD_SCHED_POLICY SCHED_RR // <bel> increase priority of master thread for Linux
 #if defined(__MACH__)
 #define SSL_LIB   "libssl.dylib"
 #define CRYPTO_LIB  "libcrypto.dylib"
@@ -1244,14 +1244,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     interp = buf + 2;
   }
 
-  /* <bel> fix 328
-  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
-                     interp, interp[0] == '\0' ? "" : " ", dir, DIRSEP, prog);
-                     */
+  /* <bel> fix 328 */
   (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s",
-                     interp, interp[0] == '\0' ? "" : " ", prog);
-                     
-
+                     interp, interp[0] == '\0' ? "" : " ", prog);                     
   DEBUG_TRACE(("Running [%s] in [%s]", cmdline, dir));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
         CREATE_NEW_PROCESS_GROUP, envblk, dir, &si, &pi) == 0) {
@@ -1624,7 +1619,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   if ((stat_result = mg_stat(buf, st)) != 0) {
     // Support PATH_INFO for CGI scripts.
     for (p = buf + strlen(buf); p > buf + 1; p--) {
-      if (*p == DIRSEP) {
+      if (*p == DIRSEP) { /* <bel> fix 328 */
         *p = '\0';
         if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
                          strlen(conn->ctx->config[CGI_EXTENSIONS]), buf) > 0 &&
@@ -4134,17 +4129,18 @@ static void master_thread(struct mg_context *ctx) {
 
   // Increase priority of the master thread
 #if defined(_WIN32)
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-#endif
-
-// <bel> do not use the most time critical thread in the entire system
-#ifdef PTHREAD_SCHED_POLICY
-  int min_prio = sched_get_priority_min(PTHREAD_SCHED_POLICY);
-  int max_prio = sched_get_priority_max(PTHREAD_SCHED_POLICY);
-  if (min_prio >=0 && max_prio >= 0) {
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);  
+#elif defined(MASTER_THREAD_SCHED_PRIORITY)
+  // <bel> do not use the most time critical thread in the entire system
+  int min_prio = sched_get_priority_min(SCHED_RR);
+  int max_prio = sched_get_priority_max(SCHED_RR);
+  if (min_prio >=0 && max_prio >= 0 && 
+      MASTER_THREAD_SCHED_PRIORITY <= max_prio &&
+      MASTER_THREAD_SCHED_PRIORITY >= min_prio
+      ) {
     struct sched_param sched_param = {0};
-    sched_param.sched_priority = (max_prio + min_prio*3)/4;
-    pthread_setschedparam(pthread_self(), PTHREAD_SCHED_POLICY, &sched_param);
+    sched_param.sched_priority = MASTER_THREAD_SCHED_PRIORITY;
+    pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
   }
 #endif
 
