@@ -878,10 +878,12 @@ static void send_http_error(struct mg_connection *conn, int status,
     }
     DEBUG_TRACE(("[%s]", buf));
 
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: %d\r\n"
-              "Connection: %s\r\n\r\n", status, reason, len,
+    mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
+    if (len>0) { // fix 229
+      mg_printf(conn, "Content-Type: text/plain\r\n");
+    }
+    mg_printf(conn, "Content-Length: %d\r\n"
+              "Connection: %s\r\n\r\n", len,
               suggest_connection_header(conn));
     conn->num_bytes_sent += mg_printf(conn, "%s", buf);
   }
@@ -971,8 +973,8 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
    // actually opens "a.cgi", and does not return an error!
   if (*p == 0x20 ||               // No space at the end
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
-      *p == 0x2b ||               // No '+'
-      (*p & ~0x7f)) {             // And generally no non-ascii chars
+      *p == 0x2b /* ||            // No '+'
+      (*p & ~0x7f) */) {          // And generally no non-ascii chars // why? see comment on bug 105
     (void) fprintf(stderr, "Rejecting suspicious path: [%s]", buf);
     wbuf[0] = L'\0';
   } else {
