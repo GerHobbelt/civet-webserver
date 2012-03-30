@@ -4955,7 +4955,9 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     if (start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
       mg_cry(fc(ctx), "Cannot start worker thread: %d", ERRNO);
     } else {
+      (void) pthread_mutex_lock(&ctx->mutex);
       ctx->num_threads++;
+      (void) pthread_mutex_unlock(&ctx->mutex);
     }
   }
 

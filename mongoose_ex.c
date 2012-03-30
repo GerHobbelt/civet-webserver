@@ -165,7 +165,9 @@ int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
     if (rv == 0)
     {
         // count this thread too so the master_thread will wait for this one to end as well when we stop.
+        (void) pthread_mutex_lock(&ctx->mutex);
         ctx->num_threads++;
+        (void) pthread_mutex_unlock(&ctx->mutex);
     }
     return rv;
 }
