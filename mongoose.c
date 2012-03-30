@@ -3485,23 +3485,23 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 
 static void set_receive_timeout(SOCKET sock) {
       
-#ifdef SOCKET_RECEIVE_TIMEOUT
-   if (SOCKET_RECEIVE_TIMEOUT>0) {
+#if defined(SOCKET_RECEIVE_TIMEOUT)
+   if ((SOCKET_RECEIVE_TIMEOUT)>0) {
 #ifdef _WIN32
-      unsigned long to = SOCKET_RECEIVE_TIMEOUT * 1000;
-      unsigned int uto = SOCKET_RECEIVE_TIMEOUT * 1000;
+      unsigned long to = (SOCKET_RECEIVE_TIMEOUT) * 1000;
+      unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&to, sizeof(to));   
       /* TCP_USER_TIMEOUT (according to RFC5482) is not (yet?) supported in win32 ?
       setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));
       */
 #else
-      unsigned int uto = SOCKET_RECEIVE_TIMEOUT * 1000;
+      unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
       struct timeval to;
       to.tv_usec=0;
-      to.tv_sec=socketTimeOut;
+      to.tv_sec=(SOCKET_RECEIVE_TIMEOUT);
 
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&to, sizeof(to));
-      setsockopt(sock, SOL_TCP, TCP_USER_TIMEOUT, (const void *)&uto, sizeof(uto));
+      setsockopt(sock, 6, TCP_USER_TIMEOUT, (const void *)&uto, sizeof(uto));
 #endif
    }
 #endif
@@ -4105,15 +4105,15 @@ static void master_thread(struct mg_context *ctx) {
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #elif defined(MASTER_THREAD_SCHED_PRIORITY)
-  // <bel> do not use the most time critical thread in the entire system
+  // fix: do not use the most time critical thread in the entire system
   int min_prio = sched_get_priority_min(SCHED_RR);
   int max_prio = sched_get_priority_max(SCHED_RR);
-  if (min_prio >=0 && max_prio >= 0 && 
-      MASTER_THREAD_SCHED_PRIORITY <= max_prio &&
-      MASTER_THREAD_SCHED_PRIORITY >= min_prio
+  if ((min_prio >=0) && (max_prio >= 0) && 
+      ((MASTER_THREAD_SCHED_PRIORITY) <= max_prio) &&
+      ((MASTER_THREAD_SCHED_PRIORITY) >= min_prio)
       ) {
     struct sched_param sched_param = {0};
-    sched_param.sched_priority = MASTER_THREAD_SCHED_PRIORITY;
+    sched_param.sched_priority = (MASTER_THREAD_SCHED_PRIORITY);
     pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
   }
 #endif
