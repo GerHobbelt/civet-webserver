@@ -2021,8 +2021,13 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
         if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
                          strlen(conn->ctx->config[CGI_EXTENSIONS]), buf) > 0 &&
             (stat_result = mg_stat(buf, st)) == 0) {
+          // Shift PATH_INFO block one character right, e.g.
+          //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
+          // conn->path_info is pointing to the local variable "path" declared
+          // in handle_request(), so PATH_INFO not valid after
+          // handle_request returns.
           conn->path_info = p + 1;
-          memmove(p + 2, p + 1, strlen(p + 1));
+          memmove(p + 2, p + 1, strlen(p + 1) + 1);  // +1 is for trailing \0
           p[1] = '/';
           break;
         } else {
@@ -4767,7 +4772,7 @@ static void master_thread(struct mg_context *ctx) {
 	  //
 	  // [i_a]: always sleep a bit on error, unless the error is due to a stop signal
 	  if (ctx->stop_flag != 0)
-        sleep(1);
+        mg_sleep(10);
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
@@ -4841,7 +4846,7 @@ void mg_stop(struct mg_context *ctx) {
 
   // Wait until mg_fini() stops
   while (ctx->stop_flag != 2) {
-    (void) sleep(1);
+    (void) mg_sleep(10);
   }
 
   // call the user event handler to make sure the custom code is aware of this termination as well and do some final cleanup:
