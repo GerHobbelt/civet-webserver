@@ -65,6 +65,7 @@
 #include <io.h>
 #else // _WIN32_WCE
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #define NO_CGI // WinCE has no pipes
 
 typedef long off_t;
@@ -113,7 +114,7 @@ typedef long off_t;
 #define SHUT_WR 1
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
-#define sleep(x) Sleep((x) * 1000)
+#define mg_sleep(x) Sleep(x)
 
 #define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
 #define popen(x, y) _popen(x, y)
@@ -206,6 +207,7 @@ typedef struct DIR {
 #define mg_mkdir(x, y) mkdir(x, y)
 #define mg_remove(x) remove(x)
 #define mg_rename(x, y) rename(x, y)
+#define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
 #define INVALID_SOCKET (-1)
 #define INT64_FMT PRId64
@@ -1595,8 +1597,13 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
         if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
                          strlen(conn->ctx->config[CGI_EXTENSIONS]), buf) > 0 &&
             (stat_result = mg_stat(buf, st)) == 0) {
+          // Shift PATH_INFO block one character right, e.g.
+          //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
+          // conn->path_info is pointing to the local variable "path" declared
+          // in handle_request(), so PATH_INFO not valid after
+          // handle_request returns.
           conn->path_info = p + 1;
-          memmove(p + 2, p + 1, strlen(p + 1));
+          memmove(p + 2, p + 1, strlen(p + 1) + 1);  // +1 is for trailing \0
           p[1] = '/';
           break;
         } else {
@@ -4079,7 +4086,7 @@ static void master_thread(struct mg_context *ctx) {
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
-      sleep(1);
+      mg_sleep(1000);
 #endif // _WIN32
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
@@ -4148,7 +4155,7 @@ void mg_stop(struct mg_context *ctx) {
 
   // Wait until mg_fini() stops
   while (ctx->stop_flag != 2) {
-    (void) sleep(0);
+    mg_sleep(10);
   }
   free_context(ctx);
 
