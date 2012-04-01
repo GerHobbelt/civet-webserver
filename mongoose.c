@@ -973,8 +973,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
    // actually opens "a.cgi", and does not return an error!
   if (*p == 0x20 ||               // No space at the end
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
-      *p == 0x2b /* ||            // No '+'
-      (*p & ~0x7f) */) {          // And generally no non-ascii chars // why? see comment on bug 105
+      *p == 0x2b) {               // No '+'  // fix 335/336/337/(comment on 105)
     (void) fprintf(stderr, "Rejecting suspicious path: [%s]", buf);
     wbuf[0] = L'\0';
   } else {
