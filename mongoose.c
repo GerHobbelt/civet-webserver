@@ -972,9 +972,11 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
    // This is very nasty hole. Windows happily opens files with
    // some garbage in the end of file name. So fopen("a.cgi    ", "r")
    // actually opens "a.cgi", and does not return an error!
+   // According to http://support.microsoft.com/kb/115827/en-us, spaces
+   // and periods at the end of the filename are skipped.
   if (*p == 0x20 ||               // No space at the end
-      (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
-      *p == 0x2b) {               // No '+'  // fix 335/336/337/(comment on 105)
+      (*p == 0x2e && p > buf)) {  // No '.' at the end, but allow '.' as full path
+     // fix 189/335/336/337/(comment on 105)
     (void) fprintf(stderr, "Rejecting suspicious path: [%s]", buf);
     wbuf[0] = L'\0';
   } else {
