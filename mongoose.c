@@ -91,6 +91,7 @@ typedef long off_t;
 #define __func__ "line " STR(__LINE__)
 #define strtoull(x, y, z) strtoul(x, y, z)
 #define strtoll(x, y, z) strtol(x, y, z)
+#pragma message("Warning: Outdated Visual Studio version used. Some operations might be limited to 2 GB.")
 #else
 #define __func__  __FUNCTION__
 #define strtoull(x, y, z) _strtoui64(x, y, z)
@@ -1174,6 +1175,7 @@ struct dirent * readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
+  ctx;
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
 }
 
@@ -1519,7 +1521,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
   name_len = strlen(name);
   e = buf + buf_len;
-  len = -1;
+  len = (size_t)-1;
   dst[0] = '\0';
 
   // buf is "var1=val1&var2=val2...". Find variable first
