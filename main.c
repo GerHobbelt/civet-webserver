@@ -254,7 +254,7 @@ static void start_mongoose(int argc, char *argv[]) {
   }
 }
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(_CONSOLE)
 static SERVICE_STATUS ss;
 static SERVICE_STATUS_HANDLE hStatus;
 static const char *service_magic_argument = "--";
