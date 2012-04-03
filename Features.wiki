@@ -62,8 +62,8 @@ Similar to Apache’s mod_alias, using aliases allows a mapping to be created be
 
 In the Mongoose web server, this can be done two ways:
 
-1) Aliases can be set at runtime by using the -w option to specify url_rewrite_patterns
-2) Aliases can be set in the config file
+  # Aliases can be set at runtime by using the -w option to specify url_rewrite_patterns
+  # Aliases can be set in the config file
 
 In the following examples, suppose we wanted to map our local video directory (*/home/user/Videos*) to the URL "*/videos*", and we wanted to map our pictures directory (*/home/user/Pictures*) to the URL "*/pictures*".
 
