@@ -108,6 +108,7 @@ int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 void mg_close_connection(struct mg_connection *conn)
 {
     close_connection(conn);
+	free(conn);
 }
 
 
