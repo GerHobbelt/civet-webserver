@@ -33,12 +33,12 @@ static const char *standard_reply = "HTTP/1.1 200 OK\r\n"
   "Content-Type: text/plain\r\n"
   "Connection: close\r\n\r\n";
 
-static void test_get_var(struct mg_connection *conn,
-                         const struct mg_request_info *ri) {
+static void test_get_var(struct mg_connection *conn) {
   char *var, *buf;
   size_t buf_len;
   const char *cl;
   int var_len;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
 
@@ -71,10 +71,10 @@ static void test_get_var(struct mg_connection *conn,
   free(var);
 }
 
-static void test_get_header(struct mg_connection *conn,
-                            const struct mg_request_info *ri) {
+static void test_get_header(struct mg_connection *conn) {
   const char *value;
   int i;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
   printf("HTTP headers: %d\n", ri->num_headers);
@@ -88,9 +88,9 @@ static void test_get_header(struct mg_connection *conn,
   }
 }
 
-static void test_get_request_info(struct mg_connection *conn,
-                                  const struct mg_request_info *ri) {
+static void test_get_request_info(struct mg_connection *conn) {
   int i;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
 
@@ -112,18 +112,19 @@ static void test_get_request_info(struct mg_connection *conn,
             ri->remote_user ? ri->remote_user : "");
 }
 
-static void test_error(struct mg_connection *conn,
-                       const struct mg_request_info *ri) {
+static void test_error(struct mg_connection *conn) {
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+
   mg_printf(conn, "HTTP/1.1 %d XX\r\n"
             "Connection: close\r\n\r\n", ri->status_code);
   mg_printf(conn, "Error: [%d]", ri->status_code);
 }
 
-static void test_post(struct mg_connection *conn,
-                      const struct mg_request_info *ri) {
+static void test_post(struct mg_connection *conn) {
   const char *cl;
   char *buf;
   int len;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
   if (strcmp(ri->request_method, "POST") == 0 &&
@@ -139,7 +140,7 @@ static void test_post(struct mg_connection *conn,
 static const struct test_config {
   enum mg_event event;
   const char *uri;
-  void (*func)(struct mg_connection *, const struct mg_request_info *);
+  void (*func)(struct mg_connection *conn);
 } test_config[] = {
   {MG_NEW_REQUEST, "/test_get_header", &test_get_header},
   {MG_NEW_REQUEST, "/test_get_var", &test_get_var},
@@ -150,15 +151,15 @@ static const struct test_config {
 };
 
 static void *callback(enum mg_event event,
-                      struct mg_connection *conn,
-                      const struct mg_request_info *request_info) {
+                      struct mg_connection *conn) {
   int i;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   for (i = 0; test_config[i].uri != NULL; i++) {
     if (event == test_config[i].event &&
         (event == MG_HTTP_ERROR ||
-         !strcmp(request_info->uri, test_config[i].uri))) {
-      test_config[i].func(conn, request_info);
+         !strcmp(ri->uri, test_config[i].uri))) {
+      test_config[i].func(conn);
       return "processed";
     }
   }

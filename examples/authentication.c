@@ -24,17 +24,17 @@
  */
 
 static int
-login_page(struct mg_connection *conn,
-        const struct mg_request_info *ri)
+login_page(struct mg_connection *conn)
 {
     char        name[100], pass[100], uri[100];
 	const char  *cookies[20];
+	struct mg_request_info *ri = mg_get_request_info(conn);
 	const char  *qs = ri->query_string;
 	size_t       qslen = strlen(qs == NULL ? "" : qs);
 
     mg_get_var(qs, qslen, "name", name, ARRAY_SIZE(name));
     mg_get_var(qs, qslen, "pass", pass, ARRAY_SIZE(pass));
-    mg_get_headers(cookies, ARRAY_SIZE(cookies), ri, "Cookie");
+    mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Cookie");
 
     /*
      * Here user name and password must be checked against some
@@ -73,14 +73,14 @@ login_page(struct mg_connection *conn,
 }
 
 static int
-authorize(struct mg_connection *conn,
-        const struct mg_request_info *ri)
+authorize(struct mg_connection *conn)
 {
     const char *cookies[20];
 	const char *cookie = NULL;
 	int i;
+	const struct mg_request_info *ri = mg_get_request_info(conn);
 
-	mg_get_headers(cookies, ARRAY_SIZE(cookies), ri, "Cookie");
+	mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Cookie");
 	for (i = 0; cookies[i]; i++)
 	{
 		if (strstr(cookies[i], "allow=") != NULL)
@@ -108,7 +108,7 @@ authorize(struct mg_connection *conn,
 static const struct srv_pages_config {
 	enum mg_event event;
 	const char *uri;
-	int (*func)(struct mg_connection *, const struct mg_request_info *);
+	int (*func)(struct mg_connection *conn);
 } srv_pages_config[] = {
 	{MG_NEW_REQUEST, "/login$", &login_page},
 	{MG_NEW_REQUEST, "/**", &authorize},
@@ -116,18 +116,18 @@ static const struct srv_pages_config {
 };
 
 static void *callback(enum mg_event event,
-		struct mg_connection *conn,
-		const struct mg_request_info *request_info) 
+		struct mg_connection *conn) 
 {
 	int i;
+	const struct mg_request_info *ri = mg_get_request_info(conn);
 
 	for (i = 0; srv_pages_config[i].uri != NULL; i++) 
 	{
 		if (event == srv_pages_config[i].event &&
 			(event == MG_HTTP_ERROR ||
-			-1 < mg_match_prefix(srv_pages_config[i].uri, strlen(srv_pages_config[i].uri), request_info->uri))) 
+			-1 < mg_match_prefix(srv_pages_config[i].uri, strlen(srv_pages_config[i].uri), ri->uri))) 
 		{
-			if (srv_pages_config[i].func(conn, request_info) != 0)
+			if (srv_pages_config[i].func(conn) != 0)
 				return "processed";
 		}
 	}

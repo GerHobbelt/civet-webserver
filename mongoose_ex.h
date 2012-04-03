@@ -41,6 +41,8 @@ struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx);
 // Obtain the mongoose context definition for the given connection.
 struct mg_context *mg_get_context(struct mg_connection *conn);
 
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
+
 struct socket *mg_get_client_socket(struct mg_connection *conn);
 
 // Return the current 'stop_flag' state value for the given thread context.
@@ -122,7 +124,7 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
 // When dst is NULL, the required number of entries (sans sentinel) is returned nevertheless.
 //
 // Note, hence, that the return value may be larger than the 'dst_buffersize' input value.
-int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_request_info *ri, const char *name);
+int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *ri, const char *name);
 
 
 

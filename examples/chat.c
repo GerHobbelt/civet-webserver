@@ -16,7 +16,7 @@
 #include <winsvc.h>
 #endif
 
-#include "mongoose.h"
+#include "mongoose_ex.h"
 
 #define MAX_USER_LEN  20
 #define MAX_MESSAGE_LEN  100
@@ -131,15 +131,15 @@ static int handle_jsonp(struct mg_connection *conn,
 
 // A handler for the /ajax/get_messages endpoint.
 // Return a list of messages with ID greater than requested.
-static void ajax_get_messages(struct mg_connection *conn,
-                              const struct mg_request_info *request_info) {
+static void ajax_get_messages(struct mg_connection *conn) {
   char last_id[32], *json;
   int is_jsonp;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", ajax_reply_start);
-  is_jsonp = handle_jsonp(conn, request_info);
+  is_jsonp = handle_jsonp(conn, ri);
 
-  get_qsvar(request_info, "last_id", last_id, sizeof(last_id));
+  get_qsvar(ri, "last_id", last_id, sizeof(last_id));
   if ((json = messages_to_json(strtoul(last_id, NULL, 10))) != NULL) {
     mg_printf(conn, "[%s]", json);
     free(json);
@@ -165,17 +165,17 @@ static void my_strlcpy(char *dst, const char *src, size_t len) {
 }
 
 // A handler for the /ajax/send_message endpoint.
-static void ajax_send_message(struct mg_connection *conn,
-                              const struct mg_request_info *request_info) {
+static void ajax_send_message(struct mg_connection *conn) {
   struct message *message;
   struct session *session;
   char text[sizeof(message->text) - 1];
   int is_jsonp;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", ajax_reply_start);
-  is_jsonp = handle_jsonp(conn, request_info);
+  is_jsonp = handle_jsonp(conn, ri);
 
-  get_qsvar(request_info, "text", text, sizeof(text));
+  get_qsvar(ri, "text", text, sizeof(text));
   if (text[0] != '\0') {
     // We have a message to store. Write-lock the ringbuffer,
     // grab the next message and copy data into it.
@@ -198,12 +198,13 @@ static void ajax_send_message(struct mg_connection *conn,
 
 // Redirect user to the login form. In the cookie, store the original URL
 // we came from, so that after the authorization we could redirect back.
-static void redirect_to_login(struct mg_connection *conn,
-                              const struct mg_request_info *request_info) {
+static void redirect_to_login(struct mg_connection *conn) {
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+
   mg_printf(conn, "HTTP/1.1 302 Found\r\n"
       "Set-Cookie: original_url=%s\r\n"
       "Location: %s\r\n\r\n",
-      request_info->uri, login_url);
+      ri->uri, login_url);
 }
 
 // Return 1 if username/password is allowed, 0 otherwise.
@@ -253,14 +254,14 @@ static void send_server_message(const char *fmt, ...) {
 
 // A handler for the /authorize endpoint.
 // Login page form sends user name and password to this endpoint.
-static void authorize(struct mg_connection *conn,
-                      const struct mg_request_info *request_info) {
+static void authorize(struct mg_connection *conn) {
   char user[MAX_USER_LEN], password[MAX_USER_LEN];
   struct session *session;
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   // Fetch user name and password.
-  get_qsvar(request_info, "user", user, sizeof(user));
-  get_qsvar(request_info, "password", password, sizeof(password));
+  get_qsvar(ri, "user", user, sizeof(user));
+  get_qsvar(ri, "password", password, sizeof(password));
 
   if (check_password(user, password) && (session = new_session()) != NULL) {
     // Authentication success:
@@ -286,20 +287,20 @@ static void authorize(struct mg_connection *conn,
         session->session_id, session->user);
   } else {
     // Authentication failure, redirect to login.
-    redirect_to_login(conn, request_info);
+    redirect_to_login(conn);
   }
 }
 
 // Return 1 if request is authorized, 0 otherwise.
-static int is_authorized(const struct mg_connection *conn,
-                         const struct mg_request_info *request_info) {
+static int is_authorized(struct mg_connection *conn) {
   struct session *session;
   char valid_id[33];
   int authorized = 0;
+  struct mg_request_info *ri = mg_get_request_info(conn);
 
   // Always authorize accesses to login page and to authorize URI
-  if (!strcmp(request_info->uri, login_url) ||
-      !strcmp(request_info->uri, authorize_url)) {
+  if (!strcmp(ri->uri, login_url) ||
+      !strcmp(ri->uri, authorize_url)) {
     return 1;
   }
 
@@ -316,34 +317,35 @@ static int is_authorized(const struct mg_connection *conn,
   return authorized;
 }
 
-static void redirect_to_ssl(struct mg_connection *conn,
-                            const struct mg_request_info *request_info) {
+static void redirect_to_ssl(struct mg_connection *conn) {
   const char *p, *host = mg_get_header(conn, "Host");
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+
   if (host != NULL && (p = strchr(host, ':')) != NULL) {
     mg_printf(conn, "HTTP/1.1 302 Found\r\n"
               "Location: https://%.*s:8082/%s:8082\r\n\r\n",
-              p - host, host, request_info->uri);
+              p - host, host, ri->uri);
   } else {
     mg_printf(conn, "%s", "HTTP/1.1 500 Error\r\n\r\nHost: header is not set");
   }
 }
 
 static void *event_handler(enum mg_event event,
-                           struct mg_connection *conn,
-                           const struct mg_request_info *request_info) {
+                           struct mg_connection *conn) {
+  const struct mg_request_info *ri = mg_get_request_info(conn);
   void *processed = "yes";
 
   if (event == MG_NEW_REQUEST) {
-    if (!request_info->is_ssl) {
-      redirect_to_ssl(conn, request_info);
-    } else if (!is_authorized(conn, request_info)) {
-      redirect_to_login(conn, request_info);
-    } else if (strcmp(request_info->uri, authorize_url) == 0) {
-      authorize(conn, request_info);
-    } else if (strcmp(request_info->uri, "/ajax/get_messages") == 0) {
-      ajax_get_messages(conn, request_info);
-    } else if (strcmp(request_info->uri, "/ajax/send_message") == 0) {
-      ajax_send_message(conn, request_info);
+    if (!ri->is_ssl) {
+      redirect_to_ssl(conn);
+    } else if (!is_authorized(conn)) {
+      redirect_to_login(conn);
+    } else if (strcmp(ri->uri, authorize_url) == 0) {
+      authorize(conn);
+    } else if (strcmp(ri->uri, "/ajax/get_messages") == 0) {
+      ajax_get_messages(conn);
+    } else if (strcmp(ri->uri, "/ajax/send_message") == 0) {
+      ajax_send_message(conn);
     } else {
       // No suitable handler found, mark as not processed. Mongoose will
       // try to serve the request.

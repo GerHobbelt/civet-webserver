@@ -42,6 +42,11 @@ struct socket *mg_get_client_socket(struct mg_connection *conn)
     return &conn->client;
 }
 
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
+{
+	return conn ? &conn->request_info : NULL;
+}
+
 
 // http://www.unixguide.net/network/socketfaq/2.11.shtml
 // http://www.techrepublic.com/article/tcpip-options-for-high-performance-data-transmission/1050878
@@ -200,10 +205,11 @@ static void set_header_ptr(const char **dst, int dstsize, int idx, const char *v
 	}
 }
 
-int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_request_info *ri, const char *name) 
+int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *conn, const char *name) 
 {
 	int i;
 	int cnt = 0;
+	const struct mg_request_info *ri = &conn->request_info;
 
 	set_header_ptr(dst, dst_buffersize, 0, NULL);
 	for (i = 0; i < ri->num_headers; i++)

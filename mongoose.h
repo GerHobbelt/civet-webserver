@@ -82,7 +82,6 @@ enum mg_event {
 //   event: which event has been triggered.
 //   conn: opaque connection handler. Could be used to read, write data to the
 //         client, etc. See functions below that have "mg_connection *" arg.
-//   request_info: Information about HTTP request.
 //
 // Return:
 //   If handler returns non-NULL, that means that handler has processed the
@@ -92,8 +91,7 @@ enum mg_event {
 //   the request. Handler must not send any data to the client in this case.
 //   Mongoose proceeds with request handling as if nothing happened.
 typedef void * (*mg_callback_t)(enum mg_event event,
-                                struct mg_connection *conn,
-                                const struct mg_request_info *request_info);
+                                struct mg_connection *conn);
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose

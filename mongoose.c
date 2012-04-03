@@ -285,7 +285,7 @@ const char **mg_get_valid_option_names(void) {
 
 static void *call_user(struct mg_connection *conn, enum mg_event event) {
   if (conn && conn->ctx && conn->ctx->user_functions.user_callback) {
-    return conn->ctx->user_functions.user_callback(event, conn, &conn->request_info);
+    return conn->ctx->user_functions.user_callback(event, conn);
   } else {
     return NULL;
   }
@@ -298,7 +298,7 @@ static void *call_user_over_ctx(struct mg_context *ctx, SSL_CTX *ssl_ctx, enum m
     SSL_CTX *old_ssl = ctx->ssl_ctx;
     ctx->ssl_ctx = ssl_ctx;
     conn.ctx = ctx;
-    rv = ctx->user_functions.user_callback(event, &conn, &conn.request_info);
+    rv = ctx->user_functions.user_callback(event, &conn);
     ctx->ssl_ctx = old_ssl;
     return rv;
   } else {
