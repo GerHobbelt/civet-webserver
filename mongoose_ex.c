@@ -28,18 +28,17 @@
 
 struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx)
 {
-    return &ctx->user_functions;
+    return ctx ? &ctx->user_functions : NULL;
 }
-
 
 struct mg_context *mg_get_context(struct mg_connection *conn)
 {
-    return conn->ctx;
+    return conn ? conn->ctx : NULL;
 }
 
 struct socket *mg_get_client_socket(struct mg_connection *conn)
 {
-    return &conn->client;
+    return conn ? &conn->client : NULL;
 }
 
 struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
