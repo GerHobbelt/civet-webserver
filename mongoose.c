@@ -4719,7 +4719,6 @@ static void accept_new_connection(const struct socket *listener,
                                   struct mg_context *ctx) {
   struct socket accepted;
   char src_addr[SOCKADDR_NTOA_BUFSIZE];
-  socklen_t len;
   int allowed;
 
   accepted.rsa.len = sizeof(accepted.rsa.u.sin);
