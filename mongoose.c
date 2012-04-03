@@ -253,7 +253,7 @@ struct mg_context {
   struct socket queue[20];   // Accepted sockets
   volatile int sq_head;      // Head of the socket queue
   volatile int sq_tail;      // Tail of the socket queue
-  pthread_cond_t sq_full;    // Singaled when socket is produced
+  pthread_cond_t sq_full;    // Signaled when socket is produced
   pthread_cond_t sq_empty;   // Signaled when socket is consumed
 };
 
@@ -276,7 +276,7 @@ struct mg_connection {
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
 
-  char logfile_path[MAX_PATH+1]; // cached value: path to the logfile designated to this connection/CTX
+  char logfile_path[PATH_MAX+1]; // cached value: path to the logfile designated to this connection/CTX
 };
 
 const char **mg_get_valid_option_names(void) {
@@ -455,9 +455,9 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
     //         any other % parameter is processed by strftime.
 
     d = fnbuf;
-    d[MAX_PATH] = 0;  // sentinel for odd moments with strncpy et al
+    d[PATH_MAX] = 0;  // sentinel for odd moments with strncpy et al
     s = logfile_template;
-    while (d - fnbuf < MAX_PATH)
+    while (d - fnbuf < PATH_MAX)
     {
         switch (*s)
         {
@@ -467,7 +467,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         case '%':
             if (s[1] == '[' && s[2] && s[3] == ']')
             {
-                size_t len = MAX_PATH - (d - fnbuf);
+                size_t len = PATH_MAX - (d - fnbuf);
                 const char *u;
 				char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
@@ -568,7 +568,7 @@ copy_partial2dst:
                         }
 
                         // anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
-                        for ( ; d - fnbuf < MAX_PATH - 1; u++)
+                        for ( ; d - fnbuf < PATH_MAX - 1; u++)
                         {
                             switch (*u)
                             {
@@ -1279,7 +1279,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
   if (*p == 0x20 ||               // No space at the end
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
       *p == 0x2b ||               // No '+'
-      (*p & ~0x7f)) {             // And generally no non-ascii chars
+      (*p & ~0x7f)) {             // And generally no non-ASCII chars
     mg_cry(NULL, "Rejecting suspicious path: [%s]", buf);
     wbuf[0] = L'\0';
   } else {
@@ -1376,7 +1376,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
   MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
 
-  // resursively create the included path when the file is to be created / appended to:
+  // recursively create the included path when the file is to be created / appended to:
   if (wmode[wcscspn(wmode, L"aw")])
   {
       size_t i;
@@ -1618,7 +1618,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
       return stderr;
   }
 
-  // resursively create the included path when the file is to be created / appended to:
+  // recursively create the included path when the file is to be created / appended to:
   if (mode[strcspn(mode, "aw")])
   {
       size_t i;
@@ -2466,8 +2466,8 @@ static void bin2str(char *to, const unsigned char *p, size_t len) {
   *to = '\0';
 }
 
-// Return stringified MD5 hash for list of vectors. Buffer must be 33 bytes.
-void mg_md5(char *buf, ...) {
+// Return stringified MD5 hash for list of strings. Buffer must be 33 bytes.
+void mg_md5(char buf[33], ...) {
   unsigned char hash[16];
   const char *p;
   va_list ap;
@@ -2640,7 +2640,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
   return 0;
 }
 
-// Return 1 if request is authorised, 0 otherwise.
+// Return 1 if request is authorized, 0 otherwise.
 static int check_authorization(struct mg_connection *conn, const char *path) {
   FILE *fp;
   char fname[PATH_MAX];
@@ -3094,7 +3094,7 @@ static int is_valid_http_method(const char *method) {
 static int parse_http_request(char *buf, struct mg_request_info *ri) {
   int status = 0;
 
-  // RFC says that all initial whitespaces should be ingored
+  // RFC says that all initial whitespaces should be ignored
   while (*buf != '\0' && isspace(* (unsigned char *) buf)) {
     buf++;
   }
@@ -3623,7 +3623,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
     // or it is absolute system path
     (void) mg_snprintf(conn, path, sizeof(path), "%s", file_name);
   } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
-    // File name is relative to the currect document
+    // File name is relative to the current document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
     if ((p = strrchr(path, DIRSEP)) != NULL) {
       p[1] = '\0';
@@ -3998,7 +3998,7 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 /*
  * a socket-timeout makes the server more robust, in particular if you
  * unplug a network cable while a request is pending - also required
- * for wlan/umts
+ * for WLAN/UMTS
  */
 static int set_timeout(struct socket *sock, int seconds) {
 #ifdef _WIN32
