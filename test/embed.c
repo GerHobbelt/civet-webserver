@@ -179,7 +179,7 @@ int main(void) {
   pause();
 #else
   while (!mg_get_stop_flag(ctx)) {
-    sleep(1);
+    mg_sleep(10);
   }
   mg_stop(ctx);
 #endif
