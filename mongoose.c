@@ -4185,7 +4185,7 @@ static void log_access(const struct mg_connection *conn) {
           ri->request_method ? ri->request_method : "-",
           ri->uri ? ri->uri : "-", ri->http_version,
           conn->request_info.status_code, conn->num_bytes_sent);
-  log_header(conn, "Referer", fp);
+  log_header(conn, "Referer", fp);    // http://en.wikipedia.org/wiki/HTTP_referer
   log_header(conn, "User-Agent", fp);
   (void) fputc('\n', fp);
   (void) fflush(fp);
