@@ -353,6 +353,7 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
+// ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
 #if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
@@ -361,12 +362,36 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
             (void *) &usa->u.sin6.sin6_addr), buf, len);
 #elif defined(_WIN32) && (!defined(_MSC_VER) || _MSC_VER < 1300)
   // Only Windoze Vista (and newer) have inet_ntop()
+  //
+  // We use WSAAddressToString since it is supported on Windows XP and later
+  {
+    DWORD l = len;
+    if (WSAAddressToStringA(&usa->u.sa, usa->len, NULL, buf, &l)) {
+      buf[0] = '\0';
+    }
+  }
+#elif defined(_WIN32) && (!defined(_MSC_VER) || _MSC_VER < 1300)
+  // Only Windoze Vista (and newer) have inet_ntop()
+  //
+  // WARNING: ntoa() is very probably not thread-safe on your platform!
   strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
 #else
   inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
 #endif
   buf[len - 1] = 0;
   return buf;
+}
+
+// ntoh() replacement for IPv6 + IPv4 support:
+static unsigned short int get_socket_port(const struct usa *usa) 
+{
+#if defined(USE_IPV6)
+	return ntohs(usa->u.sa.sa_family == AF_INET ?
+		usa->u.sin.sin_port :
+		usa->u.sin6.sin6_port);
+#else
+	return ntohs(usa->u.sin.sin_port);
+#endif
 }
 
 
@@ -477,16 +502,11 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                 case 'P':
                     if (len > 0 && conn)
 					{
-#if defined(USE_IPV6)
-						unsigned short int port = (conn->client.rsa.u.sa.sa_family == AF_INET ?
-								conn->client.rsa.u.sin.sin_port :
-								conn->client.rsa.u.sin6.sin6_port);
-#else
-						unsigned int port = conn->client.rsa.u.sin.sin_port;
-#endif
+						unsigned short int port = get_socket_port(&conn->client.rsa);
+
 						if (port != 0)
 						{
-							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(port));
+							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
 							d += strlen(d);
 						}
 					}
@@ -510,16 +530,11 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                 case 'p':
                     if (len > 0 && conn)
 					{
-#if defined(USE_IPV6)
-						unsigned short int port = (conn->client.lsa.u.sa.sa_family == AF_INET ?
-								conn->client.lsa.u.sin.sin_port :
-								conn->client.lsa.u.sin6.sin6_port);
-#else
-						unsigned int port = conn->client.lsa.u.sin.sin_port;
-#endif
+						unsigned short int port = get_socket_port(&conn->client.lsa);
+
 						if (port != 0)
 						{
-							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)htons(port));
+							(void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
 							d += strlen(d);
 						}
 					}
@@ -3319,8 +3334,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "%s", "SERVER_PROTOCOL=HTTP/1.1");
   addenv(blk, "%s", "REDIRECT_STATUS=200"); // For PHP
 
-  // TODO(lsm): fix this for IPv6 case
-  addenv(blk, "SERVER_PORT=%d", ntohs(conn->client.lsa.u.sin.sin_port));
+  addenv(blk, "SERVER_PORT=%d", get_socket_port(&conn->client.lsa));
 
   addenv(blk, "REQUEST_METHOD=%s", conn->request_info.request_method);
   addenv(blk, "REMOTE_ADDR=%s", src_addr);
@@ -4151,6 +4165,7 @@ static int isbyte(int n) {
 
 // Verify given socket address against the ACL.
 // Return -1 if ACL is malformed, 0 if address is disallowed, 1 if allowed.
+// TODO: fix for IPv6
 static int check_acl(struct mg_context *ctx, const struct usa *usa) {
   int a, b, c, d, n, mask, allowed;
   char flag;
@@ -4654,7 +4669,7 @@ static void worker_thread(struct mg_context *ctx) {
     // error handler would have the corresponding info.
     // Thanks to Johannes Winkelmann for the patch.
     // TODO(lsm): Fix IPv6 case
-    conn->request_info.remote_port = ntohs(conn->client.rsa.u.sin.sin_port);
+    conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
     memcpy(&conn->request_info.remote_ip,
            &conn->client.rsa.u.sin.sin_addr.s_addr, 4);
     conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
