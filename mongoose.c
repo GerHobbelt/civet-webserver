@@ -3960,36 +3960,37 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   // for both IPv4 and IPv6 (INADDR_ANY and IN6ADDR_ANY_INIT).
   memset(so, 0, sizeof(*so));
 
-  if (sscanf(vec->ptr, " [%40s]:%d%n", &addr_buf, &port, &len) == 2
+  if (sscanf(vec->ptr, " [%40[^]]]:%d%n", &addr_buf, &port, &len) == 2
 	  && len > 0
 	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
     // all done: probably IPv6 URI
-  } else if (sscanf(vec->ptr, " %40s:%d%n", &addr_buf, &port, &len) == 2
+  } else if (sscanf(vec->ptr, " %40[^:]:%d%n", &addr_buf, &port, &len) == 2
 	  && len > 0
 	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
     // all done: probably IPv4 URI
   } else if (sscanf(vec->ptr, "%d%n", &port, &len) != 1 ||
              len <= 0 ||
              len > (int) vec->len ||
-             (vec->ptr[len] && strchr("sp,", vec->ptr[len]) == NULL)) {
+             (vec->ptr[len] && strchr("sp, \t", vec->ptr[len]) == NULL)) {
     return 0;
   } else {
 #if defined(USE_IPV6)
     usa->len = sizeof(usa->u.sin6);
-    so->lsa.u.sin6.sin6_family = AF_INET6;
-    so->lsa.u.sin6.sin6_port = htons((uint16_t) port);
-	//so->lsa.u.sin6.sin6_addr = in6addr_loopback;
+    usa->u.sin6.sin6_family = AF_INET6;
+    usa->u.sin6.sin6_port = htons((uint16_t) port);
+	//usa->u.sin6.sin6_addr = in6addr_loopback;
 #else
     usa->len = sizeof(usa->u.sin);
-    so->lsa.u.sin.sin_family = AF_INET;
-    so->lsa.u.sin.sin_port = htons((uint16_t) port);
-	//so->lsa.u.sin.sin_addr = htonl(INADDR_LOOPBACK);
+    usa->u.sin.sin_family = AF_INET;
+    usa->u.sin.sin_port = htons((uint16_t) port);
+	//usa->u.sin.sin_addr = htonl(INADDR_LOOPBACK);
 #endif
   }
 
-  so->is_ssl = vec->ptr[len] == 's';
+  so->is_ssl = (vec->ptr[len] == 's');
 #if defined(MG_PROXY_SUPPORT)
-  so->is_proxy = vec->ptr[len] == 'p';
+  if (so->is_ssl) len++;
+  so->is_proxy = (vec->ptr[len] == 'p');
 #endif
 
   return 1;
