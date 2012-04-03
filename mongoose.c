@@ -4573,7 +4573,7 @@ static int set_acl_option(struct mg_context *ctx) {
 static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
-  // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
+  // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port, local_ip, local_port
   ri->phys_path = ri->remote_user = ri->request_method = ri->uri = ri->http_version =
     conn->path_info = NULL;
   ri->num_headers = 0;
@@ -4852,6 +4852,8 @@ static void worker_thread(struct mg_context *ctx) {
     // Thanks to Johannes Winkelmann for the patch.
     conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
 	get_socket_ip_address(&conn->request_info.remote_ip, &conn->client.rsa);
+	conn->request_info.local_port = get_socket_port(&conn->client.lsa);
+	get_socket_ip_address(&conn->request_info.local_ip, &conn->client.lsa);
     conn->request_info.is_ssl = conn->client.is_ssl;
 
     if (!conn->client.is_ssl ||

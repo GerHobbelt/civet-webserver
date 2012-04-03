@@ -57,6 +57,8 @@ struct mg_request_info {
   time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
   struct mg_ip_address remote_ip;        // Client's IP address
   int remote_port;       // Client's port
+  struct mg_ip_address local_ip;        // This machine's IP address which receives/services the request
+  int local_port;       // Server's port
   int status_code;       // HTTP reply status code, e.g. 200
   int is_ssl;            // 1 if SSL-ed, 0 if not
   int num_headers;       // Number of headers
