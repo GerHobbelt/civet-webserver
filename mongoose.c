@@ -687,9 +687,23 @@ replacement_done:
     tp = localtime(&timestamp);
     if (0 == strftime(dst, dst_maxsize, fnbuf, tp))
     {
-        // error transforming the template to a filename: fall back to the literal thing.
-        strncpy(dst, fnbuf, dst_maxsize);
-        dst[dst_maxsize] = 0;
+        // error transforming the template to a filename: fall back to the literal thing, but ditch all '%' in the path now:
+		d = dst;
+		s = fnbuf; 
+		dst_maxsize--; // reserve space for the sentinel NUL
+		while (d - dst < dst_maxsize && *s)
+		{
+			if (*s == '%')
+			{
+				*d++ = '_';
+				s++;
+			}
+			else
+			{
+				*d++ = *s++;
+			}
+		}
+        *d = 0;
     }
     return dst;
 }
