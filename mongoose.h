@@ -33,6 +33,14 @@ struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
 struct socket;         // Handle for the socket related to a client / server connection
 
+// The IP address: IPv4 or IPv6
+struct mg_ip_address {
+	unsigned is_ip6: 1; // flag: 1: struct contains an IPv6 address, 0: IPv4 address
+	union {
+		unsigned short int v4[4];
+		unsigned short int v6[8];
+	} ip_addr;
+};
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
@@ -47,7 +55,7 @@ struct mg_request_info {
   const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
   const char *log_dstfile; // Mongoose preferred log file path, MG_EVENT_LOG only
   time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
-  long remote_ip;        // Client's IP address
+  struct mg_ip_address remote_ip;        // Client's IP address
   int remote_port;       // Client's port
   int status_code;       // HTTP reply status code, e.g. 200
   int is_ssl;            // 1 if SSL-ed, 0 if not

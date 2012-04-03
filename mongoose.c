@@ -394,6 +394,57 @@ static unsigned short int get_socket_port(const struct usa *usa)
 #endif
 }
 
+// IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
+static void get_socket_ip_address(struct mg_ip_address *dst, const struct usa *usa) 
+{
+#if defined(USE_IPV6)
+	// Note: According to RFC3493 the only specified member of the in6_addr structure is s6_addr.
+	dst->is_ip6 = (usa->u.sa.sa_family == AF_INET6);
+	if (dst->is_ip6) {
+		const uint16_t *s = (const uint16_t *)&usa->u.sin6.sin6_addr;
+		dst->ip_addr.v6[0] = ntohs(s[0]);
+		dst->ip_addr.v6[1] = ntohs(s[1]);
+		dst->ip_addr.v6[2] = ntohs(s[2]);
+		dst->ip_addr.v6[3] = ntohs(s[3]);
+		dst->ip_addr.v6[4] = ntohs(s[4]);
+		dst->ip_addr.v6[5] = ntohs(s[5]);
+		dst->ip_addr.v6[6] = ntohs(s[6]);
+		dst->ip_addr.v6[7] = ntohs(s[7]);
+	}
+	else
+#endif
+	{
+		const uint8_t *s = (const uint8_t *)&usa->u.sin.sin_addr;
+		dst->ip_addr.v4[0] = s[0];
+		dst->ip_addr.v4[1] = s[1];
+		dst->ip_addr.v4[2] = s[2];
+		dst->ip_addr.v4[3] = s[3];
+		dst->is_ip6 = 0;
+	}
+}
+
+// Note: dst may reference the same memory as src
+static void cvt_ipv4_to_ipv6(struct mg_ip_address *dst, const struct mg_ip_address *src)
+{
+	// process IPv4 as IPv6 ::ffff:a0:a1:a2:a3
+	if (src->is_ip6) {
+		if (dst != src)
+			*dst = *src;
+	} else {
+		struct mg_ip_address d;
+
+		d.is_ip6 = 1;
+		d.ip_addr.v6[0] = 0;
+		d.ip_addr.v6[1] = 0;
+		d.ip_addr.v6[2] = 0;
+		d.ip_addr.v6[3] = 0xffffu;
+		d.ip_addr.v6[4] = src->ip_addr.v4[0];
+		d.ip_addr.v6[5] = src->ip_addr.v4[1];
+		d.ip_addr.v6[6] = src->ip_addr.v4[2];
+		d.ip_addr.v6[7] = src->ip_addr.v4[3];
+		*dst = d;
+	}
+}
 
 /*
 Like strerror() but with included support for the same functionality for
@@ -4094,6 +4145,45 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   return 1;
 }
 
+// return 0 on success!
+// mask_n and maskbits may be NULL
+static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mask_n, struct mg_ip_address *maskbits)
+{
+	int n, mask;
+	char addr_buf[SOCKADDR_NTOA_BUFSIZE];
+
+    if (sscanf(src, "%40[^/]%n", &addr_buf, &n) != 2) {
+      return -1;
+	} else if (!parse_ipvX_addr_string(addr_buf, 0, ip)) {
+      return -2;
+    } else if (sscanf(src + n, "/%d", &mask) == 0) {
+      // no mask specified
+	  mask = (ip->u.sa.sa_family == AF_INET ? 32 : 8 * 16);
+    } else if (mask < 0 || mask > (ip->u.sa.sa_family == AF_INET ? 32 : 8 * 16)) {
+      return -3;
+    }
+	if (mask_n)
+		*mask_n = mask;
+	if (maskbits) {
+		if (ip->u.sa.sa_family == AF_INET) {
+			mask = 32 - mask;
+			// convert IPv4 mask to IPv6 mask:
+			mask += (mask >= 24 ? 24 : mask >= 16 ? 16 : mask >= 8 ? 8 : 0); 
+		} else {
+			mask = 8 * 16 - mask;
+		}
+		maskbits->ip_addr.v6[0] = (mask < 8 * 16 ? mask > 7 * 16 ? 0xffffU << (8 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[1] = (mask < 7 * 16 ? mask > 6 * 16 ? 0xffffU << (7 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[2] = (mask < 6 * 16 ? mask > 5 * 16 ? 0xffffU << (6 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[3] = (mask < 5 * 16 ? mask > 4 * 16 ? 0xffffU << (5 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[4] = (mask < 4 * 16 ? mask > 3 * 16 ? 0xffffU << (4 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[5] = (mask < 3 * 16 ? mask > 2 * 16 ? 0xffffU << (3 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[6] = (mask < 2 * 16 ? mask > 1 * 16 ? 0xffffU << (2 * 16 - mask) : 0 : 0xffffU);
+		maskbits->ip_addr.v6[7] = (mask < 1 * 16 ? mask > 0 * 16 ? 0xffffU << (1 * 16 - mask) : 0 : 0xffffU);
+	}
+	return 0;
+}
+
 /*
  * a socket-timeout makes the server more robust, in particular if you
  * unplug a network cable while a request is pending - also required
@@ -4249,11 +4339,11 @@ static int isbyte(int n) {
 
 // Verify given socket address against the ACL.
 // Return -1 if ACL is malformed, 0 if address is disallowed, 1 if allowed.
-// TODO: fix for IPv6
 static int check_acl(struct mg_context *ctx, const struct usa *usa) {
-  int a, b, c, d, n, mask, allowed;
+  int i, mask, allowed;
   char flag;
-  uint32_t acl_subnet, acl_mask, remote_ip;
+  struct mg_ip_address acl_subnet, acl_mask, remote_ip;
+  struct usa ip;
   struct vec vec;
   const char *list = ctx->config[ACCESS_CONTROL_LIST];
 
@@ -4261,34 +4351,41 @@ static int check_acl(struct mg_context *ctx, const struct usa *usa) {
     return 1;
   }
 
-  (void) memcpy(&remote_ip, &usa->u.sin.sin_addr, sizeof(remote_ip));
+  get_socket_ip_address(&remote_ip, usa);
+  cvt_ipv4_to_ipv6(&remote_ip, &remote_ip);
 
   // If any ACL is set, deny by default
   allowed = '-';
 
   while ((list = next_option(list, &vec, NULL)) != NULL) {
-    mask = 32;
-
-    if (sscanf(vec.ptr, "%c%d.%d.%d.%d%n", &flag, &a, &b, &c, &d, &n) != 5) {
-      mg_cry(fc(ctx), "%s: subnet must be [+|-]x.x.x.x[/x]", __func__);
-      return -1;
-    } else if (flag != '+' && flag != '-') {
+    flag = vec.ptr[0];
+    if (sscanf(vec.ptr, " %c%n", &flag, &i) != 1 && flag != '+' && flag != '-') {
       mg_cry(fc(ctx), "%s: flag must be + or -: [%s]", __func__, vec.ptr);
       return -1;
-    } else if (!isbyte(a)||!isbyte(b)||!isbyte(c)||!isbyte(d)) {
+	} 
+	switch (parse_ipvX_addr_and_netmask(vec.ptr + i, &ip, &mask, &acl_mask)) {
+	case 0:
+		break;
+	default:
+      mg_cry(fc(ctx), "%s: subnet must be [+|-]<IPv4 address: x.x.x.x>[/x] or [+|-]<IPv6 address>[/x], instead we see [%s]", __func__, vec.ptr);
+      return -1;
+	case -2:
       mg_cry(fc(ctx), "%s: bad ip address: [%s]", __func__, vec.ptr);
       return -1;
-    } else if (sscanf(vec.ptr + n, "/%d", &mask) == 0) {
-      // Do nothing, no mask specified
-    } else if (mask < 0 || mask > 32) {
-      mg_cry(fc(ctx), "%s: bad subnet mask: %d [%s]", __func__, n, vec.ptr);
+	case -3:
+      mg_cry(fc(ctx), "%s: bad subnet mask: %d [%s]", __func__, mask, vec.ptr);
       return -1;
     }
+	get_socket_ip_address(&acl_subnet, &ip);
+	cvt_ipv4_to_ipv6(&acl_subnet, &acl_subnet);
 
-    acl_subnet = (a << 24) | (b << 16) | (c << 8) | d;
-    acl_mask = mask ? 0xffffffffU << (32 - mask) : 0;
-
-    if (acl_subnet == (ntohl(remote_ip) & acl_mask)) {
+	for (i = 0; i < 8; i++) {
+		if (acl_subnet.ip_addr.v6[i] != (remote_ip.ip_addr.v6[i] & acl_mask.ip_addr.v6[i])) {
+			flag = 0;
+			break;
+		}
+	}
+	if (flag) {
       allowed = flag;
     }
   }
@@ -4753,11 +4850,8 @@ static void worker_thread(struct mg_context *ctx) {
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
     // Thanks to Johannes Winkelmann for the patch.
-    // TODO(lsm): Fix IPv6 case
     conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
-    memcpy(&conn->request_info.remote_ip,
-           &conn->client.rsa.u.sin.sin_addr.s_addr, 4);
-    conn->request_info.remote_ip = ntohl(conn->request_info.remote_ip);
+	get_socket_ip_address(&conn->request_info.remote_ip, &conn->client.rsa);
     conn->request_info.is_ssl = conn->client.is_ssl;
 
     if (!conn->client.is_ssl ||

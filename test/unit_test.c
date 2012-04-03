@@ -130,6 +130,12 @@ static void test_IPaddr_parsing() {
 	assert(parse_port_string(&v, &s));
 	assert(s.lsa.u.sin.sin_port == htons(443));
 	assert(s.is_ssl);
+
+
+	// TODO: test these:
+	//	check_acl()
+	//	parse_ipvX_addr_and_netmask()
+
 }
 
 static void test_logpath_fmt() {

@@ -181,6 +181,7 @@ int pthread_mutex_unlock(pthread_mutex_t *);
 #include <stdint.h>
 #else
 typedef unsigned int  uint32_t;
+typedef unsigned char  uint8_t;
 typedef unsigned short  uint16_t;
 typedef unsigned __int64 uint64_t;
 typedef __int64   int64_t;
