@@ -4856,9 +4856,11 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!conn->client.is_ssl ||
         (conn->client.is_ssl && sslize(conn, SSL_accept))) {
+      call_user(conn, MG_INIT_CLIENT_CONN);
       process_new_connection(conn);
     }
 
+	call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
   }
   free(conn);

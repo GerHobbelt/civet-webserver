@@ -78,6 +78,18 @@ enum mg_event {
 					// any more!)
   MG_INIT0,         // Mongoose starts and has just initialized the network
                     // stack and is about to start the mongoose threads.
+  MG_INIT_CLIENT_CONN,  // Mongoose has opened a connection to a client.
+                    // This is the first time that the 'conn' parameter is
+					// valid for the given thread: now is the start of 
+					// this connection's lifetime.
+  MG_EXIT_CLIENT_CONN,  // Mongoose is going to close the client connection.
+                    // Note that you won't receive the EXIT1 event when 
+					// a thread crashes; also note that you may receive
+					// this event for a connection for which you haven't
+					// received a 'init' event! The latter happens when 
+					// mongoose has its reasons to not serve the client.
+					// This event is also the end of this particular 'conn'
+					// connection's lifetime.
   MG_EXIT0          // Mongoose terminates and has already terminated its 
                     // threads. This one is the counterpart of MG_INIT0, so 
 					// to speak.
