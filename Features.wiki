@@ -62,7 +62,7 @@ Similar to Apache’s mod_alias, using aliases allows a mapping to be created be
 
 In the Mongoose web server, this can be done two ways:
 
-1) Aliases can be set at runtime by appending them to the -r option after defining the web root
+1) Aliases can be set at runtime by using the -w option to specify url_rewrite_patterns
 2) Aliases can be set in the config file
 
 In the following examples, suppose we wanted to map our local video directory (*/home/user/Videos*) to the URL "*/videos*", and we wanted to map our pictures directory (*/home/user/Pictures*) to the URL "*/pictures*".
@@ -70,7 +70,7 @@ In the following examples, suppose we wanted to map our local video directory (*
 Using the first option (setting the aliases at runtime), would look similar to the following.  
 
 {{{
-./mongoose -r /var/www,/videos=/home/user/Videos,/pictures=/home/user/Pictures
+./mongoose -w /videos=/home/user/Videos,/pictures=/home/user/Pictures
 }}}
 
 To test if the newly set-up aliases are working correctly, point your web browser to one of the two URLs, where you should see a directory listing of the local files.
