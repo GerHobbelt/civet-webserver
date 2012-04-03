@@ -255,8 +255,10 @@ typedef int socklen_t;
 #if !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
 #endif
+#if !defined(_WIN32)
 #if !defined(TCP_USER_TIMEOUT)
 #define TCP_USER_TIMEOUT (18)
+#endif
 #endif
 
 typedef void * (*mg_thread_func_t)(void *);
@@ -3495,17 +3497,25 @@ static void set_receive_timeout(SOCKET sock) {
 #ifdef _WIN32
       unsigned long to = (SOCKET_RECEIVE_TIMEOUT) * 1000;
       unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
+
+      // SO_RCVTIMEO: max. time waiting to wait for data from a client
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&to, sizeof(to));   
-      /* TCP_USER_TIMEOUT (according to RFC5482) is not (yet?) supported in win32 ?
-      setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));
-      */
+
+      // TCP_USER_TIMEOUT (according to RFC5482) is not (yet?) supported in win32 ?
+      // setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));      
 #else
-      unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
       struct timeval to;
+      unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
       to.tv_usec=0;
       to.tv_sec=(SOCKET_RECEIVE_TIMEOUT);
 
+      // SO_RCVTIMEO: max time waiting to wait for data from a client
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&to, sizeof(to));
+
+      // TCP_USER_TIMEOUT/RFC5482 (http://tools.ietf.org/html/rfc5482):
+      // max. time waiting for the acknowledged of TCP data before the connection
+      // will be forcefully closed and ETIMEDOUT is returned to the application.
+      // If this option is not set, the default timeout of 20-30 minutes is used.
       setsockopt(sock, 6, TCP_USER_TIMEOUT, (const void *)&uto, sizeof(uto));
 #endif
    }
