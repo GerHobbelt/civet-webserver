@@ -474,8 +474,8 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
     //         %[C] with client IP (sanitized for filesystem paths)
     //         %[p] with server port number
     //         %[s] with server IP (sanitized for filesystem paths)
-    //         %[U] with the request URI path section (sanitized for filesystem paths)
-    //         %[Q] with the request URI query section (sanitized for filesystem paths)
+    //         %[U] with the request URI path section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters URL hash))
+    //         %[Q] with the request URI query section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters query hash))
     //
     //         any other % parameter is processed by strftime.
 
@@ -487,20 +487,43 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         switch (*s)
         {
         case 0:
+			if (d > fnbuf && d[-1] == '.')
+				d--;
             break;
+
+		case '.':
+			if (d == fnbuf)
+			{
+				s++;
+				continue;
+			}
+			//   (fallthrough)
+		case ':':
+		case '/':
+			// don't allow output sequences with multiple dots following one another,
+			// nor do we allow a dot at the start or end of the produced part (which would
+			// possibly generate hidden files/dirs and file create issues on some 
+			// OS/storage formats):
+			if (d > fnbuf && d[-1] == '.')
+				d--;
+			*d++ = *s++;
+			continue;
 
         case '%':
             if (s[1] == '[' && s[2] && s[3] == ']')
             {
-                size_t len = PATH_MAX - (d - fnbuf);
-                const char *u;
-				char addr_buf[SOCKADDR_NTOA_BUFSIZE];
+                size_t len = PATH_MAX - (d - fnbuf); // assert(len > 0);
+                const char *u = NULL;
+				// enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
+				//char addr_buf[MAX(MAX(64+32-8+1, SOCKADDR_NTOA_BUFSIZE), PATH_MAX)];
+				char addr_buf[PATH_MAX];
+				char *old_d = d;
 
                 *d = 0;
                 switch (s[2])
                 {
                 case 'P':
-                    if (len > 0 && conn)
+                    if (conn)
 					{
 						unsigned short int port = get_socket_port(&conn->client.rsa);
 
@@ -510,11 +533,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
 							d += strlen(d);
 						}
 					}
-                    s += 4;
-                    continue;
+					goto replacement_done;
 
                 case 'C':
-                    if (len > 0 && conn)
+                    if (conn)
 					{
 						sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
 
@@ -524,11 +546,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                           goto copy_partial2dst;
 						}
                     }
-                    s += 4;
-                    continue;
+					goto replacement_done;
 
                 case 'p':
-                    if (len > 0 && conn)
+                    if (conn)
 					{
 						unsigned short int port = get_socket_port(&conn->client.lsa);
 
@@ -538,11 +559,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
 							d += strlen(d);
 						}
 					}
-                    s += 4;
-                    continue;
+					goto replacement_done;
 
                 case 's':
-                    if (len > 0 && conn)
+                    if (conn)
                     {
 						sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.lsa);
 
@@ -552,36 +572,45 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
                           goto copy_partial2dst;
 						}
                     }
-                    s += 4;
-                    continue;
+					goto replacement_done;
 
                 case 'U':
                 case 'Q':
                     // filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
-                    if (len > 0 && conn && conn->request_info.uri)
+                    if (conn && conn->request_info.uri)
                     {
+						const char *q;
+
                         u = conn->request_info.uri;
+						q = strchr(u, '?');
+						if (s[2] == 'Q')
+						{
+							if (!q)
+							{
+								// empty query section: replace as empty string.
+								q = "";
+							}
+							u = q + 1;
+							q = NULL;
+						}
+						// limit the length to process:
+						strncpy(addr_buf, u, sizeof(addr_buf));
+						addr_buf[sizeof(addr_buf) - 1] = 0;
+						if (q && q - u < sizeof(addr_buf))
+						{
+							addr_buf[q - u] = 0;
+						}
+						// limit the string inserted into the filepath template to 64 characters:
+						mg_md5(addr_buf + 64 - 8, addr_buf, NULL);
+						addr_buf[64] = 0;
+						u = addr_buf;
                         goto copy_partial2dst;
                     }
-                    s += 4;
-                    continue;
+					goto replacement_done;
 
 copy_partial2dst:
                     if (len > 0 && u)
                     {
-                        int break_on_qmark = (s[2] == 'U');
-
-                        if (s[2] == 'Q')
-                        {
-                            const char *q = strchr(u, '?');
-                            if (!q)
-                            {
-                                // empty query section: replace as empty string.
-                                q = "";
-                            }
-                            u = q;
-                        }
-
                         // anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
                         for ( ; d - fnbuf < PATH_MAX - 1; u++)
                         {
@@ -598,20 +627,16 @@ copy_partial2dst:
                             case ':':
                             case '/':
                             case '.':
-                                // don't allow output sequences with multiple dots following one another:
-                                if (d == fnbuf || d[-1] != '.')
+                                // don't allow output sequences with multiple dots following one another,
+								// nor do we allow a dot at the start or end of the produced part (which would
+								// possibly generate hidden files/dirs and file create issues on some 
+								// OS/storage formats):
+                                if (d > fnbuf && !strchr(":\\/.", d[-1]))
                                 {
                                     *d++ = '.';
                                 }
                                 continue;
 
-                            case '?':
-                                if (break_on_qmark)
-                                {
-                                    // done!
-                                    break;
-                                }
-                                // (fallthrough)
                             default:
                                 // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
                                 if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u))
@@ -624,8 +649,18 @@ copy_partial2dst:
                             }
                             break;
                         }
+
+						// make sure there's no '.' dot at the very end to prevent file create issues on some platforms:
+						if (d != old_d && d[-1] == '.')
+							d--;
                     }
-                    s += 4;
+replacement_done:
+					// and the %[?] macros ALWAYS produce at least ONE character output in the template, 
+					// otherwise you get screwed up paths with, f.e. 'a/%[Q]/b' --> 'a//b':
+					if (d == old_d && d - fnbuf < PATH_MAX)
+						*d++ = '_';
+
+					s += 4;
                     continue;
 
                 default:
