@@ -4475,6 +4475,7 @@ static void close_connection(struct mg_connection *conn) {
 
   if (conn->client.sock != INVALID_SOCKET) {
     close_socket_gracefully(conn->client.sock);
+    conn->client.sock = INVALID_SOCKET;
   }
 }
 
