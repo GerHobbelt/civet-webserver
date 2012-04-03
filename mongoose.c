@@ -2067,46 +2067,81 @@ static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
 static struct mg_connection *mg_connect(struct mg_connection *conn,
                                  const char *host, int port, int use_ssl) {
   struct mg_connection *newconn = NULL;
-  struct sockaddr_in sin;
-  struct hostent *he;
   int sock;
+  struct addrinfo *result = NULL;
+  struct addrinfo *ptr;
+  struct addrinfo hints = {0};
+
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
 
   if (conn->ctx->ssl_ctx == NULL && use_ssl) {
     mg_cry(conn, "%s: SSL is not initialized", __func__);
-  } else if ((he = gethostbyname(host)) == NULL) {
-    mg_cry(conn, "%s: gethostbyname(%s): %s", __func__, host, mg_strerror(ERRNO));
+  } else if (getaddrinfo(host, NULL, &hints, &result)) {
+    mg_cry(conn, "%s: getaddrinfo(%s): %s", __func__, host, mg_strerror(ERRNO));
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
     mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
+  } else if ((newconn = (struct mg_connection *)
+	  calloc(1, sizeof(*newconn))) == NULL) {
+		  mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
+	  closesocket(sock);
   } else {
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons((uint16_t) port);
-    sin.sin_addr = * (struct in_addr *) he->h_addr_list[0];
-    if (connect(sock, (struct sockaddr *) &sin, sizeof(sin)) != 0) {
+	newconn->birth_time = time(NULL);
+	newconn->ctx = conn->ctx;
+	newconn->client.sock = sock;
+	for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+		if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
+			continue;
+		switch (ptr->ai_family) {
+		default:
+			continue;
+
+		case AF_INET:
+			newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
+			newconn->client.rsa.u.sin = * (struct sockaddr_in *)ptr->ai_addr;
+			newconn->client.rsa.u.sin.sin_family = AF_INET;
+			newconn->client.rsa.u.sin.sin_port = htons((uint16_t) port);
+			break;
+
+#if defined(USE_IPV6)
+		case AF_INET6:
+			newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin6);
+			newconn->client.rsa.u.sin6 = * (struct sockaddr_in6 *)ptr->ai_addr;
+			newconn->client.rsa.u.sin6.sin6_family = AF_INET6;
+			newconn->client.rsa.u.sin6.sin6_port = htons((uint16_t) port);
+			break;
+#endif
+		}
+		break;
+	}
+	if (!ptr) {
+	  mg_cry(conn, "%s: getaddrinfo(%s): no TCP/IP v4/6 support found", __func__, host);
+	  closesocket(sock);
+	}
+    else if (connect(sock, &newconn->client.rsa.u.sa, newconn->client.rsa.len) != 0) {
       mg_cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
           mg_strerror(ERRNO));
       closesocket(sock);
-    } else if ((newconn = (struct mg_connection *)
-                calloc(1, sizeof(*newconn))) == NULL) {
-      mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
-      closesocket(sock);
     } else {
-      newconn->birth_time = time(NULL);
-      newconn->ctx = conn->ctx;
-      newconn->client.sock = sock;
-      newconn->client.rsa.u.sin = sin;
-      newconn->client.lsa.len = sizeof(newconn->client.lsa.u.sa);
+      newconn->client.lsa.len = newconn->client.rsa.len;
       if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
       {
         mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
         newconn->client.lsa.len = 0;
       }
-      if (use_ssl) {
-        sslize(newconn, SSL_connect);
+      if (use_ssl && !sslize(newconn, SSL_connect)) {
+		mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
+		closesocket(sock);
       }
+	  else {
+	    return newconn;
+	  }
     }
   }
 
-  return newconn;
+  if (newconn) free(newconn);
+  return NULL;
 }
 
 // Check whether full request is buffered. Return:
