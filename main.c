@@ -183,17 +183,24 @@ static void process_command_line_arguments(char *argv[], char **options) {
   // Load config file settings first
   if (fp != NULL) {
     fprintf(stderr, "Loading config file %s\n", config_file);
-
+    
     // Loop over the lines in config file
     while (fgets(line, sizeof(line), fp) != NULL) {
+
+      if (!line_no && !memcmp(line,"\xEF\xBB\xBF",3)) {
+        // strip UTF-8 BOM
+        p = line+3;
+      } else {
+        p = line;
+      }
 
       line_no++;
 
       // Ignore empty lines and comments
-      if (line[0] == '#' || line[0] == '\n')
+      if (p[0] == '#' || p[0] == '\r' || p[0] == '\n')
         continue;
 
-      if (sscanf(line, "%s %[^\r\n#]", opt, val) != 2) {
+      if (sscanf(p, "%s %[^\r\n#]", opt, val) != 2) {
         die("%s: line %d is invalid", config_file, (int) line_no);
       }
       set_option(options, opt, val);
