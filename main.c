@@ -223,61 +223,102 @@ static void init_server_name(void) {
            mg_version());
 }
 
-struct t_stat {
-  const char * name;
-  unsigned long count;
-};
-
-
 // example and test case for a callback
 // this callback creates a statistics of request methods and the requested uris
 // it is not ment as a feature but as a simple test case
-struct t_user_arg {   
-   struct t_stat methods[10];
-   struct t_stat uris[10000];
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+typedef HANDLE pthread_mutex_t;
+
+static int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
+  unused = NULL;
+  *mutex = CreateMutex(NULL, FALSE, NULL);
+  return *mutex == NULL ? -1 : 0;
+}
+
+static int pthread_mutex_destroy(pthread_mutex_t *mutex) {
+  return CloseHandle(*mutex) == 0 ? -1 : 0;
+}
+
+static int pthread_mutex_lock(pthread_mutex_t *mutex) {
+  return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
+}
+
+static int pthread_mutex_unlock(pthread_mutex_t *mutex) {
+  return ReleaseMutex(*mutex) == 0 ? -1 : 0;
+}
+#endif
+
+struct t_stat {
+  const char * name;
+  unsigned long getCount;
+  unsigned long postCount;
+  struct t_stat * next;
 };
 
-static struct t_user_arg user_arg = {0};
+struct t_user_arg {   
+   pthread_mutex_t mutex;
+   struct t_stat * uris[0x10000];
+};
+
+unsigned short crc16(const void * data, unsigned long bitCount) {
+  unsigned short r = 0xFFFFu;
+	unsigned long i;
+  for (i=0;i<bitCount;i++) {
+    unsigned short b = ((unsigned char*)data)[i>>3];
+    b >>= i & 0x7ul;    
+    r = ((r & 1u) != (b & 1u)) ? ((r>>1) ^ 0xA001u) : (r>>1);
+  }
+  r ^= 0xFFFFu;
+  return r;
+}
 
 static void * callback(enum mg_event event, struct mg_connection *conn, const struct mg_request_info *request_info) {
-
   int i;
   struct t_user_arg * udata = (struct t_user_arg *)request_info->user_data;
+  const char * uri;
+  unsigned short crc;
+  struct t_stat ** st;
 
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;
   }
 
-  // add the request method and the uri to a list
-  // In C++ one could use a STL-map; since this is only a test case a simple but
-  // not performant linear list will do
-  for (i=0;i<sizeof(udata->methods)/sizeof(udata->methods[0]);i++) {
-    if (udata->methods[i].name) {
-      if (!strcmp(udata->methods[i].name, request_info->request_method)) {
-        udata->methods[i].count++;
-        break;
-      }
-    } else {
-      udata->methods[i].name = sdup(request_info->request_method);
-      udata->methods[i].count = 1;
-      break;
-    }
-  }
-  for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
-    if (udata->uris[i].name) {
-      if (!strcmp(udata->uris[i].name, request_info->uri)) {
-        udata->uris[i].count++;
-        break;
-      }
-    } else {
-      udata->uris[i].name = sdup(request_info->uri);
-      udata->uris[i].count = 1;
-      break;
-    }
+  // This callback adds the request method and the uri to a list.
+  uri = sdup(request_info->uri);
+  if (!uri) {
+    die("out of memory");
   }
 
-  if (!strcmp(request_info->uri, "/_stat")) {
+  // In C++ one could use a STL-map. However, this is just a test case here.
+  crc = crc16(uri, (strlen(uri)+1)<<3);
+  st = &udata->uris[crc];
+
+  // This is a multithreaded system, so a mutex is required
+  pthread_mutex_lock(&udata->mutex);
+
+  while (*st) {
+    if (!strcmp((*st)->name, uri)) {      
+      break;
+    } else {
+      st = &((*st)->next);
+    }
+  }
+  if (*st == NULL) {
+    *st = (struct t_stat*) calloc(1, sizeof(struct t_stat));
+    if (!st) {
+      die("out of memory");
+    }
+    (*st)->name = uri;
+    (*st)->next = 0;
+  }
+  if (!strcmp(request_info->request_method,"GET")) {
+    (*st)->getCount++;
+  } else if (!strcmp(request_info->request_method,"POST")) {
+    (*st)->postCount++;
+  }
+
+  if (!strcmp(uri, "/_stat")) {
     //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
     mg_printf(conn, "%s",
               "HTTP/1.1 200 OK\r\n"
@@ -288,38 +329,35 @@ static void * callback(enum mg_event event, struct mg_connection *conn, const st
     mg_printf(conn,
               "<html><head><title>HTTP server statistics</title>"
               "<style>th {text-align: left;}</style></head>"
-              "<body><h1>HTTP server statistics</h1>"
-              "<p><pre><table cellpadding=\"0\">"
-              "<tr><th>Operation</th>"
-              "<th>Count</th></tr>\r\n");
+              "<body><h1>HTTP server statistics</h1>\r\n");
 
-    for (i=0;i<sizeof(udata->methods)/sizeof(udata->methods[0]);i++) {
-      if (udata->methods[i].name) {
-        mg_printf(conn, "<tr><td>%s</td><td>%u</td></tr>\r\n", 
-                  udata->methods[i].name, udata->methods[i].count);
-      }
-    }
-    mg_printf(conn, 
-              "</table></pre></p>\r\n<p><pre><table cellpadding=\"0\">"
-              "<tr><th>Operation</th>"
-              "<th>Count</th></tr>\r\n");
+    mg_printf(conn,
+              "<p><pre><table border=\"1\" rules=\"all\">"
+              "<tr><th>Resource</th>"
+              "<th>GET</th><th>POST</th></tr>\r\n");
+
     for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
-      if (udata->uris[i].name) {
-        mg_printf(conn, "<tr><td>%s</td><td>%u</td></tr>\r\n", 
-                  udata->uris[i].name, udata->uris[i].count);
+      st = &udata->uris[i];
+      while (*st) {
+        mg_printf(conn, "<tr><td>%s</td><td>%u</td><td>%u</td></tr>\r\n",
+                  (*st)->name, (*st)->getCount, (*st)->postCount);
+        st = &((*st)->next);
       }
     }
     
     mg_printf(conn, "</table></pre></p></body></html>\r\n");
+
+    pthread_mutex_unlock(&udata->mutex);
     return (void *)1;
   }
-  
+
+  pthread_mutex_unlock(&udata->mutex);  
   return NULL;
 }
 
-
 static void start_mongoose(int argc, char *argv[]) {
   char *options[MAX_OPTIONS];
+  struct t_user_arg * pUser_arg;
   int i;
 
   // Edit passwords file if -A option is specified
@@ -343,8 +381,15 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGTERM, signal_handler);
   signal(SIGINT, signal_handler);
 
+  /* prepare the user_arg */
+  pUser_arg = (struct t_user_arg *)calloc(1, sizeof(struct t_user_arg));
+  if (!pUser_arg) {
+    die("out of memory");
+  }
+  pthread_mutex_init(&pUser_arg->mutex, 0);
+
   /* Start Mongoose */
-  ctx = mg_start(callback, &user_arg, (const char **) options);
+  ctx = mg_start(callback, pUser_arg, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
