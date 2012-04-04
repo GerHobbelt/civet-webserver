@@ -216,6 +216,101 @@ static void init_server_name(void) {
            mg_version());
 }
 
+struct t_stat {
+  const char * name;
+  unsigned long count;
+};
+
+
+// example and test case for a callback
+// this callback creates a statistics of request methods and the requested uris
+// it is not ment as a feature but as a simple test case
+struct t_user_arg {   
+   struct t_stat methods[10];
+   struct t_stat uris[10000];
+};
+
+static struct t_user_arg user_arg = {0};
+
+static void * callback(enum mg_event event, struct mg_connection *conn, const struct mg_request_info *request_info) {
+
+  int i;
+  struct t_user_arg * udata = (struct t_user_arg *)request_info->user_data;
+
+  if (event != MG_NEW_REQUEST) {
+    // This callback currently only handles new requests
+    return NULL;
+  }
+
+  // add the request method and the uri to a list
+  // In C++ one could use a STL-map; since this is only a test case a simple but
+  // not performant linear list will do
+  for (i=0;i<sizeof(udata->methods)/sizeof(udata->methods[0]);i++) {
+    if (udata->methods[i].name) {
+      if (!strcmp(udata->methods[i].name, request_info->request_method)) {
+        udata->methods[i].count++;
+        break;
+      }
+    } else {
+      udata->methods[i].name = sdup(request_info->request_method);
+      udata->methods[i].count = 1;
+      break;
+    }
+  }
+  for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
+    if (udata->uris[i].name) {
+      if (!strcmp(udata->uris[i].name, request_info->uri)) {
+        udata->uris[i].count++;
+        break;
+      }
+    } else {
+      udata->uris[i].name = sdup(request_info->uri);
+      udata->uris[i].count = 1;
+      break;
+    }
+  }
+
+  if (!strcmp(request_info->uri, "/_stat")) {
+    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_printf(conn, "%s",
+              "HTTP/1.1 200 OK\r\n"
+              "Connection: close\r\n"
+              "Cache-Control: no-cache"
+              "Content-Type: text/html; charset=utf-8\r\n\r\n");
+
+    mg_printf(conn,
+              "<html><head><title>HTTP server statistics</title>"
+              "<style>th {text-align: left;}</style></head>"
+              "<body><h1>HTTP server statistics</h1>"
+              "<p><pre><table cellpadding=\"0\">"
+              "<tr><th>Operation</th>"
+              "<th>Count</th></tr>\r\n");
+
+    for (i=0;i<sizeof(udata->methods)/sizeof(udata->methods[0]);i++) {
+      if (udata->methods[i].name) {
+        mg_printf(conn, "<tr><td>%s</td><td>%u</td></tr>\r\n", 
+                  udata->methods[i].name, udata->methods[i].count);
+      }
+    }
+    mg_printf(conn, 
+              "</table></pre></p>\r\n<p><pre><table cellpadding=\"0\">"
+              "<tr><th>Operation</th>"
+              "<th>Count</th></tr>\r\n");
+    for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
+      if (udata->uris[i].name) {
+        mg_printf(conn, "<tr><td>%s</td><td>%u</td></tr>\r\n", 
+                  udata->uris[i].name, udata->uris[i].count);
+      }
+    }
+    
+    mg_printf(conn, "</table></pre></p></body></html>\r\n");
+    return (void *)1;
+  }
+  
+  return NULL;
+}
+
+
 static void start_mongoose(int argc, char *argv[]) {
   char *options[MAX_OPTIONS];
   int i;
@@ -242,7 +337,7 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
   /* Start Mongoose */
-  ctx = mg_start(NULL, NULL, (const char **) options);
+  ctx = mg_start(callback, &user_arg, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }

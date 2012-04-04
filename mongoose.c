@@ -3388,6 +3388,7 @@ static void handle_request(struct mg_connection *conn) {
     send_authorization_request(conn);
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
+    conn->must_close = 1; // TODO: currently there is no way to set the close flag in the callback
   } else if (!strcmp(ri->request_method, "OPTIONS")) {
     send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
