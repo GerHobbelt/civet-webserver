@@ -4395,7 +4395,7 @@ static int check_acl(struct mg_context *ctx, const struct usa *usa) {
 
 static void add_to_set(SOCKET fd, fd_set *set, int *max_fd) {
   FD_SET(fd, set);
-  if (fd > (SOCKET) *max_fd) {
+  if (((int)fd) > *max_fd) {
     *max_fd = (int) fd;
   }
 }
