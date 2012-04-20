@@ -102,7 +102,41 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 {
-    return pull(NULL, conn->client.sock, conn->ssl, (char *)buf, (int)max_bufsize);
+	int buffered_len, nread;
+
+	assert((conn->content_len == -1 && conn->consumed_content == 0) ||
+		(conn->content_len == 0 && conn->consumed_content > 0) ||
+		conn->consumed_content <= conn->content_len);
+	DEBUG_TRACE(("%p %zu %" INT64_FMT " %" INT64_FMT, buf, max_bufsize,
+		conn->content_len, conn->consumed_content));
+	nread = 0;
+	if (conn->consumed_content < conn->content_len)
+	{
+		// How many bytes of data we have buffered in the request buffer?
+		buffered_len = conn->data_len - conn->request_len;
+		assert(buffered_len >= 0);
+
+		// Return buffered data back if we haven't done that yet.
+		if (conn->consumed_content < (int64_t) buffered_len) {
+			buffered_len -= (int) conn->consumed_content;
+			if (max_bufsize < (size_t) buffered_len) {
+				buffered_len = max_bufsize;
+			}
+			nread = mg_read(conn, buf, buffered_len);
+			buf = (char *) buf + buffered_len;
+			max_bufsize -= buffered_len;
+		}
+	}
+
+	// We have returned all buffered data. Read new data from the remote socket.
+	if (max_bufsize > 0) {
+		int n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
+		if (n > 0) {
+			conn->consumed_content += n;
+			nread += n;
+		}
+	}
+	return nread;
 }
 
 void mg_close_connection(struct mg_connection *conn)
