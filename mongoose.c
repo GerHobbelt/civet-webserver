@@ -4218,6 +4218,16 @@ static int set_timeout(struct socket *sock, int seconds) {
   return 0;
 }
 
+static int is_all_zeroes(void *ptr, size_t len)
+{
+	char *s = (char *)ptr;
+
+	for ( ; len > 0; len--) {
+		if (*s++) return 0;
+	}
+	return 1;
+}
+
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
 #if !defined(_WIN32)
@@ -4245,41 +4255,55 @@ static int set_ports_option(struct mg_context *ctx) {
     } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
       mg_cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
       success = 0;
-    } else if ((sock = socket(so.lsa.u.sa.sa_family, SOCK_STREAM, IPPROTO_TCP)) ==
-               INVALID_SOCKET ||
-#if !defined(_WIN32)
-               // On Windows, SO_REUSEADDR is recommended only for
-               // broadcast UDP sockets
-               setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr,
-                          sizeof(reuseaddr)) != 0 ||
-#endif // !_WIN32
-               // Set TCP keep-alive. This is needed because if HTTP-level
-               // keep-alive is enabled, and client resets the connection,
-               // server won't get TCP FIN or RST and will keep the connection
-               // open forever. With TCP keep-alive, next keep-alive
-               // handshake will figure out that the client is down and
-               // will close the server end.
-               // Thanks to Igor Klopov who suggested the patch.
-               setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const void *) &on,
-                          sizeof(on)) != 0 ||
-               bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
-               listen(sock, SOMAXCONN) != 0) {
-      closesocket(sock);
-      mg_cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
-          vec.len, vec.ptr, mg_strerror(ERRNO));
-      success = 0;
-    } else if ((listener = (struct socket *)
-                calloc(1, sizeof(*listener))) == NULL) {
-      closesocket(sock);
-      mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
-      success = 0;
     } else {
-      *listener = so;
-      listener->sock = sock;
-      set_close_on_exec(listener->sock);
-      listener->next = ctx->listening_sockets;
-      ctx->listening_sockets = listener;
-    }
+#if defined(USE_IPV6)
+		// when the listener is merely a port, then we want to liten on IPv6 and IPv4 sockets both!
+		int rounds = (so.lsa.u.sin6.sin6_family == AF_INET6 && is_all_zeroes(&so.lsa.u.sin6.sin6_addr, sizeof(so.lsa.u.sin6.sin6_addr)));
+#else
+		int rounds = 0;
+#endif
+		for ( ; rounds >= 0; rounds--) {
+			if ((sock = socket(so.lsa.u.sa.sa_family, SOCK_STREAM, IPPROTO_TCP)) ==
+				   INVALID_SOCKET ||
+#if !defined(_WIN32)
+				   // On Windows, SO_REUSEADDR is recommended only for
+				   // broadcast UDP sockets
+				   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr,
+							  sizeof(reuseaddr)) != 0 ||
+#endif // !_WIN32
+				   // Set TCP keep-alive. This is needed because if HTTP-level
+				   // keep-alive is enabled, and client resets the connection,
+				   // server won't get TCP FIN or RST and will keep the connection
+				   // open forever. With TCP keep-alive, next keep-alive
+				   // handshake will figure out that the client is down and
+				   // will close the server end.
+				   // Thanks to Igor Klopov who suggested the patch.
+				   setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const void *) &on,
+							  sizeof(on)) != 0 ||
+				   bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
+				   listen(sock, SOMAXCONN) != 0) {
+			  closesocket(sock);
+			  mg_cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
+				  vec.len, vec.ptr, mg_strerror(ERRNO));
+			  success = 0;
+			} else if ((listener = (struct socket *)
+						calloc(1, sizeof(*listener))) == NULL) {
+			  closesocket(sock);
+			  mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
+			  success = 0;
+			} else {
+			  *listener = so;
+			  listener->sock = sock;
+			  set_close_on_exec(listener->sock);
+			  listener->next = ctx->listening_sockets;
+			  ctx->listening_sockets = listener;
+			}
+			so.lsa.len = sizeof(so.lsa.u.sin);
+			so.lsa.u.sin.sin_family = AF_INET;
+			//so.lsa.u.sin.sin_port = htons((uint16_t) port); -- maps to the same spot as sin6_sin6_port so nothing to do
+			//so.lsa.u.sin.sin_addr = htonl(INADDR_LOOPBACK);
+		}
+	}
   }
 
   if (!success) {
@@ -4763,7 +4787,7 @@ static void process_new_connection(struct mg_connection *conn) {
     } else {
       // Request is valid, handle it
       cl = get_header(ri, "Content-Length");
-      conn->content_len = cl == NULL ? -1 : strtoll(cl, NULL, 10);
+      conn->content_len = (cl == NULL ? -1 : strtoll(cl, NULL, 10));
       conn->birth_time = time(NULL);
       // and clear the cached logfile path so it is recalculated on the next log operation:
       conn->logfile_path[0] = 0;
