@@ -1242,12 +1242,19 @@ static void send_http_error(struct mg_connection *conn, int status,
     }
     DEBUG_TRACE(("[%s]", buf));
 
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: %d\r\n"
-              "Connection: %s\r\n\r\n", status, reason, len,
-              suggest_connection_header(conn));
-    conn->num_bytes_sent += mg_printf(conn, "%s", buf);
+    mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
+	
+    /* issue #229: Only include the content-length if there is a response body.
+	   Otherwise an incorrect Content-Type generates a warning in 
+	   some browsers when a static file request returns a 304 
+	   "not modified" error. */
+	if(len > 0) {
+		mg_printf(conn, "Content-Type: text/plain\r\n");
+	}
+    mg_printf(conn, "Content-Length: %d\r\n"
+              "Connection: %s\r\n\r\n", len,
+	          suggest_connection_header(conn));
+	conn->num_bytes_sent += mg_printf(conn, "%s", buf);
   }
 }
 
