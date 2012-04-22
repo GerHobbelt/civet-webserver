@@ -177,7 +177,7 @@ int pthread_mutex_unlock(pthread_mutex_t *);
 
 
 
-#if defined(HAVE_STDINT)
+#if defined(HAVE_STDINT) || (defined(_MSC_VER) && _MSC_VER >= 1500)
 #include <stdint.h>
 #else
 typedef unsigned int  uint32_t;
