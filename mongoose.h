@@ -259,6 +259,9 @@ int mg_printf(struct mg_connection *, const char *fmt, ...)
 #endif
 ;
 
+// Send data to the browser using vprintf() semantics.
+int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
+
 
 // Send contents of the entire file together with HTTP headers.
 void mg_send_file(struct mg_connection *conn, const char *path);
@@ -359,6 +362,23 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char
 	__attribute__((format(printf, 4, 5)))
 #endif
 ;
+
+// Writes suitably sized string buffer in *buf_ref and returns output length. 
+// When max_buflen is set to zero, an arbitrary large buffer may be allocated; 
+// otherwise the output buffer size will be limited to max_buflen: when the
+// output would overflow the buffer in that case, the string " (...)\n" is
+// appended at the very end for easier use in logging and other reporting
+// activity. (The latter bit is what makes it different from some systems'
+// asprintf().)
+// Note that the buffer must be free()d when you're done with it.
+int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, ...) 
+#ifdef __GNUC__
+	__attribute__((format(printf, 4, 5)))
+#endif
+;
+
+int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, va_list ap);
+
 
 // Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
 FILE *mg_fopen(const char *path, const char *mode);

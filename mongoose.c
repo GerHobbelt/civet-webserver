@@ -841,9 +841,6 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 
 // Print log message to the opened error log stream.
 void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
-#ifdef __GNUC__
-	__attribute__((format(printf, 5, 6)))
-#endif
 {
   va_list ap;
 
@@ -862,40 +859,20 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
   }
   else
   {
-	char buf[MG_MAX(BUFSIZ, 2048)];
+	char *buf = NULL;
+	// the absolute max we're going to support is a dump of 2MByte of text!
+	int n = mg_vasprintf(conn, &buf, 2 * 1024 * 1024, fmt, args);
 
-	int n = vsnprintf(buf, sizeof(buf), fmt, args);
-	buf[sizeof(buf) - 1] = 0;
-	if (strlen(buf) == sizeof(buf) - 1)
-	{
-		// the absolute max we're going to support is a dump of 2MByte of text!
-		size_t bufsize = 2 * 1024 * 1024;
-		char *buf2;
-
-		strcpy(buf + sizeof(buf) - 1 - 7, " (...)\n"); // mark the string as clipped
+	if (buf) {
 		// make sure the log'line' is NEWLINE terminated (or not) when clipped, depending on the format string input
-		if (fmt[strlen(fmt) - 1] != '\n')
-			buf[sizeof(buf) - 2] = 0;
+		if (n > 0 && fmt[strlen(fmt) - 1] != '\n' && buf[n - 1] == '\n')
+			buf[n - 1] = 0;
 
-		// cope with the special case of overflow by using storage on the allocated heap:
-		buf2 = (char *)malloc(bufsize);
-		// don't mind when this malloc fails! It's just a matter of 'best effort' here!
-		if (buf2)
-		{
-			n = vsnprintf(buf2, bufsize, fmt, args);
-			buf2[bufsize - 1] = 0;
-			if (strlen(buf2) == bufsize - 1)
-			{
-				strcpy(buf2 + bufsize - 1 - 7, " (...)\n"); // mark the string as clipped
-				if (fmt[strlen(fmt) - 1] != '\n')
-					buf2[bufsize - 2] = 0;
-			}
-			mg_write2log_raw(conn, logfile, timestamp, severity, buf2);
-			free(buf2);
-			return;
-		}
+		mg_write2log_raw(conn, logfile, timestamp, severity, buf);
+		free(buf);
+	} else {
+		mg_write2log_raw(conn, logfile, timestamp, severity, "!out of memory in mg_vwrite2log!\n");
 	}
-	mg_write2log_raw(conn, logfile, timestamp, severity, buf);
   }
 }
 
@@ -988,7 +965,7 @@ char * mg_strdup(const char *str) {
   return mg_strndup(str, strlen(str));
 }
 
-// Like snprintf(), but never returns negative value, or the value
+// Like snprintf(), but never returns negative value, or a value
 // that is larger than a supplied buffer.
 // Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
 // in his audit report.
@@ -1020,9 +997,6 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
                        const char *fmt, ...) 
-#ifdef __GNUC__
-	__attribute__((format(printf, 4, 5)))
-#endif
 {
   va_list ap;
   int n;
@@ -1032,6 +1006,70 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
   va_end(ap);
 
   return n;
+}
+
+int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, 
+	const char *fmt, va_list ap) 
+{
+	va_list aq;
+	int n;
+	int size = BUFSIZ;
+	char *buf = (char *)malloc(size);
+
+	if (buf == NULL) {
+		*buf_ref = NULL;
+		return 0;
+	}
+
+	if (max_buflen == 0 || max_buflen > INT_MAX) {
+		max_buflen = INT_MAX;
+	}
+
+	VA_COPY(aq, ap);
+	while ((((n = vsnprintf(buf, size, fmt, aq)) < 0) || (n >= size - 1)) && (size < max_buflen)) {
+		va_end(aq);
+		free(buf);
+		size *= 4; /* fast-growing buffer: we don't want to try too many times */
+		if (size > max_buflen)
+			size = max_buflen;
+		buf = (char *)malloc(size);
+		if (buf == NULL) {
+			*buf_ref = NULL;
+			return 0;
+		}
+		VA_COPY(aq, ap);
+	}
+	va_end(aq);
+	if (n < 0) {
+		// MSVC produces -1 on printf("%s", str) for very long 'str'!
+		n = size - 1;
+		buf[n] = '\0';
+		n = strlen(buf);
+	} else if (n >= size) {
+		// truncated output:
+		strcpy(buf + size - 1 - 7, " (...)\n"); // mark the string as clipped
+		//n = size - 1;
+		//buf[n] = '\0';
+		n = strlen(buf);
+	}
+	else {
+		buf[n] = '\0';
+	}
+	*buf_ref = buf;
+	return n;
+}
+
+int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
+	const char *fmt, ...) 
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = mg_vasprintf(conn, buf_ref, max_buflen, fmt, ap);
+	va_end(ap);
+
+	return n;
 }
 
 // Skip the characters until one of the delimiters characters found.
@@ -1205,14 +1243,10 @@ Send HTTP error response headers.
 
 'fmt' + args is the content sent along as error report (request response).
 */
-static void send_http_error(struct mg_connection *conn, int status,
-                            const char *reason, const char *fmt, ...)
-#ifdef __GNUC__
-	__attribute__((format(printf, 4, 5)))
-#endif
+static void vsend_http_error(struct mg_connection *conn, int status,
+                            const char *reason, const char *fmt, va_list ap)
 {
   char buf[BUFSIZ];
-  va_list ap;
   int len;
 
   if (!reason) {
@@ -1236,9 +1270,7 @@ static void send_http_error(struct mg_connection *conn, int status,
 			(conn->request_info.query_string ? conn->request_info.query_string : ""));
       buf[len++] = '\n';
 
-      va_start(ap, fmt);
       len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
-      va_end(ap);
     }
     DEBUG_TRACE(("[%s]", buf));
 
@@ -1256,6 +1288,19 @@ static void send_http_error(struct mg_connection *conn, int status,
 	          suggest_connection_header(conn));
 	conn->num_bytes_sent += mg_printf(conn, "%s", buf);
   }
+}
+
+static void send_http_error(struct mg_connection *conn, int status,
+	const char *reason, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 4, 5)))
+#endif
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsend_http_error(conn, status, reason, fmt, ap);
+	va_end(ap);
 }
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
@@ -1987,20 +2032,36 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
                     (int64_t) len);
 }
 
+int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) 
+{
+  char *buf = NULL;
+  int len;
+  int rv;
+
+  len = mg_vasprintf(conn, &buf, 0, fmt, ap);
+
+  if (buf) {
+    rv = mg_write(conn, buf, (size_t)len);
+    free(buf);
+    return rv;
+  } else {
+    return 0;
+  }
+}
+
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) 
 #ifdef __GNUC__
 	__attribute__((format(printf, 2, 3)))
 #endif
 {
-  char buf[BUFSIZ];
-  int len;
-  va_list ap;
+	int len;
+	va_list ap;
 
-  va_start(ap, fmt);
-  len = mg_vsnprintf(conn, buf, sizeof(buf), fmt, ap);
-  va_end(ap);
+	va_start(ap, fmt);
+	len = mg_vprintf(conn, fmt, ap);
+	va_end(ap);
 
-  return mg_write(conn, buf, (size_t)len);
+	return len;
 }
 
 // URL-decode input buffer into destination buffer.

@@ -259,6 +259,23 @@ int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connect
 	return cnt;
 }
 
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
+#ifdef __GNUC__
+		__attribute__((format(printf, 4, 5)))
+#endif
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsend_http_error(conn, status, reason, fmt, ap);
+	va_end(ap);
+}
+
+void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap)
+{
+	vsend_http_error(conn, status, reason, fmt, ap);
+}
+
 
 #include "selectable-socketpair/socketpair.c"
 

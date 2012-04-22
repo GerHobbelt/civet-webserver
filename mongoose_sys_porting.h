@@ -251,6 +251,26 @@ typedef int SOCKET;
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
 
+/*
+ * The following VA_COPY was coded following an example in
+ * the Samba project.  It may not be sufficient for some
+ * esoteric implementations of va_list (i.e. it may need
+ * something involving a memcpy) but (hopefully) will be
+ * sufficient for mongoose (code taken from libxml2 and augmented).
+ */
+#ifndef VA_COPY
+  #if defined(HAVE_VA_COPY) || defined(va_copy) /* Linux stdarg.h 'regular' flavor */
+    #define VA_COPY(dest, src) va_copy(dest, src)
+  #else
+    #if defined(HAVE___VA_COPY) || defined(__va_copy)  /* Linux stdarg.h 'strict ANSI' flavor */
+      #define VA_COPY(dest,src) __va_copy(dest, src)
+    #else
+      #define VA_COPY(dest,src) do { (dest) = (src); } while (0) /* MSVC: doesn't offer va_copy at all. */
+    #endif
+  #endif
+#endif
+
+
 /* <bel>: Local fix for some linux sdk headers that do not know these options */
 #ifndef SOMAXCONN
 #define SOMAXCONN 128
