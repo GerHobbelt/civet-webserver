@@ -61,6 +61,8 @@ int mg_set_socket_keepalive(struct socket *sock, int on);
 // Set the read/write/user timeout on a socket.
 int mg_set_socket_timeout(struct socket *sock, int seconds);
 
+int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen);
+int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref);
 
 // Same as FD_SET() but also keeps track of the maximum handle value in *max_fd for use with, for example, select()
 void mg_FD_SET(struct socket *socket, struct fd_set *set, int *max_fd);
@@ -117,6 +119,9 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx);
 // **        - matches the remainder of the string
 // |         - a|b matches either pattern a or pattern b
 int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
+
+// Parse the UTC date string and return the decoded timestamp as UNIX time_t value in seconds since epoch 1/1/1970
+time_t mg_parse_date_string(const char *datetime);
 
 // Return the set of matching HTTP header values in dst[] and the number of discovered entries as a return value.
 // The dst[] array will be terminated by a NULL sentinel.

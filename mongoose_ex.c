@@ -46,6 +46,22 @@ struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
 	return conn ? &conn->request_info : NULL;
 }
 
+int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen)
+{
+	int rv = setsockopt(sock->sock, level, optname, optval, optlen);
+
+	return rv;
+}
+
+int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref)
+{
+	int optlen = 0;
+	int rv = getsockopt(sock->sock, level, optname, optval, &optlen);
+
+	*optlen_ref = optlen;
+	return rv;
+}
+
 
 // http://www.unixguide.net/network/socketfaq/2.11.shtml
 // http://www.techrepublic.com/article/tcpip-options-for-high-performance-data-transmission/1050878
@@ -228,6 +244,13 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
 	if (!str || !pattern) return -1;
 
 	return match_prefix(pattern, pattern_len, str);
+}
+
+time_t mg_parse_date_string(const char *datetime) 
+{
+	time_t rv = parse_date_string(datetime);
+	
+	return rv;
 }
 
 
