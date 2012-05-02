@@ -1288,7 +1288,8 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 			(conn->request_info.query_string ? conn->request_info.query_string : ""));
       buf[len++] = '\n';
 
-      len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
+      if (fmt != NULL)
+        len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
     }
     DEBUG_TRACE(("[%s]", buf));
 
