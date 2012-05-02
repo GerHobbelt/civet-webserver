@@ -1174,7 +1174,7 @@ struct dirent * readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
-  ctx;
+  ctx; // fix: avoid a warning
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
 }
 
@@ -1520,7 +1520,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
   name_len = strlen(name);
   e = buf + buf_len;
-  len = (size_t)-1;
+  len = (size_t)-1; // fix: avoid a warning
   dst[0] = '\0';
 
   // buf is "var1=val1&var2=val2...". Find variable first
@@ -2952,7 +2952,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
-  const char *status, *status_text, *connection_status;
+  const char *status, *status_text, *connection_status; // fix: keep-alive
   char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri;
   struct cgi_env_block blk;
@@ -3036,6 +3036,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     conn->request_info.status_code = 200;
   }
   if ((connection_status = get_header(&ri, "Connection")) != NULL) {
+    // fix: keep-alive (storing connection_status is a performance bonus)
     if (mg_strcasecmp(connection_status, "keep-alive")) {
       conn->must_close = 1;
     }
@@ -4111,7 +4112,7 @@ static void master_thread(struct mg_context *ctx) {
   struct timeval tv;
   struct socket *sp;
   int max_fd;
-  struct mg_request_info request_info;
+  struct mg_request_info request_info; // fix: issue 345 for the master thread
 
   // Increase priority of the master thread
 #if defined(_WIN32)
@@ -4130,6 +4131,7 @@ static void master_thread(struct mg_context *ctx) {
   }
 #endif
   
+  // fix: issue 345 for the master thread (TODO: set the priority in the callback)
   memset(&request_info, 0, sizeof(request_info));
   request_info.user_data = ctx->user_data;
   ctx->user_callback(MG_ENTER_MASTER, (struct mg_connection *) 0, &request_info);
@@ -4162,6 +4164,7 @@ static void master_thread(struct mg_context *ctx) {
     }
   }
 
+  // fix: issue 345 for the master thread
   memset(&request_info, 0, sizeof(request_info));
   request_info.user_data = ctx->user_data;
   ctx->user_callback(MG_EXIT_MASTER, (struct mg_connection *) 0, &request_info);

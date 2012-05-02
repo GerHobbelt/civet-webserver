@@ -61,6 +61,9 @@ enum mg_event {
   MG_REQUEST_COMPLETE = 4,  // Mongoose has finished handling the request
   MG_ENTER_MASTER     = 5,  // Mongoose started the master thread
   MG_EXIT_MASTER      = 6   // The master thread is about to close
+  // MG_*_MASTER fix: issue 345 for the master thread
+  // fix: numbers where added to to fix the abi in case mongoose core and callback
+  //      are compiled with different compilers
 };
 
 // Prototype for the user-defined function. Mongoose calls this function
