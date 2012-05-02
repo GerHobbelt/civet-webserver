@@ -21,9 +21,7 @@
 #ifndef MONGOOSE_HEADER_INCLUDED
 #define MONGOOSE_HEADER_INCLUDED
 
-#include <stddef.h>
-#include <stdio.h>
-#include <stdarg.h>
+#include "mongoose_sys_porting.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -417,6 +415,16 @@ int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, c
 // Similar to mg_asprintf().
 int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, va_list ap);
 
+
+// Structure used by mg_stat() function. Uses 64 bit file length.
+struct mgstat {
+	int is_directory;  // Directory marker
+	int64_t size;      // File size
+	time_t mtime;      // Modification time
+};
+
+// return 0 when file/directory exists; fills the mgstat struct with last-modified timestamp and file size.
+int mg_stat(const char *path, struct mgstat *stp);
 
 // Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
 FILE *mg_fopen(const char *path, const char *mode);

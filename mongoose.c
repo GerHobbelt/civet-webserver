@@ -177,13 +177,6 @@ struct vec {
   size_t len;
 };
 
-// Structure used by mg_stat() function. Uses 64 bit file length.
-struct mgstat {
-  int is_directory;  // Directory marker
-  int64_t size;      // File size
-  time_t mtime;      // Modification time
-};
-
 // Describes listening socket, or socket which was accept()-ed by the master
 // thread and queued for future handling by the worker thread.
 struct socket {
@@ -1598,10 +1591,13 @@ FILE *mg_fopen(const char *path, const char *mode) {
   return _wfopen(wbuf, wmode);
 }
 
-static int mg_stat(const char *path, struct mgstat *stp) {
+int mg_stat(const char *path, struct mgstat *stp) {
   int ok = -1; // Error
   wchar_t wbuf[PATH_MAX];
   WIN32_FILE_ATTRIBUTE_DATA info;
+
+  if (!path || !stp)
+	  return -1;
 
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
 
@@ -1847,9 +1843,12 @@ FILE *mg_fopen(const char *path, const char *mode) {
   return fopen(path, mode);
 }
 
-static int mg_stat(const char *path, struct mgstat *stp) {
+int mg_stat(const char *path, struct mgstat *stp) {
   struct stat st;
   int ok;
+
+  if (!path || !stp)
+	  return -1;
 
   if (stat(path, &st) == 0) {
     ok = 0;
