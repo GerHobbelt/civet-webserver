@@ -20,8 +20,8 @@
 
 
 #include "mongoose_sys_porting.h"
-
 #include "mongoose_ex.h"
+#include "win32/resource.h"
 
 #ifdef _WIN32
 #include <winsvc.h>
@@ -95,7 +95,7 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 static void verify_document_root(const char *root) {
   const char *p, *path;
   char buf[PATH_MAX];
-  struct stat st;
+  struct mgstat st;
 
   path = root;
   if ((p = strchr(root, ',')) != NULL && (size_t) (p - root) < sizeof(buf)) {
@@ -104,7 +104,7 @@ static void verify_document_root(const char *root) {
     path = buf;
   }
 
-    if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+    if (mg_stat(path, &st) != 0 || !st.is_directory) {
         die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
     }
 }
@@ -154,7 +154,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
              (int) (p - argv[0]), argv[0], DIRSEP, CONFIG_FILE);
   }
 
-  fp = fopen(config_file, "r");
+  fp = mg_fopen(config_file, "r");
 
     // If config file was set in command line and open failed, exit
     if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
@@ -212,10 +212,75 @@ static void init_server_name(void) {
            mg_version());
 }
 
+static void *event_callback(enum mg_event event, struct mg_connection *conn) {
+  struct mg_context *ctx = mg_get_context(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
+
+#ifdef _WIN32
+  // Send the systray icon as favicon
+  if (event == MG_NEW_REQUEST) {
+    if (!strcmp("/favicon.ico", request_info->uri)) {
+      const char *p;
+      const char *root;
+      char path[PATH_MAX];
+      struct mgstat st;
+
+      HMODULE module;
+      HRSRC icon;
+      DWORD len;
+      void *data;
+
+      root = mg_get_option(ctx, "document_root");
+
+      if ((p = strchr(root, ',')) != NULL && (size_t)(p - root + 1) < sizeof(path)) {
+        memcpy(path, root, p - root);
+        path[p - root] = '\0';
+      }
+      else {
+        strncpy(path, root, sizeof(path));
+        path[sizeof(path) - 1] = '\0';
+      }
+
+      strncat(path, request_info->uri, sizeof(path) - 1);
+
+      // An existing favicon takes precedence
+      if (mg_stat(path, &st) == 0) {
+        return NULL;
+      }
+
+      module = GetModuleHandle(NULL);
+
+      icon = FindResource(module, MAKEINTRESOURCE(IDR_FAVICON), RT_RCDATA);
+      data = LockResource(LoadResource(module, icon));
+      len = SizeofResource(module, icon);
+
+      (void) mg_printf(conn,
+          "HTTP/1.1 200 OK\r\n"
+          "Content-Type: image/x-icon\r\n"
+          "Cache-Control: no-cache\r\n"
+          "Content-Length: %d\r\n"
+          "Connection: close\r\n\r\n", len);
+
+      mg_send_data(conn, data, len);
+
+      return "";
+    }
+  }
+#endif
+
+  return NULL;
+}
+
 static void start_mongoose(int argc, char *argv[]) {
     char *options[MAX_OPTIONS * 2] = { NULL };
     int i;
-	struct mg_user_class_t userdef = {0};
+    struct mg_user_class_t userdef = {
+        &event_callback,
+        0,
+        0,
+        0,
+        0
+    };
 
     /* Edit passwords file if -A option is specified */
     if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
@@ -238,7 +303,7 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
   /* Start Mongoose */
-  ctx = mg_start(&userdef, options);
+  ctx = mg_start(&userdef, (const char **)options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
@@ -287,7 +352,7 @@ static void WINAPI ServiceMain(void) {
 #define ID_SEPARATOR 103
 #define ID_INSTALL_SERVICE 104
 #define ID_REMOVE_SERVICE 105
-#define ID_ICON 200
+
 static NOTIFYICONDATAA TrayIcon;
 
 static void edit_config_file(const struct mg_context *ctx) {
@@ -455,7 +520,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.cbSize = sizeof(TrayIcon);
   TrayIcon.uID = ID_TRAYICON;
   TrayIcon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-  TrayIcon.hIcon = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(ID_ICON),
+  TrayIcon.hIcon = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON),
                              IMAGE_ICON, 16, 16, 0);
   TrayIcon.hWnd = hWnd;
   snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", server_name);

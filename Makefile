@@ -107,7 +107,7 @@ cyassl:
 
 windows:
 	rc win32\res.rc
-	$(CL) main.c mongoose.c /GA $(LINK) win32\res.res \
+	$(CL) /I win32 main.c mongoose.c /GA $(LINK) win32\res.res \
 		$(GUILIB) /out:$(PROG).exe
 	$(CL) mongoose.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
@@ -120,7 +120,7 @@ mingw:
 	windres win32\res.rc win32\res.o
 	gcc $(MINGWOPT) mongoose.c -lws2_32 \
 		-shared -Wl,--out-implib=$(PROG).lib -o _$(PROG).dll
-	gcc $(MINGWOPT) mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
+	gcc $(MINGWOPT) -Iwin32 mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
 		-o $(PROG).exe
 
 
