@@ -2046,6 +2046,14 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   return nread;
 }
 
+int mg_send_data(struct mg_connection *conn, const void *buf, size_t len) {
+	int rv = mg_write(conn, buf, len);
+	if (rv > 0) {
+		conn->num_bytes_sent += rv;
+	}
+	return rv;
+}
+
 int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   return (int) push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
                     (int64_t) len);
@@ -3217,11 +3225,10 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
       break;
 
     // Send read bytes to the client, exit the loop on error
-    if ((num_written = mg_write(conn, buf, (size_t)num_read)) != num_read)
+    if ((num_written = mg_send_data(conn, buf, (size_t)num_read)) != num_read)
       break;
 
-    // Both read and were successful, adjust counters
-    conn->num_bytes_sent += num_written;
+    // Both read and write were successful, adjust counters
     len -= num_written;
   }
 }
@@ -3743,8 +3750,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   (void) mg_write(conn, "\r\n", 2);
 
   // Send chunk of data that may be read after the headers
-  conn->num_bytes_sent += mg_write(conn, buf + headers_len,
-                                   (size_t)(data_len - headers_len));
+  (void) mg_send_data(conn, buf + headers_len,
+                      (size_t)(data_len - headers_len));
 
   // Read the rest of CGI output and send to the client
   send_file_data(conn, out, INT64_MAX);
@@ -3923,7 +3930,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       assert(len <= (int) sizeof(buf));
       if (len < 6 || memcmp(buf, "<!--#", 5) != 0) {
         // Not an SSI tag, pass it
-        (void) mg_write(conn, buf, (size_t)len);
+        (void) mg_send_data(conn, buf, (size_t)len);
       } else {
         if (!memcmp(buf + 5, "include", 7)) {
           do_ssi_include(conn, path, buf + 12, include_level);
@@ -3948,14 +3955,14 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
     } else if (ch == '<') {
       in_ssi_tag = 1;
       if (len > 0) {
-        (void) mg_write(conn, buf, (size_t)len);
+        (void) mg_send_data(conn, buf, (size_t)len);
       }
       len = 0;
       buf[len++] = ch & 0xff;
     } else {
       buf[len++] = ch & 0xff;
       if (len == (int) sizeof(buf)) {
-        (void) mg_write(conn, buf, (size_t)len);
+        (void) mg_send_data(conn, buf, (size_t)len);
         len = 0;
       }
     }
@@ -3963,7 +3970,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
 
   // Send the rest of buffered data
   if (len > 0) {
-    (void) mg_write(conn, buf, (size_t)len);
+    (void) mg_send_data(conn, buf, (size_t)len);
   }
 }
 
@@ -4814,7 +4821,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
   // Read data from the target and forward it to the client
   while ((n = pull(NULL, conn->peer->client.sock, conn->peer->ssl,
                    buf, sizeof(buf))) > 0) {
-    if (mg_write(conn, buf, (size_t)n) != n) {
+    if (mg_send_data(conn, buf, (size_t)n) != n) {
       break;
     }
   }
