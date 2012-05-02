@@ -3210,7 +3210,7 @@ static void handle_directory_request(struct mg_connection *conn,
 
 // Send len bytes from the opened file to the client.
 static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
-  char buf[BUFSIZ];
+  char buf[DATA_COPY_BUFSIZ];
   int to_read, num_read, num_written;
 
   while (len > 0) {
@@ -3436,7 +3436,7 @@ static int is_not_modified(const struct mg_connection *conn,
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
                              SOCKET sock, SSL *ssl) {
   const char *expect, *buffered;
-  char buf[BUFSIZ];
+  char buf[DATA_COPY_BUFSIZ];
   int to_read, nread, buffered_len, success = 0;
 
   expect = mg_get_header(conn, "Expect");
@@ -3651,7 +3651,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
-  char buf[BUFSIZ], *pbuf, dir[PATH_MAX], *p;
+  char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
   FILE *in, *out;
@@ -3851,11 +3851,11 @@ static void send_ssi_file(struct mg_connection *, const char *, FILE *, int);
 
 static void do_ssi_include(struct mg_connection *conn, const char *ssi,
                            char *tag, int include_level) {
-  char file_name[BUFSIZ], path[PATH_MAX], *p;
+  char file_name[SSI_LINE_BUFSIZ], path[PATH_MAX], *p;
   FILE *fp;
 
   // sscanf() is safe here, since send_ssi_file() also uses buffer
-  // of size BUFSIZ to get the tag. So strlen(tag) is always < BUFSIZ.
+  // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
   if (sscanf(tag, " virtual=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver root
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
@@ -3894,9 +3894,11 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
 
 #if !defined(NO_POPEN)
 static void do_ssi_exec(struct mg_connection *conn, char *tag) {
-  char cmd[BUFSIZ];
+  char cmd[SSI_LINE_BUFSIZ];
   FILE *fp;
 
+  // sscanf() is safe here, since send_ssi_file() also uses buffer
+  // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
   if (sscanf(tag, " \"%[^\"]\"", cmd) != 1) {
     mg_cry(conn, "Bad SSI #exec: [%s]", tag);
   } else if ((fp = popen(cmd, "r")) == NULL) {
@@ -3910,7 +3912,7 @@ static void do_ssi_exec(struct mg_connection *conn, char *tag) {
 
 static void send_ssi_file(struct mg_connection *conn, const char *path,
                           FILE *fp, int include_level) {
-  char buf[BUFSIZ];
+  char buf[SSI_LINE_BUFSIZ];
   int ch, len, in_ssi_tag;
 
   if (include_level > 10) {
@@ -4782,7 +4784,7 @@ static int parse_url(const char *url, char *host, int *port) {
 
 static void handle_proxy_request(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
-  char host[1025], buf[BUFSIZ];
+  char host[1025], buf[DATA_COPY_BUFSIZ];
   int port = 0, is_ssl, len, i, n;
 
   DEBUG_TRACE(("URL: %s", ri->uri));

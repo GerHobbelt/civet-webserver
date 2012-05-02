@@ -305,6 +305,14 @@ typedef int socklen_t;
 /* buffer size that will fit both IPv4 and IPv6 addresses formatted by ntoa() / ntop() */
 #define SOCKADDR_NTOA_BUFSIZE			42
 
+/* buffer size used when copying data to/from file/socket/... */
+#define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
+/* buffer size used to load all HTTP headers into: if the client sends more header data than this, we'll barf a hairball! */
+#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 2048)
+/* buffer size used to extract/decode an SSI command line / file path; hence must be equal or larger than PATH_MAX, at least */
+#define SSI_LINE_BUFSIZ                 MG_MAX(BUFSIZ, PATH_MAX)
+
+
 
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
