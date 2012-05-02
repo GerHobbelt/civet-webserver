@@ -2062,7 +2062,7 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
   if (buf) {
     rv = mg_write(conn, buf, (size_t)len);
     free(buf);
-    return rv;
+    return (rv < 0 ? 0 : rv);
   } else {
     return 0;
   }
