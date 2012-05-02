@@ -852,7 +852,7 @@ void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timest
 // Print log message to the opened error log stream.
 void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args)
 {
-  // handle the special case where there's nothing to do in terms of formatting in order to accept arbitrary input lengths then:
+  // handle the special case where there's nothing to do in terms of formatting in order to accept arbitrary input lengths then without the malloc/speed penalty:
   if (!strchr(fmt, '%'))
   {
 	mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
@@ -860,8 +860,8 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
   else
   {
 	char *buf = NULL;
-	// the absolute max we're going to support is a dump of 2MByte of text!
-	int n = mg_vasprintf(conn, &buf, 2 * 1024 * 1024, fmt, args);
+	// the absolute max we're going to support is a dump of 1MByte of text!
+	int n = mg_vasprintf(conn, &buf, 1024 * 1024, fmt, args);
 
 	if (buf) {
 		// make sure the log'line' is NEWLINE terminated (or not) when clipped, depending on the format string input
@@ -899,12 +899,9 @@ void mg_cry(struct mg_connection *conn, const char *fmt, ...)
 
 // Print error message to the opened error log stream.
 void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args) {
-  char buf[MG_MAX(BUFSIZ, 2048)];
+    time_t timestamp = time(NULL);
 
-  (void) vsnprintf(buf, sizeof(buf), fmt, args);
-  buf[sizeof(buf) - 1] = 0;
-
-  mg_cry_raw(conn, buf);
+    (void)mg_vwrite2log(conn, NULL, timestamp, NULL, fmt, args);
 }
 
 
