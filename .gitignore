@@ -4,6 +4,7 @@
 *.o
 *.lo
 *.la
+*.aps
 .deps
 .libs
 Makefile.in
