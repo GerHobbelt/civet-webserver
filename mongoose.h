@@ -53,12 +53,14 @@ struct mg_request_info {
 
 // Various events on which user-defined function is called by Mongoose.
 enum mg_event {
-  MG_NEW_REQUEST,   // New HTTP request has arrived from the client
-  MG_HTTP_ERROR,    // HTTP error must be returned to the client
-  MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
-  MG_INIT_SSL,      // Mongoose initializes SSL. Instead of mg_connection *,
-                    // SSL context is passed to the callback function.
-  MG_REQUEST_COMPLETE  // Mongoose has finished handling the request
+  MG_NEW_REQUEST      = 0,  // New HTTP request has arrived from the client
+  MG_HTTP_ERROR       = 1,  // HTTP error must be returned to the client
+  MG_EVENT_LOG        = 2,  // Mongoose logs an event, request_info.log_message
+  MG_INIT_SSL         = 3,  // Mongoose initializes SSL. Instead of mg_connection *,
+                            // SSL context is passed to the callback function.
+  MG_REQUEST_COMPLETE = 4,  // Mongoose has finished handling the request
+  MG_ENTER_MASTER     = 5,  // Mongoose started the master thread
+  MG_EXIT_MASTER      = 6   // The master thread is about to close
 };
 
 // Prototype for the user-defined function. Mongoose calls this function

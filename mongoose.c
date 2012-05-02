@@ -3498,7 +3498,7 @@ static void set_receive_timeout(SOCKET sock) {
       setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&to, sizeof(to));   
 
       // TCP_USER_TIMEOUT (according to RFC5482) is not (yet?) supported in win32 ?
-      // setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));      
+      // setsockopt(sock, IPPROTO_TCP, TCP_USER_TIMEOUT, (const char *)&uto, sizeof(uto));
 #else
       struct timeval to;
       unsigned int uto = (SOCKET_RECEIVE_TIMEOUT) * 1000;
@@ -4111,6 +4111,7 @@ static void master_thread(struct mg_context *ctx) {
   struct timeval tv;
   struct socket *sp;
   int max_fd;
+  struct mg_request_info request_info;
 
   // Increase priority of the master thread
 #if defined(_WIN32)
@@ -4128,6 +4129,10 @@ static void master_thread(struct mg_context *ctx) {
     pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
   }
 #endif
+  
+  memset(&request_info, 0, sizeof(request_info));
+  request_info.user_data = ctx->user_data;
+  ctx->user_callback(MG_ENTER_MASTER, (struct mg_connection *) 0, &request_info);
 
   while (ctx->stop_flag == 0) {
     FD_ZERO(&read_set);
@@ -4156,6 +4161,11 @@ static void master_thread(struct mg_context *ctx) {
       }
     }
   }
+
+  memset(&request_info, 0, sizeof(request_info));
+  request_info.user_data = ctx->user_data;
+  ctx->user_callback(MG_EXIT_MASTER, (struct mg_connection *) 0, &request_info);
+
   DEBUG_TRACE(("stopping workers"));
 
   // Stop signal received: somebody called mg_stop. Quit.

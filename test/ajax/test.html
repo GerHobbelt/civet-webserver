@@ -1,0 +1,103 @@
+<!-- saved from url=(0022)http://internet.e-mail -->
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <title>Test</title>
+    <script type='text/javascript' language="javascript" src='jquery.js'></script>
+    <script type='text/javascript' language="javascript">
+    <!--
+
+    function mbox() {
+      alert('Javascript OK');
+    }
+
+    var totalCount = 10;
+    var pendingCount = 0;
+    var errorCount = 0;
+    var pushCount = 0;
+
+    function runTest() {
+
+      ++pushCount;
+      document.getElementById('start').innerHTML = 'Test: ' + pushCount;
+      document.getElementById('resTotal').innerHTML = 'Running';
+
+      errorCount = 0;
+      pendingCount = totalCount;
+
+      for (var i = 0; i < totalCount; ++i) {
+
+        var data = [];
+
+        for (var j = 0; j < 100; ++j) {
+          data.push({
+            key: (1000 * i) + j
+          });
+        }
+
+        fetch(data, i+1);
+      }
+    }
+
+    function fetch(pdata, id) {
+
+      document.getElementById('res'+id).innerHTML = "pending";
+
+      $.ajax({
+        //async: false,
+        url: 'echo.cgi',
+        type: 'POST',
+        timeout: 1000,
+        data: pdata,
+        dataType: 'json',
+        succes: function(data) {
+        },
+        error: function() {
+          ++errorCount;
+        },
+        complete: function(jqXHR, textStatus) {
+
+          --pendingCount;
+
+          document.getElementById('res'+id).innerHTML = textStatus;
+          console.log('id: ' + id + ' (' + pendingCount + '/' + totalCount + '), status: ' + textStatus);
+
+          if (pendingCount == 0) {
+            document.getElementById('resTotal').innerHTML = 'Done';
+            console.log('complete, error count: ' + errorCount);
+          }
+        }
+      });
+
+    }
+
+    //-->
+    </script>
+
+  </head>
+  <body>
+    <p>
+      <div id="start">Test not started.</div>
+    </p>
+    <p>
+      <input id="testButton" type="button" onclick="javascript:runTest()" value="Test"></input>
+      <input id="testButton" type="button" onclick="javascript:mbox()" value="MsgBox"></input>
+    </p>
+    <p>
+      <table border="1">
+        <tr><th>Test</th><th>Result</th></tr>
+        <tr><td>1</td><td><div id="res1">not started</div></td></tr>
+        <tr><td>2</td><td><div id="res2">not started</div></td></tr>
+        <tr><td>3</td><td><div id="res3">not started</div></td></tr>
+        <tr><td>4</td><td><div id="res4">not started</div></td></tr>
+        <tr><td>5</td><td><div id="res5">not started</div></td></tr>
+        <tr><td>6</td><td><div id="res6">not started</div></td></tr>
+        <tr><td>7</td><td><div id="res7">not started</div></td></tr>
+        <tr><td>8</td><td><div id="res8">not started</div></td></tr>
+        <tr><td>9</td><td><div id="res9">not started</div></td></tr>
+        <tr><td>10</td><td><div id="res10">not started</div></td></tr>
+      </table>
+      <div id="resTotal">Push [Test] to start.</div>
+    </p>
+  </body>
+</html>
