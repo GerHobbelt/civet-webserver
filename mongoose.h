@@ -250,9 +250,17 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // Send data to the browser using printf() semantics.
 //
 // Works exactly like mg_write(), but allows to do message formatting.
-// Note that mg_printf() uses internal buffer of size IO_BUF_SIZE
-// (8 Kb by default) as temporary message storage for formatting. Do not
-// print data that is bigger than that, otherwise it will be truncated.
+// 
+// Note that mg_printf() uses an internal buffer which is allocated 
+// on the heap; the buffer is sized to fit the formatted output, so
+// arbitrary lengths of text are accepted, but very large texts will
+// incur an additional O(N * logK(N)) overhead as mg_printf() needs
+// to estimate the size of the output. This extra cost is not in effect
+// when built with MSVC, as that environment offers the _vscprintf() API.
+//
+// mg_printf() is guaranteed to return 0 when an error occurs or when
+// and empty string was written, otherwise the function returns the
+// number of bytes in the formatted output, excluding the NUL sentinel.
 int mg_printf(struct mg_connection *, const char *fmt, ...)
 #ifdef __GNUC__
 	__attribute__((format(printf, 2, 3)))
@@ -260,6 +268,8 @@ int mg_printf(struct mg_connection *, const char *fmt, ...)
 ;
 
 // Send data to the browser using vprintf() semantics.
+// 
+// See mg_printf() for the applicable conditions, caveats and return values.
 int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
 
 
@@ -340,7 +350,7 @@ int mg_strncasecmp(const char *s1, const char *s2, size_t len);
 int mg_strcasecmp(const char *s1, const char *s2);
 
 // Allocate space for a copy of the given string on the heap.
-// The allocated copy will have space for at most 'len' characters (exclusing the NUL sentinel).
+// The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).
 // The returned pointer is either NULL on failure or pointing at the ('len' length bound) copied string.
 char * mg_strndup(const char *str, size_t len);
 
@@ -350,7 +360,8 @@ char * mg_strdup(const char *str);
 
 // Like vsnprintf(), but never returns negative value, or the value
 // that is larger than a supplied buffer.
-// Barfs a hairball when a destination buffer would occur (logs a failure message).
+//
+// Barfs a hairball when a destination buffer would be undersized (logs a failure message).
 //
 // Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
 // in his audit report.
@@ -363,33 +374,58 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char
 #endif
 ;
 
-// Writes suitably sized string buffer in *buf_ref and returns output length. 
+// Like vsnprintf(), but never returns negative value, or the value
+// that is larger than a supplied buffer.
+//
+// Identical to mg_vsnprintf() apart from the fact that this one SILENTLY processes buffer overruns:
+// The output is simply clipped to the specified buffer size.
+int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
+
+// Is to mg_vsnq0printf() what printf() is to vprintf().
+int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 4, 5)))
+#endif
+	;
+
+// Writes suitably sized, heap allocated, string buffer in *buf_ref and returns 
+// output length (excluding NUL sentinel). 
+//
 // When max_buflen is set to zero, an arbitrary large buffer may be allocated; 
 // otherwise the output buffer size will be limited to max_buflen: when the
 // output would overflow the buffer in that case, the string " (...)\n" is
 // appended at the very end for easier use in logging and other reporting
 // activity. (The latter bit is what makes it different from some systems'
 // asprintf().)
-// Note that the buffer must be free()d when you're done with it.
+//
+// The caller is responsible for calling free() on the returned buffer pointer.
+//
+// The variable referenced by buf_ref is guaranteed to be set to NULL or a valid value
+// as returned by malloc/realloc(3).
 int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, ...) 
 #ifdef __GNUC__
 	__attribute__((format(printf, 4, 5)))
 #endif
 ;
 
+// Similar to mg_asprintf().
 int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, va_list ap);
 
 
 // Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
 FILE *mg_fopen(const char *path, const char *mode);
 
-// Print error message to the opened error log stream.
+// Print error message to the opened error log stream. 
+//
+// Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...)
 #ifdef __GNUC__
 	__attribute__((format(printf, 2, 3)))
 #endif
 ;
 // Print error message to the opened error log stream.
+//
+// Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args);
 // Print formatted error message to the opened error log stream.
 void mg_cry_raw(struct mg_connection *conn, const char *msg);
@@ -413,12 +449,16 @@ const char *mg_get_default_logfile_path(struct mg_connection *conn);
 int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg);
 
 // Print log message to the opened error log stream.
+//
+// Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
 #ifdef __GNUC__
 	__attribute__((format(printf, 5, 6)))
 #endif
 ;
 // Print log message to the opened error log stream.
+//
+// Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args);
 
 /*

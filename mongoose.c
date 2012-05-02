@@ -987,6 +987,44 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
   return n;
 }
 
+
+int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap) 
+{
+	int n;
+
+	if (buflen == 0)
+		return 0;
+
+	buf[0] = 0;
+	n = vsnprintf(buf, buflen, fmt, ap);
+	buf[buflen - 1] = 0;
+
+	if (n < 0) {
+		// MSVC produces -1 on printf("%s", str) for very long 'str'!
+		n = (int) buflen - 1;
+		buf[n] = '\0';
+		n = strlen(buf);
+	} else if (n >= (int) buflen) {
+		n = (int) buflen - 1;
+	}
+	buf[n] = '\0';
+
+	return n;
+}
+
+int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
+	const char *fmt, ...) 
+{
+	va_list ap;
+	int n;
+
+	va_start(ap, fmt);
+	n = mg_vsnq0printf(conn, buf, buflen, fmt, ap);
+	va_end(ap);
+
+	return n;
+}
+
 int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, 
 	const char *fmt, va_list ap) 
 {
@@ -1007,6 +1045,7 @@ int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
 	VA_COPY(aq, ap);
 	while ((((n = vsnprintf(buf, size, fmt, aq)) < 0) || (n >= size - 1)) && (size < max_buflen)) {
 		va_end(aq);
+		// forego the extra cost in realloc() due to memcpy(): use free+malloc instead:
 		free(buf);
 		size *= 4; /* fast-growing buffer: we don't want to try too many times */
 		if (size > max_buflen)
