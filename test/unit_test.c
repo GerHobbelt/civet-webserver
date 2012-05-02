@@ -221,12 +221,17 @@ static void test_header_processing()
 
 	c.ctx = &ctx;
 
-	p = buf;
 	strcpy(buf, input);
 
+	rv = get_request_len(buf, strlen(buf));
+	assert(rv > 0 && rv < strlen(buf));
+	assert(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
+	buf[rv] = 0;
+	p = buf;
 	parse_http_headers(&p, &c.request_info);
 	assert(p > buf);
-	assert(strstr(p, "<HTML><HEAD>") == p);
+	assert(*p == 0);
+	assert(c.request_info.num_headers == 11);
 
 	values[0] = mg_get_header(&c, "Set-Cookie");
 	assert(values[0]);
@@ -238,22 +243,22 @@ static void test_header_processing()
 	assert(!values[2]);
 
 	rv = mg_get_headers(values, 2, &c, "Set-Cookie");
-	assert(rv == 1);
+	assert(rv == 2);
 	assert(values[0]);
 	assert(!values[1]);
 
 	rv = mg_get_headers(values, 1, &c, "Set-Cookie");
-	assert(rv == 0);
+	assert(rv == 2);
 	assert(!values[0]);
 
 	values[0] = mg_get_header(&c, "p3p");
 	assert(values[0]);
 
 	values[0] = mg_get_header(&c, "NID");
-	assert(values[0]);
+	assert(!values[0]);
 
 	values[0] = mg_get_header(&c, "PREF");
-	assert(values[0]);
+	assert(!values[0]);
 
 	values[0] = mg_get_header(&c, "Cache-Control");
 	assert(values[0]);
@@ -262,6 +267,16 @@ static void test_header_processing()
 	assert(values[0]);
 
 	rv = mg_get_headers(values, 64, &c, "Content-Type");
+	assert(values[0]);
+	assert(rv == 1);
+
+	rv = mg_get_headers(values, 64, &c, "content-type");
+	assert(values[0]);
+	assert(rv == 1);
+
+	rv = mg_get_headers(values, 64, &c, "CONTENT-TYPE");
+	assert(values[0]);
+	assert(rv == 1);
 }
 
 
