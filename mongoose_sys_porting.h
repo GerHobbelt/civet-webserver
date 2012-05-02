@@ -199,6 +199,10 @@ typedef struct DIR {
   struct dirent  result;
 } DIR;
 
+int mg_rename(const char* oldname, const char* newname);
+int mg_remove(const char *path);
+int mg_mkdir(const char *path, int mode);
+
 #else    // UNIX  specific
 
 #include <sys/wait.h>

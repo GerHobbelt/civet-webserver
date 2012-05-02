@@ -1531,7 +1531,7 @@ static size_t strftime(char *dst, size_t dst_size, const char *fmt,
 }
 #endif
 
-static int mg_rename(const char* oldname, const char* newname) {
+int mg_rename(const char* oldname, const char* newname) {
   wchar_t woldbuf[PATH_MAX];
   wchar_t wnewbuf[PATH_MAX];
 
@@ -1613,13 +1613,13 @@ int mg_stat(const char *path, struct mgstat *stp) {
   return ok;
 }
 
-static int mg_remove(const char *path) {
+int mg_remove(const char *path) {
   wchar_t wbuf[PATH_MAX];
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
   return DeleteFileW(wbuf) ? 0 : -1;
 }
 
-static int mg_mkdir(const char *path, int mode) {
+int mg_mkdir(const char *path, int mode) {
   char buf[PATH_MAX];
   wchar_t wbuf[PATH_MAX];
 
