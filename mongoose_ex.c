@@ -299,6 +299,19 @@ void mg_vsend_http_error(struct mg_connection *conn, int status, const char *rea
 	vsend_http_error(conn, status, reason, fmt, ap);
 }
 
+void mg_gmt_time_string(char *buf, size_t bufsize, time_t *tm)
+{
+	gmt_time_string(buf, bufsize, tm);
+}
+
+const char *mg_suggest_connection_header(const struct mg_connection *conn)
+{
+	return suggest_connection_header(conn);
+}
+
+
+
+
 
 #include "selectable-socketpair/socketpair.c"
 

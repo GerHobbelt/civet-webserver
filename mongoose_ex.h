@@ -123,6 +123,9 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
 // Parse the UTC date string and return the decoded timestamp as UNIX time_t value in seconds since epoch 1/1/1970
 time_t mg_parse_date_string(const char *datetime);
 
+// Converts the given timestamp to UTC timestamp string compatible with HTTP headers. 
+void mg_gmt_time_string(char *buf, size_t bufsize, time_t *tm);
+
 // Return the set of matching HTTP header values in dst[] and the number of discovered entries as a return value.
 // The dst[] array will be terminated by a NULL sentinel.
 //
@@ -145,6 +148,10 @@ void mg_send_http_error(struct mg_connection *conn, int status, const char *reas
 ;
 
 void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
+
+
+// Returns a string useful as Connection: header value, depending on the current state of connection
+const char *mg_suggest_connection_header(const struct mg_connection *conn);
 
 
 
