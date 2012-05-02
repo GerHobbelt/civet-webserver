@@ -542,24 +542,6 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
 				d--;
             break;
 
-		case '.':
-			if (d == fnbuf)
-			{
-				s++;
-				continue;
-			}
-			//   (fallthrough)
-		case ':':
-		case '/':
-			// don't allow output sequences with multiple dots following one another,
-			// nor do we allow a dot at the start or end of the produced part (which would
-			// possibly generate hidden files/dirs and file create issues on some 
-			// OS/storage formats):
-			if (d > fnbuf && d[-1] == '.')
-				d--;
-			*d++ = *s++;
-			continue;
-
         case '%':
             if (s[1] == '[' && s[2] && s[3] == ']')
             {
