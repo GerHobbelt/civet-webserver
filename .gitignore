@@ -8,3 +8,16 @@
 .deps
 .libs
 Makefile.in
+
+*.exe
+*.depend
+*.layout
+*.res
+*.user
+win32/msvc2010/bin/
+win32/msvc2010/obj/
+win32/msvc2010/ipch/
+
+*.suo
+*.sdf
+*.opensdf
