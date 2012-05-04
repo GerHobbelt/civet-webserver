@@ -11,21 +11,27 @@
       alert('Javascript OK');
     }
 
+
     var totalCount = 10;
     var pendingCount = 0;
     var errorCount = 0;
     var pushCount = 0;
 
-    function runTest() {
+
+    function runTest(method, isAsync) {
 
       ++pushCount;
       document.getElementById('start').innerHTML = 'Test: ' + pushCount;
-      document.getElementById('resTotal').innerHTML = 'Running';
+      document.getElementById('resTotal').innerHTML = 'running';
+
+      for (var i = 1; i <= totalCount; ++i) {
+        document.getElementById('res'+i).innerHTML = "ready";
+      }
 
       errorCount = 0;
       pendingCount = totalCount;
 
-      for (var i = 0; i < totalCount; ++i) {
+      for (var i = 1; i <= totalCount; ++i) {
 
         var data = [];
 
@@ -35,19 +41,20 @@
           });
         }
 
-        fetch(data, i+1);
+        fetch(data, i,  method, isAsync);
       }
     }
 
-    function fetch(pdata, id) {
+
+    function fetch(pdata, id, method, isAsync) {
 
       document.getElementById('res'+id).innerHTML = "pending";
 
       $.ajax({
-        //async: false,
-        url: 'echo.cgi',
-        type: 'POST',
-        timeout: 1000,
+        async: isAsync,
+        url: 'echo.cgi?id=' + id,
+        type: method,
+        timeout: 10000,
         data: pdata,
         dataType: 'json',
         succes: function(data) {
@@ -63,13 +70,14 @@
           console.log('id: ' + id + ' (' + pendingCount + '/' + totalCount + '), status: ' + textStatus);
 
           if (pendingCount == 0) {
-            document.getElementById('resTotal').innerHTML = 'Done';
+            document.getElementById('resTotal').innerHTML = 'done';
             console.log('complete, error count: ' + errorCount);
           }
         }
       });
 
     }
+
 
     //-->
     </script>
@@ -80,8 +88,38 @@
       <div id="start">Test not started.</div>
     </p>
     <p>
-      <input id="testButton" type="button" onclick="javascript:runTest()" value="Test"></input>
-      <input id="testButton" type="button" onclick="javascript:mbox()" value="MsgBox"></input>
+      <table>
+        <tr>
+          <td>
+            <input id="testButton1" type="button" onclick="javascript:runTest('GET', false)" value="sync GET"></input>
+          </td>
+          <td>
+            <input id="testButton2" type="button" onclick="javascript:runTest('POST', false)" value="sync POST"></input>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <input id="testButton3" type="button" onclick="javascript:runTest('GET', true)" value="async GET"></input>
+          </td>
+          <td>
+            <input id="testButton4" type="button" onclick="javascript:runTest('POST', true)" value="async POST"></input>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <input id="testButtonReset" type="button" onclick="javascript:location.reload(true)" value="reset"></input>
+          </td>
+          <td>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <input id="testButtonBox" type="button" onclick="javascript:mbox()" value="MsgBox"></input>
+          </td>
+          <td>
+          </td>
+        </tr>
+      </table>
     </p>
     <p>
       <table border="1">
