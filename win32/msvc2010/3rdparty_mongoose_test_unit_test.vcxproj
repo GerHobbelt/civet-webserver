@@ -452,11 +452,6 @@
   <ItemGroup>
     <ClCompile Include="..\..\test\unit_test.c" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread.2010.vcxproj">
-      <Project>{5d459ba0-5eeb-47d3-a1c4-6b55c8d37ec0}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

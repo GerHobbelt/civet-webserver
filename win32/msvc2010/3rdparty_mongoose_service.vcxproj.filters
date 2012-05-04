@@ -7,34 +7,43 @@
     <Filter Include="Misc Files">
       <UniqueIdentifier>{f1161ac6-3ec9-4755-bf92-30c448556ffe}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{24c83633-acef-4ba1-950a-3fa0ac1fa1ac}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\mongoose\main.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\..\mongoose\LICENSE">
+    <None Include="..\..\LICENSE">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose\mongoose.1">
+    <None Include="..\..\mongoose.1">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose\win32\favicon.ico">
-      <Filter>Sources</Filter>
+    <None Include="..\..\.gitmodules">
+      <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose\win32\systray.ico">
-      <Filter>Sources</Filter>
+    <None Include="..\..\Makefile">
+      <Filter>Misc Files</Filter>
+    </None>
+    <None Include="..\..\win32\favicon.ico">
+      <Filter>Resources</Filter>
+    </None>
+    <None Include="..\..\win32\systray.ico">
+      <Filter>Resources</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\mongoose\win32\res.rc">
-      <Filter>Sources</Filter>
+    <ResourceCompile Include="..\..\win32\res.rc">
+      <Filter>Resources</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\mongoose\win32\resource.h">
-      <Filter>Sources</Filter>
+    <ClInclude Include="..\..\win32\resource.h">
+      <Filter>Resources</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\main.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

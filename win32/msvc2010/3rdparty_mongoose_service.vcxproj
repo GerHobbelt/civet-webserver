@@ -450,16 +450,19 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread.2010.vcxproj">
-      <Project>{5d459ba0-5eeb-47d3-a1c4-6b55c8d37ec0}</Project>
-    </ProjectReference>
     <ProjectReference Include="3rdparty_mongoose.vcxproj">
       <Project>{fc4eff85-2c41-4ed6-a13e-eb98409de435}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\.gitmodules">
+      <FileType>Document</FileType>
+    </None>
     <None Include="..\..\LICENSE" />
+    <None Include="..\..\Makefile">
+      <FileType>Document</FileType>
+    </None>
     <None Include="..\..\mongoose.1" />
     <None Include="..\..\win32\favicon.ico" />
     <None Include="..\..\win32\systray.ico" />
