@@ -157,7 +157,7 @@ const char *mg_suggest_connection_header(const struct mg_connection *conn);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 #if !defined(HAVE_PTHREAD)
-#error "You can only use the extended mongoose code when you include the pthread-Win32 pthread.h header as well: it was too much hassle to export the mongoose pthread-internal replacements here."
+#pragma message("You are advised to use pthread-Win32 library (with its own pthread.h header) and then set the HAVE_PTHREAD #define. The mongoose pthread-internal replacements have not been tested to the same extend as this external library has.")
 #endif
 #endif
 
