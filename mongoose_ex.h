@@ -124,7 +124,7 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
 time_t mg_parse_date_string(const char *datetime);
 
 // Converts the given timestamp to UTC timestamp string compatible with HTTP headers. 
-void mg_gmt_time_string(char *buf, size_t bufsize, time_t *tm);
+void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
 
 // Return the set of matching HTTP header values in dst[] and the number of discovered entries as a return value.
 // The dst[] array will be terminated by a NULL sentinel.

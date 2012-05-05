@@ -299,7 +299,7 @@ void mg_vsend_http_error(struct mg_connection *conn, int status, const char *rea
 	vsend_http_error(conn, status, reason, fmt, ap);
 }
 
-void mg_gmt_time_string(char *buf, size_t bufsize, time_t *tm)
+void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm)
 {
 	gmt_time_string(buf, bufsize, tm);
 }

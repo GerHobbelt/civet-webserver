@@ -3236,7 +3236,7 @@ static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
   return sscanf(header, "bytes=%" INT64_FMT "-%" INT64_FMT, a, b);
 }
 
-static void gmt_time_string(char *buf, size_t buf_len, time_t *t) {
+static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
   strftime(buf, buf_len, "%a, %d %b %Y %H:%M:%S GMT", gmtime(t));
 }
 
