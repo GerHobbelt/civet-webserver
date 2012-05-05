@@ -193,7 +193,7 @@ struct socket {
 
 enum {
   CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
-  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, ACCESS_LOG_FILE,
+  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
   ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
@@ -210,6 +210,7 @@ static const char *config_options[] = {
   "P", "protect_uri", NULL,
   "R", "authentication_domain", "mydomain.com",
   "S", "ssi_pattern", "**.shtml$|**.shtm$",
+  "",  "ssi_marker", NULL,
   "a", "access_log_file", NULL,
   "c", "ssl_chain_file", NULL,
   "d", "enable_directory_listing", "yes",
@@ -328,7 +329,7 @@ static int get_option_index(const char *name) {
   int i;
 
   for (i = 0; config_options[i] != NULL; i += ENTRIES_PER_CONFIG_OPTION) {
-    if (strcmp(config_options[i], name) == 0 ||
+    if ((config_options[i][0] && strcmp(config_options[i], name) == 0) ||
         strcmp(config_options[i + 1], name) == 0) {
       return i / ENTRIES_PER_CONFIG_OPTION;
     }
@@ -1170,6 +1171,8 @@ static const char *next_option(const char *list, struct vec *val,
                                struct vec *eq_val) {
   if (list == NULL || *list == '\0') {
     // End of the list
+	val->ptr = 0;
+	val->len = 0;
     list = NULL;
   } else {
     val->ptr = list;
@@ -3928,30 +3931,43 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
                           FILE *fp, int include_level) {
   char buf[SSI_LINE_BUFSIZ];
   int ch, len, in_ssi_tag;
+  struct vec ssi_start = {0}, ssi_end = {0};
+  const char *m;
 
   if (include_level > 10) {
     mg_cry(conn, "SSI #include level is too deep (%s)", path);
     return;
   }
 
+  m = next_option(conn->ctx->config[SSI_MARKER], &ssi_start, NULL);
+  ssi_end = ssi_start;
+  next_option(m, &ssi_end, NULL);
+  if (!ssi_end.len || !ssi_start.len)
+  {
+	  ssi_start.ptr = "<!--#";
+	  ssi_start.len = 5;
+	  ssi_end.ptr = ">";
+	  ssi_end.len = 1;
+  }
+
   in_ssi_tag = 0;
   len = 0;
 
   while ((ch = fgetc(fp)) != EOF) {
-    if (in_ssi_tag && ch == '>') {
+    if (in_ssi_tag && ch == ssi_end.ptr[0]) {
       in_ssi_tag = 0;
       buf[len++] = (char) ch;
       buf[len] = '\0';
       assert(len <= (int) sizeof(buf));
-      if (len < 6 || memcmp(buf, "<!--#", 5) != 0) {
+      if (len < ssi_start.len + 1 || memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
         // Not an SSI tag, pass it
         (void) mg_send_data(conn, buf, (size_t)len);
       } else {
-        if (!memcmp(buf + 5, "include", 7)) {
-          do_ssi_include(conn, path, buf + 12, include_level);
+        if (!memcmp(buf + ssi_start.len, "include", 7)) {
+          do_ssi_include(conn, path, buf + ssi_start.len + 7, include_level);
 #if !defined(NO_POPEN)
-        } else if (!memcmp(buf + 5, "exec", 4)) {
-          do_ssi_exec(conn, buf + 9);
+        } else if (!memcmp(buf + ssi_start.len, "exec", 4)) {
+          do_ssi_exec(conn, buf + ssi_start.len + 4);
 #endif // !NO_POPEN
         } else {
           mg_cry(conn, "%s: unknown SSI " "command: \"%s\"", path, buf);
@@ -3959,7 +3975,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       }
       len = 0;
     } else if (in_ssi_tag) {
-      if (len == 5 && memcmp(buf, "<!--#", 5) != 0) {
+      if (len == ssi_start.len && memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
         // Not an SSI tag
         in_ssi_tag = 0;
       } else if (len == (int) sizeof(buf) - 2) {
@@ -3967,7 +3983,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
         len = 0;
       }
       buf[len++] = ch & 0xff;
-    } else if (ch == '<') {
+    } else if (ch == ssi_start.ptr[0]) {
       in_ssi_tag = 1;
       if (len > 0) {
         (void) mg_send_data(conn, buf, (size_t)len);
