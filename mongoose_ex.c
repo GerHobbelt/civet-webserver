@@ -243,6 +243,8 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
 {
 	if (!str || !pattern) return -1;
 
+	if (pattern_len < 0)
+		pattern_len = (int)strlen(pattern);
 	return match_prefix(pattern, pattern_len, str);
 }
 
