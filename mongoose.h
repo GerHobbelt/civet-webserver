@@ -70,6 +70,7 @@ struct mg_request_info {
 enum mg_event {
   MG_NEW_REQUEST,   // New HTTP request has arrived from the client
   MG_REQUEST_COMPLETE,  // Mongoose has finished handling the request
+  MG_SSI_INCLUDE_REQUEST,   // Page includes an SSI request (file is specified in request_info::phys_path)
   MG_HTTP_ERROR,    // HTTP error must be returned to the client
   MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
   MG_INIT_SSL,      // Mongoose initializes SSL. The SSL context is passed 

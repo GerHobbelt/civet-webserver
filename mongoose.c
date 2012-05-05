@@ -3886,19 +3886,24 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
     return;
   }
 
-  if ((fp = mg_fopen(path, "rb")) == NULL) {
-    mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
-        tag, path, mg_strerror(ERRNO));
-  } else {
-    set_close_on_exec(fileno(fp));
-    if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
-                     strlen(conn->ctx->config[SSI_EXTENSIONS]), path) > 0) {
-      send_ssi_file(conn, path, fp, include_level + 1);
+  p = conn->request_info.phys_path;
+  conn->request_info.phys_path = path;
+  if (!call_user(conn, MG_SSI_INCLUDE_REQUEST)) {
+    if ((fp = mg_fopen(path, "rb")) == NULL) {
+      mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
+          tag, path, mg_strerror(ERRNO));
     } else {
-      send_file_data(conn, fp, INT64_MAX);
+      set_close_on_exec(fileno(fp));
+      if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
+                       strlen(conn->ctx->config[SSI_EXTENSIONS]), path) > 0) {
+        send_ssi_file(conn, path, fp, include_level + 1);
+      } else {
+        send_file_data(conn, fp, INT64_MAX);
+      }
+      (void) fclose(fp);
     }
-    (void) fclose(fp);
   }
+  conn->request_info.phys_path = p;
 }
 
 #if !defined(NO_POPEN)
