@@ -4449,7 +4449,7 @@ static void log_header(const struct mg_connection *conn, const char *header,
   }
 }
 
-static void log_access(const struct mg_connection *conn) {
+static void log_access(struct mg_connection *conn) {
   const struct mg_request_info *ri;
   FILE *fp;
   char date[64], src_addr[20];
