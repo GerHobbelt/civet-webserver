@@ -269,7 +269,8 @@ struct mg_connection {
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
 
-  char logfile_path[PATH_MAX+1]; // cached value: path to the logfile designated to this connection/CTX
+  char error_logfile_path[PATH_MAX+1]; // cached value: path to the error logfile designated to this connection/CTX
+  char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
 };
 
 const char **mg_get_valid_option_names(void) {
@@ -500,10 +501,6 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
     const char *s;
     struct tm *tp;
 
-    if (!logfile_template && conn && conn->ctx)
-    {
-        logfile_template = conn->ctx->config[ERROR_LOG_FILE];
-    }
     if (!dst || dst_maxsize < 1)
     {
         return NULL;
@@ -734,16 +731,28 @@ replacement_done:
     return dst;
 }
 
-const char *mg_get_default_logfile_path(struct mg_connection *conn)
+const char *mg_get_default_error_logfile_path(struct mg_connection *conn)
 {
     // Once determined, we stick with the given logfile for the current connection.
     //
     // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
-    if (!conn->logfile_path[0])
+    if (!conn->error_logfile_path[0])
     {
-        return mg_get_logfile_path(conn->logfile_path, ARRAY_SIZE(conn->logfile_path), NULL, conn, conn->birth_time);
+        return mg_get_logfile_path(conn->error_logfile_path, ARRAY_SIZE(conn->error_logfile_path), ((conn && conn->ctx) ? conn->ctx->config[ERROR_LOG_FILE] : NULL), conn, conn->birth_time);
     }
-    return conn->logfile_path;
+    return conn->error_logfile_path;
+}
+
+const char *mg_get_default_access_logfile_path(struct mg_connection *conn)
+{
+    // Once determined, we stick with the given logfile for the current connection.
+    //
+    // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
+    if (!conn->access_logfile_path[0])
+    {
+        return mg_get_logfile_path(conn->access_logfile_path, ARRAY_SIZE(conn->access_logfile_path), ((conn && conn->ctx) ? conn->ctx->config[ACCESS_LOG_FILE] : NULL), conn, conn->birth_time);
+    }
+    return conn->access_logfile_path;
 }
 
 // write arbitrary formatted string to the specified logfile
@@ -752,7 +761,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
   int rv = 0;
 
   if (!conn) conn = fc(NULL);
-  logfile = (logfile == NULL ? mg_get_default_logfile_path(conn) : logfile);
+  logfile = (logfile == NULL ? mg_get_default_error_logfile_path(conn) : logfile);
   severity = (severity ? severity : "error");
   conn->request_info.log_severity = severity;
   conn->request_info.log_dstfile = logfile;
@@ -4423,9 +4432,9 @@ static void log_access(const struct mg_connection *conn) {
   const struct mg_request_info *ri;
   FILE *fp;
   char date[64], src_addr[20];
+  const char *fpath = mg_get_default_access_logfile_path(conn);
 
-  fp = conn->ctx->config[ACCESS_LOG_FILE] == NULL ?  NULL :
-    mg_fopen(conn->ctx->config[ACCESS_LOG_FILE], "a+");
+  fp = mg_fopen(fpath, "a+");
 
   if (fp == NULL)
     return;
@@ -4885,7 +4894,8 @@ static void process_new_connection(struct mg_connection *conn) {
       conn->content_len = (cl == NULL ? -1 : strtoll(cl, NULL, 10));
       conn->birth_time = time(NULL);
       // and clear the cached logfile path so it is recalculated on the next log operation:
-      conn->logfile_path[0] = 0;
+      conn->error_logfile_path[0] = 0;
+      conn->access_logfile_path[0] = 0;
 #if defined(MG_PROXY_SUPPORT)
       if (conn->client.is_proxy)
 	  {
@@ -4964,7 +4974,8 @@ static void worker_thread(struct mg_context *ctx) {
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
     // and clear the cached logfile path so it is recalculated on the next log operation:
-    conn->logfile_path[0] = 0;
+    conn->error_logfile_path[0] = 0;
+    conn->access_logfile_path[0] = 0;
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.

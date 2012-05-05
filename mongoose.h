@@ -456,8 +456,11 @@ void mg_cry_raw(struct mg_connection *conn, const char *msg);
 //         Any other % parameter is processed by strftime(3).
 const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp);
 
-// Obtain a reference to the logfile designated to this connection (logfile CAN be connection specific but do NOT HAVE TO be).
-const char *mg_get_default_logfile_path(struct mg_connection *conn);
+// Obtain a reference to the error logfile designated to this connection (logfile CAN be connection specific but do NOT HAVE TO be).
+const char *mg_get_default_error_logfile_path(struct mg_connection *conn);
+
+// Obtain a reference to the access logfile designated to this connection (logfile CAN be connection specific but do NOT HAVE TO be).
+const char *mg_get_default_access_logfile_path(struct mg_connection *conn);
 
 // Write arbitrary formatted string to the specified logfile.
 int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg);
