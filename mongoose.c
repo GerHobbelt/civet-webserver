@@ -1765,7 +1765,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   if (interp == NULL) {
     buf[2] = '\0';
     mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%c%s", dir, DIRSEP, prog);
-    if ((fp = fopen(cmdline, "r")) != NULL) {
+    if ((fp = mg_fopen(cmdline, "r")) != NULL) {
       (void) fgets(buf, sizeof(buf), fp);
       if (buf[0] != '#' || buf[1] != '!') {
         // First line does not start with "#!". Do not set interpreter.
@@ -1776,7 +1776,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
           *p = '\0';
         }
       }
-      (void) fclose(fp);
+      (void) mg_fclose(fp);
     }
     interp = buf + 2;
   }
@@ -3669,7 +3669,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
   const char *status;
-  char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p;
+  char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
   FILE *in, *out;
@@ -3681,9 +3681,14 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // directory containing executable program, 'p' must point to the
   // executable program name relative to 'dir'.
   (void) mg_snprintf(conn, dir, sizeof(dir), "%s", prog);
-  if ((p = strrchr(dir, DIRSEP)) != NULL) {
-    *p++ = '\0';
-  } else {
+  for (p = dir, e = p + strlen(p) - 1; e > p; e--) {
+    if (IS_DIRSEP_CHAR(*e)) {
+      *e = '\0';
+	  p = e + 1;
+	  break;
+	}
+  }
+  if (e == p) {
     dir[0] = '.', dir[1] = '\0';
     p = (char *) prog;
   }
@@ -3885,7 +3890,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
   } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
     // File name is relative to the current document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
-    if ((p = strrchr(path, DIRSEP)) != NULL) {
+    if ((p = strrchr(path, '/')) != NULL) {
       p[1] = '\0';
     }
     (void) mg_snprintf(conn, path + strlen(path),
