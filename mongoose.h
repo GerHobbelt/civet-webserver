@@ -430,6 +430,10 @@ int mg_stat(const char *path, struct mgstat *stp);
 // Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
 FILE *mg_fopen(const char *path, const char *mode);
 
+// Like fclose() but the other of the matching pair with mg_fopen()
+int mg_fclose(FILE *fp);
+
+
 // Print error message to the opened error log stream. 
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.

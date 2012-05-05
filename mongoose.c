@@ -811,9 +811,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
       rv += fprintf(fp, "%s\n", msg);
       fflush(fp);
       funlockfile(fp);
-      if (fp != stderr) {
-        fclose(fp);
-      }
+      mg_fclose(fp);
     }
   }
   conn->request_info.log_severity = NULL;
@@ -1560,7 +1558,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
   if (!path || !path[0] || !mode || !mode[0]) {
       return NULL;
   }
-  if (0 == strcmp("-", path)) {
+  if (0 == strcmp("-", path) && 0 == strcmp("a+", mode)) {
       return stderr;
   }
 
@@ -1601,6 +1599,14 @@ FILE *mg_fopen(const char *path, const char *mode) {
       }
   }
   return _wfopen(wbuf, wmode);
+}
+
+int mg_fclose(FILE *fp)
+{
+	if (fp != NULL && fp != stderr) {
+		return fclose(fp);
+	}
+	return 0;
 }
 
 int mg_stat(const char *path, struct mgstat *stp) {
@@ -2925,7 +2931,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
 
   if (fp != NULL) {
     authorized = authorize(conn, fp);
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 
   return authorized;
@@ -2951,7 +2957,7 @@ static int is_authorized_for_put(struct mg_connection *conn) {
 
   if (fp != NULL) {
     ret = authorize(conn, fp);
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 
   return ret;
@@ -2974,15 +2980,15 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   (void) snprintf(tmp, sizeof(tmp), "%s.tmp", fname);
 
   // Create the file if does not exist
-  if ((fp = mg_fopen(fname, "a+")) != NULL) {
-    (void) fclose(fp);
+  if ((fp = mg_fopen(fname, "a")) != NULL) {
+    (void) mg_fclose(fp);
   }
 
   // Open the given file and temporary file
   if ((fp = mg_fopen(fname, "r")) == NULL) {
     return 0;
   } else if ((fp2 = mg_fopen(tmp, "w+")) == NULL) {
-    fclose(fp);
+    mg_fclose(fp);
     return 0;
   }
 
@@ -3010,8 +3016,8 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   }
 
   // Close files
-  (void) fclose(fp);
-  (void) fclose(fp2);
+  (void) mg_fclose(fp);
+  (void) mg_fclose(fp2);
 
   // Put the temp file in place of real file
   (void) mg_remove(fname);
@@ -3311,7 +3317,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
   if (strcmp(conn->request_info.request_method, "HEAD") != 0) {
     send_file_data(conn, fp, cl);
   }
-  (void) fclose(fp);
+  (void) mg_fclose(fp);
 }
 
 void mg_send_file(struct mg_connection *conn, const char *path) {
@@ -3855,7 +3861,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
     if (forward_body_data(conn, fp, INVALID_SOCKET, NULL))
       (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
           conn->request_info.status_code);
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 }
 
@@ -3903,7 +3909,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
       } else {
         send_file_data(conn, fp, INT64_MAX);
       }
-      (void) fclose(fp);
+      (void) mg_fclose(fp);
     }
   }
   conn->request_info.phys_path = p;
@@ -4019,7 +4025,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
     send_ssi_file(conn, path, fp, 0);
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 }
 
@@ -4479,7 +4485,7 @@ static void log_access(struct mg_connection *conn) {
   (void) fflush(fp);
 
   funlockfile(fp);
-  (void) fclose(fp);
+  (void) mg_fclose(fp);
 }
 
 static int isbyte(int n) {

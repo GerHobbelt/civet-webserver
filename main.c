@@ -48,7 +48,8 @@ static const char *default_options[] = {
     "listening_ports",       "8081",                         // "8081,8082s"
     //"ssl_certificate",     "ssl_cert.pem",
     "num_threads",           "5",
-    "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p].log",
+    "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
+	"access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
 
     NULL
 };
@@ -83,7 +84,8 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 
   names = mg_get_valid_option_names();
   for (i = 0; names[i] != NULL; i += 3) {
-    fprintf(stderr, "  -%s %s (default: \"%s\")\n",
+    fprintf(stderr, "  %s%s %s (default: \"%s\")\n",
+            (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
   }
   fprintf(stderr, "See  http://code.google.com/p/mongoose/wiki/MongooseManual"
@@ -195,7 +197,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
       }
     }
 
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 
   // Now handle command line flags. They override config file / default settings.
@@ -216,37 +218,25 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
 
-#ifdef _WIN32
-  // Send the systray icon as favicon
   if (event == MG_NEW_REQUEST) {
-    if (!strcmp("/favicon.ico", request_info->uri)) {
-      const char *p;
-      const char *root;
-      char path[PATH_MAX];
-      struct mgstat st;
+	struct mgstat st;
+	int file_found;
 
+	assert(request_info->phys_path);
+	file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
+	if (file_found) {
+	  return NULL; // let mongoose handle the default of 'file exists'...
+	}
+  }
+
+#ifdef _WIN32
+  if (event == MG_NEW_REQUEST) {
+    // Send the systray icon as favicon
+    if (!strcmp("/favicon.ico", request_info->uri)) {
       HMODULE module;
       HRSRC icon;
       DWORD len;
       void *data;
-
-      root = mg_get_option(ctx, "document_root");
-
-      if ((p = strchr(root, ',')) != NULL && (size_t)(p - root + 1) < sizeof(path)) {
-        memcpy(path, root, p - root);
-        path[p - root] = '\0';
-      }
-      else {
-        strncpy(path, root, sizeof(path));
-        path[sizeof(path) - 1] = '\0';
-      }
-
-      strncat(path, request_info->uri, sizeof(path) - 1);
-
-      // An existing favicon takes precedence
-      if (mg_stat(path, &st) == 0) {
-        return NULL;
-      }
 
       module = GetModuleHandle(NULL);
 
@@ -362,8 +352,8 @@ static void edit_config_file(const struct mg_context *ctx) {
   char cmd[200];
 
   // Create config file if it is not present yet
-  if ((fp = fopen(config_file, "r")) != NULL) {
-    fclose(fp);
+  if ((fp = mg_fopen(config_file, "r")) != NULL) {
+    mg_fclose(fp);
   } else if ((fp = fopen(config_file, "a+")) != NULL) {
     fprintf(fp,
             "# Mongoose web server configuration file.\n"
@@ -372,10 +362,10 @@ static void edit_config_file(const struct mg_context *ctx) {
             "# http://code.google.com/p/mongoose/wiki/MongooseManual\n\n");
     names = mg_get_valid_option_names();
     for (i = 0; names[i] != NULL; i += 3) {
-      value = mg_get_option(ctx, names[i]);
+      value = mg_get_option(ctx, names[i + 1]);
       fprintf(fp, "# %s %s\n", names[i + 1], *value ? value : "<value>");
     }
-    fclose(fp);
+    mg_fclose(fp);
   }
 
   snprintf(cmd, sizeof(cmd), "notepad.exe %s", config_file);
