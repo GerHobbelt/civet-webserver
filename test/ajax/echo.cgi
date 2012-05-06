@@ -13,7 +13,7 @@ resp = "{";
 method = os.getenv("REQUEST_METHOD")
 uri = os.getenv("REQUEST_URI");
 query = os.getenv("QUERY_STRING");
-len = os.getenv("CONTENT_LENGTH");
+datalen = os.getenv("CONTENT_LENGTH");
 
 if method then
   resp = resp .. '"method" : "' .. method .. '", ';
@@ -24,8 +24,8 @@ end
 if query then
   resp = resp .. '"query" : "' .. query .. '", ';
 end
-if len then
-  resp = resp .. '"len" : "' .. len .. '", ';
+if datalen then
+  resp = resp .. '"datalen" : "' .. datalen .. '", ';
 end
 
 resp = resp .. '"time" : "' .. os.date() .. '" ';
@@ -47,12 +47,19 @@ print (resp)
 
 
 -- Store the POST data to a file
-if (method == "POST") then  
-  myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");  
+if (method == "POST") then
+  myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");
   myFile:write(resp)
   myFile:write("\r\n\r\n")
-  data = io.read(len)
-  myFile:write(data)
+  if datalen then
+    data = tonumber(datalen)
+    myFile:write("<<< " .. datalen .. " bytes of data >>>\r\n")
+    data = io.stdin:read(datalen)
+    myFile:write(data)
+    myFile:write("\r\n<<< end >>>\r\n")
+  else
+    myFile:write("<<< no data >>>\r\n")
+  end
   myFile:close()
 end
 
