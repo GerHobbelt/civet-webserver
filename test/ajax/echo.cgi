@@ -13,28 +13,20 @@ resp = "{";
 method = os.getenv("REQUEST_METHOD")
 uri = os.getenv("REQUEST_URI");
 query = os.getenv("QUERY_STRING");
+len = os.getenv("CONTENT_LENGTH");
 
 if method then
-	resp = resp .. '"method" : "' .. method .. '", ';
+  resp = resp .. '"method" : "' .. method .. '", ';
 end
 if uri then
-	resp = resp .. '"uri" : "' .. uri .. '", ';
+  resp = resp .. '"uri" : "' .. uri .. '", ';
 end
 if query then
-	resp = resp .. '"query" : "' .. query .. '", ';
+  resp = resp .. '"query" : "' .. query .. '", ';
 end
-
-
--- The POST data is of no relevance, so just ignore it
---[[
-if (method == "POST") then
-	data = io.stdin:lines()
-	for lin in data do
-		resp = resp .. (lin);
-	end
+if len then
+  resp = resp .. '"len" : "' .. len .. '", ';
 end
-]]
-
 
 resp = resp .. '"time" : "' .. os.date() .. '" ';
 
@@ -52,4 +44,16 @@ print "Cache-Control: no-cache"
 print ""
 
 print (resp)
+
+
+-- Store the POST data to a file
+if (method == "POST") then  
+  myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");  
+  myFile:write(resp)
+  myFile:write("\r\n\r\n")
+  data = io.read(len)
+  myFile:write(data)
+  myFile:close()
+end
+
 

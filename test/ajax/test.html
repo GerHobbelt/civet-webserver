@@ -33,20 +33,12 @@
 
       for (var i = 1; i <= totalCount; ++i) {
 
-        var data = [];
-
-        for (var j = 0; j < 100; ++j) {
-          data.push({
-            key: (1000 * i) + j
-          });
-        }
-
-        fetch(data, i,  method, isAsync);
+        fetch(i,  method, isAsync);
       }
     }
 
 
-    function fetch(pdata, id, method, isAsync) {
+    function fetch(id, method, isAsync) {
 
       document.getElementById('res'+id).innerHTML = "pending";
 
@@ -55,7 +47,7 @@
         url: 'echo.cgi?id=' + id,
         type: method,
         timeout: 10000,
-        data: pdata,
+        data: { 'id' : id },
         dataType: 'json',
         succes: function(data) {
         },
