@@ -6,8 +6,6 @@
 -- to some folder in your search path (the path of the webserver or /usr/bin on Linux), and add the
 -- line   I lua5.1.exe   to your .conf file.
 
-
-
 resp = "{";
 
 method = os.getenv("REQUEST_METHOD")
@@ -46,21 +44,28 @@ print ""
 print (resp)
 
 
--- Store the POST data to a file
-if (method == "POST") then
-  myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");
-  myFile:write(resp)
-  myFile:write("\r\n\r\n")
-  if datalen then
-    data = tonumber(datalen)
-    myFile:write("<<< " .. datalen .. " bytes of data >>>\r\n")
-    data = io.stdin:read(datalen)
-    myFile:write(data)
-    myFile:write("\r\n<<< end >>>\r\n")
-  else
-    myFile:write("<<< no data >>>\r\n")
+doLogging = false
+
+if (doLogging) then
+  -- Store the POST data to a file
+  if (method == "POST") then
+    myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");
+    myFile:write(resp)
+    myFile:write("\r\n\r\n")  
+    if datalen then
+      datalen = tonumber(datalen)
+      myFile:write("<<< " .. datalen .. " bytes of data >>>\r\n")
+      
+      data = io.stdin:read(datalen)
+      myFile:write(data)
+      
+      myFile:write("\r\n<<< end >>>\r\n")
+    else
+      myFile:write("<<< no data >>>\r\n")
+    end  
+    myFile:close()
   end
-  myFile:close()
 end
+
 
 
