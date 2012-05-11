@@ -250,9 +250,10 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
 
 time_t mg_parse_date_string(const char *datetime) 
 {
-	time_t rv = parse_date_string(datetime);
-	
-	return rv;
+	if (!datetime)
+		return (time_t)0;
+
+	return parse_date_string(datetime);
 }
 
 
