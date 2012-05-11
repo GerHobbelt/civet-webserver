@@ -495,6 +495,14 @@ static struct mg_connection *fc(struct mg_context *ctx) {
   return &fake_connection;
 }
 
+// replace %[P] with client port number
+//         %[C] with client IP (sanitized for filesystem paths)
+//         %[p] with server port number
+//         %[s] with server IP (sanitized for filesystem paths)
+//         %[U] with the request URI path section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters URL hash))
+//         %[Q] with the request URI query section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters query hash))
+//
+//         any other % parameter is processed by strftime.
 const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp)
 {
     char fnbuf[PATH_MAX+1];
@@ -511,15 +519,6 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         dst[0] = 0;
         return NULL;
     }
-
-    // replace %[P] with client port number
-    //         %[C] with client IP (sanitized for filesystem paths)
-    //         %[p] with server port number
-    //         %[s] with server IP (sanitized for filesystem paths)
-    //         %[U] with the request URI path section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters URL hash))
-    //         %[Q] with the request URI query section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters query hash))
-    //
-    //         any other % parameter is processed by strftime.
 
     d = fnbuf;
     d[PATH_MAX] = 0;  // sentinel for odd moments with strncpy et al
@@ -4734,8 +4733,12 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port, local_ip, local_port
-  ri->phys_path = ri->remote_user = ri->request_method = ri->uri = ri->http_version =
-    conn->path_info = NULL;
+  ri->phys_path = NULL;
+  ri->remote_user = NULL;
+  ri->request_method = NULL;
+  ri->uri = NULL;
+  ri->http_version = NULL;
+  conn->path_info = NULL;
   ri->num_headers = 0;
   ri->status_code = -1;
 

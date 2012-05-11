@@ -43,10 +43,10 @@ struct mg_ip_address {
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
-  char *request_method;  // "GET", "POST", etc
+  const char *request_method;  // "GET", "POST", etc
   char *uri;             // URL-decoded URI
   char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
-  char *http_version;    // E.g. "1.0", "1.1"
+  const char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // URL part after '?' (not including '?') or NULL
   char *remote_user;     // Authenticated user, or NULL if no auth used
   const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
