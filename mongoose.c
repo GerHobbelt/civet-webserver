@@ -1328,6 +1328,22 @@ static void send_http_error(struct mg_connection *conn, int status,
 
 #if !defined(HAVE_PTHREAD)
 
+/*
+ * POSIX pthread features support:
+ */
+#undef _POSIX_THREADS
+
+#undef _POSIX_READER_WRITER_LOCKS
+#define _POSIX_READER_WRITER_LOCKS 200809L
+
+#undef _POSIX_SPIN_LOCKS
+
+#undef _POSIX_BARRIERS
+
+#undef _POSIX_THREAD_SAFE_FUNCTIONS
+
+#undef _POSIX_THREAD_ATTR_STACKSIZE
+
 int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
   unused = NULL;
   *mutex = CreateMutex(NULL, FALSE, NULL);
