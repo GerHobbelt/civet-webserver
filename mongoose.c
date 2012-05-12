@@ -1328,22 +1328,6 @@ static void send_http_error(struct mg_connection *conn, int status,
 
 #if !defined(HAVE_PTHREAD)
 
-/*
- * POSIX pthread features support:
- */
-#undef _POSIX_THREADS
-
-#undef _POSIX_READER_WRITER_LOCKS
-#define _POSIX_READER_WRITER_LOCKS 200809L
-
-#undef _POSIX_SPIN_LOCKS
-
-#undef _POSIX_BARRIERS
-
-#undef _POSIX_THREAD_SAFE_FUNCTIONS
-
-#undef _POSIX_THREAD_ATTR_STACKSIZE
-
 int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
   unused = NULL;
   *mutex = CreateMutex(NULL, FALSE, NULL);
@@ -1360,6 +1344,27 @@ int pthread_mutex_lock(pthread_mutex_t *mutex) {
 
 int pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return ReleaseMutex(*mutex) == 0 ? -1 : 0;
+}
+
+int pthread_spin_init(pthread_spinlock_t *lock, int unsued)
+{
+	return pthread_mutex_init(lock, unused);
+}
+int pthread_spin_destroy(pthread_spinlock_t *lock)
+{
+	return pthread_mutex_destroy(lock);
+}
+int pthread_spin_lock(pthread_spinlock_t *lock)
+{
+	return pthread_mutex_lock(lock);
+}
+//int pthread_spin_trylock(pthread_spinlock_t *lock)
+//{
+// ...
+//}
+int pthread_spin_unlock(pthread_spinlock_t *lock)
+{
+	return pthread_mutex_unlock(lock);
 }
 
 int pthread_cond_init(pthread_cond_t *cv, const void *unused) {

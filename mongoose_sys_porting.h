@@ -163,9 +163,6 @@ struct timespec {
   long tv_sec;
 };
 
-int pthread_mutex_lock(pthread_mutex_t *);
-int pthread_mutex_unlock(pthread_mutex_t *);
-
 #else
 
 #include <pthread.h>
@@ -323,6 +320,23 @@ typedef int socklen_t;
 
 #if !defined(HAVE_PTHREAD)
 
+/*
+ * POSIX pthread features support:
+ */
+#undef _POSIX_THREADS
+
+#undef _POSIX_READER_WRITER_LOCKS
+#define _POSIX_READER_WRITER_LOCKS	200809L
+
+#undef _POSIX_SPIN_LOCKS
+#define _POSIX_SPIN_LOCKS			200809L
+
+#undef _POSIX_BARRIERS
+
+#undef _POSIX_THREAD_SAFE_FUNCTIONS
+
+#undef _POSIX_THREAD_ATTR_STACKSIZE
+
 int pthread_mutex_init(pthread_mutex_t *mutex, void *unused);
 int pthread_mutex_destroy(pthread_mutex_t *mutex);
 int pthread_mutex_lock(pthread_mutex_t *mutex);
@@ -350,6 +364,16 @@ int pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
 int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+
+//#define PTHREAD_SPINLOCK_INITIALIZER		PTHREAD_MUTEX_INITIALIZER
+
+typedef pthread_mutex_t pthread_spinlock_t;
+
+int pthread_spin_init(pthread_spinlock_t *lock, int pshared);
+int pthread_spin_destroy(pthread_spinlock_t *lock);
+int pthread_spin_lock(pthread_spinlock_t *lock);
+//int pthread_spin_trylock(pthread_spinlock_t *lock);
+int pthread_spin_unlock(pthread_spinlock_t *lock);
 
 #endif
 
