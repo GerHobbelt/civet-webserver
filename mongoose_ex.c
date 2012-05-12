@@ -46,6 +46,16 @@ struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
 	return conn ? &conn->request_info : NULL;
 }
 
+int64_t mg_get_num_bytes_sent(struct mg_connection *conn)
+{
+	return conn ? conn->num_bytes_sent : 0;
+}
+
+int64_t mg_get_num_bytes_received(struct mg_connection *conn)
+{
+	return conn ? conn->consumed_content : 0;
+}
+
 int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen)
 {
 	int rv = setsockopt(sock->sock, level, optname, optval, optlen);

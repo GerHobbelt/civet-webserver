@@ -43,6 +43,9 @@ struct mg_context *mg_get_context(struct mg_connection *conn);
 
 struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
 
+int64_t mg_get_num_bytes_sent(struct mg_connection *conn);
+int64_t mg_get_num_bytes_received(struct mg_connection *conn);
+
 struct socket *mg_get_client_socket(struct mg_connection *conn);
 
 // Return the current 'stop_flag' state value for the given thread context.
