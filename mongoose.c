@@ -1043,13 +1043,13 @@ int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
 	}
 
 	VA_COPY(aq, ap);
-	while ((((n = vsnprintf(buf, size, fmt, aq)) < 0) || (n >= size - 1)) && (size < max_buflen)) {
+	while ((((n = vsnprintf(buf, size, fmt, aq)) < 0) || (n >= size - 1)) && (size < (int)max_buflen)) {
 		va_end(aq);
 		// forego the extra cost in realloc() due to memcpy(): use free+malloc instead:
 		free(buf);
 		size *= 4; /* fast-growing buffer: we don't want to try too many times */
-		if (size > max_buflen)
-			size = max_buflen;
+		if (size > (int)max_buflen)
+			size = (int)max_buflen;
 		buf = (char *)malloc(size);
 		if (buf == NULL) {
 			*buf_ref = NULL;
