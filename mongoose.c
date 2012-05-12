@@ -4041,6 +4041,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   } else {
     conn->must_close = 1;
     set_close_on_exec(fileno(fp));
+    conn->request_info.status_code = 200;
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
