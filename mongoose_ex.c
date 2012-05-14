@@ -322,6 +322,11 @@ const char *mg_suggest_connection_header(const struct mg_connection *conn)
 	return suggest_connection_header(conn);
 }
 
+void mg_connection_must_close(struct mg_connection *conn)
+{
+	conn->must_close = 1;
+}
+
 
 
 

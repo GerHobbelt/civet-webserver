@@ -156,6 +156,8 @@ void mg_vsend_http_error(struct mg_connection *conn, int status, const char *rea
 // Returns a string useful as Connection: header value, depending on the current state of connection
 const char *mg_suggest_connection_header(const struct mg_connection *conn);
 
+// signal mongoose that the server should close the connection with the client once the current request has been serviced.
+void mg_connection_must_close(struct mg_connection *conn);
 
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
