@@ -1174,7 +1174,7 @@ struct dirent * readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
-  ctx; // fix: avoid a warning
+  (void)ctx; // fix: avoid a warning
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
 }
 
@@ -3912,7 +3912,8 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   buffered_len = conn->data_len - conn->request_len;
   assert(buffered_len >= 0);
 
-  if (conn->content_len == -1) {
+  if (conn->content_len <= 0) {
+    // Protect from negative Content-Length, too
     body_len = 0;
   } else if (conn->content_len < (int64_t) buffered_len) {
     body_len = (int) conn->content_len;
