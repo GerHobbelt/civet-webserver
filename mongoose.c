@@ -1591,14 +1591,14 @@ FILE *mg_fopen(const char *path, const char *mode) {
       size_t i;
 
       // skip UNC path starters like '\\?\'
-      i = wcsspn(wbuf, L"\\/:?");
+      i = wcsspn(wbuf, L"\\:?");
       // and skip drive specs like 'C:'
       if (i == 0 && wbuf[i] && wbuf[i+1] == L':')
       {
           i = 2;
-          i += wcsspn(wbuf + i, L"\\/");
+          i += wcsspn(wbuf + i, L"\\");
       }
-      i += wcscspn(wbuf + i, L"\\/");
+      i += wcscspn(wbuf + i, L"\\");
       while (wbuf[i])
       {
           int rv;
@@ -1606,16 +1606,16 @@ FILE *mg_fopen(const char *path, const char *mode) {
           // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
           if (wbuf[i - 1] == L'.')
           {
-              wbuf[i++] = L'/';
-              i += wcscspn(wbuf + i, L"\\/");
+              wbuf[i++] = L'\\';
+              i += wcscspn(wbuf + i, L"\\");
               continue;
           }
           wbuf[i] = 0;
           rv = _wmkdir(wbuf);
-          wbuf[i++] = L'/';
+          wbuf[i++] = L'\\';
           if (0 != rv && errno != EEXIST)
               break;
-          i += wcscspn(wbuf + i, L"\\/");
+          i += wcscspn(wbuf + i, L"\\");
       }
   }
   return _wfopen(wbuf, wmode);
@@ -1623,7 +1623,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
 
 int mg_fclose(FILE *fp)
 {
-	if (fp != NULL && fp != stderr) {
+	if (fp != NULL && fp != stderr && fp != stdout && fp != stdin) {
 		return fclose(fp);
 	}
 	return 0;
@@ -1658,16 +1658,10 @@ int mg_remove(const char *path) {
 }
 
 int mg_mkdir(const char *path, int mode) {
-  char buf[PATH_MAX];
-  wchar_t wbuf[PATH_MAX];
-
-  mode = 0; // Unused
-  mg_strlcpy(buf, path, sizeof(buf));
-  change_slashes_to_backslashes(buf);
-
-  (void) MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, sizeof(wbuf));
-
-  return CreateDirectoryW(wbuf, NULL) ? 0 : -1;
+	wchar_t wbuf[PATH_MAX];
+	to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
+	mode = 0; // Unused
+	return CreateDirectoryW(wbuf, NULL) ? 0 : -1;
 }
 
 // Implementation of POSIX opendir/closedir/readdir for Windows.
@@ -1845,14 +1839,14 @@ FILE *mg_fopen(const char *path, const char *mode) {
       char *wbuf = strdup(path);
 
       // skip UNC path starters like '\\?\'
-      i = strspn(wbuf, "\\/:?");
+      i = strspn(wbuf, "/:?");
       // and skip drive specs like 'C:'
       if (i == 0 && wbuf[i] && wbuf[i+1] == ':')
       {
           i = 2;
-          i += strspn(wbuf + i, "\\/");
+          i += strspn(wbuf + i, "/");
       }
-      i += strcspn(wbuf + i, "\\/");
+      i += strcspn(wbuf + i, "/");
       while (wbuf[i])
       {
           int rv;
@@ -1861,7 +1855,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
           if (wbuf[i - 1] == '.')
           {
               wbuf[i++] = '/';
-              i += strcspn(wbuf + i, "\\/");
+              i += strcspn(wbuf + i, "/");
               continue;
           }
           wbuf[i] = 0;
@@ -1874,7 +1868,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
           wbuf[i++] = '/';
           if (0 != rv && errno != EEXIST)
               break;
-          i += strcspn(wbuf + i, "\\/");
+          i += strcspn(wbuf + i, "/");
       }
       free(wbuf);
   }
@@ -5127,12 +5121,10 @@ static void master_thread(struct mg_context *ctx) {
   struct socket *sp;
   int max_fd;
 
-  // Increase priority of the master thread
+  // Increase priority of the master thread (issue #317)
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-#endif
-
-#if defined(ISSUE_317)
+#else
   struct sched_param sched_param;
   sched_param.sched_priority = sched_get_priority_max(SCHED_RR);
   pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
