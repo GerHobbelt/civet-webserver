@@ -7,6 +7,7 @@ char * HOST = "127.0.0.1";
 unsigned short PORT = 80;
 char * RESOURCE = "/";
 #define CLIENTCOUNT 20
+#define TESTCYCLES 20
 
 
 int sockvprintf(SOCKET soc, const char * fmt, va_list vl) {
@@ -32,14 +33,26 @@ int sockprintf(SOCKET soc, const char * fmt, ...) {
 static struct sockaddr_in target = {0};
 static CRITICAL_SECTION cs = {0};
 static size_t expectedData = 0;
+static DWORD availableCPUs = 1;
+static DWORD totalCPUs = 1;
+static unsigned good = 0;
+static unsigned bad = 0;
 
 
 int WINAPI ClientMain(void * clientNo) {
 
+  SOCKET soc;
   time_t lastData;
   size_t totalData = 0;
-  int body = 0;
-  SOCKET soc = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+  int isBody = 0;
+  int isTest = (clientNo == 0);
+  int cpu = ((int)clientNo) % 1000;
+  
+  if ((!isTest) && (((1<<cpu) & availableCPUs)!=0)) {
+    SetThreadAffinityMask(GetCurrentThread(), 1<<cpu);
+  }
+
+  soc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (soc==INVALID_SOCKET) {
     EnterCriticalSection(&cs);
     printf("\r\nClient %u cannot create socket\a\r\n", (int)clientNo);
@@ -47,14 +60,14 @@ int WINAPI ClientMain(void * clientNo) {
     return 1;
   }
 
-  if (connect(soc,(SOCKADDR*)&target,sizeof(target))) {
+  if (connect(soc, (SOCKADDR*)&target, sizeof(target))) {
     EnterCriticalSection(&cs);
     printf("\r\nClient %u cannot connect to server %s:%u\a\r\n", (int)clientNo, HOST, PORT);
     LeaveCriticalSection(&cs);
     return 2;
   }
 
-  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\n\r\n", RESOURCE, HOST);
+  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
 
   lastData = time(0);
   for (;;) {
@@ -67,7 +80,7 @@ int WINAPI ClientMain(void * clientNo) {
     if (ioctlsocket(soc, FIONREAD, &dataReady) < 0) break;
     if (dataReady) {
       chunkSize = recv(soc, buf, sizeof(buf), 0);
-      if (!body) {
+      if (!isBody) {
         char * headEnd = strstr(buf,"\xD\xA\xD\xA");
         if (headEnd) {
           headEnd+=4;
@@ -77,7 +90,7 @@ int WINAPI ClientMain(void * clientNo) {
             lastData = time(0);
             //fwrite(headEnd,1,got,STORE);
           }
-          body=1;
+          isBody=1;
         }
       } else {
         totalData += chunkSize;
@@ -91,12 +104,15 @@ int WINAPI ClientMain(void * clientNo) {
   }
 
   closesocket(soc);
+
   EnterCriticalSection(&cs);
-  if (totalData != expectedData) {
-    printf("Client %u got %u bytes\r\n", (int)clientNo, totalData);
-  }
-  if (expectedData==0) {
+  if (isTest) {
     expectedData = totalData;
+  } else if (totalData != expectedData) {
+    printf("Error: Client %u got %u bytes instead of %u\r\n", (int)clientNo, totalData, expectedData);
+    bad++;
+  } else {
+    good++;
   }
   LeaveCriticalSection(&cs);
 
@@ -130,7 +146,7 @@ void RunTest(int loop) {
     }
   }
   EnterCriticalSection(&cs);
-  printf("Test run %u completed!\r\n\r\n", loop);
+  printf("Test cylce %u completed\r\n\r\n", loop);
   LeaveCriticalSection(&cs);
 }
 
@@ -156,14 +172,25 @@ int main(int argc, char * argv[]) {
   target.sin_addr.s_addr = *((u_long FAR *) (lpHost->h_addr));
   target.sin_port = htons(PORT);
 
+  GetProcessAffinityMask(GetCurrentProcess(), &availableCPUs, &totalCPUs);
+  printf("CPUs (bit masks): process=%x, system=%x\r\n", availableCPUs, totalCPUs);
+
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
+  printf("Preparing test ...");  
   ClientMain(0);
-  printf("Starting multi client test\r\n\r\n");
+  if (expectedData==0) {
+    printf(" Error: Could not read any data\a\r\n");
+    return 3;
+  }
+  printf(" OK: %u bytes of data\r\n", expectedData);
+  printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
   
-  for (i=1;i<=100;i++) {
+  for (i=1;i<=TESTCYCLES;i++) {
     RunTest(i);
   }
+
+  printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
 
   DeleteCriticalSection(&cs);
 
