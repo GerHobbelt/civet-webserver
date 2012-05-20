@@ -5,7 +5,7 @@
 
 char * HOST = "127.0.0.1";
 unsigned short PORT = 80;
-char * RESOURCE = "/";
+char * RESOURCE = "/ajax/echo.cgi";
 #define CLIENTCOUNT 20
 #define TESTCYCLES 20
 
@@ -67,7 +67,22 @@ int WINAPI ClientMain(void * clientNo) {
     return 2;
   }
 
-  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
+
+  // Comment in just one of these test cases
+  // "GET"
+  // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
+
+  // "POST 3 bytes"
+  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 3\r\n\r\nabc", RESOURCE, HOST);
+
+  // "POST 1000 bytes"
+  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 1000\r\n\r\n", RESOURCE, HOST);
+  // {int i; for (i=0;i<100;i++) {sockprintf(soc, "1234567890");}}
+
+  // "POST 10000 bytes"
+  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 10000\r\n\r\n", RESOURCE, HOST);
+  {int i; for (i=0;i<1000;i++) {sockprintf(soc, "1234567890");}}
+
 
   lastData = time(0);
   for (;;) {
