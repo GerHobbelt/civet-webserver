@@ -1417,7 +1417,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1 && conn->consumed_content == 0) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %lu %lld %lld", buf, len,
+  DEBUG_TRACE(("%p %lu %lld %lld", buf, (unsigned long)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len) {
@@ -4203,6 +4203,13 @@ static void master_thread(struct mg_context *ctx) {
   ctx->stop_flag = 2;
 
   DEBUG_TRACE(("exiting"));
+
+  // fix: issue 345 for the master thread
+  if (ctx->user_callback != NULL) {
+    memset(&request_info, 0, sizeof(request_info));
+    request_info.user_data = ctx->user_data;
+    ctx->user_callback(MG_EXIT_SERVER, (struct mg_connection *) 0, &request_info);
+  }
 }
 
 static void free_context(struct mg_context *ctx) {
