@@ -7,7 +7,7 @@ char * HOST = "127.0.0.1";
 unsigned short PORT = 80;
 char * RESOURCE = "/ajax/echo.cgi";
 #define CLIENTCOUNT 20
-#define TESTCYCLES 20
+#define TESTCYCLES 50
 
 
 int sockvprintf(SOCKET soc, const char * fmt, va_list vl) {
@@ -37,6 +37,7 @@ static DWORD availableCPUs = 1;
 static DWORD totalCPUs = 1;
 static unsigned good = 0;
 static unsigned bad = 0;
+unsigned long postSize = 0;
 
 
 int WINAPI ClientMain(void * clientNo) {
@@ -69,19 +70,28 @@ int WINAPI ClientMain(void * clientNo) {
 
 
   // Comment in just one of these test cases
+
   // "GET"
   // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
 
-  // "POST 3 bytes"
-  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 3\r\n\r\nabc", RESOURCE, HOST);
+  // "GET" with 10000 bytes extra head data
+  // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n", RESOURCE, HOST);
+  // {int i; for (i=0;i<(10000/25);i++) {sockprintf(soc, "Comment%04u: 1234567890\r\n");}}
+  // sockprintf(soc, "\r\n");
 
-  // "POST 1000 bytes"
-  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 1000\r\n\r\n", RESOURCE, HOST);
-  // {int i; for (i=0;i<100;i++) {sockprintf(soc, "1234567890");}}
+  // "GET" with 2000 bytes of query string
+  // sockprintf(soc, "GET %s?", RESOURCE);
+  // {int i; for (i=0;i<200;i++) {sockprintf(soc, "1234567890");}}
+  // sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", HOST);
+  
+  // "POST XXX*10 bytes"
+  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
+  {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
 
-  // "POST 10000 bytes"
-  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 10000\r\n\r\n", RESOURCE, HOST);
-  {int i; for (i=0;i<1000;i++) {sockprintf(soc, "1234567890");}}
+  // "POST" with 2000 bytes of query string
+  // sockprintf(soc, "POST %s?", RESOURCE);
+  // {int i; for (i=0;i<200;i++) {sockprintf(soc, "1234567890");}}
+  // sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 0\r\n\r\n", HOST);
 
 
   lastData = time(0);
@@ -95,7 +105,10 @@ int WINAPI ClientMain(void * clientNo) {
     if (ioctlsocket(soc, FIONREAD, &dataReady) < 0) break;
     if (dataReady) {
       chunkSize = recv(soc, buf, sizeof(buf), 0);
-      if (!isBody) {
+      if (chunkSize<0) {
+        printf("Error: recv failed for client %i\r\n", (int)clientNo);
+        break;
+      } else if (!isBody) {
         char * headEnd = strstr(buf,"\xD\xA\xD\xA");
         if (headEnd) {
           headEnd+=4;
@@ -171,6 +184,7 @@ int main(int argc, char * argv[]) {
   WSADATA       wsaData = {0};
   HOSTENT     * lpHost = 0;
   int           i;
+  FILE        * log;
 
   if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR) {
     printf("\r\nCannot init WinSock\a\r\n");
@@ -192,20 +206,32 @@ int main(int argc, char * argv[]) {
 
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
-  printf("Preparing test ...");  
-  ClientMain(0);
-  if (expectedData==0) {
-    printf(" Error: Could not read any data\a\r\n");
-    return 3;
-  }
-  printf(" OK: %u bytes of data\r\n", expectedData);
-  printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
-  
-  for (i=1;i<=TESTCYCLES;i++) {
-    RunTest(i);
-  }
+  do {
 
-  printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
+    printf("Preparing POST test with %u bytes of data ...", postSize);    
+    ClientMain(0);
+    if (expectedData==0) {
+      printf(" Error: Could not read any data\a\r\n");
+      return 3;
+    }    
+    printf(" OK: %u bytes of data\r\n", expectedData);
+    printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
+    good=bad=0;
+
+    for (i=1;i<=TESTCYCLES;i++) {
+      RunTest(i);
+    }
+
+    printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
+    log = fopen("testclient.log", "at");
+    if (log) {
+      fprintf(log, "%u\t%u\t%u\r\n", postSize, good, bad);
+      fclose(log);
+    }
+
+    postSize = (postSize!=0) ? (postSize<<1) : 1;
+
+  } while (postSize!=0);
 
   DeleteCriticalSection(&cs);
 
