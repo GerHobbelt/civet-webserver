@@ -48,7 +48,7 @@ int WINAPI ClientMain(void * clientNo) {
   int isBody = 0;
   int isTest = (clientNo == 0);
   int cpu = ((int)clientNo) % 1000;
-  
+
   if ((!isTest) && (((1<<cpu) & availableCPUs)!=0)) {
     SetThreadAffinityMask(GetCurrentThread(), 1<<cpu);
   }
@@ -72,7 +72,7 @@ int WINAPI ClientMain(void * clientNo) {
   // Comment in just one of these test cases
 
   // "GET"
-  // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
+  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
 
   // "GET" with 10000 bytes extra head data
   // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n", RESOURCE, HOST);
@@ -83,10 +83,10 @@ int WINAPI ClientMain(void * clientNo) {
   // sockprintf(soc, "GET %s?", RESOURCE);
   // {int i; for (i=0;i<200;i++) {sockprintf(soc, "1234567890");}}
   // sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", HOST);
-  
+
   // "POST XXX*10 bytes"
-  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
-  {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
+  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
+  // {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
 
   // "POST" with 2000 bytes of query string
   // sockprintf(soc, "POST %s?", RESOURCE);
@@ -148,7 +148,7 @@ int WINAPI ClientMain(void * clientNo) {
 }
 
 
-void RunTest(int loop) {
+void RunMultiClientTest(int loop) {
 
   HANDLE hThread[CLIENTCOUNT] = {0};
   int i;
@@ -179,12 +179,71 @@ void RunTest(int loop) {
 }
 
 
+int MultiClientPOSTTestAutomatic(unsigned long initialPostSize) {
+
+  FILE        * log;
+  int           cycle;
+
+  postSize = initialPostSize;
+
+  do {
+    printf("Preparing POST test with %u bytes of data ...", postSize);
+    ClientMain(0);
+    if (expectedData==0) {
+      printf(" Error: Could not read any data\a\r\n");
+      return 1;
+    }
+    printf(" OK: %u bytes of data\r\n", expectedData);
+    printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
+    good=bad=0;
+
+    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
+      RunMultiClientTest(cycle);
+    }
+
+    printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
+    log = fopen("testclient.log", "at");
+    if (log) {
+      fprintf(log, "%u\t%u\t%u\r\n", postSize, good, bad);
+      fclose(log);
+    }
+
+    postSize = (postSize!=0) ? (postSize<<1) : 1;
+
+  } while (postSize!=0);
+
+  return 0;
+}
+
+
+int SingleClientTestAutomatic(void) {
+
+  FILE        * log;
+  int           cycle;
+  int           i;
+
+  for (cycle=0;;cycle++) {
+    good=bad=0;
+    for (i=0;i<1000;i++) {
+      expectedData=77;
+      ClientMain((void*)1);
+    }
+    log = fopen("testclient.log", "at");
+    if (log) {
+      fprintf(log, "GET\t%u\t%u\r\n", good, bad);
+      fclose(log);
+    }
+    printf("test cycle %u: %u good, %u bad\r\n", cycle, good, bad);
+  }
+
+  return 0;
+}
+
+
 int main(int argc, char * argv[]) {
 
   WSADATA       wsaData = {0};
   HOSTENT     * lpHost = 0;
-  int           i;
-  FILE        * log;
 
   if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR) {
     printf("\r\nCannot init WinSock\a\r\n");
@@ -206,35 +265,12 @@ int main(int argc, char * argv[]) {
 
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
-  do {
+  /* Do the actual test here */
+  //MultiClientPOSTTestAutomatic(0);
+  SingleClientTestAutomatic();
 
-    printf("Preparing POST test with %u bytes of data ...", postSize);    
-    ClientMain(0);
-    if (expectedData==0) {
-      printf(" Error: Could not read any data\a\r\n");
-      return 3;
-    }    
-    printf(" OK: %u bytes of data\r\n", expectedData);
-    printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
-    good=bad=0;
-
-    for (i=1;i<=TESTCYCLES;i++) {
-      RunTest(i);
-    }
-
-    printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
-    log = fopen("testclient.log", "at");
-    if (log) {
-      fprintf(log, "%u\t%u\t%u\r\n", postSize, good, bad);
-      fclose(log);
-    }
-
-    postSize = (postSize!=0) ? (postSize<<1) : 1;
-
-  } while (postSize!=0);
-
+  /* Cleanup */
   DeleteCriticalSection(&cs);
-
   WSACleanup();
   return 0;
 }
