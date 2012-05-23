@@ -248,8 +248,8 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
           "HTTP/1.1 200 OK\r\n"
           "Content-Type: image/x-icon\r\n"
           "Cache-Control: no-cache\r\n"
-          "Content-Length: %d\r\n"
-          "Connection: close\r\n\r\n", len);
+          "Content-Length: %u\r\n"
+          "Connection: close\r\n\r\n", (unsigned int)len);
 
       mg_send_data(conn, data, len);
 

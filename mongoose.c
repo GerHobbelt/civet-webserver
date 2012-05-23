@@ -21,7 +21,17 @@
 
 #include "mongoose_sys_porting.h"
 
-#include "mongoose.h"
+#undef UNUSED_PARAMETER
+#ifdef __GNUC__
+#define UNUSED_PARAMETER(p)		p __attribute__((unused))
+#else
+#define UNUSED_PARAMETER(p)		p
+#endif
+
+
+#include "mongoose_ex.h"  // mg_thread_func_t
+
+
 
 #define MONGOOSE_VERSION "3.2"
 #define PASSWORDS_FILE_NAME ".htpasswd"
@@ -32,17 +42,16 @@
 #ifdef _WIN32
 static CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 
-void mgW32_flockfile(FILE *x) {
+void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
   EnterCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 }
 
-void mgW32_funlockfile(FILE *x) {
+void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
   LeaveCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 }
 #endif
 
 
-typedef void * (*mg_thread_func_t)(void *);
 
 
 // Snatched from OpenSSL includes. I put the prototypes here to be independent
@@ -252,6 +261,7 @@ struct mg_context {
 };
 
 struct mg_connection {
+  int must_close;             // 1 if connection must be closed
 #if defined(MG_PROXY_SUPPORT)
   struct mg_connection *peer; // Remote target in proxy mode
 #endif
@@ -265,7 +275,6 @@ struct mg_connection {
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
   char *path_info;            // PATH_INFO part of the URL
-  int must_close;             // 1 if connection must be closed
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
@@ -361,7 +370,7 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   // We use WSAAddressToString since it is supported on Windows XP and later
   {
     DWORD l = len;
-    if (WSAAddressToStringA(&usa->u.sa, usa->len, NULL, buf, &l)) {
+    if (WSAAddressToStringA((LPSOCKADDR)&usa->u.sa, usa->len, NULL, buf, &l)) {
       buf[0] = '\0';
     }
   }
@@ -868,9 +877,6 @@ void mg_cry_raw(struct mg_connection *conn, const char *msg)
 
 // Print error message to the opened error log stream.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...) 
-#ifdef __GNUC__
-	__attribute__((format(printf, 2, 3)))
-#endif
 {
   va_list ap;
 
@@ -988,7 +994,7 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 
-int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap) 
+int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *conn), char *buf, size_t buflen, const char *fmt, va_list ap) 
 {
 	int n;
 
@@ -1025,7 +1031,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
 	return n;
 }
 
-int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, 
+int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *conn), char **buf_ref, size_t max_buflen, 
 	const char *fmt, va_list ap) 
 {
 	va_list aq;
@@ -1316,6 +1322,10 @@ static void send_http_error(struct mg_connection *conn, int status,
 #ifdef __GNUC__
 	__attribute__((format(printf, 4, 5)))
 #endif
+	;
+
+static void send_http_error(struct mg_connection *conn, int status,
+	const char *reason, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -1328,8 +1338,7 @@ static void send_http_error(struct mg_connection *conn, int status,
 
 #if !defined(HAVE_PTHREAD)
 
-int pthread_mutex_init(pthread_mutex_t *mutex, void *unused) {
-  unused = NULL;
+int pthread_mutex_init(pthread_mutex_t *mutex, UNUSED_PARAMETER(void *unused)) {
   *mutex = CreateMutex(NULL, FALSE, NULL);
   return *mutex == NULL ? -1 : 0;
 }
@@ -1346,9 +1355,9 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return ReleaseMutex(*mutex) == 0 ? -1 : 0;
 }
 
-int pthread_spin_init(pthread_spinlock_t *lock, int unsued)
+int pthread_spin_init(pthread_spinlock_t *lock, UNUSED_PARAMETER(int unused))
 {
-	return pthread_mutex_init(lock, unused);
+	return pthread_mutex_init(lock, 0);
 }
 int pthread_spin_destroy(pthread_spinlock_t *lock)
 {
@@ -1367,8 +1376,7 @@ int pthread_spin_unlock(pthread_spinlock_t *lock)
 	return pthread_mutex_unlock(lock);
 }
 
-int pthread_cond_init(pthread_cond_t *cv, const void *unused) {
-  unused = NULL;
+int pthread_cond_init(pthread_cond_t *cv, UNUSED_PARAMETER(const void *unused)) {
   cv->signal = CreateEvent(NULL, FALSE, FALSE, NULL);
   cv->broadcast = CreateEvent(NULL, TRUE, FALSE, NULL);
   return cv->signal != NULL && cv->broadcast != NULL ? 0 : -1;
@@ -1412,13 +1420,12 @@ pthread_t pthread_self(void) {
 
 // rwlock types have been moved to mongoose_sys_porting.h
 
+#if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
 
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
   InitializeSRWLock(&rwlock->lock);
   return 0;
 }
-
-#define PTHREAD_RWLOCK_INITIALIZER			{ RTL_SRWLOCK_INIT }
 
 int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
     // empty
@@ -1446,6 +1453,34 @@ int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
     }
     return 0;
 }
+
+#else  // emulate methods for other Win systems / compiler platforms - use a very blunt approach.
+
+int pthread_rwlock_init(pthread_rwlock_t *rwlock, UNUSED_PARAMETER(const pthread_rwlockattr_t *attr)) {
+  return pthread_mutex_init(&rwlock->mutex, NULL);
+}
+
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+  return pthread_mutex_destroy(&rwlock->mutex);
+}
+
+int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+  int rv = pthread_mutex_lock(&rwlock->mutex);
+    rwlock->rw = 0;
+    return rv;
+}
+
+int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+  int rv = pthread_mutex_lock(&rwlock->mutex);
+    rwlock->rw = 1;
+    return rv;
+}
+
+int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+  return pthread_mutex_unlock(&rwlock->mutex);
+}
+
+#endif
 
 #endif
 
@@ -1734,7 +1769,7 @@ struct dirent * readdir(DIR *dir) {
 
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
-static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
+static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t f, void *p) {
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
 }
 
@@ -1898,7 +1933,7 @@ static void set_close_on_exec(int fd) {
   (void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
-static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
+static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t func,
                         void *param) {
   pthread_t thread_id;
   pthread_attr_t attr;
@@ -2108,9 +2143,6 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
 }
 
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) 
-#ifdef __GNUC__
-	__attribute__((format(printf, 2, 3)))
-#endif
 {
 	int len;
 	va_list ap;
@@ -3544,6 +3576,9 @@ static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 #ifdef __GNUC__
 	__attribute__((format(printf, 2, 3)))
 #endif
+	;
+
+static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 {
   int n, space;
   char *added;
@@ -4260,11 +4295,11 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   // for both IPv4 and IPv6 (INADDR_ANY and IN6ADDR_ANY_INIT).
   memset(so, 0, sizeof(*so));
 
-  if (sscanf(vec->ptr, " [%40[^]]]:%d%n", &addr_buf, &port, &len) == 2
+  if (sscanf(vec->ptr, " [%40[^]]]:%d%n", addr_buf, &port, &len) == 2
 	  && len > 0
 	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
     // all done: probably IPv6 URI
-  } else if (sscanf(vec->ptr, " %40[^:]:%d%n", &addr_buf, &port, &len) == 2
+  } else if (sscanf(vec->ptr, " %40[^:]:%d%n", addr_buf, &port, &len) == 2
 	  && len > 0
 	  && parse_ipvX_addr_string(addr_buf, port, usa)) {
     // all done: probably IPv4 URI
@@ -4303,7 +4338,7 @@ static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mas
 	int n, mask;
 	char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
-    if (sscanf(src, "%40[^/]%n", &addr_buf, &n) != 2) {
+    if (sscanf(src, "%40[^/]%n", addr_buf, &n) != 2) {
       return -1;
 	} else if (!parse_ipvX_addr_string(addr_buf, 0, ip)) {
       return -2;
@@ -4369,6 +4404,7 @@ static int set_timeout(struct socket *sock, int seconds) {
   return 0;
 }
 
+#if defined(USE_IPV6)
 static int is_all_zeroes(void *ptr, size_t len)
 {
 	char *s = (char *)ptr;
@@ -4378,6 +4414,7 @@ static int is_all_zeroes(void *ptr, size_t len)
 	}
 	return 1;
 }
+#endif
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = ctx->config[LISTENING_PORTS];
@@ -4508,14 +4545,10 @@ static void log_access(struct mg_connection *conn) {
   (void) mg_fclose(fp);
 }
 
-static int isbyte(int n) {
-  return n >= 0 && n <= 255;
-}
-
 // Verify given socket address against the ACL.
 // Return -1 if ACL is malformed, 0 if address is disallowed, 1 if allowed.
 static int check_acl(struct mg_context *ctx, const struct usa *usa) {
-  int i, mask, allowed;
+  int i, mask = 0, allowed;
   char flag;
   struct mg_ip_address acl_subnet, acl_mask, remote_ip;
   struct usa ip;
@@ -4686,17 +4719,17 @@ static int set_ssl_option(struct mg_context *ctx) {
 
   if (CTX != NULL && SSL_CTX_use_certificate_file(CTX, pem,
         SSL_FILETYPE_PEM) == 0) {
-    mg_cry(fc(ctx), "%s: cannot open %s: %s", __func__, pem, ssl_error());
+    mg_cry(fc(ctx), "%s: cannot open cert file %s: %s", __func__, pem, ssl_error());
     return 0;
   } else if (CTX != NULL && SSL_CTX_use_PrivateKey_file(CTX, pem,
         SSL_FILETYPE_PEM) == 0) {
-    mg_cry(fc(ctx), "%s: cannot open %s: %s", NULL, pem, ssl_error());
+    mg_cry(fc(ctx), "%s: cannot open private key file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
 
   if (CTX != NULL && chain != NULL &&
       SSL_CTX_use_certificate_chain_file(CTX, chain) == 0) {
-    mg_cry(fc(ctx), "%s: cannot open %s: %s", NULL, chain, ssl_error());
+    mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, chain, ssl_error());
     return 0;
   }
 
@@ -4893,13 +4926,13 @@ static void handle_proxy_request(struct mg_connection *conn) {
     conn->peer = NULL;
   }
 }
-#endif /* proxy support */
 
 static int is_valid_uri(const char *uri) {
   // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
   // URI can be an asterisk (*) or should start with slash.
   return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
 }
+#endif /* proxy support */
 
 static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;

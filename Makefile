@@ -33,21 +33,21 @@ CC = g++
 # "-Wl,--as-needed" turned on by default  in cc command.
 # Also, this is turned in many other distros in static linkage builds.
 linux:
-	$(CC) mongoose.c -shared -fPIC -fpic -o $(LIB) $(LINFLAGS)
-	$(CC) mongoose.c main.c -o $(PROG) $(LINFLAGS)
+	$(CC) mongoose_ex.c -shared -fPIC -fpic -o $(LIB) $(LINFLAGS)
+	$(CC) mongoose_ex.c main.c -o $(PROG) $(LINFLAGS)
 
 bsd:
-	$(CC) mongoose.c -shared -pthread -fpic -fPIC -o $(LIB) $(CFLAGS)
-	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
+	$(CC) mongoose_ex.c -shared -pthread -fpic -fPIC -o $(LIB) $(CFLAGS)
+	$(CC) mongoose_ex.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 mac:
-	$(CC) mongoose.c -pthread -o $(LIB) $(MAC_SHARED) $(CFLAGS)
-	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
+	$(CC) mongoose_ex.c -pthread -o $(LIB) $(MAC_SHARED) $(CFLAGS)
+	$(CC) mongoose_ex.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 solaris:
-	gcc mongoose.c -pthread -lnsl \
+	gcc mongoose_ex.c -pthread -lnsl \
 		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
-	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
+	gcc mongoose_ex.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
 
 
 ##########################################################################
@@ -107,9 +107,9 @@ cyassl:
 
 windows:
 	rc win32\res.rc
-	$(CL) /I win32 main.c mongoose.c /GA $(LINK) win32\res.res \
+	$(CL) /I win32 main.c mongoose_ex.c /GA $(LINK) win32\res.res \
 		$(GUILIB) /out:$(PROG).exe
-	$(CL) mongoose.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
+	$(CL) mongoose_ex.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
 #MINGWDBG= -DDEBUG -O0
@@ -118,9 +118,9 @@ MINGWDBG= -DNDEBUG -Os
 MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG)
 mingw:
 	windres win32\res.rc win32\res.o
-	gcc $(MINGWOPT) mongoose.c -lws2_32 \
+	gcc $(MINGWOPT) mongoose_ex.c -lws2_32 \
 		-shared -Wl,--out-implib=$(PROG).lib -o _$(PROG).dll
-	gcc $(MINGWOPT) -Iwin32 mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
+	gcc $(MINGWOPT) -Iwin32 mongoose_ex.c main.c win32\res.o -lws2_32 -ladvapi32 \
 		-o $(PROG).exe
 
 
@@ -144,3 +144,10 @@ release: clean
 
 clean:
 	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz
+
+
+# dependencies
+.PHONY: mongoose_ex.c main.c
+
+mongoose_ex.c: mongoose.c mongoose.h mongoose_sys_porting.h
+main.c:        mongoose.h mongoose_sys_porting.h

@@ -296,9 +296,6 @@ int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connect
 }
 
 void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
-#ifdef __GNUC__
-		__attribute__((format(printf, 4, 5)))
-#endif
 {
 	va_list ap;
 

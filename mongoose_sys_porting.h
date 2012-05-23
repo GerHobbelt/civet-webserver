@@ -105,14 +105,18 @@ typedef long off_t;
 #endif // _MSC_VER
 #endif // _MSC_VER
 
-#define ERRNO   GetLastError()
+#define ERRNO   ((int)GetLastError())
 #define NO_SOCKLEN_T
 #define SSL_LIB   "ssleay32.dll"
 #define CRYPTO_LIB  "libeay32.dll"
 #define DIRSEP '\\'
 #define IS_DIRSEP_CHAR(c) ((c) == '/' || (c) == '\\')
+#ifndef PATH_MAX // MingW fix
 #define PATH_MAX MAX_PATH
+#endif
+#ifndef S_ISDIR // MingW fix
 #define S_ISDIR(x) ((x) & _S_IFDIR)
+#endif
 #define O_NONBLOCK  0
 
 #if !defined(EWOULDBLOCK)
@@ -350,15 +354,23 @@ int pthread_cond_destroy(pthread_cond_t *cv);
 pthread_t pthread_self(void);
 
 typedef struct {
-    SRWLOCK lock;
-    unsigned rw: 1;
+	unsigned rw: 1;
+#if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+	SRWLOCK lock;
+#else
+	pthread_mutex_t mutex;
+#endif
 } pthread_rwlock_t;
 
 typedef void pthread_rwlockattr_t;
 
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr);
 
-#define PTHREAD_RWLOCK_INITIALIZER			{ RTL_SRWLOCK_INIT }
+#if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+#define PTHREAD_RWLOCK_INITIALIZER			{ 0, RTL_SRWLOCK_INIT }
+#else
+#define PTHREAD_RWLOCK_INITIALIZER			{ 0 }
+#endif
 
 int pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
 int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
