@@ -112,10 +112,10 @@ windows:
 	$(CL) mongoose_ex.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
-#MINGWDBG= -DDEBUG -O0
+#MINGWDBG= -DDEBUG -O0 -ggdb
 MINGWDBG= -DNDEBUG -Os
-#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
-MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG)
+MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
+#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT
 mingw:
 	windres win32\res.rc win32\res.o
 	gcc $(MINGWOPT) mongoose_ex.c -lws2_32 \
