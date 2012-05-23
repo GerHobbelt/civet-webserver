@@ -133,7 +133,7 @@ int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 	assert((conn->content_len == -1 && conn->consumed_content == 0) ||
 		(conn->content_len == 0 && conn->consumed_content > 0) ||
 		conn->consumed_content <= conn->content_len);
-	DEBUG_TRACE(("%p %zu %" INT64_FMT " %" INT64_FMT, buf, max_bufsize,
+	DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)max_bufsize,
 		conn->content_len, conn->consumed_content));
 	nread = 0;
 	if (conn->consumed_content < conn->content_len)
