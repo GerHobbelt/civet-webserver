@@ -233,7 +233,7 @@ int SingleClientTestAutomatic(void) {
     }
     log = fopen("testclient.log", "at");
     if (log) {
-      fprintf(log, "POST\t%u\t%u\r\n", good, bad);
+      fprintf(log, "Cylce<%u>\t%u\t%u\r\n", cycle, good, bad);
       fclose(log);
     }
     printf("test cycle %u: %u good, %u bad\r\n", cycle, good, bad);
