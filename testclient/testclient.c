@@ -181,7 +181,7 @@ void RunMultiClientTest(int loop) {
 }
 
 
-int MultiClientPOSTTestAutomatic(unsigned long initialPostSize) {
+int MultiClientTestAutomatic(unsigned long initialPostSize) {
 
   FILE        * log;
   int           cycle;
@@ -189,7 +189,7 @@ int MultiClientPOSTTestAutomatic(unsigned long initialPostSize) {
   postSize = initialPostSize;
 
   do {
-    printf("Preparing POST test with %u bytes of data ...", postSize);
+    printf("Preparing test with %u bytes of data ...", postSize);
     ClientMain(0);
     if (expectedData==0) {
       printf(" Error: Could not read any data\a\r\n");
@@ -269,8 +269,8 @@ int main(int argc, char * argv[]) {
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
   /* Do the actual test here */
-  //MultiClientPOSTTestAutomatic(0);
-  SingleClientTestAutomatic();
+  MultiClientTestAutomatic(0);
+  //SingleClientTestAutomatic();
 
   /* Cleanup */
   DeleteCriticalSection(&cs);
