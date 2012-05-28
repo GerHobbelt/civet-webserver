@@ -5,8 +5,11 @@
 
 char * HOST = "127.0.0.1";
 unsigned short PORT = 80;
-//char * RESOURCE = "/ajax/echo.cgi";
-char * RESOURCE = "/imagetest/00.png";
+// char * RESOURCE = "/ajax/echo.cgi";
+// char * RESOURCE = "/imagetest/00.png";
+// char * RESOURCE = "/args.cgi";
+// char * RESOURCE = "/_stat";
+char * RESOURCE = "/_echo";
 
 #define CLIENTCOUNT 20
 #define TESTCYCLES 50
@@ -74,7 +77,7 @@ int WINAPI ClientMain(void * clientNo) {
   // Comment in just one of these test cases
 
   // "GET"
-  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
+  // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE, HOST);
 
   // "GET" with 10000 bytes extra head data
   // sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n", RESOURCE, HOST);
@@ -87,8 +90,8 @@ int WINAPI ClientMain(void * clientNo) {
   // sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", HOST);
 
   // "POST <postSize> bytes"
-  // sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
-  // {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
+  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
+  {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
 
   // "POST" with 2000 bytes of query string
   // sockprintf(soc, "POST %s?", RESOURCE);
@@ -228,7 +231,7 @@ int SingleClientTestAutomatic(void) {
   for (cycle=0;;cycle++) {
     good=bad=0;
     for (i=0;i<1000;i++) {
-      expectedData=566;
+      expectedData=3;
       ClientMain((void*)1);
     }
     log = fopen("testclient.log", "at");
@@ -269,7 +272,7 @@ int main(int argc, char * argv[]) {
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
   /* Do the actual test here */
-  MultiClientTestAutomatic(0);
+  MultiClientTestAutomatic(1);
   //SingleClientTestAutomatic();
 
   /* Cleanup */
