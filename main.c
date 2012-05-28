@@ -320,7 +320,7 @@ static void * callback(enum mg_event event, struct mg_connection *conn, const st
 
   if (!strcmp(uri, "/_stat")) {
     //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
-    mg_printf(conn, "%s",
+    mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
               "Connection: close\r\n"
               "Cache-Control: no-cache"
@@ -346,6 +346,40 @@ static void * callback(enum mg_event event, struct mg_connection *conn, const st
     }
     
     mg_printf(conn, "</table></pre></p></body></html>\r\n");
+
+    pthread_mutex_unlock(&udata->mutex);
+    return (void *)1;
+
+  } else if (!strcmp(uri, "/_echo")) {
+
+    const char * contentLength = mg_get_header(conn, "Content-Length");
+    const char * contentType = mg_get_header(conn, "Content-Type");
+
+    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Connection: close\r\n"
+              "Cache-Control: no-cache"
+              "Content-Type: text/plain; charset=utf-8\r\n\r\n");
+    
+    if (!strcmp(request_info->request_method, "POST")) {
+      int dataSize = atoi(contentLength);
+      int gotSize = 0;
+      char * data = (char*) ((dataSize>0) ? malloc(dataSize) : 0);
+      if (data) {
+        while (gotSize<dataSize) {
+          int got = mg_read(conn, data + gotSize, dataSize - gotSize);
+          if (got != dataSize) {
+            int breakpoint = 1;  // did not happen in the test
+          }
+          gotSize += got;
+        }
+        mg_write(conn, data, gotSize);
+        free(data);
+      }            
+    } else {
+      mg_printf(conn, "%s", request_info->request_method);
+    }
 
     pthread_mutex_unlock(&udata->mutex);
     return (void *)1;
