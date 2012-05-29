@@ -225,7 +225,7 @@ static const char *config_options[] = {
   "d", "enable_directory_listing", "yes",
   "e", "error_log_file", NULL,
   "g", "global_passwords_file", NULL,
-  "i", "index_files", "index.html,index.htm,index.cgi",
+  "i", "index_files", "index.html,index.htm,index.cgi,index.shtml,index.php",
   "k", "enable_keep_alive", "no",
   "K", "keep_alive_timeout", "5",
   "l", "access_control_list", NULL,
@@ -4845,7 +4845,8 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   buffered_len = conn->data_len - conn->request_len;
   assert(buffered_len >= 0);
 
-  if (conn->content_len == -1) {
+  if (conn->content_len <= 0) {
+    // Protect from negative Content-Length, too
     body_len = 0;
   } else if (conn->content_len < (int64_t) buffered_len) {
     body_len = (int) conn->content_len;
