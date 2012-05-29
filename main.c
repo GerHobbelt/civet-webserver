@@ -1,4 +1,4 @@
-// Copyright (c) 2004-2011 Sergey Lyubka
+// Copyright (c) 2004-2012 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -175,6 +175,13 @@ static void process_command_line_arguments(char *argv[], char **options) {
     // Loop over the lines in config file
     while (fgets(line, sizeof(line), fp) != NULL) {
 
+      if (!line_no && !memcmp(line,"\xEF\xBB\xBF",3)) {
+        // strip UTF-8 BOM
+        p = line+3;
+      } else {
+        p = line;
+      }
+
       line_no++;
 
       // Ignore empty lines (with optional, ignored, whitespace) and comments
@@ -214,12 +221,154 @@ static void init_server_name(void) {
            mg_version());
 }
 
+// example and test case for a callback
+// this callback creates a statistics of request methods and the requested uris
+// it is not ment as a feature but as a simple test case
+
+struct t_stat {
+  const char * name;
+  unsigned long getCount;
+  unsigned long postCount;
+  struct t_stat * next;
+};
+
+struct t_user_arg {   
+   pthread_mutex_t mutex;
+   struct t_stat * uris[0x10000];
+};
+
+unsigned short crc16(const void * data, unsigned long bitCount) {
+  unsigned short r = 0xFFFFu;
+	unsigned long i;
+  for (i=0;i<bitCount;i++) {
+    unsigned short b = ((unsigned char*)data)[i>>3];
+    b >>= i & 0x7ul;    
+    r = ((r & 1u) != (b & 1u)) ? ((r>>1) ^ 0xA001u) : (r>>1);
+  }
+  r ^= 0xFFFFu;
+  return r;
+}
+
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
+  int i;
+  struct t_user_arg * udata = (struct t_user_arg *)request_info->user_data;
+  const char * uri;
+  unsigned short crc;
+  struct t_stat ** st;
 
-  if (event == MG_NEW_REQUEST) {
-	struct mgstat st;
+  if (event != MG_NEW_REQUEST) {
+    // This callback currently only handles new requests
+    return NULL;
+  }
+
+  // This callback adds the request method and the uri to a list.
+  uri = mg_strdup(request_info->uri);
+  if (!uri) {
+    die("out of memory");
+  }
+
+  // In C++ one could use a STL-map. However, this is just a test case here.
+  crc = crc16(uri, (strlen(uri)+1)<<3);
+  st = &udata->uris[crc];
+
+  // This is a multithreaded system, so a mutex is required
+  pthread_mutex_lock(&udata->mutex);
+
+  while (*st) {
+    if (!strcmp((*st)->name, uri)) {      
+      break;
+    } else {
+      st = &((*st)->next);
+    }
+  }
+  if (*st == NULL) {
+    *st = (struct t_stat*) calloc(1, sizeof(struct t_stat));
+    if (!st) {
+      die("out of memory");
+    }
+    (*st)->name = uri;
+    (*st)->next = 0;
+  }
+  if (!strcmp(request_info->request_method, "GET")) {
+    (*st)->getCount++;
+  } else if (!strcmp(request_info->request_method, "POST")) {
+    (*st)->postCount++;
+  }
+
+  if (!strcmp(uri, "/_stat")) {
+    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Connection: close\r\n"
+              "Cache-Control: no-cache"
+              "Content-Type: text/html; charset=utf-8\r\n\r\n");
+    mg_printf(conn,
+              "<html><head><title>HTTP server statistics</title>"
+              "<style>th {text-align: left;}</style></head>"
+              "<body><h1>HTTP server statistics</h1>\r\n");
+
+    mg_printf(conn,
+              "<p><pre><table border=\"1\" rules=\"all\">"
+              "<tr><th>Resource</th>"
+              "<th>GET</th><th>POST</th></tr>\r\n");
+
+    for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
+      st = &udata->uris[i];
+      while (*st) {
+        mg_printf(conn, "<tr><td>%s</td><td>%u</td><td>%u</td></tr>\r\n",
+                  (*st)->name, (*st)->getCount, (*st)->postCount);
+        st = &((*st)->next);
+      }
+    }
+    
+    mg_printf(conn, "</table></pre></p></body></html>\r\n");
+
+    pthread_mutex_unlock(&udata->mutex);
+    return (void *)1;
+  } else if (!strcmp(uri, "/_echo")) {
+    const char * contentLength = mg_get_header(conn, "Content-Length");
+    const char * contentType = mg_get_header(conn, "Content-Type");
+
+    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Connection: close\r\n"
+              "Cache-Control: no-cache"
+              "Content-Type: text/plain; charset=utf-8\r\n\r\n");
+    
+    if (!strcmp(request_info->request_method, "POST")) {
+      int dataSize = atoi(contentLength);
+      int gotSize = 0;
+      char * data = (char*) ((dataSize>0) ? malloc(dataSize) : 0);
+      if (data) {
+        while (gotSize<dataSize) {
+          int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
+          if (gotNow != dataSize) {
+            // did not happen in the test for dataSize < 262144 
+            printf("POST /_echo: dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+            #if defined(WIN32)
+            Sleep(1000);
+            #else
+            sleep(1);
+            #endif
+          }
+          gotSize += gotNow;
+        }
+        mg_write(conn, data, gotSize);
+        free(data);
+      }            
+    } else {
+      mg_printf(conn, "%s", request_info->request_method);
+    }
+
+    pthread_mutex_unlock(&udata->mutex);
+    return (void *)1;
+  }
+
+  pthread_mutex_unlock(&udata->mutex);  
+
 	int file_found;
 
 	assert(request_info->phys_path);
@@ -227,7 +376,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	if (file_found) {
 	  return NULL; // let mongoose handle the default of 'file exists'...
 	}
-  }
 
 #ifdef _WIN32
   if (event == MG_NEW_REQUEST) {
@@ -292,8 +440,15 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGTERM, signal_handler);
   signal(SIGINT, signal_handler);
 
+  /* prepare the user_arg */
+  pUser_arg = (struct t_user_arg *)calloc(1, sizeof(struct t_user_arg));
+  if (!pUser_arg) {
+    die("out of memory");
+  }
+  pthread_mutex_init(&pUser_arg->mutex, 0);
+
   /* Start Mongoose */
-  ctx = mg_start(&userdef, (const char **)options);
+  ctx = mg_start(callback, pUser_arg, (const char **) options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
@@ -544,5 +699,4 @@ int main(int argc, char *argv[]) {
   return EXIT_SUCCESS;
 }
 #endif /* _WIN32 */
-
 

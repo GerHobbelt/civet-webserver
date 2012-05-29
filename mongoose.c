@@ -5158,11 +5158,27 @@ static void master_thread(struct mg_context *ctx) {
   // Increase priority of the master thread (issue #317)
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-#else
+#elif defined(MASTER_THREAD_SCHED_PRIORITY)
+  // fix: do not use the most time critical thread in the entire system
   struct sched_param sched_param;
-  sched_param.sched_priority = sched_get_priority_max(SCHED_RR);
-  pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
+  int min_prio = sched_get_priority_min(SCHED_RR);
+  int max_prio = sched_get_priority_max(SCHED_RR);
+  if ((min_prio >=0) && (max_prio >= 0) && 
+      (MASTER_THREAD_SCHED_PRIORITY <= max_prio) &&
+      (MASTER_THREAD_SCHED_PRIORITY >= min_prio)
+      ) {
+    struct sched_param sched_param = {0};
+    sched_param.sched_priority = MASTER_THREAD_SCHED_PRIORITY;
+    pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
+  }
 #endif
+  
+  // fix: issue 345 for the master thread (TODO: set the priority in the callback)
+  if (ctx->user_callback != NULL) {
+    memset(&request_info, 0, sizeof(request_info));
+    request_info.user_data = ctx->user_data;
+    ctx->user_callback(MG_ENTER_MASTER, (struct mg_connection *) 0, &request_info);
+  }
 
   while (ctx->stop_flag == 0) {
     FD_ZERO(&read_set);
@@ -5192,6 +5208,14 @@ static void master_thread(struct mg_context *ctx) {
       }
     }
   }
+
+  // fix: issue 345 for the master thread
+  if (ctx->user_callback != NULL) {
+    memset(&request_info, 0, sizeof(request_info));
+    request_info.user_data = ctx->user_data;
+    ctx->user_callback(MG_EXIT_MASTER, (struct mg_connection *) 0, &request_info);
+  }
+
   DEBUG_TRACE(("stopping workers"));
 
   // Stop signal received: somebody called mg_stop. Quit.
@@ -5221,6 +5245,13 @@ static void master_thread(struct mg_context *ctx) {
   ctx->stop_flag = 2;
 
   DEBUG_TRACE(("exiting"));
+
+  // fix: issue 345 for the master thread
+  if (ctx->user_callback != NULL) {
+    memset(&request_info, 0, sizeof(request_info));
+    request_info.user_data = ctx->user_data;
+    ctx->user_callback(MG_EXIT_SERVER, (struct mg_connection *) 0, &request_info);
+  }
 }
 
 static void free_context(struct mg_context *ctx) {
