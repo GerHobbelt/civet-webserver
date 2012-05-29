@@ -368,11 +368,17 @@ static void * callback(enum mg_event event, struct mg_connection *conn, const st
       char * data = (char*) ((dataSize>0) ? malloc(dataSize) : 0);
       if (data) {
         while (gotSize<dataSize) {
-          int got = mg_read(conn, data + gotSize, dataSize - gotSize);
-          if (got != dataSize) {
-            int breakpoint = 1;  // did not happen in the test
+          int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
+          if (gotNow != dataSize) {
+            // did not happen in the test for dataSize < 262144 
+            printf("POST /_echo: dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+            #if defined(WIN32)
+            Sleep(1000);
+            #else
+            sleep(1);
+            #endif
           }
-          gotSize += got;
+          gotSize += gotNow;
         }
         mg_write(conn, data, gotSize);
         free(data);

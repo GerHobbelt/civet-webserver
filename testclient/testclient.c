@@ -53,6 +53,7 @@ int WINAPI ClientMain(void * clientNo) {
   int isBody = 0;
   int isTest = (clientNo == 0);
   int cpu = ((int)clientNo) % 1000;
+  int timeOut = 10;
 
   if ((!isTest) && (((1<<cpu) & availableCPUs)!=0)) {
     SetThreadAffinityMask(GetCurrentThread(), 1<<cpu);
@@ -92,6 +93,7 @@ int WINAPI ClientMain(void * clientNo) {
   // "POST <postSize> bytes"
   sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE, HOST, postSize);
   {unsigned long i; for (i=0;i<postSize/10;i++) {sockprintf(soc, "1234567890");} for (i=0;i<postSize%10;i++) {sockprintf(soc, ".");}}
+  timeOut += postSize/10000;
 
   // "POST" with 2000 bytes of query string
   // sockprintf(soc, "POST %s?", RESOURCE);
@@ -132,7 +134,7 @@ int WINAPI ClientMain(void * clientNo) {
       }
     } else {
       time_t current = time(0);
-      if (difftime(current, lastData) > 10) break;
+      if (difftime(current, lastData) > timeOut) break;
     }
   }
 
@@ -272,7 +274,7 @@ int main(int argc, char * argv[]) {
   InitializeCriticalSectionAndSpinCount(&cs, 100000);
 
   /* Do the actual test here */
-  MultiClientTestAutomatic(1);
+  MultiClientTestAutomatic(200000);
   //SingleClientTestAutomatic();
 
   /* Cleanup */
