@@ -5174,11 +5174,7 @@ static void master_thread(struct mg_context *ctx) {
 #endif
   
   // fix: issue 345 for the master thread (TODO: set the priority in the callback)
-  if (ctx->user_callback != NULL) {
-    memset(&request_info, 0, sizeof(request_info));
-    request_info.user_data = ctx->user_data;
-    ctx->user_callback(MG_ENTER_MASTER, (struct mg_connection *) 0, &request_info);
-  }
+  call_user_over_ctx(ctx, 0, MG_ENTER_MASTER);
 
   while (ctx->stop_flag == 0) {
     FD_ZERO(&read_set);
@@ -5210,11 +5206,7 @@ static void master_thread(struct mg_context *ctx) {
   }
 
   // fix: issue 345 for the master thread
-  if (ctx->user_callback != NULL) {
-    memset(&request_info, 0, sizeof(request_info));
-    request_info.user_data = ctx->user_data;
-    ctx->user_callback(MG_EXIT_MASTER, (struct mg_connection *) 0, &request_info);
-  }
+  call_user_over_ctx(ctx, 0, MG_EXIT_MASTER);
 
   DEBUG_TRACE(("stopping workers"));
 
@@ -5247,11 +5239,7 @@ static void master_thread(struct mg_context *ctx) {
   DEBUG_TRACE(("exiting"));
 
   // fix: issue 345 for the master thread
-  if (ctx->user_callback != NULL) {
-    memset(&request_info, 0, sizeof(request_info));
-    request_info.user_data = ctx->user_data;
-    ctx->user_callback(MG_EXIT_SERVER, (struct mg_connection *) 0, &request_info);
-  }
+  call_user_over_ctx(ctx, 0, MG_EXIT_SERVER);
 }
 
 static void free_context(struct mg_context *ctx) {

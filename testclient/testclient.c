@@ -1,10 +1,10 @@
-#include <WinSock2.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <time.h>
+
+#include "mongoose_ex.h"
+#include "mongoose_sys_porting.h"
+
 
 char * HOST = "127.0.0.1";
-unsigned short PORT = 80;
+unsigned short PORT = 8081;
 // char * RESOURCE = "/ajax/echo.cgi";
 // char * RESOURCE = "/imagetest/00.png";
 // char * RESOURCE = "/args.cgi";

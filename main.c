@@ -44,8 +44,12 @@ static void WINCDECL signal_handler(int sig_num) {
 }
 
 static const char *default_options[] = {
-    "document_root",         "./html",
-    "listening_ports",       "8081",                         // "8081,8082s"
+#if defined(_MSC_VER)
+    "document_root",         "../../test",
+#else
+    "document_root",         "./test",
+#endif
+	"listening_ports",       "8081",                         // "8081,8082s"
     //"ssl_certificate",     "ssl_cert.pem",
     "num_threads",           "5",
     "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
@@ -253,7 +257,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
   int i;
-  struct t_user_arg * udata = (struct t_user_arg *)request_info->user_data;
+  struct t_user_arg * udata = (struct t_user_arg *)mg_get_user_data(ctx)->user_data;
   const char * uri;
   unsigned short crc;
   struct t_stat ** st;
@@ -271,10 +275,11 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
   // In C++ one could use a STL-map. However, this is just a test case here.
   crc = crc16(uri, (strlen(uri)+1)<<3);
-  st = &udata->uris[crc];
 
   // This is a multithreaded system, so a mutex is required
   pthread_mutex_lock(&udata->mutex);
+
+  st = &udata->uris[crc];
 
   while (*st) {
     if (!strcmp((*st)->name, uri)) {      
@@ -296,9 +301,10 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   } else if (!strcmp(request_info->request_method, "POST")) {
     (*st)->postCount++;
   }
+  pthread_mutex_unlock(&udata->mutex);
 
   if (!strcmp(uri, "/_stat")) {
-    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_connection_must_close(conn);
     mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
               "Connection: close\r\n"
@@ -314,6 +320,8 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
               "<tr><th>Resource</th>"
               "<th>GET</th><th>POST</th></tr>\r\n");
 
+    pthread_mutex_lock(&udata->mutex);
+
     for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
       st = &udata->uris[i];
       while (*st) {
@@ -322,16 +330,15 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
         st = &((*st)->next);
       }
     }
+    pthread_mutex_unlock(&udata->mutex);
     
     mg_printf(conn, "</table></pre></p></body></html>\r\n");
-
-    pthread_mutex_unlock(&udata->mutex);
     return (void *)1;
   } else if (!strcmp(uri, "/_echo")) {
     const char * contentLength = mg_get_header(conn, "Content-Length");
     const char * contentType = mg_get_header(conn, "Content-Type");
 
-    //conn->must_close = 1; <TODO: currently there is no way to set the close flag in the callback>
+    mg_connection_must_close(conn);
     mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
               "Connection: close\r\n"
@@ -363,22 +370,20 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       mg_printf(conn, "%s", request_info->request_method);
     }
 
-    pthread_mutex_unlock(&udata->mutex);
     return (void *)1;
   }
-
-  pthread_mutex_unlock(&udata->mutex);  
-
+  else
+  {
 	int file_found;
+	struct mgstat fst;
 
 	assert(request_info->phys_path);
-	file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
+	file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
 	if (file_found) {
 	  return NULL; // let mongoose handle the default of 'file exists'...
 	}
 
 #ifdef _WIN32
-  if (event == MG_NEW_REQUEST) {
     // Send the systray icon as favicon
     if (!strcmp("/favicon.ico", request_info->uri)) {
       HMODULE module;
@@ -403,8 +408,8 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       return "";
     }
-  }
 #endif
+  }
 
   return NULL;
 }
@@ -441,14 +446,17 @@ static void start_mongoose(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
 
   /* prepare the user_arg */
-  pUser_arg = (struct t_user_arg *)calloc(1, sizeof(struct t_user_arg));
-  if (!pUser_arg) {
-    die("out of memory");
+  {
+	struct t_user_arg *pUser_arg = (struct t_user_arg *)calloc(1, sizeof(struct t_user_arg));
+	if (!pUser_arg) {
+		die("out of memory");
+	}
+	pthread_mutex_init(&pUser_arg->mutex, 0);
+	userdef.user_data = pUser_arg;
   }
-  pthread_mutex_init(&pUser_arg->mutex, 0);
 
   /* Start Mongoose */
-  ctx = mg_start(callback, pUser_arg, (const char **) options);
+  ctx = mg_start(&userdef, (const char **)options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }

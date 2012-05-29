@@ -19,9 +19,9 @@
 // THE SOFTWARE.
 
 #ifndef MONGOOSE_HEADER_INCLUDED
-#define  MONGOOSE_HEADER_INCLUDED
+#define MONGOOSE_HEADER_INCLUDED
 
-#include <stddef.h>
+#include "mongoose_sys_porting.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,19 +29,34 @@ extern "C" {
 
 struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
+struct socket;         // Handle for the socket related to a client / server connection
 
+// The IP address: IPv4 or IPv6
+struct mg_ip_address {
+	unsigned is_ip6: 1; // flag: 1: struct contains an IPv6 address, 0: IPv4 address
+	union {
+		unsigned short int v4[4];
+		unsigned short int v6[8];
+	} ip_addr;
+};
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
-  void *user_data;       // User-defined pointer passed to mg_start()
-  char *request_method;  // "GET", "POST", etc
+  void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  const char *request_method;  // "GET", "POST", etc
   char *uri;             // URL-decoded URI
-  char *http_version;    // E.g. "1.0", "1.1"
+  char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
+  const char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // URL part after '?' (not including '?') or NULL
   char *remote_user;     // Authenticated user, or NULL if no auth used
-  char *log_message;     // Mongoose error log message, MG_EVENT_LOG only
-  long remote_ip;        // Client's IP address
+  const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
+  const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
+  const char *log_dstfile; // Mongoose preferred log file path, MG_EVENT_LOG only
+  time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
+  struct mg_ip_address remote_ip;        // Client's IP address
   int remote_port;       // Client's port
+  struct mg_ip_address local_ip;        // This machine's IP address which receives/services the request
+  int local_port;       // Server's port
   int status_code;       // HTTP reply status code, e.g. 200
   int is_ssl;            // 1 if SSL-ed, 0 if not
   int num_headers;       // Number of headers
