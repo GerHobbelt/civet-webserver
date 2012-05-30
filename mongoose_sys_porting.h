@@ -131,7 +131,13 @@ typedef long off_t;
 #define INT64_FMT  "I64d"
 
 #define WINCDECL __cdecl
-#define SHUT_WR 1
+
+#ifndef SHUT_WR
+#define SHUT_WR   SD_SEND
+#define SHUT_RD   SD_RECEIVE
+#define SHUT_RDWR SD_BOTH
+#endif
+
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
 #define mg_sleep(x) Sleep(x)

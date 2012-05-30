@@ -64,6 +64,12 @@ int mg_set_socket_keepalive(struct socket *sock, int on);
 // Set the read/write/user timeout on a socket.
 int mg_set_socket_timeout(struct socket *sock, int seconds);
 
+// set socket to non-blocking mode.
+int mg_set_non_blocking_mode(struct socket *sock, int on);
+
+// shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
+int mg_shutdown(struct socket *sock, int how);
+
 int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen);
 int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref);
 

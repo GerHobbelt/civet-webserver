@@ -56,6 +56,16 @@ int64_t mg_get_num_bytes_received(struct mg_connection *conn)
 	return conn ? conn->consumed_content : 0;
 }
 
+int mg_set_non_blocking_mode(struct socket *sock, int on)
+{
+	return sock ? !!set_non_blocking_mode(sock->sock, on) : -1;
+}
+
+int mg_shutdown(struct socket *sock, int how)
+{
+	return sock ? shutdown(sock->sock, how) : -1;
+}
+
 int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen)
 {
 	int rv = setsockopt(sock->sock, level, optname, optval, optlen);

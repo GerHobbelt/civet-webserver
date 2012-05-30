@@ -1852,9 +1852,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 }
 #endif // !NO_CGI
 
-static int set_non_blocking_mode(SOCKET sock) {
-  unsigned long on = 1;
-  return ioctlsocket(sock, FIONBIO, &on);
+static int set_non_blocking_mode(SOCKET sock, int on) {
+  unsigned long _on = !!on;
+  return ioctlsocket(sock, FIONBIO, &_on);
 }
 
 #else
@@ -1998,13 +1998,36 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 }
 #endif // !NO_CGI
 
-static int set_non_blocking_mode(SOCKET sock) {
-  int flags;
+static int set_non_blocking_mode(SOCKET sock, int on) {
+  int flags = -1;
 
+#if defined(FIONBIO) // VMS
+  flags = !!on;
+  flags = ioctl(sock, FIONBIO, &flags);
+#endif
+#if defined(SO_NONBLOCK) // BeOS et al
+  flags = !!on;
+  flags = setsockopt(sock, SOL_SOCKET, SO_NONBLOCK, &flags, sizeof(flags));
+#endif
+#if defined(F_GETFL)
   flags = fcntl(sock, F_GETFL, 0);
-  (void) fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-
-  return 0;
+  if (flags != -1) {
+#if defined(O_NONBLOCK)
+	if (on)
+	  flags |= O_NONBLOCK;
+	else
+	  flags &= ~O_NONBLOCK;
+#endif
+#if defined(F_NDELAY)
+	if (on)
+	  flags |= F_NDELAY;
+	else
+	  flags &= ~F_NDELAY;
+#endif
+    flags = fcntl(s, F_SETFL, flags);
+  }
+#endif
+  return flags;
 }
 #endif // _WIN32
 
@@ -2131,14 +2154,23 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
   int len;
   int rv;
 
-  len = mg_vasprintf(conn, &buf, 0, fmt, ap);
-
-  if (buf) {
-    rv = mg_write(conn, buf, (size_t)len);
-    free(buf);
+  // handle the special case where there's nothing to do in terms of formatting --> print without the malloc/speed penalty:
+  if (!strchr(fmt, '%'))
+  {
+    rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
-  } else {
-    return 0;
+  }
+  else
+  {
+    len = mg_vasprintf(conn, &buf, 0, fmt, ap);
+
+    if (buf) {
+      rv = mg_write(conn, buf, (size_t)len);
+      free(buf);
+      return (rv < 0 ? 0 : rv);
+    } else {
+      return 0;
+    }
   }
 }
 
@@ -4810,7 +4842,7 @@ static void close_socket_gracefully(SOCKET sock) {
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
-  set_non_blocking_mode(sock);
+  set_non_blocking_mode(sock, 1);
 
   // Read and discard pending data. If we do not do that and close the
   // socket, the data in the send buffer may be discarded. This
