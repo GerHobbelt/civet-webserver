@@ -252,7 +252,7 @@ unsigned short crc16(const void * data, unsigned long bitCount) {
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
-  const struct mg_request_info *request_info = mg_get_request_info(conn);
+  struct mg_request_info *request_info = mg_get_request_info(conn);
   int i;
   struct t_user_arg * udata = (struct t_user_arg *)mg_get_user_data(ctx)->user_data;
   const char * uri;
@@ -311,6 +311,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
   if (!strcmp(uri, "/_stat")) {
     mg_connection_must_close(conn);
+    request_info->status_code = 200;
     mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
               "Connection: close\r\n"
@@ -331,7 +332,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
       st = &udata->uris[i];
       while (*st) {
-        mg_printf(conn, "<tr><td>%s</td><td>%u</td><td>%u</td></tr>\r\n",
+        mg_printf(conn, "<tr><td>%s</td><td>%8u</td><td>%8u</td></tr>\r\n",
                   (*st)->name, (*st)->getCount, (*st)->postCount);
         st = &((*st)->next);
       }
@@ -345,6 +346,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     const char * contentType = mg_get_header(conn, "Content-Type");
 
     mg_connection_must_close(conn);
+    request_info->status_code = 200;
     mg_printf(conn,
               "HTTP/1.1 200 OK\r\n"
               "Connection: close\r\n"
@@ -407,6 +409,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					FD_ZERO(&read_set);
 					max_fd = -1;
 					assert(!"Should never get here");
+                    request_info->status_code = 590; // internal error in our custom handler
 					break;
 				}
 				else
@@ -438,6 +441,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 						{
 							// TODO: report failure to handle request after all
 							mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
+							request_info->status_code = 590; // internal error in our custom handler
 							break;
 						}
 						bufferFill = bufferSize - bufferFill;
@@ -470,6 +474,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 				if (bufferFill != wlen)
 				{
 					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
+                    request_info->status_code = 591; // internal error in our custom handler
 				}
 				bufferFill -= wlen;
 			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
@@ -507,6 +512,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
 
+      request_info->status_code = 200;
       (void) mg_printf(conn,
           "HTTP/1.1 200 OK\r\n"
           "Content-Type: image/x-icon\r\n"
@@ -514,9 +520,11 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
           "Content-Length: %u\r\n"
           "Connection: close\r\n\r\n", (unsigned int)len);
 
-      mg_send_data(conn, data, len);
-
-      return "";
+      if (len != mg_send_data(conn, data, len))
+	  {
+        request_info->status_code = 592; // internal error in our custom handler or client closed connection prematurely
+	  }
+      return (void *)1;
     }
 #endif
   }
