@@ -5274,7 +5274,7 @@ mg_signal_stop() instead.
 void mg_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 
-  // Wait until mg_fini() stops
+  // Wait until mg_finish() stops
   while (ctx->stop_flag != 2) {
     (void) mg_sleep(10);
   }

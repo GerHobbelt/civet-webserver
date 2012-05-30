@@ -44,11 +44,7 @@ static void WINCDECL signal_handler(int sig_num) {
 }
 
 static const char *default_options[] = {
-#if defined(_MSC_VER)
-    "document_root",         "../../test",
-#else
     "document_root",         "./test",
-#endif
 	"listening_ports",       "8081",                         // "8081,8082s"
     //"ssl_certificate",     "ssl_cert.pem",
     "num_threads",           "5",
@@ -350,20 +346,71 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       int gotSize = 0;
       char * data = (char*) ((dataSize>0) ? malloc(dataSize) : 0);
       if (data) {
-        while (gotSize<dataSize) {
-          int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
-          if (gotNow != dataSize) {
+        while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
+#if 0
+		  int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
+			mg_sleep(1);
+#else
+		  int gotNow = 0;
+		{
+			// check whether there's anything available:
+			fd_set read_set;
+			struct timeval tv;
+			int max_fd;
+
+			FD_ZERO(&read_set);
+			max_fd = -1;
+
+			tv.tv_sec = 1;
+			tv.tv_usec = 0;
+
+			while (mg_get_stop_flag(ctx) == 0)
+			{
+				struct timeval tv2 = tv;
+
+				FD_ZERO(&read_set);
+				max_fd = -1;
+
+				// Add listening sockets to the read set
+				mg_FD_SET(mg_get_client_socket(conn), &read_set, &max_fd);
+				if (select(max_fd + 1, &read_set, NULL, NULL, &tv2) < 0)
+				{
+					// signal a fatal failure:
+					// clear the handles sets to prevent 'surprises' from processing these a second time (below):
+					FD_ZERO(&read_set);
+					max_fd = -1;
+					assert(!"Should never get here");
+					break;
+				}
+				else
+				{
+					if (mg_FD_ISSET(mg_get_client_socket(conn), &read_set))
+					{
+						break;
+					}
+					max_fd = -1;
+				}
+			}
+	
+			if (max_fd >= 0)
+			{
+				// use mg_pull() instead when you're accessing custom protocol sockets
+				gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
+			}
+		}
+#endif
+		  if (gotNow != dataSize) {
             // did not happen in the test for dataSize < 262144 
-            printf("POST /_echo: dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
-            #if defined(WIN32)
-            Sleep(1000);
-            #else
-            sleep(1);
-            #endif
+            mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+			if (gotNow == 0)
+			{
+				mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ABORT*** at dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+				break;
+			}
           }
           gotSize += gotNow;
         }
-        mg_write(conn, data, gotSize);
+        mg_send_data(conn, data, gotSize);
         free(data);
       }            
     } else {
@@ -414,6 +461,31 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   return NULL;
 }
 
+#if defined(_WIN32)
+ 
+static BOOL WINAPI mg_win32_break_handler(DWORD signal_type) 
+{ 
+  switch(signal_type) 
+  { 
+    // Handle the CTRL-C signal. 
+    case CTRL_C_EVENT: 
+    // CTRL-CLOSE: confirm that the user wants to exit. 
+    case CTRL_CLOSE_EVENT: 
+    case CTRL_BREAK_EVENT: 
+      exit_flag = 1000 + signal_type;
+	  //mg_signal_stop(ctx);
+      return TRUE; 
+ 
+    // Pass other signals to the next handler. 
+    case CTRL_LOGOFF_EVENT: 
+    case CTRL_SHUTDOWN_EVENT: 
+    default: 
+      return FALSE; 
+  } 
+} 
+ 
+#endif
+
 static void start_mongoose(int argc, char *argv[]) {
     char *options[MAX_OPTIONS * 2] = { NULL };
     int i;
@@ -444,6 +516,18 @@ static void start_mongoose(int argc, char *argv[]) {
   /* Setup signal handler: quit on Ctrl-C */
   signal(SIGTERM, signal_handler);
   signal(SIGINT, signal_handler);
+  signal(SIGABRT, signal_handler);
+  signal(SIGILL, signal_handler);
+  signal(SIGSEGV, signal_handler);
+  signal(SIGFPE, signal_handler);
+  // SIGINT and SIGTERM are pretty darn useless for Win32 applications.
+  // See http://msdn.microsoft.com/en-us/library/ms685049%28VS.85%29.aspx
+#if defined(_WIN32)
+  if (!SetConsoleCtrlHandler(mg_win32_break_handler, TRUE))
+  {
+	die("Failed to set up the Win32 console Ctrl-Break handler.");
+  }
+#endif
 
   /* prepare the user_arg */
   {
@@ -698,7 +782,7 @@ int main(int argc, char *argv[]) {
   while (exit_flag == 0 && !mg_get_stop_flag(ctx)) {
     mg_sleep(10);
   }
-    printf("Exiting on signal %d/%d, waiting for all threads to finish...",
+  printf("Exiting on signal %d/%d, waiting for all threads to finish...",
         exit_flag, mg_get_stop_flag(ctx));
   fflush(stdout);
   mg_stop(ctx);
