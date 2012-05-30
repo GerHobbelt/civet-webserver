@@ -19,6 +19,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_authentication_sam
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_service", "3rdparty_mongoose_service.vcxproj", "{B839D0D3-DDB2-6B19-7A3A-D62F3C392775}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_testclient", "3rdparty_mongoose_testclient.vcxproj", "{ED53E956-7B6B-930B-2891-FA3A0BB4999C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Itanium = Debug|Itanium
@@ -275,6 +277,35 @@ Global
 		{B839D0D3-DDB2-6B19-7A3A-D62F3C392775}.Upskirt|Win32.ActiveCfg = Release|x64
 		{B839D0D3-DDB2-6B19-7A3A-D62F3C392775}.Upskirt|x64.ActiveCfg = Release|x64
 		{B839D0D3-DDB2-6B19-7A3A-D62F3C392775}.Upskirt|x64.Build.0 = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|Itanium.ActiveCfg = Debug|Itanium
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|Itanium.Build.0 = Debug|Itanium
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|Pocket PC 2003 (ARMV4).ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|Win32.ActiveCfg = Debug|Win32
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|Win32.Build.0 = Debug|Win32
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|x64.ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Debug|x64.Build.0 = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.DebugDll|Itanium.ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.DebugDll|Pocket PC 2003 (ARMV4).ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.DebugDll|Win32.ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.DebugDll|x64.ActiveCfg = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.DebugDll|x64.Build.0 = Debug|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|Itanium.ActiveCfg = Release|Itanium
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|Itanium.Build.0 = Release|Itanium
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|Pocket PC 2003 (ARMV4).ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|Win32.ActiveCfg = Release|Win32
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|Win32.Build.0 = Release|Win32
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|x64.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Release|x64.Build.0 = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.ReleaseDll|Itanium.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.ReleaseDll|Pocket PC 2003 (ARMV4).ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.ReleaseDll|Win32.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.ReleaseDll|x64.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.ReleaseDll|x64.Build.0 = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Upskirt|Itanium.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Upskirt|Pocket PC 2003 (ARMV4).ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Upskirt|Win32.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Upskirt|x64.ActiveCfg = Release|x64
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C}.Upskirt|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -288,6 +319,7 @@ Global
 		{EA5F0641-E39B-58D2-DD85-D0C2A75323B1} = {A49FBF42-AA78-4459-B83B-201271B73458}
 		{5D84E396-F92C-ED8C-256D-65567155C477} = {A49FBF42-AA78-4459-B83B-201271B73458}
 		{B839D0D3-DDB2-6B19-7A3A-D62F3C392775} = {A49FBF42-AA78-4459-B83B-201271B73458}
+		{ED53E956-7B6B-930B-2891-FA3A0BB4999C} = {A49FBF42-AA78-4459-B83B-201271B73458}
 	EndGlobalSection
 	GlobalSection(DPCodeReviewSolutionGUID) = preSolution
 		DPCodeReviewSolutionGUID = {00000000-0000-0000-0000-000000000000}
