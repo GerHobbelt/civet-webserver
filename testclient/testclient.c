@@ -36,52 +36,159 @@ int sockprintf(SOCKET soc, const char * fmt, ...) {
   return ret;
 }
 
-static char *source_data_buffer = NULL;
-static size_t source_data_size = 0;
-static char *source_query_data_buffer = NULL;
-static size_t source_query_data_size = 0;
+static int volatile bugger_off = 0;
+static int verbose = 1;
 
-static void send_dummy_data(SOCKET soc, size_t len)
+typedef struct io_info
 {
-	size_t i, l;
+	int clientNo;
+	size_t totalData;
+	size_t postSize;
+	int isBody;
+	time_t lastData;
+	int timeOut;
+
+	const char *fake_output_databuf;
+	size_t fake_output_databuf_size;
+
+} io_info_t;
+
+static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
+{
+    char buf[65536];
+    int chunkSize = 0;
+    unsigned long dataReady = 0;
+	FD_SET fds, fdw;
+	struct timeval tv;
+	int srv;
+
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+
+	FD_ZERO(&fds);
+	FD_SET(soc, &fds);
+	FD_ZERO(&fdw);
+	if (we_re_writing_too)
+	{
+		FD_SET(soc, &fdw);
+	}
+	srv = select(1, &fds, (we_re_writing_too ? &fdw : 0), 0, &tv);
+	if (bugger_off)
+	{
+		if (verbose <= 1) fputc('~', stdout);
+		else if (verbose > 1) printf("Closing prematurely: server is taking too long to our taste: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+		return -1;
+	}
+
+    if (ioctlsocket(soc, FIONREAD, &dataReady) < 0) 
+	{
+		if (verbose || 1) fputc('@', stdout);
+		return -1;
+	}
+    if (dataReady) {
+	  if (verbose > 1) fputc('+', stdout); // see a bit of action around here...
+	  // fetch all the pending RX data pronto:
+	  do
+	  {
+		  chunkSize = recv(soc, buf, sizeof(buf), 0);
+		  if (chunkSize<0) {
+			printf("Error: recv failed for client %i: %d/%d\r\n", io->clientNo, chunkSize, GetLastError());
+			return -1;
+		  } else if (!io->isBody) {
+			char * headEnd = strstr(buf,"\xD\xA\xD\xA");
+			if (headEnd) {
+			  headEnd+=4;
+			  chunkSize -= ((int)headEnd - (int)buf);
+			  if (chunkSize>0) {
+				io->totalData += chunkSize;
+				if (verbose > 2) printf("r:%d/%d\n", (int)chunkSize, (int)io->totalData);
+				//fwrite(headEnd,1,got,STORE);
+			  }
+			  io->isBody = 1;
+			}
+		  } else {
+			io->totalData += chunkSize;
+			if (verbose > 2) printf("R:%d/%d\n", (int)chunkSize, (int)io->totalData);
+			//fwrite(buf,1,got,STORE);
+		  }
+		  dataReady -= chunkSize;
+	  } while (dataReady > 0 && chunkSize > 0);
+	  io->lastData = time(0);
+    } else {
+      time_t current = time(0);
+	  if (verbose > 1) fputc('.', stdout); // see a bit of action around here...
+      if (difftime(current, io->lastData) > io->timeOut) 
+	  {
+        printf("Error: request timed out for client %i\r\n", io->clientNo);
+		return -1;
+	  }
+	  if (!FD_ISSET(soc, &fdw))
+	  {
+		  if (srv == 1)
+		  {
+			  // server closed connection:
+			  if (verbose <= 1) fputc('#', stdout);
+			  else if (verbose > 1) printf("Server close: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+			return -1;
+		  }
+		  else 
+		  {
+			  // server crash / abortus provocatus?
+			printf("Abortus Provocatus?: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+			return -1;
+		  }
+	  }
+    }
+	return 0;
+}
+
+
+static void send_dummy_data(SOCKET soc, io_info_t *io)
+{
+	size_t i, l, len = io->postSize;
+	const char *s = io->fake_output_databuf;
+
+	l = len;
+	if (l > io->fake_output_databuf_size)
+		l = io->fake_output_databuf_size;
 
 	for (i = len; i > 0; ) 
 	{
 		int rv;
 
-		l = i;
-		if (l > source_data_size)
-			l = source_data_size;
-		rv = send(soc, source_data_buffer, l, 0);
+		if (l == 0)
+		{
+			l = i;
+			if (l > io->fake_output_databuf_size)
+				l = io->fake_output_databuf_size;
+			s = io->fake_output_databuf;
+		}
+			
+		rv = send(soc, s, l, 0);
 		if (rv <= 0)
 		{
 			printf("**BONK**! in send_dummy_data(): %d/%d\a\n", rv, GetLastError());
 			return;
 		}
 		i -= rv;
-	} 
-}
+		s += rv;
+		l -= rv;
 
-static void send_dummy_query_data(SOCKET soc, size_t len)
-{
-	size_t i, l;
-
-	for (i = len; i > 0; ) 
-	{
-		int rv;
-
-		l = i;
-		if (l > source_query_data_size)
-			l = source_query_data_size;
-		rv = send(soc, source_query_data_buffer, l, 0);
-		if (rv <= 0)
+		// fetch all the data available for reading already;
+		// we ASSUME that ding so will be good enough in that we don't worry
+		// about lockup in sockprintf() et al, since those are only writing
+		// (and the server might be stream-echoing back to us), yet our
+		// flushing of the RX buffers here by slurping should suffice to keep
+		// the stack going (and NOT locking due to completely filled buffers!)
+		// as long as those sockprintf() buffers aren't pushing too much data...
+		if (slurp_data(soc, 1, io) < 0)
 		{
-			printf("**BONK**! in send_dummy_query_data()\a\n");
+			printf("**BONK #2**! in send_dummy_data(): %d/%d\a\n", rv, GetLastError());
 			return;
 		}
-		i -= l;
 	} 
 }
+
 
 static struct sockaddr_in target = {0};
 static CRITICAL_SECTION cs = {0};
@@ -91,20 +198,29 @@ static DWORD_PTR totalCPUs = 1;
 static unsigned good = 0;
 static unsigned bad = 0;
 static unsigned long postSize = 0;
-static int verbose = 1;
-static int volatile bugger_off = 0;
 static int testcase = 35;
+
+static char *source_data_buffer = NULL;
+static size_t source_data_size = 0;
+static char *source_query_data_buffer = NULL;
+static size_t source_query_data_size = 0;
 
 
 int WINAPI ClientMain(void * clientNo) {
 
   SOCKET soc;
-  time_t lastData;
-  size_t totalData = 0;
-  int isBody = 0;
   int isTest = (clientNo == 0);
   int cpu = ((int)clientNo) % 64; /* Win32: max 64 processors possible for affinity mask!!! See the Win32 API docs. */
-  int timeOut = 10;
+  io_info_t io = {0};
+
+  io.clientNo = (int)clientNo;
+  io.fake_output_databuf = source_data_buffer;
+  io.fake_output_databuf_size = source_data_size;
+  io.isBody = 0;
+  io.lastData = time(0);
+  io.postSize = postSize;
+  io.timeOut = 10;
+  io.totalData = 0;
 
   if ((!isTest) && (((1ULL<<cpu) & availableCPUs)!=0)) {
     SetThreadAffinityMask(GetCurrentThread(), 1ULL<<cpu);
@@ -112,16 +228,12 @@ int WINAPI ClientMain(void * clientNo) {
 
   soc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (soc==INVALID_SOCKET) {
-    EnterCriticalSection(&cs);
     printf("\r\nClient %u cannot create socket\a\r\n", (int)clientNo);
-    LeaveCriticalSection(&cs);
     return 1;
   }
 
   if (connect(soc, (SOCKADDR*)&target, sizeof(target))) {
-    EnterCriticalSection(&cs);
     printf("\r\nClient %u cannot connect to server %s:%u\a\r\n", (int)clientNo, HOST, PORT);
-    LeaveCriticalSection(&cs);
     return 2;
   }
 
@@ -151,7 +263,7 @@ int WINAPI ClientMain(void * clientNo) {
   case 15:
 	  // "GET" with <postSize> bytes extra head data
 	  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST);
-	  send_dummy_data(soc, postSize);
+	  send_dummy_data(soc, &io);
 	  sockprintf(soc, "BuggerIt: Millennium-Hand-And-Shrimp!\r\n\r\n");
 	  break;
 
@@ -162,7 +274,9 @@ int WINAPI ClientMain(void * clientNo) {
   case 25:
 	  // "GET" with <postSize> bytes of query string
 	  sockprintf(soc, "GET %s?", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)]);
-	  send_dummy_query_data(soc, postSize);
+	  io.fake_output_databuf = source_query_data_buffer;
+	  io.fake_output_databuf_size = source_query_data_size;
+	  send_dummy_data(soc, &io);
 	  sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", HOST);
 	  break;
 
@@ -172,9 +286,9 @@ int WINAPI ClientMain(void * clientNo) {
   case 34:
   case 35:
 	  // "POST <postSize> bytes"
-	  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST, postSize);
-	  send_dummy_data(soc, postSize);
-	  timeOut += postSize/10000;
+	  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST, io.postSize);
+	  send_dummy_data(soc, &io);
+	  io.timeOut += io.postSize/10000;
 	  break;
 
   case 41:
@@ -184,7 +298,9 @@ int WINAPI ClientMain(void * clientNo) {
   case 45:
 	  // "POST" with <postSize> bytes of query string
 	  sockprintf(soc, "POST %s?", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)]);
-	  send_dummy_query_data(soc, postSize);
+	  io.fake_output_databuf = source_query_data_buffer;
+	  io.fake_output_databuf_size = source_query_data_size;
+	  send_dummy_data(soc, &io);
 	  sockprintf(soc, " HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: 0\r\n\r\n", HOST);
 	  break;
   }
@@ -208,95 +324,29 @@ int WINAPI ClientMain(void * clientNo) {
   (void) shutdown(soc, SHUT_WR);
   //mg_set_non_blocking_mode(soc, 1);
 
-  lastData = time(0);
+  //io.lastData = time(0);
   for (;;) {
-    char buf[2048];
-    int chunkSize = 0;
-    unsigned long dataReady = 0;
-	FD_SET fds;
-	struct timeval tv;
-	int srv;
-
-	tv.tv_sec = 10;
-	tv.tv_usec = 0;
-
-	FD_ZERO(&fds);
-	FD_SET(soc, &fds);
-	srv = select(1, &fds, 0, 0, &tv);
-	if (bugger_off)
+	if (slurp_data(soc, 0, &io) < 0)
 	{
-		if (verbose <= 1) fputc('~', stdout);
-		else if (verbose > 1) printf("Closing prematurely: server is taking too long to our taste: client %i --> %u/%u\r\n", (int)clientNo, (unsigned int)totalData, (unsigned int)postSize);
 		break;
 	}
-
-    if (ioctlsocket(soc, FIONREAD, &dataReady) < 0) 
-	{
-		if (verbose || 1) fputc('@', stdout);
-		break;
-	}
-    if (dataReady) {
-	  if (verbose > 1) fputc('+', stdout); // see a bit of action around here...
-      chunkSize = recv(soc, buf, sizeof(buf), 0);
-      if (chunkSize<0) {
-        printf("Error: recv failed for client %i: %d/%d\r\n", (int)clientNo, chunkSize, GetLastError());
-        break;
-      } else if (!isBody) {
-        char * headEnd = strstr(buf,"\xD\xA\xD\xA");
-        if (headEnd) {
-          headEnd+=4;
-          chunkSize -= ((int)headEnd - (int)buf);
-          if (chunkSize>0) {
-            totalData += chunkSize;
-			if (verbose > 2) printf("r:%d/%d\n", (int)chunkSize, (int)totalData);
-            lastData = time(0);
-            //fwrite(headEnd,1,got,STORE);
-          }
-          isBody=1;
-        }
-      } else {
-        totalData += chunkSize;
-		if (verbose > 2) printf("R:%d/%d\n", (int)chunkSize, (int)totalData);
-        lastData = time(0);
-        //fwrite(buf,1,got,STORE);
-      }
-    } else {
-      time_t current = time(0);
-	  if (verbose > 1) fputc('.', stdout); // see a bit of action around here...
-      if (difftime(current, lastData) > timeOut) 
-	  {
-        printf("Error: request timed out for client %i\r\n", (int)clientNo);
-		break;
-	  }
-	  if (srv == 1)
-	  {
-		  // server closed connection:
-		  if (verbose <= 1) fputc('#', stdout);
-		  else if (verbose > 1) printf("Server close: client %i --> %u/%u\r\n", (int)clientNo, (unsigned int)totalData, (unsigned int)postSize);
-		break;
-	  }
-	  else 
-	  {
-		  // server crash / abortus provocatus?
-        printf("Abortus Provocatus?: client %i --> %u/%u\r\n", (int)clientNo, (unsigned int)totalData, (unsigned int)postSize);
-		break;
-	  }
-    }
   }
 
   closesocket(soc);
 
-  EnterCriticalSection(&cs);
   if (isTest) {
-	if (verbose > 2) printf("RR:%d\n", (int)totalData);
-    expectedData = totalData;
-  } else if (totalData != expectedData) {
-    printf("Error: Client %i got %u bytes instead of %u\r\n", (int)clientNo, (unsigned int)totalData, (unsigned int)expectedData);
+	if (verbose > 2) printf("RR:%d\n", (int)io.totalData);
+    expectedData = io.totalData;
+  } else if (io.totalData != expectedData) {
+    printf("Error: Client %i got %u bytes instead of %u\r\n", io.clientNo, (unsigned int)io.totalData, (unsigned int)expectedData);
+    EnterCriticalSection(&cs);
     bad++;
+    LeaveCriticalSection(&cs);
   } else {
+    EnterCriticalSection(&cs);
     good++;
+    LeaveCriticalSection(&cs);
   }
-  LeaveCriticalSection(&cs);
 
   return 0;
 }
@@ -310,7 +360,7 @@ void RunMultiClientTest(int loop) {
 
   for (i=0;i<CLIENTCOUNT;i++) {
     DWORD dummy;
-    hThread[i] = CreateThread(NULL, 1024*32, (LPTHREAD_START_ROUTINE)ClientMain, (void*)(1000*loop+i), 0, &dummy);
+    hThread[i] = CreateThread(NULL, 65536 + 1024*32, (LPTHREAD_START_ROUTINE)ClientMain, (void*)(1000*loop+i), 0, &dummy);
   }
 
   res = WaitForMultipleObjects(CLIENTCOUNT, hThread, TRUE, 15000);
@@ -331,7 +381,6 @@ void RunMultiClientTest(int loop) {
   }
   for (i=0;i<CLIENTCOUNT;i++) {
     if (hThread[i]) {
-      EnterCriticalSection(&cs);
 #if 0
 	  SuspendThread(hThread[i]); // -> check this thread in the debugger
 #else
@@ -344,13 +393,9 @@ void RunMultiClientTest(int loop) {
 		}
 #endif
 		printf("Thread %i did not finish in time!\r\n", (int)(1000*loop+i));
-
-      LeaveCriticalSection(&cs);
     }
   }
-  EnterCriticalSection(&cs);
   printf("Test cycle %u completed\r\n\r\n", loop);
-  LeaveCriticalSection(&cs);
 }
 
 
@@ -363,6 +408,7 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
 
   do {
     printf("Preparing test with %u bytes of data ...", postSize);
+	expectedData = 0;
     ClientMain(0);
     if (expectedData==0) {
       printf(" Error: Could not read any data\a\r\n");
@@ -392,26 +438,41 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
 }
 
 
-int SingleClientTestAutomatic(void) {
+int SingleClientTestAutomatic(unsigned long initialPostSize) {
 
   FILE        * log;
   int           cycle;
-  int           i;
 
-  postSize = 0;
-  for (cycle=0;;cycle++) {
+  postSize = initialPostSize;
+
+  do {
+    printf("Preparing test with %u bytes of data ...", postSize);
+	expectedData = 0;
+    ClientMain(0);
+    if (expectedData==0) {
+      printf(" Error: Could not read any data\a\r\n");
+      return 1;
+    }
+    printf(" OK: %u bytes of data\r\n", expectedData);
+    printf("Starting single client test: %i cycles\r\n\r\n", (int)TESTCYCLES);
     good=bad=0;
-    for (i=0;i<1000;i++) {
-      expectedData=3;
+
+    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
       ClientMain((void*)1);
     }
+
+    printf("\r\n--------\r\n%u errors\r\n%u OK\r\n--------\r\n\r\n", bad, good);
     log = fopen("testclient.log", "at");
     if (log) {
-      fprintf(log, "Cycle<%u>\t%u\t%u\r\n", cycle, good, bad);
+      fprintf(log, "%u\t%u\t%u\r\n", postSize, good, bad);
       fclose(log);
     }
-    printf("test cycle %u: %u good, %u bad\r\n", cycle, good, bad);
-  }
+	Sleep(1000);
+
+    postSize = (postSize!=0) ? (postSize<<1) : 1;
+
+  } while (postSize!=0);
+
 
   return 0;
 }
@@ -440,7 +501,7 @@ int main(int argc, char * argv[]) {
   GetProcessAffinityMask(GetCurrentProcess(), &availableCPUs, &totalCPUs);
   printf("CPUs (bit masks): process=%x, system=%x\r\n", availableCPUs, totalCPUs);
 
-  InitializeCriticalSectionAndSpinCount(&cs, 100000);
+  InitializeCriticalSectionAndSpinCount(&cs, 100);
 
   /* set up the data buffer for fast I/O */
   source_data_size = 1024 * 1024;
@@ -475,8 +536,14 @@ int main(int argc, char * argv[]) {
   }
 
   /* Do the actual test here */
-  MultiClientTestAutomatic(200);
-  //SingleClientTestAutomatic();
+	if (0)
+	{
+		MultiClientTestAutomatic(200);
+	}
+	else
+	{
+		SingleClientTestAutomatic(200);
+	}
 
   /* Cleanup */
   DeleteCriticalSection(&cs);
