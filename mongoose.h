@@ -230,6 +230,9 @@ const char *mg_version(void);
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
 
+//returns latest error message printed by 'cry' function
+//call this function if mg_start returned NULL to get error details
+const char* mg_error();
 
 #ifdef __cplusplus
 }

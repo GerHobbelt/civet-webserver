@@ -259,6 +259,9 @@ typedef void * (*mg_thread_func_t)(void *);
 
 static const char *http_500_error = "Internal Server Error";
 
+//keeps latest error message printed by 'cry' function
+static char last_error[BUFSIZ];
+
 // Snatched from OpenSSL includes. I put the prototypes here to be independent
 // from the OpenSSL source installation. Having this, mongoose + SSL can be
 // built on any system with binary SSL libraries installed.
@@ -539,6 +542,9 @@ static void cry(struct mg_connection *conn, const char *fmt, ...) {
   va_start(ap, fmt);
   (void) vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
+  
+  //store error message in global variable
+  strcpy(last_error,buf);
 
   // Do not lock when getting the callback value, here and below.
   // I suppose this is fine, since function cannot disappear in the
@@ -3788,7 +3794,16 @@ static void uninitialize_ssl(struct mg_context *ctx) {
 static int set_gpass_option(struct mg_context *ctx) {
   struct mgstat mgstat;
   const char *path = ctx->config[GLOBAL_PASSWORDS_FILE];
-  return path == NULL || mg_stat(path, &mgstat) == 0;
+  
+  if(path == NULL) return 1;
+  
+  if(mg_stat(path, &mgstat)==0){
+    return 1;
+  }else{
+    cry(fc(ctx), "%s: global passwords file \"%s\" error: %s", __func__, path, strerror(ERRNO));
+    return 0;
+  }
+  
 }
 
 static int set_acl_option(struct mg_context *ctx) {
@@ -4252,4 +4267,9 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   }
 
   return ctx;
+}
+
+const char* mg_error()
+{
+  return last_error;
 }
