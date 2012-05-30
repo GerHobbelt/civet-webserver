@@ -13,9 +13,47 @@ static const char * RESOURCE[] = {
 	"/_echo"
 };
 
-#define CLIENTCOUNT 20
-#define TESTCYCLES 5
+static int CLIENTCOUNT = 20;
+static int TESTCYCLES = 50;
 
+static int keypress = 0;
+
+int is_quit_key_pressed(void)
+{
+    HANDLE inHandle = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD numEvents = 0;
+    DWORD numEventsRead = 0;
+    INPUT_RECORD e[128] = {0};
+	int bingo = 0;
+
+    GetNumberOfConsoleInputEvents(inHandle, &numEvents);
+    if (numEvents != 0) 
+	{
+		DWORD i;
+
+		if (!keypress)
+		{
+			ReadConsoleInput(inHandle, e, numEvents, &numEventsRead);
+			for (i = 0; i < numEventsRead; i++) 
+			{
+				if (e[i].EventType == KEY_EVENT
+					&& e[i].Event.KeyEvent.bKeyDown
+					&& e[i].Event.KeyEvent.uChar.AsciiChar
+					&& strchr("qQxX", e[i].Event.KeyEvent.uChar.AsciiChar))
+				{
+					keypress = bingo = e[i].Event.KeyEvent.uChar.AsciiChar;
+					break;
+				}
+			}
+		}
+		else
+		{
+			bingo = keypress;
+		}
+        FlushConsoleInputBuffer(inHandle);
+    }
+	return bingo;
+}
 
 int sockvprintf(SOCKET soc, const char * fmt, va_list vl) {
 
@@ -73,6 +111,8 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 		FD_SET(soc, &fdw);
 	}
 	srv = select(1, &fds, (we_re_writing_too ? &fdw : 0), 0, &tv);
+	if (is_quit_key_pressed()) 
+		bugger_off = 2;
 	if (bugger_off)
 	{
 		if (verbose <= 1) fputc('~', stdout);
@@ -193,6 +233,7 @@ static void send_dummy_data(SOCKET soc, io_info_t *io)
 static struct sockaddr_in target = {0};
 static CRITICAL_SECTION cs = {0};
 static size_t expectedData = 0;
+static size_t previously_expectedData = 0;
 static DWORD_PTR availableCPUs = 1;
 static DWORD_PTR totalCPUs = 1;
 static unsigned good = 0;
@@ -226,6 +267,12 @@ int WINAPI ClientMain(void * clientNo) {
     SetThreadAffinityMask(GetCurrentThread(), 1ULL<<cpu);
   }
 
+	if (is_quit_key_pressed()) 
+	{
+		bugger_off = 2;
+		return 3;
+	}
+
   soc = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (soc==INVALID_SOCKET) {
     printf("\r\nClient %u cannot create socket\a\r\n", (int)clientNo);
@@ -244,6 +291,12 @@ int WINAPI ClientMain(void * clientNo) {
 	setsockopt(soc, SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
   }
 
+	if (is_quit_key_pressed()) 
+	{
+		bugger_off = 2;
+		return 3;
+	}
+
   // Comment in just one of these test cases
   switch (testcase)
   {
@@ -253,7 +306,14 @@ int WINAPI ClientMain(void * clientNo) {
   case 4:
   case 5:
 	  // "GET"
+	  if (isTest)
+		  printf("\n    GET %s\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)]);
 	  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST);
+	  if (isTest)
+	  {
+		  // hack to make sure we're not looping this test type forever: there's no change whatsoever anyway caused by postSize here...
+		  previously_expectedData = INT32_MAX;
+	  }
 	  break;
 
   case 11:
@@ -262,6 +322,8 @@ int WINAPI ClientMain(void * clientNo) {
   case 14:
   case 15:
 	  // "GET" with <postSize> bytes extra head data
+	  if (isTest)
+		  printf("\n    GET %s  with <%u> bytes extra head data\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], (unsigned int)io.postSize);
 	  sockprintf(soc, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST);
 	  send_dummy_data(soc, &io);
 	  sockprintf(soc, "BuggerIt: Millennium-Hand-And-Shrimp!\r\n\r\n");
@@ -273,6 +335,8 @@ int WINAPI ClientMain(void * clientNo) {
   case 24:
   case 25:
 	  // "GET" with <postSize> bytes of query string
+	  if (isTest)
+		  printf("\n    GET %s  with <%u> bytes of query string\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], (unsigned int)io.postSize);
 	  sockprintf(soc, "GET %s?", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)]);
 	  io.fake_output_databuf = source_query_data_buffer;
 	  io.fake_output_databuf_size = source_query_data_size;
@@ -286,6 +350,8 @@ int WINAPI ClientMain(void * clientNo) {
   case 34:
   case 35:
 	  // "POST <postSize> bytes"
+	  if (isTest)
+		  printf("\n    POST %s with <%u> bytes\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], (unsigned int)io.postSize);
 	  sockprintf(soc, "POST %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\nContent-Length: %u\r\n\r\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], HOST, io.postSize);
 	  send_dummy_data(soc, &io);
 	  io.timeOut += io.postSize/10000;
@@ -297,6 +363,8 @@ int WINAPI ClientMain(void * clientNo) {
   case 44:
   case 45:
 	  // "POST" with <postSize> bytes of query string
+	  if (isTest)
+		  printf("\n    POST %s with <%u> bytes of query string\n", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)], (unsigned int)io.postSize);
 	  sockprintf(soc, "POST %s?", RESOURCE[(testcase - 1) % ARRAY_SIZE(RESOURCE)]);
 	  io.fake_output_databuf = source_query_data_buffer;
 	  io.fake_output_databuf_size = source_query_data_size;
@@ -351,12 +419,13 @@ int WINAPI ClientMain(void * clientNo) {
   return 0;
 }
 
-
 void RunMultiClientTest(int loop) {
 
-  HANDLE hThread[CLIENTCOUNT] = {0};
+  HANDLE *hThread = calloc(CLIENTCOUNT, sizeof(hThread[0]));
   int i;
   DWORD res;
+
+  bugger_off = 0;
 
   for (i=0;i<CLIENTCOUNT;i++) {
     DWORD dummy;
@@ -396,6 +465,8 @@ void RunMultiClientTest(int loop) {
     }
   }
   printf("Test cycle %u completed\r\n\r\n", loop);
+
+  free(hThread);
 }
 
 
@@ -407,7 +478,14 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
   postSize = initialPostSize;
 
   do {
+	if (is_quit_key_pressed()) 
+	{
+		bugger_off = 2;
+		break;
+	}
+
     printf("Preparing test with %u bytes of data ...", postSize);
+	previously_expectedData = expectedData;
 	expectedData = 0;
     ClientMain(0);
     if (expectedData==0) {
@@ -430,6 +508,12 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
     }
 	Sleep(1000);
 
+	if (previously_expectedData >= expectedData && previously_expectedData != 0)
+	{
+		// no change / deterioration in test case: stop the incrementing runs
+		break;
+	}
+
     postSize = (postSize!=0) ? (postSize<<1) : 1;
 
   } while (postSize!=0);
@@ -446,7 +530,14 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
   postSize = initialPostSize;
 
   do {
+	if (is_quit_key_pressed()) 
+	{
+		bugger_off = 2;
+		break;
+	}
+
     printf("Preparing test with %u bytes of data ...", postSize);
+	previously_expectedData = expectedData;
 	expectedData = 0;
     ClientMain(0);
     if (expectedData==0) {
@@ -469,6 +560,12 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
     }
 	Sleep(1000);
 
+	if (previously_expectedData >= expectedData && previously_expectedData != 0)
+	{
+		// no change / deterioration in test case: stop the incrementing runs
+		break;
+	}
+
     postSize = (postSize!=0) ? (postSize<<1) : 1;
 
   } while (postSize!=0);
@@ -482,6 +579,26 @@ int main(int argc, char * argv[]) {
 
   WSADATA       wsaData = {0};
   HOSTENT     * lpHost = 0;
+  int desired_testcase = (argc > 1 ? atoi(argv[1]) : 0);
+	
+  if (argc > 1 && !strcmp(argv[1], "-h"))
+  {
+	  printf(""
+		"commandline arguments:\n"
+		"\n"
+		"  [testcase] [client count] [test cycles]\n"
+		"\n"
+		"defaults:\n"
+		"\n"
+		"  0 %d %d\n"
+		"\n"
+		"  where testcase==0 means: ALL testcases.\n",
+	CLIENTCOUNT, TESTCYCLES);
+	  exit(1);
+  }
+
+  CLIENTCOUNT = (argc > 2 ? atoi(argv[2]) : CLIENTCOUNT);
+  TESTCYCLES = (argc > 3 ? atoi(argv[3]) : TESTCYCLES);
 
   if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR) {
     printf("\r\nCannot init WinSock\a\r\n");
@@ -536,7 +653,18 @@ int main(int argc, char * argv[]) {
   }
 
   /* Do the actual test here */
-	if (0)
+  for (testcase = (desired_testcase ? desired_testcase : 1); testcase < 50; testcase++)
+  {
+	  printf("\n====================================================================\n"
+		       "                   Performing test scenario #%d\n"
+		       "           (Press [Q] or [X] to abort the test scenario)\n"
+		       "====================================================================\n\n",
+			   testcase);
+
+	  keypress = 0;
+	  previously_expectedData = 0;
+
+	if (CLIENTCOUNT > 1)
 	{
 		MultiClientTestAutomatic(200);
 	}
@@ -544,6 +672,10 @@ int main(int argc, char * argv[]) {
 	{
 		SingleClientTestAutomatic(200);
 	}
+
+	if (desired_testcase)
+		break;
+  }
 
   /* Cleanup */
   DeleteCriticalSection(&cs);
