@@ -40,6 +40,7 @@ static struct mg_context *ctx;      // Set by start_mongoose()
 #endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num) {
+	fprintf(stderr, "\nsignal: %d\n", sig_num);
   exit_flag = sig_num;
 }
 
@@ -223,7 +224,7 @@ static void init_server_name(void) {
 
 // example and test case for a callback
 // this callback creates a statistics of request methods and the requested uris
-// it is not ment as a feature but as a simple test case
+// it is not meant as a feature but as a simple test case
 
 struct t_stat {
   const char * name;
@@ -258,16 +259,23 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   unsigned short crc;
   struct t_stat ** st;
 
+#if 0 // 01 if you want to see when the custom code is entered
+  printf("%d: %s: %s\n", (int)event, request_info->request_method, request_info->uri);
+#endif
+
+#if 0
+  if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
+  {
+	printf("Boom?\n");
+  }
+#endif
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;
   }
 
   // This callback adds the request method and the uri to a list.
-  uri = mg_strdup(request_info->uri);
-  if (!uri) {
-    die("out of memory");
-  }
+  uri = request_info->uri;
 
   // In C++ one could use a STL-map. However, this is just a test case here.
   crc = crc16(uri, (strlen(uri)+1)<<3);
@@ -285,8 +293,10 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     }
   }
   if (*st == NULL) {
+    uri = mg_strdup(uri);
     *st = (struct t_stat*) calloc(1, sizeof(struct t_stat));
-    if (!st) {
+    if (!st || !uri) {
+      pthread_mutex_unlock(&udata->mutex);
       die("out of memory");
     }
     (*st)->name = uri;
@@ -342,10 +352,24 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
               "Content-Type: text/plain; charset=utf-8\r\n\r\n");
     
     if (!strcmp(request_info->request_method, "POST")) {
-      int dataSize = atoi(contentLength);
-      int gotSize = 0;
-      char * data = (char*) ((dataSize>0) ? malloc(dataSize) : 0);
+      long int dataSize = atol(contentLength);
+#if 0
+	  int bufferSize = (dataSize > 1024 * 1024 ? 1024 * 1024 : (int)dataSize);
+#else
+	  int bufferSize = (int)dataSize;
+#endif
+	  long int gotSize = 0;
+	  int bufferFill = 0;
+      char * data = (char*) ((dataSize>0) ? malloc(bufferSize) : 0);
       if (data) {
+		mg_set_non_blocking_mode(mg_get_client_socket(conn), 1);
+		{
+			const int tcpbuflen = 1 * 1024 * 1024;
+
+			mg_setsockopt(mg_get_client_socket(conn), SOL_SOCKET, SO_RCVBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+			mg_setsockopt(mg_get_client_socket(conn), SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+		}
+
         while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
 #if 0
 		  int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
@@ -373,6 +397,9 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
 				// Add listening sockets to the read set
 				mg_FD_SET(mg_get_client_socket(conn), &read_set, &max_fd);
+#if 0 // 01 if you want to see when the custom code is entered (and whether if is waiting or not at the select() below)
+				printf("x:%ld/%ld\n", gotSize, dataSize);
+#endif
 				if (select(max_fd + 1, &read_set, NULL, NULL, &tv2) < 0)
 				{
 					// signal a fatal failure:
@@ -395,22 +422,58 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 			if (max_fd >= 0)
 			{
 				// use mg_pull() instead when you're accessing custom protocol sockets
-				gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
+				long int len = dataSize - gotSize;
+				unsigned long int readLen = 0;
+				if (len > bufferSize - bufferFill)
+					len = bufferSize - bufferFill;
+				gotNow = mg_read(conn, data + bufferFill, len);
+				if (gotNow > 0)
+				{
+					bufferFill += gotNow;
+					if (bufferFill == bufferSize && bufferSize != dataSize)
+					{
+						//printf("w:%d/%d/%ld\n", gotNow, bufferSize, gotSize);
+						bufferFill = mg_send_data(conn, data, bufferSize);
+						if (bufferFill < 0)
+						{
+							// TODO: report failure to handle request after all
+							mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
+							break;
+						}
+						bufferFill = bufferSize - bufferFill;
+					}
+				}
 			}
-		}
+#if 0 // 01 if you want to see when the custom code is fetching data
+			printf("r:%d/%d\n", max_fd, gotNow);
 #endif
-		  if (gotNow != dataSize) {
-            // did not happen in the test for dataSize < 262144 
-            mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+		  }
+#endif
 			if (gotNow == 0)
 			{
-				mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ABORT*** at dataSize=%u, gotNow=%u, gotSize=%u\n", dataSize, gotNow, gotSize);
+				mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
 				break;
 			}
-          }
           gotSize += gotNow;
         }
-        mg_send_data(conn, data, gotSize);
+		mg_set_non_blocking_mode(mg_get_client_socket(conn), 0);
+//		printf("NB:%d\n", bufferFill);
+		//mg_send_data(conn, data, gotSize);
+		if (bufferFill > 0)
+		{
+			int wlen;
+
+			do
+			{
+				//printf("W:%d/%d/%ld\n", bufferSize, bufferFill, gotSize);
+				wlen = mg_send_data(conn, data, bufferFill);
+				if (bufferFill != wlen)
+				{
+					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
+				}
+				bufferFill -= wlen;
+			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
+		}
         free(data);
       }            
     } else {
@@ -465,6 +528,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
  
 static BOOL WINAPI mg_win32_break_handler(DWORD signal_type) 
 { 
+	fprintf(stderr, "\nbreak handler: %d\n", signal_type);
   switch(signal_type) 
   { 
     // Handle the CTRL-C signal. 
@@ -786,7 +850,7 @@ int main(int argc, char *argv[]) {
         exit_flag, mg_get_stop_flag(ctx));
   fflush(stdout);
   mg_stop(ctx);
-  printf("%s", " done.\n");
+  printf(" done.\n");
 
   return EXIT_SUCCESS;
 }
