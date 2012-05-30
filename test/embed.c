@@ -41,6 +41,7 @@ static void test_get_var(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
 
   buf_len = 0;
   var = buf = NULL;
@@ -77,6 +78,7 @@ static void test_get_header(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
   printf("HTTP headers: %d\n", ri->num_headers);
   for (i = 0; i < ri->num_headers; i++) {
     printf("[%s]: [%s]\n", ri->http_headers[i].name, ri->http_headers[i].value);
@@ -93,6 +95,7 @@ static void test_get_request_info(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
 
   mg_printf(conn, "Method: [%s]\n", ri->request_method);
   mg_printf(conn, "URI: [%s]\n", ri->uri);
@@ -126,6 +129,7 @@ static void test_error(struct mg_connection *conn) {
 
   mg_printf(conn, "HTTP/1.1 %d XX\r\n"
             "Connection: close\r\n\r\n", ri->status_code);
+  mg_mark_end_of_header_transmission(conn);
   mg_printf(conn, "Error: [%d]", ri->status_code);
 }
 
@@ -136,6 +140,8 @@ static void test_post(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
+
   if (strcmp(ri->request_method, "POST") == 0 &&
       (cl = mg_get_header(conn, "Content-Length")) != NULL) {
     len = atoi(cl);

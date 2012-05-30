@@ -11,6 +11,7 @@ static void *callback(enum mg_event event,
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/plain\r\n\r\n"
               "%s", ri->uri);
+    mg_mark_end_of_header_transmission(conn);
     return "";  // Mark as processed
   } else {
     return NULL;

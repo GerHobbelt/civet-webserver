@@ -57,11 +57,14 @@ login_page(struct mg_connection *conn)
         mg_printf(conn, "HTTP/1.1 301 Moved Permanently\r\n"
             "Location: %s\r\n"
             "Set-Cookie: allow=yes; Path=/;\r\n\r\n", uri);
+        mg_mark_end_of_header_transmission(conn);
     } else {
         /* Print login page */
         mg_printf(conn, "HTTP/1.1 200 OK\r\n"
 			"Set-Cookie: allow=no; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;\r\n" /* destroy cookie if it exists already */
-            "content-Type: text/html\r\n\r\n"
+            "content-Type: text/html\r\n\r\n");
+        mg_mark_end_of_header_transmission(conn);
+        mg_printf(conn, ""
             "Please login (enter admin/admin to pass)<br>"
             "<form method=post>"
             "Name: <input type=text name=name></input><br/>"
@@ -101,6 +104,7 @@ authorize(struct mg_connection *conn)
         mg_printf(conn, "HTTP/1.1 301 Moved Permanently\r\n"
             "Set-Cookie: uri=%s;\r\n"
             "Location: /login\r\n\r\n", ri->uri);
+        mg_mark_end_of_header_transmission(conn);
     }
 	return 1;
 }

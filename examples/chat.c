@@ -137,6 +137,7 @@ static void ajax_get_messages(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", ajax_reply_start);
+  mg_mark_end_of_header_transmission(conn);
   is_jsonp = handle_jsonp(conn, ri);
 
   get_qsvar(ri, "last_id", last_id, sizeof(last_id));
@@ -173,6 +174,7 @@ static void ajax_send_message(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
   mg_printf(conn, "%s", ajax_reply_start);
+  mg_mark_end_of_header_transmission(conn);
   is_jsonp = handle_jsonp(conn, ri);
 
   get_qsvar(ri, "text", text, sizeof(text));
@@ -205,6 +207,7 @@ static void redirect_to_login(struct mg_connection *conn) {
       "Set-Cookie: original_url=%s\r\n"
       "Location: %s\r\n\r\n",
       ri->uri, login_url);
+  mg_mark_end_of_header_transmission(conn);
 }
 
 // Return 1 if username/password is allowed, 0 otherwise.
@@ -285,6 +288,7 @@ static void authorize(struct mg_connection *conn) {
         "Set-Cookie: original_url=/; max-age=0\r\n"  // Delete original_url
         "Location: /\r\n\r\n",
         session->session_id, session->user);
+    mg_mark_end_of_header_transmission(conn);
   } else {
     // Authentication failure, redirect to login.
     redirect_to_login(conn);
@@ -325,8 +329,11 @@ static void redirect_to_ssl(struct mg_connection *conn) {
     mg_printf(conn, "HTTP/1.1 302 Found\r\n"
               "Location: https://%.*s:8082/%s:8082\r\n\r\n",
               p - host, host, ri->uri);
+    mg_mark_end_of_header_transmission(conn);
   } else {
-    mg_printf(conn, "%s", "HTTP/1.1 500 Error\r\n\r\nHost: header is not set");
+    mg_printf(conn, "%s", "HTTP/1.1 500 Error\r\n\r\n");
+    mg_mark_end_of_header_transmission(conn);
+    mg_printf(conn, "%s", "Host: header is not set");
   }
 }
 

@@ -317,6 +317,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
               "Connection: close\r\n"
               "Cache-Control: no-cache"
               "Content-Type: text/html; charset=utf-8\r\n\r\n");
+    mg_mark_end_of_header_transmission(conn);
     mg_printf(conn,
               "<html><head><title>HTTP server statistics</title>"
               "<style>th {text-align: left;}</style></head>"
@@ -352,6 +353,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
               "Connection: close\r\n"
               "Cache-Control: no-cache"
               "Content-Type: text/plain; charset=utf-8\r\n\r\n");
+    mg_mark_end_of_header_transmission(conn);
     
     if (!strcmp(request_info->request_method, "POST")) {
       long int dataSize = atol(contentLength);
@@ -436,7 +438,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					if (bufferFill == bufferSize && bufferSize != dataSize)
 					{
 						//printf("w:%d/%d/%ld\n", gotNow, bufferSize, gotSize);
-						bufferFill = mg_send_data(conn, data, bufferSize);
+						bufferFill = mg_write(conn, data, bufferSize);
 						if (bufferFill < 0)
 						{
 							// TODO: report failure to handle request after all
@@ -462,7 +464,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
         }
 		mg_set_non_blocking_mode(mg_get_client_socket(conn), 0);
 //		printf("NB:%d\n", bufferFill);
-		//mg_send_data(conn, data, gotSize);
+		//mg_write(conn, data, gotSize);
 		if (bufferFill > 0)
 		{
 			int wlen;
@@ -470,7 +472,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 			do
 			{
 				//printf("W:%d/%d/%ld\n", bufferSize, bufferFill, gotSize);
-				wlen = mg_send_data(conn, data, bufferFill);
+				wlen = mg_write(conn, data, bufferFill);
 				if (bufferFill != wlen)
 				{
 					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
@@ -520,8 +522,9 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
           "Cache-Control: no-cache\r\n"
           "Content-Length: %u\r\n"
           "Connection: close\r\n\r\n", (unsigned int)len);
+      mg_mark_end_of_header_transmission(conn);
 
-      if (len != mg_send_data(conn, data, len))
+      if (len != mg_write(conn, data, len))
 	  {
         request_info->status_code = 580; // internal error in our custom handler or client closed connection prematurely
 	  }

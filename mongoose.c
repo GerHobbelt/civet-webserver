@@ -270,7 +270,7 @@ struct mg_connection {
   SSL *ssl;                   // SSL descriptor
   struct socket client;       // Connected client
   time_t birth_time;          // Time connection was accepted
-  int64_t num_bytes_sent;     // Total bytes sent to client
+  int64_t num_bytes_sent;     // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
   int64_t content_len;        // Content-Length header value
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
@@ -1313,7 +1313,9 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     mg_printf(conn, "Content-Length: %d\r\n"
               "Connection: %s\r\n\r\n", len,
 	          suggest_connection_header(conn));
-	conn->num_bytes_sent += mg_printf(conn, "%s", buf);
+
+	mg_mark_end_of_header_transmission(conn);
+	mg_printf(conn, "%s", buf);
   }
 }
 
@@ -2135,17 +2137,22 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   return nread;
 }
 
-int mg_send_data(struct mg_connection *conn, const void *buf, size_t len) {
-	int rv = mg_write(conn, buf, len);
-	if (rv > 0) {
-		conn->num_bytes_sent += rv;
-	}
-	return rv;
+void mg_mark_end_of_header_transmission(struct mg_connection *conn) {
+	// incidentally, current total header length would now equal (-1 - conn->num_bytes_sent)
+	if (conn && conn->num_bytes_sent < 0)
+		conn->num_bytes_sent = 0;
 }
 
 int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
-  return (int) push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
+  int rv = (int) push(NULL, conn->client.sock, conn->ssl, (const char *) buf,
                     (int64_t) len);
+  if (rv > 0) {
+    if (conn->num_bytes_sent < 0)
+	  conn->num_bytes_sent -= rv; // count as header data
+	else 
+	  conn->num_bytes_sent += rv; // count as content data
+  }
+  return rv;
 }
 
 int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) 
@@ -3024,6 +3031,7 @@ static void send_authorization_request(struct mg_connection *conn) {
       "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
       conn->ctx->config[AUTHENTICATION_DOMAIN],
       (unsigned long) time(NULL));
+  mg_mark_end_of_header_transmission(conn);
 }
 
 static int is_authorized_for_put(struct mg_connection *conn) {
@@ -3154,7 +3162,7 @@ static void print_dir_entry(struct de *de) {
   }
   (void) strftime(mod, sizeof(mod), "%d-%b-%Y %H:%M", localtime(&de->st.mtime));
   url_encode(de->file_name, href, sizeof(href));
-  de->conn->num_bytes_sent += mg_printf(de->conn,
+  mg_printf(de->conn,
       "<tr><td><a href=\"%s%s%s\">%s%s</a></td>"
       "<td>&nbsp;%s</td><td>&nbsp;&nbsp;%s</td></tr>\n",
       de->conn->request_info.uri, href, de->st.is_directory ? "/" : "",
@@ -3273,8 +3281,8 @@ static void handle_directory_request(struct mg_connection *conn,
             "HTTP/1.1 200 OK\r\n"
             "Connection: close\r\n"
             "Content-Type: text/html; charset=utf-8\r\n\r\n");
-
-  conn->num_bytes_sent += mg_printf(conn,
+  mg_mark_end_of_header_transmission(conn);
+  mg_printf(conn,
       "<html><head><title>Index of %s</title>"
       "<style>th {text-align: left;}</style></head>"
       "<body><h1>Index of %s</h1><pre><table cellpadding=\"0\">"
@@ -3286,7 +3294,7 @@ static void handle_directory_request(struct mg_connection *conn,
       sort_direction, sort_direction, sort_direction);
 
   // Print first entry - link to a parent directory
-  conn->num_bytes_sent += mg_printf(conn,
+  mg_printf(conn,
       "<tr><td><a href=\"%s%s\">%s</a></td>"
       "<td>&nbsp;%s</td><td>&nbsp;&nbsp;%s</td></tr>\n",
       conn->request_info.uri, "..", "Parent directory", "-", "-");
@@ -3300,7 +3308,7 @@ static void handle_directory_request(struct mg_connection *conn,
   }
   free(data.entries);
 
-  conn->num_bytes_sent += mg_printf(conn, "%s", "</table></body></html>");
+  mg_printf(conn, "%s", "</table></body></html>");
   conn->request_info.status_code = 200;
 }
 
@@ -3323,7 +3331,7 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
 	}
 
     // Send read bytes to the client, exit the loop on error
-    if ((num_written = mg_send_data(conn, buf, (size_t)num_read)) != num_read)
+    if ((num_written = mg_write(conn, buf, (size_t)num_read)) != num_read)
 	{
       conn->request_info.status_code = 580; // signal internal error or premature close by client in access log file at least
       break;
@@ -3396,6 +3404,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
       "%s\r\n",
       conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code), date, lm, etag, (int) mime_vec.len,
       mime_vec.ptr, cl, suggest_connection_header(conn), range);
+  mg_mark_end_of_header_transmission(conn);
 
   if (strcmp(conn->request_info.request_method, "HEAD") != 0) {
     send_file_data(conn, fp, cl);
@@ -3550,6 +3559,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   } else {
     if (expect != NULL) {
       (void) mg_printf(conn, "%s", "HTTP/1.1 100 Continue\r\n\r\n");
+      mg_mark_end_of_header_transmission(conn);
     }
 
     buffered = conn->buf + conn->request_len;
@@ -3856,9 +3866,10 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
               ri.http_headers[i].name, ri.http_headers[i].value);
   }
   (void) mg_write(conn, "\r\n", 2);
+  mg_mark_end_of_header_transmission(conn);
 
   // Send chunk of data that may be read after the headers
-  (void) mg_send_data(conn, buf + headers_len,
+  (void) mg_write(conn, buf + headers_len,
                       (size_t)(data_len - headers_len));
 
   // Read the rest of CGI output and send to the client
@@ -3934,6 +3945,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
 
   if ((rc = put_dir(path)) == 0) {
     mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n", conn->request_info.status_code);
+    mg_mark_end_of_header_transmission(conn);
   } else if (rc == -1) {
     send_http_error(conn, 500, NULL,
         "put_dir(%s): %s", path, mg_strerror(ERRNO));
@@ -3949,9 +3961,11 @@ static void put_file(struct mg_connection *conn, const char *path) {
       // TODO(lsm): handle seek error
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
-    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL))
+    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL)) {
       (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
           conn->request_info.status_code);
+      mg_mark_end_of_header_transmission(conn);
+	}
     (void) mg_fclose(fp);
   }
 }
@@ -4058,7 +4072,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       assert(len <= (int) sizeof(buf));
       if (len < ssi_start.len + 1 || memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
         // Not an SSI tag, pass it
-        (void) mg_send_data(conn, buf, (size_t)len);
+        (void) mg_write(conn, buf, (size_t)len);
       } else {
         if (!memcmp(buf + ssi_start.len, "include", 7)) {
           do_ssi_include(conn, path, buf + ssi_start.len + 7, include_level);
@@ -4083,14 +4097,14 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
     } else if (ch == ssi_start.ptr[0]) {
       in_ssi_tag = 1;
       if (len > 0) {
-        (void) mg_send_data(conn, buf, (size_t)len);
+        (void) mg_write(conn, buf, (size_t)len);
       }
       len = 0;
       buf[len++] = ch & 0xff;
     } else {
       buf[len++] = ch & 0xff;
       if (len == (int) sizeof(buf)) {
-        (void) mg_send_data(conn, buf, (size_t)len);
+        (void) mg_write(conn, buf, (size_t)len);
         len = 0;
       }
     }
@@ -4098,7 +4112,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
 
   // Send the rest of buffered data
   if (len > 0) {
-    (void) mg_send_data(conn, buf, (size_t)len);
+    (void) mg_write(conn, buf, (size_t)len);
   }
 }
 
@@ -4116,6 +4130,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
               suggest_connection_header(conn));
+    mg_mark_end_of_header_transmission(conn);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
   }
@@ -4128,6 +4143,7 @@ static void send_options(struct mg_connection *conn) {
       "HTTP/1.1 200 OK\r\n"
       "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS\r\n"
       "DAV: 1\r\n\r\n");
+  mg_mark_end_of_header_transmission(conn);
 }
 
 // Writes PROPFIND properties for a collection element
@@ -4135,7 +4151,7 @@ static void print_props(struct mg_connection *conn, const char* uri,
                         struct mgstat* st) {
   char mtime[64];
   gmt_time_string(mtime, sizeof(mtime), &st->mtime);
-  conn->num_bytes_sent += mg_printf(conn,
+  mg_printf(conn,
       "<d:response>"
        "<d:href>%s</d:href>"
        "<d:propstat>"
@@ -4170,8 +4186,9 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
             "Connection: close\r\n"
             "Content-Type: text/xml; charset=utf-8\r\n\r\n");
+  mg_mark_end_of_header_transmission(conn);
 
-  conn->num_bytes_sent += mg_printf(conn,
+  mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
       "<d:multistatus xmlns:d='DAV:'>\n");
 
@@ -4185,7 +4202,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
     scan_directory(conn, path, conn, &print_dav_dir_entry);
   }
 
-  conn->num_bytes_sent += mg_printf(conn, "%s\n", "</d:multistatus>");
+  mg_printf(conn, "%s\n", "</d:multistatus>");
 }
 
 // This is the heart of the Mongoose's logic.
@@ -4239,6 +4256,7 @@ static void handle_request(struct mg_connection *conn) {
     (void) mg_printf(conn,
         "HTTP/1.1 301 Moved Permanently\r\n"
         "Location: %s/\r\n\r\n", ri->uri);
+    mg_mark_end_of_header_transmission(conn);
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -4568,11 +4586,14 @@ static void log_access(struct mg_connection *conn) {
   flockfile(fp);
 
   sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
-  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %" INT64_FMT,
+  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" INT64_FMT "%s",
           src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
           ri->request_method ? ri->request_method : "-",
           ri->uri ? ri->uri : "-", ri->http_version,
-          conn->request_info.status_code, conn->num_bytes_sent);
+          conn->request_info.status_code, 
+		  (conn->num_bytes_sent < 0 ? "(" : ""),
+		  (conn->num_bytes_sent < 0 ? -1 - conn->num_bytes_sent : conn->num_bytes_sent),
+		  (conn->num_bytes_sent < 0 ? ")" : ""));
   log_header(conn, "Referer", fp);    // http://en.wikipedia.org/wiki/HTTP_referer
   log_header(conn, "User-Agent", fp);
   (void) fputc('\n', fp);
@@ -4828,7 +4849,8 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->num_headers = 0;
   ri->status_code = -1;
 
-  conn->num_bytes_sent = conn->consumed_content = 0;
+  conn->num_bytes_sent = -1;
+  conn->consumed_content = 0;
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
   conn->must_close = 0;
@@ -4944,6 +4966,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
   }
   // End of headers, final newline
   mg_write(conn->peer, "\r\n", 2);
+  mg_mark_end_of_header_transmission(conn->peer);
 
   // Read and forward body data if any
   if (!strcmp(ri->request_method, "POST")) {
@@ -4953,7 +4976,7 @@ static void handle_proxy_request(struct mg_connection *conn) {
   // Read data from the target and forward it to the client
   while ((n = pull(NULL, conn->peer->client.sock, conn->peer->ssl,
                    buf, sizeof(buf))) > 0) {
-    if (mg_send_data(conn, buf, (size_t)n) != n) {
+    if (mg_write(conn, buf, (size_t)n) != n) {
       break;
     }
   }

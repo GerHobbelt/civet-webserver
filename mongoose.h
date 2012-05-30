@@ -251,12 +251,11 @@ int mg_modify_passwords_file(const char *passwords_file_name,
 // Send data to the client.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
-// Similar to mg_write(): send content data to the client, but here we
-// update the connection statistics to ensure mongoose can write a 
-// correct access log line for this request.
-// 
-// Note: Hence do not use to write header data to the client.
-int mg_send_data(struct mg_connection *conn, const void *buf, size_t len);
+// Mark the end of the tranmission of HTTP headers.
+//
+// Use this before proceeding and writing content data if you want your 
+// access log to show the correct (actual) number.
+void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 
 // Send data to the browser using printf() semantics.
 //

@@ -48,7 +48,7 @@ struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
 
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn)
 {
-	return conn ? conn->num_bytes_sent : 0;
+	return conn ? conn->num_bytes_sent > 0 ? conn->num_bytes_sent : 0 : 0;
 }
 
 int64_t mg_get_num_bytes_received(struct mg_connection *conn)
