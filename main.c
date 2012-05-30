@@ -409,7 +409,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					FD_ZERO(&read_set);
 					max_fd = -1;
 					assert(!"Should never get here");
-                    request_info->status_code = 590; // internal error in our custom handler
+                    request_info->status_code = 579; // internal error in our custom handler
 					break;
 				}
 				else
@@ -441,7 +441,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 						{
 							// TODO: report failure to handle request after all
 							mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
-							request_info->status_code = 590; // internal error in our custom handler
+							request_info->status_code = 579; // internal error in our custom handler
 							break;
 						}
 						bufferFill = bufferSize - bufferFill;
@@ -474,9 +474,10 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 				if (bufferFill != wlen)
 				{
 					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
-                    request_info->status_code = 591; // internal error in our custom handler
+                    request_info->status_code = 580; // internal error in our custom handler
 				}
-				bufferFill -= wlen;
+				if (wlen > 0)
+					bufferFill -= wlen;
 			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
 		}
         free(data);
@@ -522,7 +523,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       if (len != mg_send_data(conn, data, len))
 	  {
-        request_info->status_code = 592; // internal error in our custom handler or client closed connection prematurely
+        request_info->status_code = 580; // internal error in our custom handler or client closed connection prematurely
 	  }
       return (void *)1;
     }

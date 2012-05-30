@@ -3317,12 +3317,17 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
 
     // Read from file, exit the loop on error
     if ((num_read = fread(buf, 1, (size_t)to_read, fp)) == 0)
+	{
+      conn->request_info.status_code = 578; // signal internal error in access log file at least
       break;
+	}
 
     // Send read bytes to the client, exit the loop on error
     if ((num_written = mg_send_data(conn, buf, (size_t)num_read)) != num_read)
+	{
+      conn->request_info.status_code = 580; // signal internal error or premature close by client in access log file at least
       break;
-
+	}
     // Both read and write were successful, adjust counters
     len -= num_written;
   }
@@ -5495,6 +5500,9 @@ const char *mg_get_response_code_text(int response_code)
 	case 510:   return "Not Extended";
 */
 	case 577:   return "Mongoose Internal Server Error";
+	case 578:   return "Mongoose Internal Server Error: file I/O";
+	case 579:   return "Mongoose Internal Server Error: socket I/O";
+	case 580:   return "Mongoose Internal Server Error or client closed connetion prematurely";
 
 	default:   return "Unknown Response Code";
 	}
