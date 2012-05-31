@@ -352,13 +352,10 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     mg_mark_end_of_header_transmission(conn);
 
 	mg_printf(conn,	"Received headers:\r\n");
-	for (i = 0; i < ARRAY_SIZE(request_info->http_headers); i++)
+	for (i = 0; i < request_info->num_headers; i++)
 	{
-		if (request_info->http_headers[i].name)
-		{
-			mg_printf(conn,	"Header[%d]: '%s' = '%s'\r\n", 
-				i, request_info->http_headers[i].name, request_info->http_headers[i].value);
-		}
+		mg_printf(conn,	"Header[%d]: '%s' = '%s'\r\n", 
+			i, request_info->http_headers[i].name, request_info->http_headers[i].value);
 	}
 	mg_printf(conn,	"----- info bits ------\r\n");
 	mg_printf(conn,	"URL: [%s]\r\n", request_info->uri);
