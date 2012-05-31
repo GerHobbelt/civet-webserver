@@ -635,7 +635,7 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
 
 int atoi_def(const char *val, int def)
 {
-	int rv = atoi(val);
+	int rv = (val ? atoi(val) : 0);
 
 	if (rv < 1)
 		return def;
