@@ -1286,25 +1286,25 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   if (fmt != NULL)
   {
     custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
-	if (custom_len > 0)
-	{
-	  buf[len++] ='\t';
-	  len += custom_len;
-	}
+    if (custom_len > 0)
+    {
+      buf[len++] ='\t';
+      len += custom_len;
+    }
   }
 
   conn->request_info.status_code = status;
   conn->request_info.status_custom_description = buf;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
-	char *p;
-	if (conn->request_info.status_custom_description)
+    char *p;
+    if (conn->request_info.status_custom_description)
       len = strlen(conn->request_info.status_custom_description);
-	else
-	  conn->request_info.status_custom_description = buf;
-	p = strchr(conn->request_info.status_custom_description, '\t');
-	if (p)
-	  *p = 0;
+    else
+      conn->request_info.status_custom_description = buf;
+    p = strchr(conn->request_info.status_custom_description, '\t');
+    if (p)
+      *p = 0;
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
@@ -1314,14 +1314,14 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           conn->request_info.request_method, conn->request_info.uri,
           (conn->request_info.query_string ? "?" : ""),
           (conn->request_info.query_string ? conn->request_info.query_string : ""),
-		  (p ? p : ""));
-  	  if (p)
+          (p ? p + 1 : ""));
+      if (p)
         *p = '\n';
-	}
-	else
-	{
-	  len = 0;
-	}
+    }
+    else
+    {
+      len = 0;
+    }
     DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
     mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
@@ -1338,10 +1338,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
               suggest_connection_header(conn));
 
     mg_mark_end_of_header_transmission(conn);
-	if (len > 0)
-	{
+    if (len > 0)
+    {
       mg_write(conn, conn->request_info.status_custom_description, len);
-	}
+    }
   }
   // kill lingering reference to local storage:
   conn->request_info.status_custom_description = NULL;
