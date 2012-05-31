@@ -539,8 +539,6 @@ void RunMultiClientTest(int loop) {
   int i;
   DWORD res;
 
-  bugger_off = 0;
-
   for (i=0;i<CLIENTCOUNT;i++) {
     DWORD dummy;
     hThread[i] = CreateThread(NULL, 65536 + 1024*32, (LPTHREAD_START_ROUTINE)ClientMain, (void*)(1000*loop+i), 0, &dummy);
@@ -610,7 +608,7 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
     printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
     good=bad=0;
 
-    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
+    for (cycle = 1; cycle <= TESTCYCLES && !bugger_off; cycle++) {
       RunMultiClientTest(cycle);
     }
 
@@ -662,7 +660,7 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
     printf("Starting single client test: %i cycles\r\n\r\n", (int)TESTCYCLES);
     good=bad=0;
 
-    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
+    for (cycle = 1; cycle <= TESTCYCLES && !bugger_off; cycle++) {
       ClientMain((void*)1);
     }
 
@@ -783,8 +781,9 @@ int main(int argc, char * argv[]) {
                "====================================================================\n\n",
                testcase);
 
-      keypress = 0;
-      previously_expectedData = 0;
+    keypress = 0;
+    bugger_off = 0;
+    previously_expectedData = 0;
 
     if (CLIENTCOUNT > 1)
     {
