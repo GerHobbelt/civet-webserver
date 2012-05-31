@@ -522,7 +522,7 @@ printf("j");
     } else {
       mg_printf(conn, "%s", request_info->request_method);
     }
-	printf("#(%" INT64_FMT ")", mg_get_num_bytes_sent(conn));
+printf("#(%" INT64_FMT ")", mg_get_num_bytes_sent(conn));
 
     return (void *)1;
   }
