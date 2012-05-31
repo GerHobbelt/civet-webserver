@@ -134,7 +134,6 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     }
 
     ic = ioctlsocket(soc, FIONREAD, &dataReady);
-printf("-(%d/%d/%d/%d/%d)", ic, (int)dataReady, (int)io->totalData, srv, we_re_writing_too);
     if (ic < 0)
     {
         if (verbose || 1) fputc('@', stdout);
@@ -403,7 +402,6 @@ int WINAPI ClientMain(void * clientNo) {
   }
 
   if (verbose == 1) fputc('>', stdout);
-printf(">(%d)", (int)io.totalData);
 
   /*
   You MUST flush the TCP write buffer or mongoose to receive the transmitted data -- or part or whole of
@@ -454,7 +452,6 @@ printf(">(%d)", (int)io.totalData);
         break;
     }
   }
-printf(".(%d)", (int)io.totalData);
 
   {
       char buf[BUFSIZ];
@@ -486,7 +483,6 @@ printf(".(%d)", (int)io.totalData);
       do {
           // when server does shutdown(WR), we'll be notified here by recv() --> n==0
           n = recv(soc, buf, sizeof(buf), 0);
-printf("!(%d)", n);
       } while (n > 0 && !bugger_off);
 
       // Now we know that our FIN is ACK-ed, safe to close

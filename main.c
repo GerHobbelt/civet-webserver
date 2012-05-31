@@ -259,17 +259,12 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   unsigned short crc;
   struct t_stat ** st;
 
-#if 0 // 01 if you want to see when the custom code is entered
-  printf("%d: %s: %s\n", (int)event, request_info->request_method, request_info->uri);
-#endif
-
 #if 0
   if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
   {
 	printf("Boom?\n");
   }
 #endif
-printf("?(%d:%s/%d)", event, request_info->uri, (int)mg_get_num_bytes_sent(conn));
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;
@@ -347,7 +342,6 @@ printf("?(%d:%s/%d)", event, request_info->uri, (int)mg_get_num_bytes_sent(conn)
     const char * contentLength = mg_get_header(conn, "Content-Length");
     const char * contentType = mg_get_header(conn, "Content-Type");
 
-printf(">");
     mg_connection_must_close(conn);
     request_info->status_code = 200;
     mg_printf(conn,
@@ -357,7 +351,6 @@ printf(">");
               "Content-Type: text/plain; charset=utf-8\r\n\r\n");
     mg_mark_end_of_header_transmission(conn);
 
-printf("a");
 	mg_printf(conn,	"Received headers:\r\n");
 	for (i = 0; i < ARRAY_SIZE(request_info->http_headers); i++)
 	{
@@ -367,13 +360,11 @@ printf("a");
 				i, request_info->http_headers[i].name, request_info->http_headers[i].value);
 		}
 	}
-printf("b");
 	mg_printf(conn,	"----- info bits ------\r\n");
 	mg_printf(conn,	"URL: [%s]\r\n", request_info->uri);
 	mg_printf(conn,	"Query: [%s]\r\n", request_info->query_string);
 	mg_printf(conn,	"Phys.Path: [%s]\r\n", request_info->phys_path);
 	mg_printf(conn,	"----- data? ------\r\n");
-printf("c");
 
     if (!strcmp(request_info->request_method, "POST")) {
       long int dataSize = atol(contentLength);
@@ -394,12 +385,7 @@ printf("c");
 			mg_setsockopt(mg_get_client_socket(conn), SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
 		}
 
-printf("d");
         while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
-#if 0
-		  int gotNow = mg_read(conn, data + gotSize, dataSize - gotSize);
-			mg_sleep(1);
-#else
 		  int gotNow = 0;
 		{
 			// check whether there's anything available:
@@ -422,10 +408,6 @@ printf("d");
 
 				// Add listening sockets to the read set
 				mg_FD_SET(mg_get_client_socket(conn), &read_set, &max_fd);
-#if 0 // 01 if you want to see when the custom code is entered (and whether if is waiting or not at the select() below)
-				printf("x:%ld/%ld\n", gotSize, dataSize);
-#endif
-printf("D");
 				if (select(max_fd + 1, &read_set, NULL, NULL, &tv2) < 0)
 				{
 					// signal a fatal failure:
@@ -446,7 +428,6 @@ printf("D");
 				}
 			}
 	
-printf("e");
 			if (max_fd >= 0)
 			{
 				// use mg_pull() instead when you're accessing custom protocol sockets
@@ -455,14 +436,11 @@ printf("e");
 				if (len > bufferSize - bufferFill)
 					len = bufferSize - bufferFill;
 				gotNow = mg_read(conn, data + bufferFill, len);
-printf("E(%d/%ld)", gotNow, dataSize);
 				if (gotNow > 0)
 				{
 					bufferFill += gotNow;
 					if (bufferFill == bufferSize && bufferSize != dataSize)
 					{
-printf("f");
-						//printf("w:%d/%d/%ld\n", gotNow, bufferSize, gotSize);
 						bufferFill = mg_write(conn, data, bufferSize);
 						if (bufferFill < 0)
 						{
@@ -475,11 +453,8 @@ printf("f");
 					}
 				}
 			}
-#if 0 // 01 if you want to see when the custom code is fetching data
-			printf("r:%d/%d\n", max_fd, gotNow);
-#endif
 		  }
-#endif
+
 			if (gotNow == 0)
 			{
 				mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
@@ -487,9 +462,7 @@ printf("f");
 			}
           gotSize += gotNow;
         }
-printf("g(%d)", bufferFill);
 		mg_set_non_blocking_mode(mg_get_client_socket(conn), 0);
-//		printf("NB:%d\n", bufferFill);
 		//mg_write(conn, data, gotSize);
 		if (bufferFill > 0)
 		{
@@ -502,27 +475,22 @@ printf("g(%d)", bufferFill);
 					wlen = -1;
 				else
 					wlen = dataReady;
-printf("g(:%d)", wlen);
 
-				//printf("W:%d/%d/%ld\n", bufferSize, bufferFill, gotSize);
 				wlen = mg_write(conn, data, bufferFill);
 				if (bufferFill != wlen)
 				{
 					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
                     request_info->status_code = 580; // internal error in our custom handler
 				}
-printf("h");
 				if (wlen > 0)
 					bufferFill -= wlen;
 			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
-printf("j");
 		}
         free(data);
       }            
     } else {
       mg_printf(conn, "%s", request_info->request_method);
     }
-	printf("#(%" INT64_FMT ")", mg_get_num_bytes_sent(conn));
 
     return (void *)1;
   }
@@ -576,7 +544,6 @@ printf("j");
  
 static BOOL WINAPI mg_win32_break_handler(DWORD signal_type) 
 { 
-	fprintf(stderr, "\nbreak handler: %d\n", signal_type);
   switch(signal_type) 
   { 
     // Handle the CTRL-C signal. 
