@@ -4297,6 +4297,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
   for (sp = ctx->listening_sockets; sp != NULL; sp = tmp) {
     tmp = sp->next;
     (void) closesocket(sp->sock);
+	sp->sock = INVALID_SOCKET;
     free(sp);
   }
 }
@@ -4500,7 +4501,7 @@ static int set_ports_option(struct mg_context *ctx) {
       success = 0;
     } else {
 #if defined(USE_IPV6)
-		// when the listener is merely a port, then we want to liten on IPv6 and IPv4 sockets both!
+		// when the listener is merely a port, then we want to listen on IPv6 and IPv4 sockets both!
 		int rounds = (so.lsa.u.sin6.sin6_family == AF_INET6 && is_all_zeroes(&so.lsa.u.sin6.sin6_addr, sizeof(so.lsa.u.sin6.sin6_addr)));
 #else
 		int rounds = 0;
@@ -4573,19 +4574,18 @@ static void log_access(struct mg_connection *conn) {
   char date[64], src_addr[20];
   const char *fpath = mg_get_default_access_logfile_path(conn);
 
-  fp = mg_fopen(fpath, "a+");
-
-  if (fp == NULL)
-    return;
-
   (void) strftime(date, sizeof(date), "%d/%b/%Y:%H:%M:%S %z",
       localtime(&conn->birth_time));
 
   ri = &conn->request_info;
 
+  sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
+
+  fp = mg_fopen(fpath, "a+");
+  if (fp == NULL)
+    return;
   flockfile(fp);
 
-  sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
   (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" INT64_FMT "%s",
           src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
           ri->request_method ? ri->request_method : "-",
@@ -4856,30 +4856,119 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->must_close = 0;
 }
 
-static void close_socket_gracefully(SOCKET sock) {
+#if defined(_WIN32)
+
+static LPFN_DISCONNECTEX DisconnectExPtr = 0;
+static CRITICAL_SECTION DisconnectExPtrCS;
+
+static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+	return 0;
+}
+
+static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
+{
+  /*
+	Note  The function pointer for the DisconnectEx function must be obtained 
+	      at run time by making a call to the WSAIoctl function with the 
+		  SIO_GET_EXTENSION_FUNCTION_POINTER opcode specified. The input buffer 
+		  passed to the WSAIoctl function must contain WSAID_DISCONNECTEX, a 
+		  globally unique identifier (GUID) whose value identifies the 
+		  DisconnectEx extension function. 
+		  On success, the output returned by the WSAIoctl function contains 
+		  a pointer to the DisconnectEx function. The WSAID_DISCONNECTEX GUID 
+		  is defined in the Mswsock.h header file.
+  */
+  LPFN_DISCONNECTEX ret;
+
+  EnterCriticalSection(&DisconnectExPtrCS);
+
+  if (!DisconnectExPtr && sock)
+  {
+	  GUID dcex = WSAID_DISCONNECTEX;
+	  LPFN_DISCONNECTEX DisconnectExPtr = 0;
+	  DWORD len = 0;
+	  int rv;
+
+	  rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
+			  &DisconnectExPtr, sizeof(DisconnectExPtr), 
+			  &len, 0, 0);
+	  if (rv)
+	  {
+		  DisconnectExPtr = dummy_disconnectEx;
+	  }
+  }
+  if (DisconnectExPtr)
+	  ret = DisconnectExPtr;
+  else
+	  ret = dummy_disconnectEx;
+
+  LeaveCriticalSection(&DisconnectExPtrCS);
+
+  return ret;
+}
+
+static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+	LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
+
+	return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
+}
+
+#endif // _WIN32
+
+static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   char buf[BUFSIZ];
   struct linger linger;
-  int n;
+  int n, w;
+  int linger_timeout = 1;
 
   // Set linger option to avoid socket hanging out after close. This prevent
   // ephemeral port exhaust problem under high QPS.
   linger.l_onoff = 1;
-  linger.l_linger = 1;
+  linger.l_linger = linger_timeout;
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
+
+  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
+  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+  //
+  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+  // and in particular the section titled "Some notes on non-blocking sockets".
+  
   set_non_blocking_mode(sock, 1);
 
-  // Read and discard pending data. If we do not do that and close the
+  // Read and discard pending incoming data. If we do not do that and close the
   // socket, the data in the send buffer may be discarded. This
   // behaviour is seen on Windows, when client keeps sending data
-  // when server decide to close the connection; then when client
+  // when server decides to close the connection; then when client
   // does recv() it gets no data back.
+  w = 0;
   do {
     n = pull(NULL, sock, NULL, buf, sizeof(buf));
-  } while (n > 0);
+#if defined(SIOCOUTQ)
+	{
+		int wr_pending = 0;
+		if (ioctl(sock, SIOCOUTQ, &wr_pending))
+		{
+			w = wr_pending;
+		}
+		if (w && !n)
+		{
+			mg_sleep(1);
+		}
+	}
+#endif
+  } while ((n > 0 || w > 0) && mg_get_stop_flag(ctx) == 0);
+  
+  // better: have the socket block before we close. See MSDN comment above.
+  set_non_blocking_mode(sock, 0);
 
+#if defined(_WIN32)
+  DisconnectEx(sock, NULL, 0, 0);
+#endif
   // Now we know that our FIN is ACK-ed, safe to close
   (void) closesocket(sock);
 }
@@ -4891,7 +4980,7 @@ static void close_connection(struct mg_connection *conn) {
   }
 
   if (conn->client.sock != INVALID_SOCKET) {
-    close_socket_gracefully(conn->client.sock);
+    close_socket_gracefully(conn->client.sock, conn->ctx);
     conn->client.sock = INVALID_SOCKET;
   }
 }
@@ -5345,6 +5434,8 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
+  DeleteCriticalSection(&traceCS);
+  DeleteCriticalSection(&DisconnectExPtrCS);
   (void) WSACleanup();
 #endif // _WIN32
 }
@@ -5359,6 +5450,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
   InitializeCriticalSection(&traceCS);
+  InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #endif // _WIN32
 
   // Allocate context and initialize reasonable general case defaults.

@@ -132,7 +132,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 	  {
 		  chunkSize = recv(soc, buf, sizeof(buf), 0);
 		  if (chunkSize<0) {
-			printf("Error: recv failed for client %i: %d/%d\r\n", io->clientNo, chunkSize, GetLastError());
+			printf("Error: recv failed for client %i: %d/%d/%d\r\n", io->clientNo, chunkSize, dataReady, GetLastError());
 			return -1;
 		  } else if (!io->isBody) {
 			char * headEnd = strstr(buf,"\xD\xA\xD\xA");
@@ -400,7 +400,46 @@ int WINAPI ClientMain(void * clientNo) {
 	}
   }
 
-  closesocket(soc);
+  {
+	  char buf[BUFSIZ];
+	  struct linger linger;
+	  int n, w;
+	  int linger_timeout = 100;
+
+	  // Set linger option to avoid socket hanging out after close. This prevent
+	  // ephemeral port exhaust problem under high QPS.
+	  linger.l_onoff = 1;
+	  linger.l_linger = linger_timeout;
+	  setsockopt(soc, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+
+	  // Send FIN to the client
+	  (void) shutdown(soc, SHUT_WR);
+
+	  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
+	  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+	  //
+	  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+	  // and in particular the section titled "Some notes on non-blocking sockets".
+
+	  // Read and discard pending incoming data. If we do not do that and close the
+	  // socket, the data in the send buffer may be discarded. This
+	  // behaviour is seen on Windows, when client keeps sending data
+	  // when server decides to close the connection; then when client
+	  // does recv() it gets no data back.
+	  w = 0;
+	  do {
+		  n = recv(soc, buf, sizeof(buf), 0);
+	  } while (n > 0 && !bugger_off);
+
+	  // better: have the socket block before we close. See MSDN comment above.
+	  {
+		  unsigned long _on = 0;
+		  ioctlsocket(soc, FIONBIO, &_on);
+	  }
+
+	  // Now we know that our FIN is ACK-ed, safe to close
+	  (void) closesocket(soc);
+  }
 
   if (isTest) {
 	if (verbose > 2) printf("RR:%d\n", (int)io.totalData);
@@ -574,12 +613,20 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
   return 0;
 }
 
+int atoi_def(const char *val, int def)
+{
+	int rv = atoi(val);
+
+	if (rv < 1)
+		return def;
+	return rv;
+}
 
 int main(int argc, char * argv[]) {
 
   WSADATA       wsaData = {0};
   HOSTENT     * lpHost = 0;
-  int desired_testcase = (argc > 1 ? atoi(argv[1]) : 0);
+  int desired_testcase = atoi_def((argc > 1 ? argv[1] : 0), 0);
 	
   if (argc > 1 && !strcmp(argv[1], "-h"))
   {
@@ -597,8 +644,8 @@ int main(int argc, char * argv[]) {
 	  exit(1);
   }
 
-  CLIENTCOUNT = (argc > 2 ? atoi(argv[2]) : CLIENTCOUNT);
-  TESTCYCLES = (argc > 3 ? atoi(argv[3]) : TESTCYCLES);
+  CLIENTCOUNT = atoi_def((argc > 2 ? argv[2] : 0), CLIENTCOUNT);
+  TESTCYCLES = atoi_def((argc > 3 ? argv[3] : 0), TESTCYCLES);
 
   if (WSAStartup(MAKEWORD(2,2), &wsaData) != NO_ERROR) {
     printf("\r\nCannot init WinSock\a\r\n");
