@@ -4921,7 +4921,7 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   char buf[BUFSIZ];
   struct linger linger;
   int n, w;
-  int linger_timeout = 1;
+  int linger_timeout = 1 * 1000;
 
   /*
 
@@ -4946,6 +4946,12 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
 
   */
 
+  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
+  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+  //
+  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+  // and in particular the section titled "Some notes on non-blocking sockets".
+
   // older mongoose set socket to non-blocking. That turned out to be VERY evil. 
   // Now we set socket to BLOCKING before we go into the 'graceful close' phase:
   set_non_blocking_mode(sock, 0); 
@@ -4953,6 +4959,11 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
 
+  // Read and discard pending incoming data. If we do not do that and close the
+  // socket, the data in the send buffer may be discarded. This
+  // behaviour is seen on Windows, when client keeps sending data
+  // when server decides to close the connection; then when client
+  // does recv() it gets no data back.
   w = 0;
   do {
 	  // as data may still be incoming (but we don';t wanna hear about it),
@@ -4962,35 +4973,58 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
 	  // socket errors client-side.
 	  fd_set fds;
 	  struct timeval tv = {0};
-	  tv.tv_sec = linger_timeout;
+	  int sv;
+
+	  tv.tv_sec = linger_timeout / 1000;
 
 	  FD_ZERO(&fds);
 	  FD_SET(sock, &fds);
-	  switch (select(sock + 1, &fds, 0, 0, &tv))
+	  sv = select(sock + 1, &fds, 0, 0, &tv);
+	  switch (sv)
 	  {
 	  case 1:
 		  // only fetch RX data when there actually is some:
 		  n = pull(NULL, sock, NULL, buf, sizeof(buf));
-		  if (n > 0)
-			  w += n;
-		  break;
-
+		  printf("n = %d\n", n);
+		  if (n < 0)
+		  {
+			  w = 0;
+			  linger_timeout = 0;
+			  break;
+		  }
+		  // fall through:
+		  if (n == 0)
+		  {
 	  case 0:
-		  // timeout expired:
-		  n = 0;
+			  // timeout expired:
+			  n = 0;
+			  linger_timeout -= tv.tv_sec * 1000;
+		  }
+#if defined(SIOCOUTQ)
+		  {
+			  int wr_pending = 0;
+			  if (ioctl(sock, SIOCOUTQ, &wr_pending))
+			  {
+				  w = wr_pending;
+			  }
+		  }
+#endif
 		  break;
 
 	  default:
 		  // fatality:
 		  n = 0;
+		  w = 0;
+		  linger_timeout = 0;
 		  break;
 	  }
-  } while (n > 0 && mg_get_stop_flag(ctx) == 0);
+	  printf("graceful close: %d/%d/%d/%d\n", n, w, linger_timeout, sv);
+  } while ((n > 0 || w > 0 || linger_timeout > 0) && mg_get_stop_flag(ctx) == 0);
 
   // Set linger option to avoid socket hanging out after close. This prevent
   // ephemeral port exhaust problem under high QPS.
-  linger.l_onoff = 1;
-  linger.l_linger = linger_timeout;
+  linger.l_onoff = (linger_timeout > 0);
+  linger.l_linger = linger_timeout / 1000;
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
   // Send FIN to the client
@@ -5030,6 +5064,13 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   // better: have the socket block before we close. See MSDN comment above.
   set_non_blocking_mode(sock, 0);
 
+  // Set linger option to avoid socket hanging out after close. This prevent
+  // ephemeral port exhaust problem under high QPS.
+  linger.l_onoff = (linger_timeout > 0);
+  linger.l_linger = linger_timeout / 1000;
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+
+  printf("graceful close: before closing: %d/%d/%d\n", n, w, linger_timeout);
 #if defined(_WIN32)
   DisconnectEx(sock, NULL, 0, 0);
 #endif
