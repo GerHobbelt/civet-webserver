@@ -380,7 +380,7 @@ int WINAPI ClientMain(void * clientNo) {
   it will sit in your own TX buffer for EVER, or rather, until the socket 'times out'.
 
   The classic approach here is to do a half-close, but you can be nasty and disable Nagle, i.e. act
-  like you're telnet.
+  like you're telnet. (We don't do that here, BTW.)
 
   When sending multiple requests to the HTTP server over a single connection (HTTP keep-alive), it is
   generally assumed that:
@@ -388,9 +388,34 @@ int WINAPI ClientMain(void * clientNo) {
   - request A+1 is not directly dependent on the response to request A (as that would make the entire 
     thing half-duplex anyway, while we strive for full-duplex comm), or
   - both sides flush their TCP buffers after each request (no-Nagle or some other way)
+
+  ---
+
+  [Update] Anyhow, the evil/faulty Nagle hack probably won't work (we haven't tested it), but the
+  POST test issues with aborted connections are GONE as soon as we adhere to this one line in the
+  MSDN documentation on both sides of the fence:
+
+  ( http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx )
+  linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+
+  The issues are gone as soon as you do the graceful close on a BLOCKING socket - with a little
+  help from select(): essentially we do the linger timeout in userland entirely by fetching
+  pending (surplus) RX data with a timeout upper bound of the configured linger timeout.
+
+  See below and mongoose.c code in close_socket_gracefully().
+
+  The major point is that:
+
+  - you must use BLOCKING sockets by the time you decide to go into graceful close.
+  - you need to fetch pending RX data after shutdown(WR), i.e. flush the TCP RX buffer at least
+    (on Linux, this phase should wait until the entire TX output is transmitted, guaranteed, but
+	we do not have that ironclad guarantee on other platforms such as Win32/WinSock - it just
+	turns out that for our test scenarios, it is sufficient to wait-and-check before calling
+	closesocket() after all
+  - only set LINGER ON for the BLOCKING socket (or you're toast)
+
   */
   (void) shutdown(soc, SHUT_WR);
-  //mg_set_non_blocking_mode(soc, 1);
 
   //io.lastData = time(0);
   for (;;) {
@@ -404,7 +429,7 @@ int WINAPI ClientMain(void * clientNo) {
 	  char buf[BUFSIZ];
 	  struct linger linger;
 	  int n, w;
-	  int linger_timeout = 100;
+	  int linger_timeout = 1;
 
 	  // Set linger option to avoid socket hanging out after close. This prevent
 	  // ephemeral port exhaust problem under high QPS.
@@ -413,7 +438,7 @@ int WINAPI ClientMain(void * clientNo) {
 	  setsockopt(soc, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
 	  // Send FIN to the client
-	  (void) shutdown(soc, SHUT_WR);
+	  //(void) shutdown(soc, SHUT_WR);  -- done that above already
 
 	  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
 	  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
@@ -428,14 +453,9 @@ int WINAPI ClientMain(void * clientNo) {
 	  // does recv() it gets no data back.
 	  w = 0;
 	  do {
+		  // when server does shutdown(WR), we'll be notified here by recv() --> n==0
 		  n = recv(soc, buf, sizeof(buf), 0);
 	  } while (n > 0 && !bugger_off);
-
-	  // better: have the socket block before we close. See MSDN comment above.
-	  {
-		  unsigned long _on = 0;
-		  ioctlsocket(soc, FIONBIO, &_on);
-	  }
 
 	  // Now we know that our FIN is ACK-ed, safe to close
 	  (void) closesocket(soc);

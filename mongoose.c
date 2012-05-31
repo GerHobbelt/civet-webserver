@@ -4921,12 +4921,39 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   char buf[BUFSIZ];
   struct linger linger;
   int n, w;
-  int linger_timeout = 1;
+  int linger_timeout = 1 * 1000;
+
+  /*
+
+  ( http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx )
+  linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+
+  The issues are gone as soon as you do the graceful close on a BLOCKING socket - with a little
+  help from select(): essentially we do the linger timeout in userland entirely by fetching
+  pending (surplus) RX data with a timeout upper bound of the configured linger timeout.
+
+  The major point is that:
+
+  - you must use BLOCKING sockets by the time you decide to go into graceful close.
+
+  - you need to fetch pending RX data after shutdown(WR), i.e. flush the TCP RX buffer at least.
+    (One would really like to wait until all pending TX is done: we can only check for it 
+	on Linux, but we do not have that ironclad guarantee on other platforms such as 
+	Win32/WinSock - it just turns out that for our test scenarios at least, it is sufficient 
+	to wait-and-check before calling closesocket() after all.)
+
+  - only set LINGER ON for the BLOCKING socket (or you're toast)
+
+  */
+
+  // older mongoose set socket to non-blocking. That turned out to be VERY evil. 
+  // Now we set socket to BLOCKING before we go into the 'graceful close' phase:
+  set_non_blocking_mode(sock, 0); 
 
   // Set linger option to avoid socket hanging out after close. This prevent
   // ephemeral port exhaust problem under high QPS.
   linger.l_onoff = 1;
-  linger.l_linger = linger_timeout;
+  linger.l_linger = linger_timeout / 1000;
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
   // Send FIN to the client
@@ -4938,8 +4965,6 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
   // and in particular the section titled "Some notes on non-blocking sockets".
   
-  set_non_blocking_mode(sock, 1);
-
   // Read and discard pending incoming data. If we do not do that and close the
   // socket, the data in the send buffer may be discarded. This
   // behaviour is seen on Windows, when client keeps sending data
@@ -4947,24 +4972,61 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   // does recv() it gets no data back.
   w = 0;
   do {
-    n = pull(NULL, sock, NULL, buf, sizeof(buf));
+	  // as data may still be incoming (but we don';t wanna hear about it),
+	  // we still need to fetch it (see WinSock comments elsewhere for what
+	  // happens if you don't. Doing this on a NON-BLOCKINGT socket would
+	  // still cause a disaster every once in a while, producing 'aborted'
+	  // socket errors client-side.
+	  fd_set fds;
+	  struct timeval tv = {0};
+	  tv.tv_usec = 200000;
+
+	  FD_ZERO(&fds);
+	  FD_SET(sock, &fds);
+	  switch (select(sock + 1, &fds, 0, 0, &tv))
+	  {
+	  case 1:
+		  // only fetch RX data when there actually is some:
+		  n = pull(NULL, sock, NULL, buf, sizeof(buf));
+		  if (n > 0)
+			  w += n;
+		  break;
+
+	  case 0:
+		  // timeout expired:
+		  n = 0;
+		  linger_timeout -= 200;
+		  // check if all pending TX is gone already:
 #if defined(SIOCOUTQ)
-	{
-		int wr_pending = 0;
-		if (ioctl(sock, SIOCOUTQ, &wr_pending))
-		{
-			w = wr_pending;
-		}
-		if (w && !n)
-		{
-			mg_sleep(1);
-		}
-	}
+		  {
+			  int wr_pending = 0;
+			  if (ioctl(sock, SIOCOUTQ, &wr_pending))
+			  {
+				  w = wr_pending;
+			  }
+			  if (w && !n)
+			  {
+				  mg_sleep(1);
+			  }
+		  }
 #endif
-  } while ((n > 0 || w > 0) && mg_get_stop_flag(ctx) == 0);
-  
-  // better: have the socket block before we close. See MSDN comment above.
-  set_non_blocking_mode(sock, 0);
+		  break;
+
+	  default:
+		  // fatality:
+		  n = 0;
+		  w = 0;
+		  linger_timeout = 0;
+		  break;
+	  }
+	  // check our linger timeout 'expiry': prevent possibly malicious clients
+	  // from keeping the socket open forever by not fetching our TX data...
+  } while ((n > 0 || w > 0) && linger_timeout > 0 && mg_get_stop_flag(ctx) == 0);
+
+  // Adjust linger option for time spent above
+  linger.l_onoff = (linger_timeout > 0);
+  linger.l_linger = linger_timeout / 1000;
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
 
 #if defined(_WIN32)
   DisconnectEx(sock, NULL, 0, 0);
