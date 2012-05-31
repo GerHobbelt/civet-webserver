@@ -20,7 +20,7 @@ char *strnstr(char *haystack, const char *needle, size_t haysize)
 {
     size_t len = strlen(needle);
     size_t i;
-    for (i = 0; i + len < haysize; i++)
+    for (i = 0; i + len <= haysize; i++)
     {
         if (!memcmp(haystack + i, needle, len))
             return haystack + i;
@@ -98,6 +98,8 @@ typedef struct io_info
     time_t lastData;
     int timeOut;
 
+    int prevRXbuf[3]; // stores the last 3 previously received bytes; helps to find dual CRLF at chunk boundaries
+
     const char *fake_output_databuf;
     size_t fake_output_databuf_size;
 
@@ -105,7 +107,7 @@ typedef struct io_info
 
 static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 {
-    char buf[65536];
+    char buf[65536 + 3];
     int chunkSize = 0;
     unsigned long dataReady = 0;
     FD_SET fds, fdw;
@@ -113,7 +115,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     int srv;
     int ic;
 
-    tv.tv_sec = 1;
+    tv.tv_sec = 10;
     tv.tv_usec = 0;
 
     FD_ZERO(&fds);
@@ -134,6 +136,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     }
 
     ic = ioctlsocket(soc, FIONREAD, &dataReady);
+    assert(dataReady < 2E9);
     if (ic < 0)
     {
         if (verbose || 1) fputc('@', stdout);
@@ -145,15 +148,31 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
       // fetch all the pending RX data pronto:
       do
       {
-          chunkSize = recv(soc, buf, sizeof(buf), 0);
+          memcpy(buf, io->prevRXbuf, 3);
+          chunkSize = recv(soc, buf + 3, sizeof(buf) - 3, 0);
+        // subtract the RAW number of bytes fetched from the IP stack:
+        if (chunkSize > 0)
+        {
+            int copylen;
+            if (dataReady >= chunkSize)
+              dataReady -= chunkSize;
+            else
+                dataReady = 0;
+            assert(dataReady < 2E9);
+            copylen = 3;
+            if (copylen > chunkSize) // theoretically, checkSize can be 1 or 2
+                copylen = chunkSize;
+            memcpy(io->prevRXbuf + 3 - copylen, buf + chunkSize - copylen, copylen);
+        }
+        // now process the fetched data (if any):
           if (chunkSize<0) {
             printf("Error: recv failed for client %i: %d/%d/%d\r\n", io->clientNo, chunkSize, dataReady, GetLastError());
             return -1;
           } else if (!io->isBody) {
-            char * headEnd = strnstr(buf,"\xD\xA\xD\xA", chunkSize);
+            char * headEnd = strnstr(buf,"\xD\xA\xD\xA", chunkSize + 3);
             if (headEnd) {
               headEnd+=4;
-              chunkSize -= ((int)headEnd - (int)buf);
+              chunkSize -= (headEnd - buf) - 3; 
               assert(chunkSize >= 0);
               assert(chunkSize < 2E9);
               if (chunkSize>0) {
@@ -163,24 +182,28 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
               }
               io->isBody = 1;
             }
+            // else: we haven't received all headers entirely yet --> don't count recv()'d data
           } else {
+            // we're already receiving the body data of the response: count 'em all:
             io->totalData += chunkSize;
             if (verbose > 2) printf("R:%d/%d\n", (int)chunkSize, (int)io->totalData);
-            //fwrite(buf,1,got,STORE);
+            //fwrite(buf+3,1,got,STORE);
           }
-          dataReady -= chunkSize;
+          assert(chunkSize >= 0);
+
           if (dataReady == 0)
           {
             // see if there's more data pending already...
             ic = ioctlsocket(soc, FIONREAD, &dataReady);
+            assert(dataReady < 2E9);
             if (ic < 0)
             {
-                if (verbose || 1) fputc('@', stdout);
+                if (verbose) fputc('@', stdout);
                 return -1;
             }
             assert(dataReady < 2E9);
           }
-      } while (dataReady > 0 && chunkSize > 0);
+      } while (dataReady > 0);
       io->lastData = time(0);
     } else {
       time_t current = time(0);
@@ -443,6 +466,10 @@ int WINAPI ClientMain(void * clientNo) {
   - only set LINGER ON for the BLOCKING socket (or you're toast)
 
   */
+{
+  unsigned long _on = 0;
+  ioctlsocket(soc, FIONBIO, &_on);
+}
   (void) shutdown(soc, SHUT_WR);
 
   //io.lastData = time(0);
@@ -511,8 +538,6 @@ void RunMultiClientTest(int loop) {
   HANDLE *hThread = calloc(CLIENTCOUNT, sizeof(hThread[0]));
   int i;
   DWORD res;
-
-  bugger_off = 0;
 
   for (i=0;i<CLIENTCOUNT;i++) {
     DWORD dummy;
@@ -583,7 +608,7 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
     printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
     good=bad=0;
 
-    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
+    for (cycle = 1; cycle <= TESTCYCLES && !bugger_off; cycle++) {
       RunMultiClientTest(cycle);
     }
 
@@ -635,7 +660,7 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
     printf("Starting single client test: %i cycles\r\n\r\n", (int)TESTCYCLES);
     good=bad=0;
 
-    for (cycle=1;cycle<=TESTCYCLES;cycle++) {
+    for (cycle = 1; cycle <= TESTCYCLES && !bugger_off; cycle++) {
       ClientMain((void*)1);
     }
 
@@ -756,8 +781,9 @@ int main(int argc, char * argv[]) {
                "====================================================================\n\n",
                testcase);
 
-      keypress = 0;
-      previously_expectedData = 0;
+    keypress = 0;
+    bugger_off = 0;
+    previously_expectedData = 0;
 
     if (CLIENTCOUNT > 1)
     {
