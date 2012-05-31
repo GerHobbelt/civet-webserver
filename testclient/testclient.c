@@ -98,7 +98,7 @@ typedef struct io_info
     time_t lastData;
     int timeOut;
 
-	int prevRXbuf[3]; // stores the last 3 previously received bytes; helps to find dual CRLF at chunk boundaries
+    int prevRXbuf[3]; // stores the last 3 previously received bytes; helps to find dual CRLF at chunk boundaries
 
     const char *fake_output_databuf;
     size_t fake_output_databuf_size;
@@ -125,9 +125,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     {
         FD_SET(soc, &fdw);
     }
-printf("t(%u)", (int)clock());
     srv = select(1, &fds, (we_re_writing_too ? &fdw : 0), 0, &tv);
-printf("T(%u)", (int)clock());
     if (is_quit_key_pressed())
         bugger_off = 2;
     if (bugger_off)
@@ -138,8 +136,7 @@ printf("T(%u)", (int)clock());
     }
 
     ic = ioctlsocket(soc, FIONREAD, &dataReady);
-printf("-(%d/%d/%d/%d/%d)", ic, (int)dataReady, (int)io->totalData, srv, we_re_writing_too);
-        assert(dataReady < 2E9);
+    assert(dataReady < 2E9);
     if (ic < 0)
     {
         if (verbose || 1) fputc('@', stdout);
@@ -151,25 +148,23 @@ printf("-(%d/%d/%d/%d/%d)", ic, (int)dataReady, (int)io->totalData, srv, we_re_w
       // fetch all the pending RX data pronto:
       do
       {
-printf("r(%d/%d/%d/%d)", (int)dataReady, (int)io->totalData, srv, we_re_writing_too);
-		  memcpy(buf, io->prevRXbuf, 3);
+          memcpy(buf, io->prevRXbuf, 3);
           chunkSize = recv(soc, buf + 3, sizeof(buf) - 3, 0);
-printf("R(%d/%d/%d/%d/%d)", chunkSize, (int)dataReady, (int)io->totalData, srv, we_re_writing_too);
-		// subtract the RAW number of bytes fetched from the IP stack:
-		if (chunkSize > 0)
-		{
-			int copylen;
-			if (dataReady >= chunkSize)
-			  dataReady -= chunkSize;
-			else
-				dataReady = 0;
-			assert(dataReady < 2E9);
-			copylen = 3;
-			if (copylen > chunkSize) // theoretically, checkSize can be 1 or 2
-				copylen = chunkSize;
-			memcpy(io->prevRXbuf + 3 - copylen, buf + chunkSize - copylen, copylen);
-		}
-		// now process the fetched data (if any):
+        // subtract the RAW number of bytes fetched from the IP stack:
+        if (chunkSize > 0)
+        {
+            int copylen;
+            if (dataReady >= chunkSize)
+              dataReady -= chunkSize;
+            else
+                dataReady = 0;
+            assert(dataReady < 2E9);
+            copylen = 3;
+            if (copylen > chunkSize) // theoretically, checkSize can be 1 or 2
+                copylen = chunkSize;
+            memcpy(io->prevRXbuf + 3 - copylen, buf + chunkSize - copylen, copylen);
+        }
+        // now process the fetched data (if any):
           if (chunkSize<0) {
             printf("Error: recv failed for client %i: %d/%d/%d\r\n", io->clientNo, chunkSize, dataReady, GetLastError());
             return -1;
@@ -187,24 +182,21 @@ printf("R(%d/%d/%d/%d/%d)", chunkSize, (int)dataReady, (int)io->totalData, srv, 
               }
               io->isBody = 1;
             }
-			else
-			{
-printf("_");			
-			}
+            // else: we haven't received all headers entirely yet --> don't count recv()'d data
           } else {
+            // we're already receiving the body data of the response: count 'em all:
             io->totalData += chunkSize;
             if (verbose > 2) printf("R:%d/%d\n", (int)chunkSize, (int)io->totalData);
-            //fwrite(buf,1,got,STORE);
+            //fwrite(buf+3,1,got,STORE);
           }
-		  assert(chunkSize >= 0);
+          assert(chunkSize >= 0);
 
           if (dataReady == 0)
           {
             // see if there's more data pending already...
             ic = ioctlsocket(soc, FIONREAD, &dataReady);
-printf("^(%d/%d/%d/%d)", ic, (int)chunkSize, (int)dataReady, (int)io->totalData);
-        assert(dataReady < 2E9);
-			if (ic < 0)
+            assert(dataReady < 2E9);
+            if (ic < 0)
             {
                 if (verbose) fputc('@', stdout);
                 return -1;
@@ -247,8 +239,7 @@ static void send_dummy_data(SOCKET soc, io_info_t *io)
     size_t i, l, len = io->postSize;
     const char *s = io->fake_output_databuf;
 
-printf("\n[START]");
-	l = len;
+    l = len;
     if (l > io->fake_output_databuf_size)
         l = io->fake_output_databuf_size;
 
@@ -434,7 +425,6 @@ int WINAPI ClientMain(void * clientNo) {
   }
 
   if (verbose == 1) fputc('>', stdout);
-printf("=(%d)", (int)io.totalData);
 
   /*
   You MUST flush the TCP write buffer or mongoose to receive the transmitted data -- or part or whole of
@@ -489,7 +479,6 @@ printf("=(%d)", (int)io.totalData);
         break;
     }
   }
-printf(".(%d)", (int)io.totalData);
 
   {
       char buf[BUFSIZ];
@@ -521,7 +510,6 @@ printf(".(%d)", (int)io.totalData);
       do {
           // when server does shutdown(WR), we'll be notified here by recv() --> n==0
           n = recv(soc, buf, sizeof(buf), 0);
-printf("!(%d)", n);
       } while (n > 0 && !bugger_off);
 
       // Now we know that our FIN is ACK-ed, safe to close
