@@ -2455,6 +2455,7 @@ static int get_request_len(const char *buf, int buflen) {
     if (!isprint(* (const unsigned char *) s) && *s != '\r' &&
         *s != '\n' && * (const unsigned char *) s < 128) {
       len = -1;
+	  break; // [i_a] abort scan as soon as one malformed character is found; don't let subsequent \r\n\r\n win us over anyhow
     } else if (s[0] == '\n' && s[1] == '\n') {
       len = (int) (s - buf) + 2;
     } else if (s[0] == '\n' && &s[1] < e &&
@@ -5171,7 +5172,7 @@ static void process_new_connection(struct mg_connection *conn) {
       send_http_error(conn, 413, NULL, "");
       return;
     } if (conn->request_len <= 0) {
-      return;  // Remote end closed the connection
+      return;  // Remote end closed the connection or malformed request
     }
 
     // Nul-terminate the request cause parse_http_request() uses sscanf
@@ -5289,6 +5290,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!conn->client.is_ssl ||
         (conn->client.is_ssl && sslize(conn, SSL_accept))) {
+      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary data
       call_user(conn, MG_INIT_CLIENT_CONN);
       process_new_connection(conn);
     }
