@@ -4921,7 +4921,7 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   char buf[BUFSIZ];
   struct linger linger;
   int n, w;
-  int linger_timeout = 1 * 1000;
+  int linger_timeout = 1;
 
   /*
 
@@ -4950,26 +4950,9 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   // Now we set socket to BLOCKING before we go into the 'graceful close' phase:
   set_non_blocking_mode(sock, 0); 
 
-  // Set linger option to avoid socket hanging out after close. This prevent
-  // ephemeral port exhaust problem under high QPS.
-  linger.l_onoff = 1;
-  linger.l_linger = linger_timeout / 1000;
-  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
-
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
 
-  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
-  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
-  //
-  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
-  // and in particular the section titled "Some notes on non-blocking sockets".
-  
-  // Read and discard pending incoming data. If we do not do that and close the
-  // socket, the data in the send buffer may be discarded. This
-  // behaviour is seen on Windows, when client keeps sending data
-  // when server decides to close the connection; then when client
-  // does recv() it gets no data back.
   w = 0;
   do {
 	  // as data may still be incoming (but we don';t wanna hear about it),
@@ -4979,7 +4962,7 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
 	  // socket errors client-side.
 	  fd_set fds;
 	  struct timeval tv = {0};
-	  tv.tv_usec = 200000;
+	  tv.tv_sec = linger_timeout;
 
 	  FD_ZERO(&fds);
 	  FD_SET(sock, &fds);
@@ -4995,38 +4978,57 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
 	  case 0:
 		  // timeout expired:
 		  n = 0;
-		  linger_timeout -= 200;
-		  // check if all pending TX is gone already:
-#if defined(SIOCOUTQ)
-		  {
-			  int wr_pending = 0;
-			  if (ioctl(sock, SIOCOUTQ, &wr_pending))
-			  {
-				  w = wr_pending;
-			  }
-			  if (w && !n)
-			  {
-				  mg_sleep(1);
-			  }
-		  }
-#endif
 		  break;
 
 	  default:
 		  // fatality:
 		  n = 0;
-		  w = 0;
-		  linger_timeout = 0;
 		  break;
 	  }
-	  // check our linger timeout 'expiry': prevent possibly malicious clients
-	  // from keeping the socket open forever by not fetching our TX data...
-  } while ((n > 0 || w > 0) && linger_timeout > 0 && mg_get_stop_flag(ctx) == 0);
+  } while (n > 0 && mg_get_stop_flag(ctx) == 0);
 
-  // Adjust linger option for time spent above
-  linger.l_onoff = (linger_timeout > 0);
-  linger.l_linger = linger_timeout / 1000;
+  // Set linger option to avoid socket hanging out after close. This prevent
+  // ephemeral port exhaust problem under high QPS.
+  linger.l_onoff = 1;
+  linger.l_linger = linger_timeout;
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+
+  // Send FIN to the client
+  (void) shutdown(sock, SHUT_WR);
+
+  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
+  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+  //
+  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+  // and in particular the section titled "Some notes on non-blocking sockets".
+  
+  set_non_blocking_mode(sock, 1);
+
+  // Read and discard pending incoming data. If we do not do that and close the
+  // socket, the data in the send buffer may be discarded. This
+  // behaviour is seen on Windows, when client keeps sending data
+  // when server decides to close the connection; then when client
+  // does recv() it gets no data back.
+  w = 0;
+  do {
+    n = pull(NULL, sock, NULL, buf, sizeof(buf));
+#if defined(SIOCOUTQ)
+	{
+		int wr_pending = 0;
+		if (ioctl(sock, SIOCOUTQ, &wr_pending))
+		{
+			w = wr_pending;
+		}
+		if (w && !n)
+		{
+			mg_sleep(1);
+		}
+	}
+#endif
+  } while ((n > 0 || w > 0) && mg_get_stop_flag(ctx) == 0);
+  
+  // better: have the socket block before we close. See MSDN comment above.
+  set_non_blocking_mode(sock, 0);
 
 #if defined(_WIN32)
   DisconnectEx(sock, NULL, 0, 0);
