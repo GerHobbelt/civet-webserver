@@ -58,7 +58,7 @@ struct mg_request_info {
   struct mg_ip_address local_ip;        // This machine's IP address which receives/services the request
   int local_port;       // Server's port
   int status_code;       // HTTP reply status code, e.g. 200
-  const char *status_custom_description; // extra info for the given status_code, may be empty; valid for event MG_HTTP_ERROR
+  char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
   int is_ssl;            // 1 if SSL-ed, 0 if not
   int num_headers;       // Number of headers
   struct mg_header {

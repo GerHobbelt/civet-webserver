@@ -1284,45 +1284,45 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   custom_len = 0;
   len = mg_snprintf(conn, buf, sizeof(buf) - 2, "Error %d: %s", status, reason);
   if (fmt != NULL)
+  {
     custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
-  else
-	buf[len + 1] = 0;
+	if (custom_len > 0)
+	{
+	  buf[len++] ='\t';
+	  len += custom_len;
+	}
+  }
 
   conn->request_info.status_code = status;
-  conn->request_info.status_custom_description = buf + len + 1;
+  conn->request_info.status_custom_description = buf;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
-	custom_len = 0;
+	char *p;
 	if (conn->request_info.status_custom_description)
-	{
-      if (conn->request_info.status_custom_description != buf + len + 1)
-	  {
-	    strncpy(buf + len + 1, conn->request_info.status_custom_description, sizeof(buf) - len - 1);
-		buf[sizeof(buf) - 1] = 0;
-	  }
-      custom_len = strlen(buf + len + 1);
-    }
+      len = strlen(conn->request_info.status_custom_description);
+	else
+	  conn->request_info.status_custom_description = buf;
+	p = strchr(conn->request_info.status_custom_description, '\t');
+	if (p)
+	  *p = 0;
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
       mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
-          __func__, buf,
+          __func__, conn->request_info.status_custom_description,
           conn->request_info.http_version,
           conn->request_info.request_method, conn->request_info.uri,
           (conn->request_info.query_string ? "?" : ""),
           (conn->request_info.query_string ? conn->request_info.query_string : ""),
-		  conn->request_info.status_custom_description);
-  	  if (custom_len)
-	  {
-        buf[len++] = '\n';
-	    len += custom_len;
-	  }
+		  (p ? p : ""));
+  	  if (p)
+        *p = '\n';
 	}
 	else
 	{
 	  len = 0;
 	}
-    DEBUG_TRACE(("[%s]", buf));
+    DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
     mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
   
@@ -1340,7 +1340,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     mg_mark_end_of_header_transmission(conn);
 	if (len > 0)
 	{
-      mg_write(conn, buf, len);
+      mg_write(conn, conn->request_info.status_custom_description, len);
 	}
   }
   // kill lingering reference to local storage:
@@ -4111,7 +4111,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
           do_ssi_exec(conn, buf + ssi_start.len + 4);
 #endif // !NO_POPEN
         } else {
-          mg_cry(conn, "%s: unknown SSI " "command: \"%s\"", path, buf);
+          mg_cry(conn, "%s: unknown SSI command: \"%s\"", path, buf);
         }
       }
       len = 0;
