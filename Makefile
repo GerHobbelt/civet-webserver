@@ -26,7 +26,7 @@ CFLAGS = -W -Wall -std=c99 -pedantic -O2 $(COPT)
 MAC_SHARED = -flat_namespace -bundle -undefined suppress
 LINFLAGS = -ldl -pthread $(CFLAGS)
 LIB = _$(PROG).so
-CC = g++
+CC = gcc
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -45,9 +45,9 @@ mac:
 	$(CC) mongoose_ex.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 solaris:
-	gcc mongoose_ex.c -pthread -lnsl \
+	$(CC) mongoose_ex.c -pthread -lnsl \
 		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
-	gcc mongoose_ex.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
+	$(CC) mongoose_ex.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
 
 
 ##########################################################################
@@ -118,9 +118,9 @@ MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
 #MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT
 mingw:
 	windres win32\res.rc win32\res.o
-	gcc $(MINGWOPT) mongoose_ex.c -lws2_32 \
+	$(CC) $(MINGWOPT) mongoose_ex.c -lws2_32 \
 		-shared -Wl,--out-implib=$(PROG).lib -o _$(PROG).dll
-	gcc $(MINGWOPT) -Iwin32 mongoose_ex.c main.c win32\res.o -lws2_32 -ladvapi32 \
+	$(CC) $(MINGWOPT) -Iwin32 mongoose_ex.c main.c win32\res.o -lws2_32 -ladvapi32 \
 		-o $(PROG).exe
 
 
