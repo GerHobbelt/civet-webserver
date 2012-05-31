@@ -93,6 +93,7 @@ typedef struct io_info
 {
     int clientNo;
     size_t totalData;
+    size_t totalHeadersData;
     size_t postSize;
     int isBody;
     time_t lastData;
@@ -131,7 +132,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     if (bugger_off)
     {
         if (verbose <= 1) fputc('~', stdout);
-        else if (verbose > 1) printf("Closing prematurely: server is taking too long to our taste: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+        else if (verbose > 1) printf("Closing prematurely: server is taking too long to our taste: client %i --> %u/%u/%u\r\n", io->clientNo, (unsigned int)io->totalHeadersData, (unsigned int)io->totalData, (unsigned int)io->postSize);
         return -1;
     }
 
@@ -139,7 +140,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
     assert(dataReady < 2E9);
     if (ic < 0)
     {
-        if (verbose || 1) fputc('@', stdout);
+        if (verbose) fputc('@', stdout);
         return -1;
     }
     if (dataReady) {
@@ -175,14 +176,21 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
               chunkSize -= (headEnd - buf) - 3; 
               assert(chunkSize >= 0);
               assert(chunkSize < 2E9);
+              assert((headEnd - buf) - 3 > 0); 
+              io->totalHeadersData += (headEnd - buf) - 3;
               if (chunkSize>0) {
                 io->totalData += chunkSize;
-                if (verbose > 2) printf("r:%d/%d\n", (int)chunkSize, (int)io->totalData);
                 //fwrite(headEnd,1,got,STORE);
               }
+              if (verbose > 2) printf("r:%d/%d/%d\n", (int)chunkSize, (int)io->totalHeadersData, (int)io->totalData);
               io->isBody = 1;
             }
-            // else: we haven't received all headers entirely yet --> don't count recv()'d data
+			else
+			{
+              // else: we haven't received all headers entirely yet 
+              io->totalHeadersData += chunkSize;
+              if (verbose > 2) printf("h:%d/%d\n", (int)chunkSize, (int)io->totalHeadersData);
+			}
           } else {
             // we're already receiving the body data of the response: count 'em all:
             io->totalData += chunkSize;
@@ -219,13 +227,13 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
           {
               // server closed connection:
               if (verbose <= 1) fputc('#', stdout);
-              else if (verbose > 1) printf("Server close: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+              else if (verbose > 1) printf("Server close: client %i --> %u/%u/%u\r\n", io->clientNo, (unsigned int)io->totalHeadersData, (unsigned int)io->totalData, (unsigned int)io->postSize);
             return -1;
           }
           else
           {
               // server crash / abortus provocatus?
-            printf("Abortus Provocatus?: client %i --> %u/%u\r\n", io->clientNo, (unsigned int)io->totalData, (unsigned int)io->postSize);
+            printf("Abortus Provocatus?: client %i --> %u/%u/%u\r\n", io->clientNo, (unsigned int)io->totalHeadersData, (unsigned int)io->totalData, (unsigned int)io->postSize);
             return -1;
           }
       }
@@ -285,6 +293,7 @@ static struct sockaddr_in target = {0};
 static CRITICAL_SECTION cs = {0};
 static size_t expectedData = 0;
 static size_t previously_expectedData = 0;
+static size_t expectedHeadersData = 0;
 static DWORD_PTR availableCPUs = 1;
 static DWORD_PTR totalCPUs = 1;
 static unsigned good = 0;
@@ -313,6 +322,7 @@ int WINAPI ClientMain(void * clientNo) {
   io.postSize = postSize;
   io.timeOut = 10;
   io.totalData = 0;
+  io.totalHeadersData = 0;
 
   if ((!isTest) && (((1ULL<<cpu) & availableCPUs)!=0)) {
     SetThreadAffinityMask(GetCurrentThread(), 1ULL<<cpu);
@@ -517,10 +527,16 @@ int WINAPI ClientMain(void * clientNo) {
   }
 
   if (isTest) {
-    if (verbose > 2) printf("RR:%d\n", (int)io.totalData);
+    if (verbose > 2) printf("M:%d/%d\n", (int)io.totalHeadersData, (int)io.totalData);
     expectedData = io.totalData;
+    expectedHeadersData = io.totalHeadersData;
   } else if (io.totalData != expectedData) {
-    printf("Error: Client %i got %u bytes instead of %u\r\n", io.clientNo, (unsigned int)io.totalData, (unsigned int)expectedData);
+    printf("Error: Client %i got %u content bytes instead of %u\r\n", io.clientNo, (unsigned int)io.totalData, (unsigned int)expectedData);
+    EnterCriticalSection(&cs);
+    bad++;
+    LeaveCriticalSection(&cs);
+  } else if (io.totalHeadersData != expectedHeadersData) {
+    printf("Error: Client %i got %u HTTP header bytes instead of %u\r\n", io.clientNo, (unsigned int)io.totalHeadersData, (unsigned int)expectedHeadersData);
     EnterCriticalSection(&cs);
     bad++;
     LeaveCriticalSection(&cs);
@@ -599,12 +615,13 @@ int MultiClientTestAutomatic(unsigned long initialPostSize) {
     printf("Preparing test with %u bytes of data ...", postSize);
     previously_expectedData = expectedData;
     expectedData = 0;
+    expectedHeadersData = 0;
     ClientMain(0);
-    if (expectedData==0) {
+    if (expectedData == 0 && expectedHeadersData == 0) {
       printf(" Error: Could not read any data\a\r\n");
       return 1;
     }
-    printf(" OK: %u bytes of data\r\n", expectedData);
+    printf(" OK: %u bytes of data  &  %u bytes of header data\r\n", expectedData, expectedHeadersData);
     printf("Starting multi client test: %i cycles, %i clients each\r\n\r\n", (int)TESTCYCLES, (int)CLIENTCOUNT);
     good=bad=0;
 
@@ -651,12 +668,13 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
     printf("Preparing test with %u bytes of data ...", postSize);
     previously_expectedData = expectedData;
     expectedData = 0;
+    expectedHeadersData = 0;
     ClientMain(0);
-    if (expectedData==0) {
+    if (expectedData == 0 && expectedHeadersData == 0) {
       printf(" Error: Could not read any data\a\r\n");
       return 1;
     }
-    printf(" OK: %u bytes of data\r\n", expectedData);
+    printf(" OK: %u bytes of data  &  %u bytes of header data\r\n", expectedData, expectedHeadersData);
     printf("Starting single client test: %i cycles\r\n\r\n", (int)TESTCYCLES);
     good=bad=0;
 
