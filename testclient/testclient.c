@@ -16,6 +16,18 @@ static const char * RESOURCE[] = {
 static int CLIENTCOUNT = 20;
 static int TESTCYCLES = 50;
 
+char *strnstr(char *haystack, const char *needle, size_t haysize)
+{
+	size_t len = strlen(needle);
+	size_t i;
+	for (i = 0; i + len < haysize; i++)
+	{
+		if (!memcmp(haystack + i, needle, len))
+			return haystack + i;
+	}
+	return NULL;
+}
+
 static int keypress = 0;
 
 int is_quit_key_pressed(void)
@@ -99,6 +111,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 	FD_SET fds, fdw;
 	struct timeval tv;
 	int srv;
+	int ic;
 
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
@@ -120,12 +133,15 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 		return -1;
 	}
 
-    if (ioctlsocket(soc, FIONREAD, &dataReady) < 0) 
+    ic = ioctlsocket(soc, FIONREAD, &dataReady);
+printf("-(%d/%d/%d/%d/%d)", ic, (int)dataReady, (int)io->totalData, srv, we_re_writing_too);
+    if (ic < 0) 
 	{
 		if (verbose || 1) fputc('@', stdout);
 		return -1;
 	}
     if (dataReady) {
+		assert(dataReady < 2E9);
 	  if (verbose > 1) fputc('+', stdout); // see a bit of action around here...
 	  // fetch all the pending RX data pronto:
 	  do
@@ -135,10 +151,12 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 			printf("Error: recv failed for client %i: %d/%d/%d\r\n", io->clientNo, chunkSize, dataReady, GetLastError());
 			return -1;
 		  } else if (!io->isBody) {
-			char * headEnd = strstr(buf,"\xD\xA\xD\xA");
+			char * headEnd = strnstr(buf,"\xD\xA\xD\xA", chunkSize);
 			if (headEnd) {
 			  headEnd+=4;
 			  chunkSize -= ((int)headEnd - (int)buf);
+			  assert(chunkSize >= 0);
+			  assert(chunkSize < 2E9);
 			  if (chunkSize>0) {
 				io->totalData += chunkSize;
 				if (verbose > 2) printf("r:%d/%d\n", (int)chunkSize, (int)io->totalData);
@@ -152,6 +170,17 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
 			//fwrite(buf,1,got,STORE);
 		  }
 		  dataReady -= chunkSize;
+		  if (dataReady == 0)
+		  {
+			// see if there's more data pending already...
+			ic = ioctlsocket(soc, FIONREAD, &dataReady);
+			if (ic < 0) 
+			{
+				if (verbose || 1) fputc('@', stdout);
+				return -1;
+			}
+			assert(dataReady < 2E9);
+		  }
 	  } while (dataReady > 0 && chunkSize > 0);
 	  io->lastData = time(0);
     } else {
@@ -374,6 +403,7 @@ int WINAPI ClientMain(void * clientNo) {
   }
 
   if (verbose == 1) fputc('>', stdout);
+printf(">(%d)", (int)io.totalData);
 
   /*
   You MUST flush the TCP write buffer or mongoose to receive the transmitted data -- or part or whole of
@@ -424,6 +454,7 @@ int WINAPI ClientMain(void * clientNo) {
 		break;
 	}
   }
+printf(".(%d)", (int)io.totalData);
 
   {
 	  char buf[BUFSIZ];
@@ -455,6 +486,7 @@ int WINAPI ClientMain(void * clientNo) {
 	  do {
 		  // when server does shutdown(WR), we'll be notified here by recv() --> n==0
 		  n = recv(soc, buf, sizeof(buf), 0);
+printf("!(%d)", n);
 	  } while (n > 0 && !bugger_off);
 
 	  // Now we know that our FIN is ACK-ed, safe to close
