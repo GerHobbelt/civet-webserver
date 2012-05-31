@@ -1274,31 +1274,54 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 {
   char buf[BUFSIZ];
   int len;
+  int custom_len;
 
   if (!reason) {
     reason = mg_get_response_code_text(status);
   }
 
+  buf[0] = '\0';
+  custom_len = 0;
+  len = mg_snprintf(conn, buf, sizeof(buf) - 2, "Error %d: %s", status, reason);
+  if (fmt != NULL)
+    custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
+  else
+	buf[len + 1] = 0;
+
   conn->request_info.status_code = status;
+  conn->request_info.status_custom_description = buf + len + 1;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
-    buf[0] = '\0';
-    len = 0;
+	custom_len = 0;
+	if (conn->request_info.status_custom_description)
+	{
+      if (conn->request_info.status_custom_description != buf + len + 1)
+	  {
+	    strncpy(buf + len + 1, conn->request_info.status_custom_description, sizeof(buf) - len - 1);
+		buf[sizeof(buf) - 1] = 0;
+	  }
+      custom_len = strlen(buf + len + 1);
+    }
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
-      len = mg_snprintf(conn, buf, sizeof(buf), "Error %d: %s", status, reason);
-      mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s)",
+      mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
           __func__, buf,
           conn->request_info.http_version,
           conn->request_info.request_method, conn->request_info.uri,
           (conn->request_info.query_string ? "?" : ""),
-          (conn->request_info.query_string ? conn->request_info.query_string : ""));
-      buf[len++] = '\n';
-
-      if (fmt != NULL)
-        len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
-    }
+          (conn->request_info.query_string ? conn->request_info.query_string : ""),
+		  conn->request_info.status_custom_description);
+  	  if (custom_len)
+	  {
+        buf[len++] = '\n';
+	    len += custom_len;
+	  }
+	}
+	else
+	{
+	  len = 0;
+	}
     DEBUG_TRACE(("[%s]", buf));
 
     mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
@@ -1307,16 +1330,21 @@ static void vsend_http_error(struct mg_connection *conn, int status,
      Otherwise an incorrect Content-Type generates a warning in
      some browsers when a static file request returns a 304
      "not modified" error. */
-  if(len > 0) {
-    mg_printf(conn, "Content-Type: text/plain\r\n");
-  }
+    if(len > 0) {
+      mg_printf(conn, "Content-Type: text/plain\r\n");
+    }
     mg_printf(conn, "Content-Length: %d\r\n"
               "Connection: %s\r\n\r\n", len,
               suggest_connection_header(conn));
 
     mg_mark_end_of_header_transmission(conn);
-    mg_printf(conn, "%s", buf);
+	if (len > 0)
+	{
+      mg_write(conn, buf, len);
+	}
   }
+  // kill lingering reference to local storage:
+  conn->request_info.status_custom_description = NULL;
 }
 
 static void send_http_error(struct mg_connection *conn, int status,
@@ -3799,6 +3827,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     goto done;
   } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
           fd_stdin[0], fd_stdout[1], dir)) == (pid_t) -1) {
+    send_http_error(conn, 500, NULL,
+        "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
       (out = fdopen(fd_stdout[0], "rb")) == NULL) {
