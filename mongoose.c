@@ -3795,15 +3795,12 @@ static int set_gpass_option(struct mg_context *ctx) {
   struct mgstat mgstat;
   const char *path = ctx->config[GLOBAL_PASSWORDS_FILE];
   
-  if(path == NULL) return 1;
-  
-  if(mg_stat(path, &mgstat)==0){
+  if(path == NULL || mg_stat(path, &mgstat)==0){
     return 1;
   }else{
     cry(fc(ctx), "%s: global passwords file \"%s\" error: %s", __func__, path, strerror(ERRNO));
     return 0;
   }
-  
 }
 
 static int set_acl_option(struct mg_context *ctx) {
