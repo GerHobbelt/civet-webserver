@@ -107,6 +107,10 @@ int mg_set_socket_timeout(struct socket *sock, int seconds)
 	return set_timeout(sock, seconds);
 }
 
+int mg_ioctlsocket(struct socket *sock, long int cmd, unsigned long int *arg)
+{
+	return ioctlsocket(sock->sock, cmd, arg);
+}
 
 int mg_get_stop_flag(struct mg_context *ctx)
 {

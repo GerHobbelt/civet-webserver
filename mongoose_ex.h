@@ -67,6 +67,9 @@ int mg_set_socket_timeout(struct socket *sock, int seconds);
 // set socket to non-blocking mode.
 int mg_set_non_blocking_mode(struct socket *sock, int on);
 
+// generic interface: ioctlsocket()
+int mg_ioctlsocket(struct socket *sock, long int cmd, unsigned long int *arg);
+
 // shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
 int mg_shutdown(struct socket *sock, int how);
 
