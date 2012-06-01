@@ -459,6 +459,31 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="..\..\.gitmodules" />
+    <None Include="..\..\documentation\BuildOnAndroid.html" />
+    <None Include="..\..\documentation\BuildOnAndroid.wiki" />
+    <None Include="..\..\documentation\ConfigurationProblems.html" />
+    <None Include="..\..\documentation\ConfigurationProblems.wiki" />
+    <None Include="..\..\documentation\default.html" />
+    <None Include="..\..\documentation\desktop.ini" />
+    <None Include="..\..\documentation\development-info.html" />
+    <None Include="..\..\documentation\Features.html" />
+    <None Include="..\..\documentation\Features.wiki" />
+    <None Include="..\..\documentation\icon.svg" />
+    <None Include="..\..\documentation\images\leftphoto.jpg" />
+    <None Include="..\..\documentation\master.dwt" />
+    <None Include="..\..\documentation\MongooseManual.html" />
+    <None Include="..\..\documentation\MongooseManual.wiki" />
+    <None Include="..\..\documentation\styles\layout.css" />
+    <None Include="..\..\documentation\styles\style0.css" />
+    <None Include="..\..\documentation\styles\style1.css" />
+    <None Include="..\..\documentation\styles\style2.css" />
+    <None Include="..\..\documentation\styles\style3.css" />
+    <None Include="..\..\documentation\UsefulResources.html" />
+    <None Include="..\..\documentation\UsefulResources.wiki" />
+    <None Include="..\..\documentation\WindowsUsage.html" />
+    <None Include="..\..\documentation\WindowsUsage.wiki" />
+    <None Include="..\..\documentation\WritingWebApplications.html" />
+    <None Include="..\..\documentation\WritingWebApplications.wiki" />
     <None Include="..\..\LICENSE" />
     <None Include="..\..\Makefile" />
     <None Include="..\..\mongoose.1" />

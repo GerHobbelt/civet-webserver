@@ -1,5 +1,4 @@
-#summary Describes all configurable options
-#labels Featured
+# Describes all configurable options
 
 <pre>
 mongoose(1)               BSD General Commands Manual              mongoose(1)
