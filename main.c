@@ -20,7 +20,7 @@
 
 
 #include "mongoose_sys_porting.h"
-#include "mongoose_ex.h"
+#include "mongoose_ex.c"
 #include "win32/resource.h"
 
 #ifdef _WIN32
@@ -30,7 +30,6 @@
 #include <upskirt/src/markdown.h>
 #include <upskirt/html/html.h>
 
-using namespace upskirt;
 
 
 #define MAX_OPTIONS 40
@@ -61,6 +60,7 @@ static const char *default_options[] = {
 	"ssi_pattern",			 "**.html$|**.htm|**.shtml$|**.shtm$",
 	"enable_keep_alive",     "yes",
 	//"ssi_marker",			 "{!--#,}",
+	"keep_alive_timeout",    "0",
 
     NULL
 };
@@ -415,6 +415,13 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
 }
 
 
+static struct mg_context *docu_host_ctx = NULL;
+
+void mg_set_context(struct mg_connection *conn, struct mg_context *ctx)
+{
+	conn->ctx = ctx;
+}
+
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   struct mg_request_info *request_info = mg_get_request_info(conn);
@@ -430,6 +437,30 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	printf("Boom?\n");
   }
 #endif
+
+  if (event == MG_INIT0)
+  {
+	  // as part of the IP-based Virtual Hosting trickery, set up a copy of the global CTX for the second host:
+	  docu_host_ctx = (struct mg_context *)malloc(sizeof(*docu_host_ctx));
+	  if (!docu_host_ctx)
+		die("out of memory");
+	  *docu_host_ctx = *ctx;
+	  mg_asprintf(conn, &docu_host_ctx->config[DOCUMENT_ROOT], PATH_MAX, "%s/../documentation", ctx->config[DOCUMENT_ROOT]);
+  }
+  else if (event == MG_EXIT_SERVER)
+  {
+	  // cleanup the Virtual Hosting trickery:
+	  free(docu_host_ctx->config[DOCUMENT_ROOT]);
+	  free(docu_host_ctx);
+  }
+  if (event == MG_INIT_CLIENT_CONN)
+  {
+	  // check local IP for IP-based Virtual Hosting & switch CTX for the connection accordingly
+	  if (!request_info->local_ip.is_ip6 && request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.2 */)
+	  {
+		  mg_set_context(conn, docu_host_ctx);
+	  }
+  }
 
   if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
 	struct mgstat st;

@@ -5315,6 +5315,12 @@ static void worker_thread(struct mg_context *ctx) {
     // Thanks to Johannes Winkelmann for the patch.
     conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
     get_socket_ip_address(&conn->request_info.remote_ip, &conn->client.rsa);
+	// get the actual local IP address+port the client connected to:
+	if (0 != getsockname(conn->client.sock, &conn->client.lsa.u.sa, &conn->client.lsa.len))
+	{
+		mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+		//conn->client.lsa.len = 0;
+	}
     conn->request_info.local_port = get_socket_port(&conn->client.lsa);
     get_socket_ip_address(&conn->request_info.local_ip, &conn->client.lsa);
     conn->request_info.is_ssl = conn->client.is_ssl;
@@ -5364,7 +5370,7 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
 
 static void accept_new_connection(const struct socket *listener,
                                   struct mg_context *ctx) {
-  struct socket accepted;
+  struct socket accepted = {0};  // NIL all connection parameters to prevent surprises in user code accessing any of these.
   char src_addr[SOCKADDR_NTOA_BUFSIZE];
   int allowed;
 
