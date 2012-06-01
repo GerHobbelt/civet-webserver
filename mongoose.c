@@ -2459,11 +2459,13 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
         closesocket(sock);
       }
       else {
+		if (result) freeaddrinfo(result);
         return newconn;
       }
     }
   }
 
+  if (result) freeaddrinfo(result);
   if (newconn) free(newconn);
   return NULL;
 }
@@ -5441,7 +5443,7 @@ static void master_thread(struct mg_context *ctx) {
       // (at least on my Windows XP Pro). So in this case, we sleep here.
       //
       // [i_a]: always sleep a bit on error, unless the error is due to a stop signal
-      if (ctx->stop_flag != 0)
+      if (ctx->stop_flag == 0)
         mg_sleep(10);
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
