@@ -46,7 +46,36 @@ struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn);
 int64_t mg_get_num_bytes_received(struct mg_connection *conn);
 
-struct socket *mg_get_client_socket(struct mg_connection *conn);
+struct socket *mg_get_socket(struct mg_connection *conn);
+
+/*
+ntop()/ntoa() replacement with IPv6 + IPv4 support.
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+'dst' is also returned as function result; on error, 'dst' will 
+contain an empty string.
+*/
+char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote);
+
+/*
+ntoh() replacement for IPv6 + IPv4 support.
+
+remote = 1 will produce the remote port, while
+remote = 0 will produce the local port for the given connection (socket)
+*/
+unsigned short int mg_get_socket_port(const struct socket *sock, int remote);
+
+/*
+IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+Return 0 on success, non-zero on error.
+*/
+int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote);
 
 // Return the current 'stop_flag' state value for the given thread context.
 int mg_get_stop_flag(struct mg_context *ctx);
