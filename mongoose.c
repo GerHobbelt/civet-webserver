@@ -4172,7 +4172,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       buf[len++] = (char) ch;
       buf[len] = '\0';
       assert(len <= (int) sizeof(buf));
-      if (len < ssi_start.len + 1 || memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
+      if (len < (int)ssi_start.len + 1 || memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
         // Not an SSI tag, pass it
         (void) mg_write(conn, buf, (size_t)len);
       } else {
@@ -4188,7 +4188,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
       }
       len = 0;
     } else if (in_ssi_tag) {
-      if (len == ssi_start.len && memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
+      if (len == (int)ssi_start.len && memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
         // Not an SSI tag
         in_ssi_tag = 0;
       } else if (len == (int) sizeof(buf) - 2) {
@@ -4673,7 +4673,8 @@ static void log_header(const struct mg_connection *conn, const char *header,
 static void log_access(struct mg_connection *conn) {
   const struct mg_request_info *ri;
   FILE *fp;
-  char date[64], src_addr[20];
+  char date[64];
+  char src_addr[SOCKADDR_NTOA_BUFSIZE];
   const char *fpath = mg_get_default_access_logfile_path(conn);
 
   (void) strftime(date, sizeof(date), "%d/%b/%Y:%H:%M:%S %z",
@@ -5374,6 +5375,15 @@ static void worker_thread(struct mg_context *ctx) {
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
   while (consume_socket(ctx, &conn->client)) {
+	// particular connections may want an alternate timeout...
+    int keep_alive_timeout = atoi(get_conn_option(conn, KEEP_ALIVE_TIMEOUT));
+
+    if (set_timeout(&conn->client, keep_alive_timeout)) {
+      char src_addr[SOCKADDR_NTOA_BUFSIZE];
+      mg_cry(conn, "%s: %s - failed to set the socket timeout to %d seconds",
+          __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
+    }
+
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
     // and clear the cached logfile path so it is recalculated on the next log operation:
