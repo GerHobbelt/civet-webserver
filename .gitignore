@@ -24,3 +24,11 @@ win32/msvc2010/ipch/
 
 _mongoose.dll
 mongoose.lib
+
+documentation/_vti_cnf/
+documentation/images/_vti_cnf/
+documentation/styles/_vti_cnf/
+
+log/
+testclient.log
+

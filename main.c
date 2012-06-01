@@ -27,6 +27,12 @@
 #include <winsvc.h>
 #endif // _WIN32
 
+#include <upskirt/src/markdown.h>
+#include <upskirt/html/html.h>
+
+using namespace upskirt;
+
+
 #define MAX_OPTIONS 40
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
@@ -51,6 +57,10 @@ static const char *default_options[] = {
     "num_threads",           "5",
     "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
 	"access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
+	"index_files",			 "default.html",
+	"ssi_pattern",			 "**.html$|**.htm|**.shtml$|**.shtm$",
+	"enable_keep_alive",     "yes",
+	//"ssi_marker",			 "{!--#,}",
 
     NULL
 };
@@ -233,7 +243,7 @@ struct t_stat {
   struct t_stat * next;
 };
 
-struct t_user_arg {   
+struct t_user_arg {
    pthread_mutex_t mutex;
    struct t_stat * uris[0x10000];
 };
@@ -243,12 +253,167 @@ unsigned short crc16(const void * data, unsigned long bitCount) {
 	unsigned long i;
   for (i=0;i<bitCount;i++) {
     unsigned short b = ((unsigned char*)data)[i>>3];
-    b >>= i & 0x7ul;    
+    b >>= i & 0x7ul;
     r = ((r & 1u) != (b & 1u)) ? ((r>>1) ^ 0xA001u) : (r>>1);
   }
   r ^= 0xFFFFu;
   return r;
 }
+
+static int report_markdown_failure(struct mg_connection *conn, int is_inline_production, int response_code, const char *fmt, ...)
+{
+	va_list args;
+
+	if (is_inline_production)
+	{
+		mg_printf(conn, "<h1 style=\"color: red;\">Error: %d - %s</h1>\n", response_code, mg_get_response_code_text(response_code));
+		va_start(args, fmt);
+		mg_vprintf(conn, fmt, args);
+		va_end(args);
+	}
+	else
+	{
+		va_start(args, fmt);
+		mg_vsend_http_error(conn, response_code, NULL, fmt, args);
+		va_end(args);
+	}
+	return -1;
+}
+
+
+int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, int is_inline_production)
+{
+#define SD_READ_UNIT 1024
+#define SD_OUTPUT_UNIT 64
+
+	struct mg_request_info *ri = mg_get_request_info(conn);
+	struct sd_buf *ib, *ob;
+	int ret;
+	unsigned int enabled_extensions = MKDEXT_TABLES | MKDEXT_FENCED_CODE | MKDEXT_EMAIL_FRIENDLY;
+	unsigned int render_flags = 0; // HTML_SKIP_HTML | HTML_SKIP_STYLE | HTML_HARD_WRAP;
+
+	struct sd_callbacks callbacks;
+	struct html_renderopt options;
+	struct sd_markdown *markdown;
+
+	/* opening the file */
+	FILE *in;
+
+	assert(ri->phys_path);
+	/* opening the file */
+	in = mg_fopen(ri->phys_path, "r");
+	if (!in)
+	{
+		return report_markdown_failure(conn, is_inline_production, 404, "Unable to open input file: [%s] %s", ri->uri, mg_strerror(errno));
+	}
+
+	/* reading everything */
+	ib = sd_bufnew(SD_READ_UNIT);
+	if (SD_BUF_OK != sd_bufgrow(ib, (size_t)st->size))
+	{
+		mg_fclose(in);
+		sd_bufrelease(ib);
+		return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while loading Markdown input file: [%s]", ri->uri);
+	}
+	ret = fread(ib->data, 1, ib->asize, in);
+	if (ret > 0)
+	{
+		ib->size += ret;
+		mg_fclose(in);
+	}
+	else
+	{
+		mg_fclose(in);
+		sd_bufrelease(ib);
+		return report_markdown_failure(conn, is_inline_production, 500, "Cannot read from input file: [%s] %s", ri->uri, mg_strerror(errno));
+	}
+
+	/* performing markdown parsing */
+	ob = sd_bufnew(SD_OUTPUT_UNIT);
+
+	sdhtml_renderer(&callbacks, &options, render_flags);
+	markdown = sd_markdown_new(enabled_extensions, 16, &callbacks, &options);
+	if (!markdown)
+	{
+		sd_bufrelease(ib);
+		sd_bufrelease(ob);
+		return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while processing Markdown input file: [%s]", ri->uri);
+	}
+	sd_markdown_render(ob, ib->data, ib->size, markdown);
+	sd_markdown_free(markdown);
+
+	if (!is_inline_production)
+	{
+		/* write the appropriate headers */
+		char date[64], lm[64], etag[64], range[64];
+		time_t curtime = time(NULL);
+		const char *hdr;
+		int64_t cl, r1, r2;
+		int n;
+
+		ri->status_code = 200;
+
+		cl = ob->size;
+
+		range[0] = '\0';
+
+#if 0
+		// If Range: header specified, act accordingly
+		r1 = r2 = 0;
+		hdr = mg_get_header(conn, "Range");
+		if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
+			conn->request_info.status_code = 206;
+			(void) fseeko(fp, (off_t) r1, SEEK_SET);
+			cl = n == 2 ? r2 - r1 + 1: cl - r1;
+			(void) mg_snprintf(conn, range, sizeof(range),
+				"Content-Range: bytes "
+				"%" INT64_FMT "-%"
+				INT64_FMT "/%" INT64_FMT "\r\n",
+				r1, r1 + cl - 1, stp->size);
+		}
+#endif
+
+		// Prepare Etag, Date, Last-Modified headers. Must be in UTC, according to
+		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
+		mg_gmt_time_string(date, sizeof(date), &curtime);
+		mg_gmt_time_string(lm, sizeof(lm), &st->mtime);
+		(void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx", (unsigned long) st->mtime, (unsigned long) st->size);
+
+		(void) mg_printf(conn,
+			"HTTP/1.1 %d %s\r\n"
+			"Date: %s\r\n"
+			"Last-Modified: %s\r\n"
+			"Etag: \"%s\"\r\n"
+			"Content-Type: text/html\r\n"
+			"Content-Length: %" INT64_FMT "\r\n"
+			"Connection: %s\r\n"
+			// "Accept-Ranges: bytes\r\n"
+			"%s\r\n"
+			, ri->status_code, mg_get_response_code_text(ri->status_code)
+			, date, lm, etag
+			, cl
+			, mg_suggest_connection_header(conn)
+			, range
+			);
+        mg_mark_end_of_header_transmission(conn);
+
+		ret = (int)cl;
+		if (strcmp(ri->request_method, "HEAD") != 0) {
+			ret = mg_write(conn, ob->data, (size_t)cl);
+		}
+	}
+	else
+	{
+		ret = mg_write(conn, ob->data, ob->size);
+	}
+
+	/* cleanup */
+	sd_bufrelease(ib);
+	sd_bufrelease(ob);
+
+	return ret;
+}
+
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
@@ -265,6 +430,23 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	printf("Boom?\n");
   }
 #endif
+
+  if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
+	struct mgstat st;
+	int file_found;
+
+	assert(request_info->phys_path);
+	file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
+	if (file_found) {
+	  // are we looking for HTML output of MarkDown file?
+      if (mg_match_prefix("**.md$|**.wiki$", -1, request_info->phys_path) > 0) {
+		serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
+		return "";
+	  }
+	  return NULL; // let mongoose handle the default of 'file exists'...
+	}
+  }
+
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;
@@ -282,7 +464,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   st = &udata->uris[crc];
 
   while (*st) {
-    if (!strcmp((*st)->name, uri)) {      
+    if (!strcmp((*st)->name, uri)) {
       break;
     } else {
       st = &((*st)->next);
@@ -335,7 +517,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       }
     }
     pthread_mutex_unlock(&udata->mutex);
-    
+
     mg_printf(conn, "</table></pre></p></body></html>\r\n");
     return (void *)1;
   } else if (!strcmp(uri, "/_echo")) {
@@ -354,7 +536,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	mg_printf(conn,	"Received headers:\r\n");
 	for (i = 0; i < request_info->num_headers; i++)
 	{
-		mg_printf(conn,	"Header[%d]: '%s' = '%s'\r\n", 
+		mg_printf(conn,	"Header[%d]: '%s' = '%s'\r\n",
 			i, request_info->http_headers[i].name, request_info->http_headers[i].value);
 	}
 	mg_printf(conn,	"----- info bits ------\r\n");
@@ -424,7 +606,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					max_fd = -1;
 				}
 			}
-	
+
 			if (max_fd >= 0)
 			{
 				// use mg_pull() instead when you're accessing custom protocol sockets
@@ -468,7 +650,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 			do
 			{
 				unsigned long dataReady = 0;
-			    if (mg_ioctlsocket(mg_get_client_socket(conn), FIONREAD, &dataReady) < 0) 
+			    if (mg_ioctlsocket(mg_get_client_socket(conn), FIONREAD, &dataReady) < 0)
 					wlen = -1;
 				else
 					wlen = dataReady;
@@ -484,7 +666,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
 		}
         free(data);
-      }            
+      }
     } else {
       mg_printf(conn, "%s", request_info->request_method);
     }
@@ -538,28 +720,28 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 }
 
 #if defined(_WIN32)
- 
-static BOOL WINAPI mg_win32_break_handler(DWORD signal_type) 
-{ 
-  switch(signal_type) 
-  { 
-    // Handle the CTRL-C signal. 
-    case CTRL_C_EVENT: 
-    // CTRL-CLOSE: confirm that the user wants to exit. 
-    case CTRL_CLOSE_EVENT: 
-    case CTRL_BREAK_EVENT: 
+
+static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
+{
+  switch(signal_type)
+  {
+    // Handle the CTRL-C signal.
+    case CTRL_C_EVENT:
+    // CTRL-CLOSE: confirm that the user wants to exit.
+    case CTRL_CLOSE_EVENT:
+    case CTRL_BREAK_EVENT:
       exit_flag = 1000 + signal_type;
 	  //mg_signal_stop(ctx);
-      return TRUE; 
- 
-    // Pass other signals to the next handler. 
-    case CTRL_LOGOFF_EVENT: 
-    case CTRL_SHUTDOWN_EVENT: 
-    default: 
-      return FALSE; 
-  } 
-} 
- 
+      return TRUE;
+
+    // Pass other signals to the next handler.
+    case CTRL_LOGOFF_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+    default:
+      return FALSE;
+  }
+}
+
 #endif
 
 static void start_mongoose(int argc, char *argv[]) {
