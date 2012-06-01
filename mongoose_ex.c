@@ -328,7 +328,7 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm)
 	gmt_time_string(buf, bufsize, tm);
 }
 
-const char *mg_suggest_connection_header(const struct mg_connection *conn)
+const char *mg_suggest_connection_header(struct mg_connection *conn)
 {
 	return suggest_connection_header(conn);
 }

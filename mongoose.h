@@ -123,7 +123,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
-// calls this function for every unidentified option.
+// calls this function for every unidentified (global) option.
 //
 // Parameters:
 //   ctx: the server context.
@@ -138,7 +138,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *name, const char *value);
 
 // Prototype for the final user-defined option processing function. Mongoose
-// calls this function once after all options have been processed: this callback
+// calls this function once after all (global) options have been processed: this callback
 // is usually used to set the default values for any user options which have not
 // been configured yet.
 //
@@ -154,13 +154,14 @@ typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 //
 // Parameters:
 //   ctx: the server context.
+//   conn: the current connection, NULL if not available.
 //   name: (string) the option identifier.
 //
 // Return:
-//   If handler returns the non-NULL option value string.
+//   If handler returns the non-NULL option value string, that value is used.
 //   If handler returns zero, that means that the handler has not processed
-//   the option.
-typedef const char * (*mg_option_get_callback_t)(const struct mg_context *ctx, const char *name);
+//   the option (and possibly a default value is used instead).
+typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
@@ -223,13 +224,26 @@ void mg_stop(struct mg_context *);
 // If given parameter name is not valid, NULL is returned. For valid
 // names, return value is guaranteed to be non-NULL. If parameter is not
 // set, zero-length string is returned.
-const char *mg_get_option(const struct mg_context *ctx, const char *name);
+const char *mg_get_option(struct mg_context *ctx, const char *name);
+
+
+// Get the value of particular (possibly connection specific) configuration parameter.
+// The value returned is read-only. Mongoose does not allow changing
+// configuration for a connection at run time.
+// If given parameter name is not valid, NULL is returned. For valid
+// names, return value is guaranteed to be non-NULL. If parameter is not
+// set, zero-length string is returned.
+const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 
 
 // Return array of strings that represent all mongoose configuration options.
-// For each option, a short name, long name, and default value is returned.
+// For each option, a short name, long name, and default value is returned 
+// (i.e. a total of MG_ENTRIES_PER_CONFIG_OPTION elements per entry).
+//
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);
+
+#define MG_ENTRIES_PER_CONFIG_OPTION 3
 
 
 // Add, edit or delete the entry in the passwords file.

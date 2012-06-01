@@ -200,7 +200,7 @@ struct socket {
 };
 
 
-enum {
+typedef enum {
   CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
   PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
@@ -209,9 +209,9 @@ enum {
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
   NUM_OPTIONS
-};
+} mg_option_index_t;
 
-static const char *config_options[] = {
+static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PER_CONFIG_OPTION] = {
   "C", "cgi_pattern", "**.cgi$|**.pl$|**.php$",
   "E", "cgi_environment", NULL,
   "G", "put_delete_passwords_file", NULL,
@@ -237,9 +237,8 @@ static const char *config_options[] = {
   "t", "num_threads", "10",
   "u", "run_as_user", NULL,
   "w", "url_rewrite_patterns", NULL,
-  NULL
+  NULL, NULL, NULL
 };
-#define ENTRIES_PER_CONFIG_OPTION 3
 
 struct mg_context {
   volatile int stop_flag;       // Should we stop event loop
@@ -326,35 +325,93 @@ static int call_user_option_fill(struct mg_context *ctx) {
   }
 }
 
-static const char *call_user_option_get(const struct mg_context *ctx, const char *name) {
+static const char *call_user_option_get(struct mg_context *ctx, const char *name) {
   if (ctx && ctx->user_functions.user_option_get) {
-    return ctx->user_functions.user_option_get(ctx, name);
+    return ctx->user_functions.user_option_get(ctx, 0, name);
   } else {
     return NULL;
   }
 }
 
+static const char *call_user_conn_option_get(struct mg_connection *conn, const char *name) {
+  if (conn && conn->ctx && conn->ctx->user_functions.user_option_get) {
+    return conn->ctx->user_functions.user_option_get(conn->ctx, conn, name);
+  } else {
+    return NULL;
+  }
+}
+
+static int is_empty(const char *str)
+{
+	return !str || !*str;
+}
+
 static int get_option_index(const char *name) {
   int i;
 
-  for (i = 0; config_options[i] != NULL; i += ENTRIES_PER_CONFIG_OPTION) {
+  for (i = 0; config_options[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
     if ((config_options[i][0] && strcmp(config_options[i], name) == 0) ||
         strcmp(config_options[i + 1], name) == 0) {
-      return i / ENTRIES_PER_CONFIG_OPTION;
+      return i / MG_ENTRIES_PER_CONFIG_OPTION;
     }
   }
   return -1;
 }
 
-const char *mg_get_option(const struct mg_context *ctx, const char *name) {
-  int i;
-  if ((i = get_option_index(name)) == -1) {
-    return call_user_option_get(ctx, name);
-  } else if (ctx->config[i] == NULL) {
-    return "";
-  } else {
-    return ctx->config[i];
+const char *mg_get_option(struct mg_context *ctx, const char *name) {
+  const char *rv = call_user_option_get(ctx, name);
+  if (!rv) {
+	int i = get_option_index(name);
+    if (i == -1) {
+	  return NULL;
+    } else if (ctx == NULL || ctx->config[i] == NULL) {
+      return "";
+    } else {
+      return ctx->config[i];
+    }
   }
+  return rv;
+}
+
+const char *mg_get_conn_option(struct mg_connection *conn, const char *name) {
+  const char *rv = call_user_conn_option_get(conn, name);
+  if (!rv) {
+	int i = get_option_index(name);
+    if (i == -1) {
+	  return NULL;
+    } else if (conn == NULL || conn->ctx == NULL || conn->ctx->config[i] == NULL) {
+      return "";
+    } else {
+      return conn->ctx->config[i];
+    }
+  }
+  return rv;
+}
+
+static const char *get_option(struct mg_context *ctx, mg_option_index_t index) {
+  const char *rv;
+  assert(index >= 0 && index < NUM_OPTIONS);
+  rv = call_user_option_get(ctx, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
+  if (rv) 
+	return rv;
+
+  if (ctx == NULL || ctx->config[index] == NULL)
+	return "";
+  else 
+	return ctx->config[index];
+}
+
+static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t index) {
+  const char *rv;
+  assert(index >= 0 && index < NUM_OPTIONS);
+  rv = call_user_conn_option_get(conn, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
+  if (rv) 
+	return rv;
+
+  if (conn == NULL || conn->ctx == NULL || conn->ctx->config[index] == NULL)
+	return "";
+  else 
+	return conn->ctx->config[index];
 }
 
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
@@ -464,7 +521,7 @@ const char *mg_strerror(int errcode)
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
   const char *s = strerror(errcode);
-  if (!s || !*s || GetLastError() == (DWORD)errcode)
+  if (is_empty(s) || GetLastError() == (DWORD)errcode)
   {
     static __declspec(thread) char msg[256];
 
@@ -494,6 +551,10 @@ const char *mg_strerror(int errcode)
 /*
    Return fake connection structure. Used for logging, if connection
    is not applicable at the moment of logging.
+
+   (Note: this is 'thread safe _enough_': we don't care that multiple threads
+          can bang up this 'connection', just as long as 'ctx' is
+		  written atomically (the write is one opcode).)
 */
 static struct mg_connection *fc(struct mg_context *ctx) {
   static struct mg_connection fake_connection = {0};
@@ -523,7 +584,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
   {
     return NULL;
   }
-  if (!logfile_template || !*logfile_template || dst_maxsize <= 1)
+  if (is_empty(logfile_template) || dst_maxsize <= 1)
   {
     dst[0] = 0;
     return NULL;
@@ -723,7 +784,7 @@ replacement_done:
     d = dst;
     s = fnbuf;
     dst_maxsize--; // reserve space for the sentinel NUL
-    while (d - dst < dst_maxsize && *s)
+    while (d - dst < (int)dst_maxsize && *s)
     {
       if (*s == '%')
       {
@@ -747,7 +808,7 @@ const char *mg_get_default_error_logfile_path(struct mg_connection *conn)
   // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
   if (!conn->error_logfile_path[0])
   {
-    return mg_get_logfile_path(conn->error_logfile_path, ARRAY_SIZE(conn->error_logfile_path), ((conn && conn->ctx) ? conn->ctx->config[ERROR_LOG_FILE] : NULL), conn, conn->birth_time);
+    return mg_get_logfile_path(conn->error_logfile_path, ARRAY_SIZE(conn->error_logfile_path), get_conn_option(conn, ERROR_LOG_FILE), conn, conn->birth_time);
   }
   return conn->error_logfile_path;
 }
@@ -759,7 +820,7 @@ const char *mg_get_default_access_logfile_path(struct mg_connection *conn)
   // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
   if (!conn->access_logfile_path[0])
   {
-    return mg_get_logfile_path(conn->access_logfile_path, ARRAY_SIZE(conn->access_logfile_path), ((conn && conn->ctx) ? conn->ctx->config[ACCESS_LOG_FILE] : NULL), conn, conn->birth_time);
+    return mg_get_logfile_path(conn->access_logfile_path, ARRAY_SIZE(conn->access_logfile_path), get_conn_option(conn, ACCESS_LOG_FILE), conn, conn->birth_time);
   }
   return conn->access_logfile_path;
 }
@@ -994,7 +1055,7 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 
-int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *conn), char *buf, size_t buflen, const char *fmt, va_list ap)
+int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, size_t buflen, const char *fmt, va_list ap)
 {
   int n;
 
@@ -1031,7 +1092,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
   return n;
 }
 
-int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *conn), char **buf_ref, size_t max_buflen,
+int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref, size_t max_buflen,
   const char *fmt, va_list ap)
 {
   va_list aq;
@@ -1172,10 +1233,10 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
 // is adjusted to point only to "x".
 static const char *next_option(const char *list, struct vec *val,
                                struct vec *eq_val) {
-  if (list == NULL || *list == '\0') {
+  if (is_empty(list)) {
     // End of the list
-  val->ptr = 0;
-  val->len = 0;
+    val->ptr = 0;
+    val->len = 0;
     list = NULL;
   } else {
     val->ptr = list;
@@ -1209,6 +1270,8 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   const char *or_str;
   int i, j, len, res;
 
+  if (pattern_len == -1)
+	pattern_len = strlen(pattern);
   if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
@@ -1247,18 +1310,18 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
 // set up, for example if request parsing failed.
-static int should_keep_alive(const struct mg_connection *conn) {
+static int should_keep_alive(struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
   return (!conn->must_close &&
           !conn->request_info.status_code != 401 &&
-          !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
+          !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
           ((header == NULL && http_version && !strcmp(http_version, "1.1")) ||
            (header != NULL && !mg_strcasecmp(header, "keep-alive"))));
 }
 
-static const char *suggest_connection_header(const struct mg_connection *conn) {
+static const char *suggest_connection_header(struct mg_connection *conn) {
   return should_keep_alive(conn) ? "keep-alive" : "close";
 }
 
@@ -1821,7 +1884,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
                            int fd_stdout, const char *dir) {
   HANDLE me;
-  char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
+  char *p;
+  const char *interp;
+  char cmdline[PATH_MAX], buf[PATH_MAX];
   FILE *fp;
   STARTUPINFOA si = { sizeof(si) };
   PROCESS_INFORMATION pi = { 0 };
@@ -1839,8 +1904,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       &si.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS);
 
   // If CGI file is a script, try to read the interpreter line
-  interp = conn->ctx->config[CGI_INTERPRETER];
-  if (interp == NULL) {
+  interp = get_conn_option(conn, CGI_INTERPRETER);
+  if (is_empty(interp)) {
     buf[2] = '\0';
     mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%c%s", dir, DIRSEP, prog);
     if ((fp = mg_fopen(cmdline, "r")) != NULL) {
@@ -2006,8 +2071,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       (void) close(fd_stdout);
 
       // Execute CGI program. No need to lock: new process
-      interp = conn->ctx->config[CGI_INTERPRETER];
-      if (interp == NULL) {
+      interp = get_conn_option(conn, CGI_INTERPRETER);
+      if (is_empty(interp)) {
         (void) execle(prog, prog, NULL, envp);
         mg_cry(conn, "%s: execle(%s): %s", __func__, prog, mg_strerror(ERRNO));
       } else {
@@ -2337,10 +2402,9 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   buf_len--;  // This is because memmove() for PATH_INFO may shift part
               // of the path one byte on the right.
-  mg_snprintf(conn, buf, buf_len, "%s%s", conn->ctx->config[DOCUMENT_ROOT],
-              uri);
+  mg_snprintf(conn, buf, buf_len, "%s%s", get_conn_option(conn, DOCUMENT_ROOT), uri);
 
-  rewrite = conn->ctx->config[REWRITE];
+  rewrite = get_conn_option(conn, REWRITE);
   while ((rewrite = next_option(rewrite, &a, &b)) != NULL) {
     if ((match_len = match_prefix(a.ptr, a.len, uri)) > 0) {
       mg_snprintf(conn, buf, buf_len, "%.*s%s", b.len, b.ptr, uri + match_len);
@@ -2353,12 +2417,14 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 #endif // _WIN32
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
+    const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);
+	size_t cgi_exts_len = strlen(cgi_exts);
+
     // Support PATH_INFO for CGI scripts.
     for (p = buf + strlen(buf); p > buf + 1; p--) {
       if (*p == '/') {
         *p = '\0';
-        if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
-                         strlen(conn->ctx->config[CGI_EXTENSIONS]), buf) > 0 &&
+        if (match_prefix(cgi_exts, cgi_exts_len, buf) > 0 &&
             (stat_result = mg_stat(buf, st)) == 0) {
           // Shift PATH_INFO block one character right, e.g.
           //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
@@ -2617,7 +2683,7 @@ static void get_mime_type(struct mg_context *ctx, const char *path,
 
   // Scan user-defined mime types first, in case user wants to
   // override default mime types.
-  list = ctx->config[EXTRA_MIME_TYPES];
+  list = get_option(ctx, EXTRA_MIME_TYPES);
   while ((list = next_option(list, &ext_vec, &mime_vec)) != NULL) {
     // ext now points to the path suffix
     ext = path + path_len - ext_vec.len;
@@ -2893,18 +2959,18 @@ static int check_password(const char *method, const char *ha1, const char *uri,
 // Use the global passwords file, if specified by auth_gpass option,
 // or search for .htpasswd in the requested directory.
 static FILE *open_auth_file(struct mg_connection *conn, const char *path) {
-  struct mg_context *ctx = conn->ctx;
   char name[PATH_MAX];
   const char *p, *e;
   struct mgstat st;
   FILE *fp;
+  const char *global_pwd_file = get_conn_option(conn, GLOBAL_PASSWORDS_FILE);
 
-  if (ctx->config[GLOBAL_PASSWORDS_FILE] != NULL) {
+  if (!is_empty(global_pwd_file)) {
     // Use global passwords file
-    fp =  mg_fopen(ctx->config[GLOBAL_PASSWORDS_FILE], "r");
+    fp =  mg_fopen(global_pwd_file, "r");
     if (fp == NULL)
       mg_cry(conn, "fopen(%s): %s",
-          ctx->config[GLOBAL_PASSWORDS_FILE], mg_strerror(ERRNO));
+          global_pwd_file, mg_strerror(ERRNO));
   } else if (!mg_stat(path, &st) && st.is_directory) {
     (void) mg_snprintf(conn, name, sizeof(name), "%s%c%s",
         path, DIRSEP, PASSWORDS_FILE_NAME);
@@ -2995,19 +3061,22 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
 static int authorize(struct mg_connection *conn, FILE *fp) {
   struct ah ah;
   char line[256], f_user[256], ha1[256], f_domain[256], buf[BUFSIZ];
+  const char *auth_domain;
 
   if (!parse_auth_header(conn, buf, sizeof(buf), &ah)) {
     return 0;
   }
 
   // Loop over passwords file
+  auth_domain = get_conn_option(conn, AUTHENTICATION_DOMAIN);
   while (fgets(line, sizeof(line), fp) != NULL) {
     if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
       continue;
     }
 
-    if (!strcmp(ah.user, f_user) &&
-        !strcmp(conn->ctx->config[AUTHENTICATION_DOMAIN], f_domain))
+    if (*f_user && *f_domain &&
+		!strcmp(ah.user, f_user) &&
+        !strcmp(auth_domain, f_domain))
       return check_password(
             conn->request_info.request_method,
             ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
@@ -3028,7 +3097,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   fp = NULL;
   authorized = 1;
 
-  list = conn->ctx->config[PROTECT_URI];
+  list = get_conn_option(conn, PROTECT_URI);
   while ((list = next_option(list, &uri_vec, &filename_vec)) != NULL) {
     if (!memcmp(conn->request_info.uri, uri_vec.ptr, uri_vec.len)) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
@@ -3059,7 +3128,7 @@ static void send_authorization_request(struct mg_connection *conn) {
       "Content-Length: 0\r\n"
       "WWW-Authenticate: Digest qop=\"auth\", "
       "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
-      conn->ctx->config[AUTHENTICATION_DOMAIN],
+      get_conn_option(conn, AUTHENTICATION_DOMAIN),
       (unsigned long) time(NULL));
   mg_mark_end_of_header_transmission(conn);
 }
@@ -3067,15 +3136,15 @@ static void send_authorization_request(struct mg_connection *conn) {
 static int is_authorized_for_put(struct mg_connection *conn) {
   FILE *fp;
   int ret = 0;
+  const char *pwd_filepath = get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE);
 
-  fp = conn->ctx->config[PUT_DELETE_PASSWORDS_FILE] == NULL ? NULL :
-    mg_fopen(conn->ctx->config[PUT_DELETE_PASSWORDS_FILE], "r");
-
-  if (fp != NULL) {
-    ret = authorize(conn, fp);
-    (void) mg_fclose(fp);
+  if (!is_empty(pwd_filepath)) {
+	fp = mg_fopen(pwd_filepath, "r");
+    if (fp != NULL) {
+      ret = authorize(conn, fp);
+      (void) mg_fclose(fp);
+    }
   }
-
   return ret;
 }
 
@@ -3524,7 +3593,7 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
 // If the file is found, it's stats is returned in stp.
 static int substitute_index_file(struct mg_connection *conn, char *path,
                                  size_t path_len, struct mgstat *stp) {
-  const char *list = conn->ctx->config[INDEX_FILES];
+  const char *list = get_conn_option(conn, INDEX_FILES);
   struct mgstat st;
   struct vec filename_vec;
   size_t n = strlen(path);
@@ -3697,9 +3766,9 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   blk->conn = conn;
   sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
 
-  addenv(blk, "SERVER_NAME=%s", conn->ctx->config[AUTHENTICATION_DOMAIN]);
-  addenv(blk, "SERVER_ROOT=%s", conn->ctx->config[DOCUMENT_ROOT]);
-  addenv(blk, "DOCUMENT_ROOT=%s", conn->ctx->config[DOCUMENT_ROOT]);
+  addenv(blk, "SERVER_NAME=%s", get_conn_option(conn, AUTHENTICATION_DOMAIN));
+  addenv(blk, "SERVER_ROOT=%s", get_conn_option(conn, DOCUMENT_ROOT));
+  addenv(blk, "DOCUMENT_ROOT=%s", get_conn_option(conn, DOCUMENT_ROOT));
 
   // Prepare the environment block
   addenv(blk, "%s", "GATEWAY_INTERFACE=CGI/1.1");
@@ -3779,7 +3848,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   }
 
   // Add user-specified variables
-  s = conn->ctx->config[CGI_ENVIRONMENT];
+  s = get_conn_option(conn, CGI_ENVIRONMENT);
   while ((s = next_option(s, &var_vec, NULL)) != NULL) {
     addenv(blk, "%.*s", var_vec.len, var_vec.ptr);
   }
@@ -4014,7 +4083,7 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
   if (sscanf(tag, " virtual=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver root
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
-        conn->ctx->config[DOCUMENT_ROOT], DIRSEP, file_name);
+        get_conn_option(conn, DOCUMENT_ROOT), DIRSEP, file_name);
   } else if (sscanf(tag, " file=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver working directory
     // or it is absolute system path
@@ -4040,8 +4109,9 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
           tag, path, mg_strerror(ERRNO));
     } else {
       set_close_on_exec(fileno(fp));
-      if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
-                       strlen(conn->ctx->config[SSI_EXTENSIONS]), path) > 0) {
+      if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS), 
+		               -1, 
+					   path) > 0) {
         send_ssi_file(conn, path, fp, include_level + 1);
       } else {
         send_file_data(conn, fp, INT64_MAX);
@@ -4082,7 +4152,7 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
     return;
   }
 
-  m = next_option(conn->ctx->config[SSI_MARKER], &ssi_start, NULL);
+  m = next_option(get_conn_option(conn, SSI_MARKER), &ssi_start, NULL);
   ssi_end = ssi_start;
   next_option(m, &ssi_end, NULL);
   if (!ssi_end.len || !ssi_start.len)
@@ -4229,7 +4299,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
 
   // If it is a directory, print directory entries too if Depth is not 0
   if (st->is_directory &&
-      !mg_strcasecmp(conn->ctx->config[ENABLE_DIRECTORY_LISTING], "yes") &&
+      !mg_strcasecmp(get_conn_option(conn, ENABLE_DIRECTORY_LISTING), "yes") &&
       (depth == NULL || strcmp(depth, "0") != 0)) {
     scan_directory(conn, path, conn, &print_dav_dir_entry);
   }
@@ -4266,11 +4336,11 @@ static void handle_request(struct mg_connection *conn) {
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
     send_http_error(conn, 403, NULL, "Access Forbidden");
-  } else if (conn->ctx->config[DOCUMENT_ROOT] == NULL) {
+  } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
     send_http_error(conn, 404, NULL, "Not Found");
   } else if ((!strcmp(ri->request_method, "PUT") ||
         !strcmp(ri->request_method, "DELETE")) &&
-      (conn->ctx->config[PUT_DELETE_PASSWORDS_FILE] == NULL ||
+      (is_empty(get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE)) ||
        !is_authorized_for_put(conn))) {
     send_authorization_request(conn);
   } else if (!strcmp(ri->request_method, "PUT")) {
@@ -4293,15 +4363,15 @@ static void handle_request(struct mg_connection *conn) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
              !substitute_index_file(conn, path, sizeof(path), &st)) {
-    if (!mg_strcasecmp(conn->ctx->config[ENABLE_DIRECTORY_LISTING], "yes")) {
+    if (!mg_strcasecmp(get_conn_option(conn, ENABLE_DIRECTORY_LISTING), "yes")) {
       handle_directory_request(conn, path);
     } else {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
 #if !defined(NO_CGI)
-  } else if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
-                          strlen(conn->ctx->config[CGI_EXTENSIONS]),
+  } else if (match_prefix(get_conn_option(conn, CGI_EXTENSIONS),
+	                      -1,
                           path) > 0) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -4311,8 +4381,8 @@ static void handle_request(struct mg_connection *conn) {
       handle_cgi_request(conn, path);
     }
 #endif // !NO_CGI
-  } else if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
-                          strlen(conn->ctx->config[SSI_EXTENSIONS]),
+  } else if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS),
+                          -1,
                           path) > 0) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st)) {
@@ -4505,7 +4575,7 @@ static int is_all_zeroes(void *ptr, size_t len)
 #endif
 
 static int set_ports_option(struct mg_context *ctx) {
-  const char *list = ctx->config[LISTENING_PORTS];
+  const char *list = get_option(ctx, LISTENING_PORTS);
 #if !defined(_WIN32)
   int reuseaddr = 1;
 #endif // !_WIN32
@@ -4517,9 +4587,9 @@ static int set_ports_option(struct mg_context *ctx) {
   long int num;
   char * chknum = NULL;
 
-  num = strtol(ctx->config[KEEP_ALIVE_TIMEOUT], &chknum, 10);
+  num = strtol(get_option(ctx, KEEP_ALIVE_TIMEOUT), &chknum, 10);
   if ((chknum != NULL && *chknum == ' ') || num < 0 || num >= INT_MAX / 1000) {
-    mg_cry(fc(ctx), "%s: Invalid socket timeout '%s'", __func__, ctx->config[KEEP_ALIVE_TIMEOUT]);
+    mg_cry(fc(ctx), "%s: Invalid socket timeout '%s'", __func__, get_option(ctx, KEEP_ALIVE_TIMEOUT));
     success = 0;
   }
 
@@ -4643,9 +4713,9 @@ static int check_acl(struct mg_context *ctx, const struct usa *usa) {
   struct mg_ip_address acl_subnet, acl_mask, remote_ip;
   struct usa ip;
   struct vec vec;
-  const char *list = ctx->config[ACCESS_CONTROL_LIST];
+  const char *list = get_option(ctx, ACCESS_CONTROL_LIST);
 
-  if (list == NULL) {
+  if (is_empty(list)) {
     return 1;
   }
 
@@ -4701,10 +4771,10 @@ static void add_to_set(SOCKET fd, fd_set *set, int *max_fd) {
 #if !defined(_WIN32)
 static int set_uid_option(struct mg_context *ctx) {
   struct passwd *pw;
-  const char *uid = ctx->config[RUN_AS_USER];
+  const char *uid = get_option(ctx, RUN_AS_USER);
   int success = 0;
 
-  if (uid == NULL) {
+  if (is_empty(uid)) {
     success = 1;
   } else {
     if ((pw = getpwnam(uid)) == NULL) {
@@ -4783,10 +4853,10 @@ static int load_dll(struct mg_context *ctx, const char *dll_name,
 static int set_ssl_option(struct mg_context *ctx) {
   SSL_CTX *CTX;
   int i, size;
-  const char *pem = ctx->config[SSL_CERTIFICATE];
-  const char *chain = ctx->config[SSL_CHAIN_FILE];
+  const char *pem = get_option(ctx, SSL_CERTIFICATE);
+  const char *chain = get_option(ctx, SSL_CHAIN_FILE);
 
-  if (pem == NULL) {
+  if (is_empty(pem)) {
     return 1;
   }
 
@@ -4817,7 +4887,7 @@ static int set_ssl_option(struct mg_context *ctx) {
     return 0;
   }
 
-  if (CTX != NULL && chain != NULL &&
+  if (CTX != NULL && !is_empty(chain) &&
       SSL_CTX_use_certificate_chain_file(CTX, chain) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, chain, ssl_error());
     return 0;
@@ -4859,8 +4929,8 @@ static void uninitialize_ssl(struct mg_context *ctx) {
 
 static int set_gpass_option(struct mg_context *ctx) {
   struct mgstat mgstat;
-  const char *path = ctx->config[GLOBAL_PASSWORDS_FILE];
-  return path == NULL || mg_stat(path, &mgstat) == 0;
+  const char *path = get_option(ctx, GLOBAL_PASSWORDS_FILE);
+  return is_empty(path) || mg_stat(path, &mgstat) == 0;
 }
 
 static int set_acl_option(struct mg_context *ctx) {
@@ -5188,7 +5258,7 @@ static void process_new_connection(struct mg_connection *conn) {
   int keep_alive_enabled;
   const char *cl;
 
-  keep_alive_enabled = !strcmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes");
+  keep_alive_enabled = !strcmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes");
 
   do {
     reset_per_request_attributes(conn);
@@ -5291,7 +5361,7 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
 
 static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn;
-  int buf_size = atoi(ctx->config[MAX_REQUEST_SIZE]);
+  int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size);
   if (conn == NULL) {
@@ -5378,7 +5448,7 @@ static void accept_new_connection(const struct socket *listener,
   accepted.lsa = listener->lsa;
   accepted.sock = accept(listener->sock, &accepted.rsa.u.sa, &accepted.rsa.len);
   if (accepted.sock != INVALID_SOCKET) {
-    int keep_alive_timeout = atoi(ctx->config[KEEP_ALIVE_TIMEOUT]);
+    int keep_alive_timeout = atoi(get_option(ctx, KEEP_ALIVE_TIMEOUT));
 
     if (set_timeout(&accepted, keep_alive_timeout)) {
       mg_cry(fc(ctx), "%s: %s failed to set the socket timeout",
@@ -5560,8 +5630,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 #endif // _WIN32
 
   // Allocate context and initialize reasonable general case defaults.
-  // TODO(lsm): do proper error handling here.
   ctx = (struct mg_context *) calloc(1, sizeof(*ctx));
+  if (!ctx) return NULL;
   if (user_functions) {
     ctx->user_functions = *user_functions;
   }
@@ -5592,12 +5662,12 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   }
 
   // Set default value if needed
-  for (i = 0; config_options[i * ENTRIES_PER_CONFIG_OPTION] != NULL; i++) {
-    default_value = config_options[i * ENTRIES_PER_CONFIG_OPTION + 2];
+  for (i = 0; config_options[i * MG_ENTRIES_PER_CONFIG_OPTION] != NULL; i++) {
+    default_value = config_options[i * MG_ENTRIES_PER_CONFIG_OPTION + 2];
     if (ctx->config[i] == NULL && default_value != NULL) {
       ctx->config[i] = mg_strdup(default_value);
       DEBUG_TRACE(("Setting default: [%s] -> [%s]",
-                   config_options[i * ENTRIES_PER_CONFIG_OPTION + 1],
+                   config_options[i * MG_ENTRIES_PER_CONFIG_OPTION + 1],
                    default_value));
     }
   }
@@ -5644,7 +5714,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   }
 
   // Start worker threads
-  for (i = 0; i < atoi(ctx->config[NUM_THREADS]); i++) {
+  for (i = 0; i < atoi(get_option(ctx, NUM_THREADS)); i++) {
     if (start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
       mg_cry(fc(ctx), "Cannot start worker thread: %d", ERRNO);
     } else {

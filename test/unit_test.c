@@ -224,7 +224,7 @@ static void test_header_processing()
 	strcpy(buf, input);
 
 	rv = get_request_len(buf, strlen(buf));
-	assert(rv > 0 && rv < strlen(buf));
+	assert(rv > 0 && rv < (int)strlen(buf));
 	assert(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
 	buf[rv] = 0;
 	p = buf;

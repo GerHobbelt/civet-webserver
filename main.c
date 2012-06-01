@@ -20,7 +20,7 @@
 
 
 #include "mongoose_sys_porting.h"
-#include "mongoose_ex.c"
+#include "mongoose_ex.h"
 #include "win32/resource.h"
 
 #ifdef _WIN32
@@ -94,7 +94,7 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
   fprintf(stderr, "OPTIONS:\n");
 
   names = mg_get_valid_option_names();
-  for (i = 0; names[i] != NULL; i += 3) {
+  for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
     fprintf(stderr, "  %s%s %s (default: \"%s\")\n",
             (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
@@ -415,12 +415,29 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
 }
 
 
-static struct mg_context *docu_host_ctx = NULL;
-
-void mg_set_context(struct mg_connection *conn, struct mg_context *ctx)
+// typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
+static const char *option_get_callback(struct mg_context *ctx, struct mg_connection *conn, const char *name)
 {
-	conn->ctx = ctx;
+	// check local IP for IP-based Virtual Hosting & switch DocumentRoot for the connection accordingly:
+	if (conn && !strcmp("document_root", name))
+	{
+		struct mg_request_info *request_info = mg_get_request_info(conn);
+		
+		if (!request_info->local_ip.is_ip6 && request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.2(!) */)
+		{
+			static char docu_site_docroot[PATH_MAX] = "";
+
+			if (!*docu_site_docroot)
+			{
+				mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../documentation", mg_get_option(ctx, name));
+			}
+			return docu_site_docroot;
+		}
+	}
+	return NULL; // let mongoose handle it by himself
 }
+
+
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
@@ -437,30 +454,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	printf("Boom?\n");
   }
 #endif
-
-  if (event == MG_INIT0)
-  {
-	  // as part of the IP-based Virtual Hosting trickery, set up a copy of the global CTX for the second host:
-	  docu_host_ctx = (struct mg_context *)malloc(sizeof(*docu_host_ctx));
-	  if (!docu_host_ctx)
-		die("out of memory");
-	  *docu_host_ctx = *ctx;
-	  mg_asprintf(conn, &docu_host_ctx->config[DOCUMENT_ROOT], PATH_MAX, "%s/../documentation", ctx->config[DOCUMENT_ROOT]);
-  }
-  else if (event == MG_EXIT_SERVER)
-  {
-	  // cleanup the Virtual Hosting trickery:
-	  free(docu_host_ctx->config[DOCUMENT_ROOT]);
-	  free(docu_host_ctx);
-  }
-  if (event == MG_INIT_CLIENT_CONN)
-  {
-	  // check local IP for IP-based Virtual Hosting & switch CTX for the connection accordingly
-	  if (!request_info->local_ip.is_ip6 && request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.2 */)
-	  {
-		  mg_set_context(conn, docu_host_ctx);
-	  }
-  }
 
   if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
 	struct mgstat st;
@@ -775,6 +768,7 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 
 #endif
 
+
 static void start_mongoose(int argc, char *argv[]) {
     char *options[MAX_OPTIONS * 2] = { NULL };
     int i;
@@ -783,7 +777,7 @@ static void start_mongoose(int argc, char *argv[]) {
         0,
         0,
         0,
-        0
+        option_get_callback
     };
 
     /* Edit passwords file if -A option is specified */
@@ -881,7 +875,7 @@ static void WINAPI ServiceMain(void) {
 
 static NOTIFYICONDATAA TrayIcon;
 
-static void edit_config_file(const struct mg_context *ctx) {
+static void edit_config_file(struct mg_context *ctx) {
   const char **names, *value;
   FILE *fp;
   int i;
@@ -897,7 +891,7 @@ static void edit_config_file(const struct mg_context *ctx) {
             "# For detailed description of every option, visit\n"
             "# http://code.google.com/p/mongoose/wiki/MongooseManual\n\n");
     names = mg_get_valid_option_names();
-    for (i = 0; names[i] != NULL; i += 3) {
+    for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
       value = mg_get_option(ctx, names[i + 1]);
       fprintf(fp, "# %s %s\n", names[i + 1], *value ? value : "<value>");
     }
