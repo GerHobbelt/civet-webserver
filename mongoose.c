@@ -2459,11 +2459,13 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
         closesocket(sock);
       }
       else {
+		if (result) freeaddrinfo(result);
         return newconn;
       }
     }
   }
 
+  if (result) freeaddrinfo(result);
   if (newconn) free(newconn);
   return NULL;
 }
