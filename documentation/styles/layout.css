@@ -1,0 +1,37 @@
+﻿#container {
+	margin: 0px auto;
+	width: 870px;
+}
+#masthead {
+	margin: 0 0 0 160px;
+	padding: 1em;
+}
+#navigation {
+	margin: 0;
+	padding: 0;
+}
+#content_container {
+	margin: 0 0 0 160px;
+}
+#column_left {
+	padding: 10px 0px 10px 10px;
+	vertical-align: top;
+	float: left;
+	width: 480px;
+	margin: 0px;
+}
+#column_right {
+	float: right;
+	margin: 0;
+	padding: 10px;
+	width: 150px;
+	vertical-align: top;
+}
+#image {
+	float: right;
+}
+#footer {
+	clear: both;
+	margin: 0;
+	padding: 5px;
+}

@@ -224,7 +224,7 @@ static void test_header_processing()
 	strcpy(buf, input);
 
 	rv = get_request_len(buf, strlen(buf));
-	assert(rv > 0 && rv < strlen(buf));
+	assert(rv > 0 && rv < (int)strlen(buf));
 	assert(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
 	buf[rv] = 0;
 	p = buf;
@@ -297,7 +297,7 @@ static void test_client_connect() {
 
 	rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
 	assert(rv == 18);
-	mg_shutdown(mg_get_client_socket(g), SHUT_WR);
+	mg_shutdown(mg_get_socket(g), SHUT_WR);
 	rv = mg_pull(g, buf, sizeof(buf));
 	assert(rv > 0);
 	close_connection(g);
@@ -311,7 +311,7 @@ static void test_client_connect() {
 
 	rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
 	assert(rv == 18);
-	mg_shutdown(mg_get_client_socket(g), SHUT_WR);
+	mg_shutdown(mg_get_socket(g), SHUT_WR);
 	rv = mg_pull(g, buf, sizeof(buf));
 	assert(rv > 0);
 	mg_close_connection(g);

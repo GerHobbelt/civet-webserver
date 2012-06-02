@@ -462,6 +462,15 @@
       <Project>{233653b7-8908-b7f0-5035-6c77fdbb99cf}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\examples\html\favicon.ico" />
+    <None Include="..\..\examples\html\index.html" />
+    <None Include="..\..\examples\html\jquery.js" />
+    <None Include="..\..\examples\html\login.html" />
+    <None Include="..\..\examples\html\logo.png" />
+    <None Include="..\..\examples\html\main.js" />
+    <None Include="..\..\examples\html\style.css" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

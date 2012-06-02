@@ -1,12 +1,12 @@
-#summary mongoose on Android
+# mongoose on Android
 
-= Introduction =
+## Introduction 
 
 This is a small guide to help you run mongoose on Android. Currently it is tested on the HTC Wildfire. If you have managed to run it on other devices as well, please comment or drop an email in the mailing list.
 
 Note : You dont need root access to run mongoose on Android.
 
-= Steps =
+## Steps 
 
   * Download the source from the Downloads page.
   * Download the Android NDK from [http://developer.android.com/sdk/ndk/index.html here]

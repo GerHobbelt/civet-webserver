@@ -1,3 +1,6 @@
 [submodule "selectable-socketpair"]
 	path = selectable-socketpair
 	url = git@github.com:GerHobbelt/selectable-socketpair.git
+[submodule "upskirt"]
+	path = upskirt
+	url = git@github.com:GerHobbelt/upskirt.git
