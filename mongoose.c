@@ -1246,6 +1246,10 @@ static const char *next_option(const char *list, struct vec *val,
     // End of the list
     val->ptr = 0;
     val->len = 0;
+	if (eq_val) {
+	  eq_val->ptr = 0;
+	  eq_val->len = 0;
+	}
     list = NULL;
   } else {
     val->ptr = list;
@@ -1355,7 +1359,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   buf[0] = '\0';
   custom_len = 0;
   len = mg_snprintf(conn, buf, sizeof(buf) - 2, "Error %d: %s", status, reason);
-  if (fmt != NULL)
+  if (!is_empty(fmt))
   {
     custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
     if (custom_len > 0)
@@ -2438,7 +2442,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
           // Shift PATH_INFO block one character right, e.g.
           //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
           // conn->path_info is pointing to the local variable "path" declared
-          // in handle_request(), so PATH_INFO not valid after
+          // in handle_request(), so PATH_INFO is not valid after
           // handle_request returns.
           conn->path_info = p + 1;
           memmove(p + 2, p + 1, strlen(p + 1) + 1);  // +1 is for trailing \0
@@ -5384,15 +5388,6 @@ static void worker_thread(struct mg_context *ctx) {
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
   while (consume_socket(ctx, &conn->client)) {
-	// particular connections may want an alternate timeout...
-    int keep_alive_timeout = atoi(get_conn_option(conn, KEEP_ALIVE_TIMEOUT));
-
-    if (set_timeout(&conn->client, keep_alive_timeout)) {
-      char src_addr[SOCKADDR_NTOA_BUFSIZE];
-      mg_cry(conn, "%s: %s - failed to set the socket timeout to %d seconds",
-          __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
-    }
-
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
     // and clear the cached logfile path so it is recalculated on the next log operation:
@@ -5812,8 +5807,8 @@ const char *mg_get_response_code_text(int response_code)
   case 577:   return "Mongoose Internal Server Error";
   case 578:   return "Mongoose Internal Server Error: file I/O";
   case 579:   return "Mongoose Internal Server Error: socket I/O";
-  case 580:   return "Mongoose Internal Server Error or client closed connetion prematurely";
+  case 580:   return "Mongoose Internal Server Error or client closed connection prematurely";
 
-  default:   return "Unknown Response Code";
+  default:    return "Unknown Response Code";
   }
 }
