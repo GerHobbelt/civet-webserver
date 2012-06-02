@@ -70,6 +70,7 @@ typedef struct ssl_ctx_st SSL_CTX;
 extern void SSL_free(SSL *);
 extern int SSL_accept(SSL *);
 extern int SSL_connect(SSL *);
+extern int SSL_shutdown(SSL *);
 extern int SSL_read(SSL *, void *, int);
 extern int SSL_write(SSL *, const void *, int);
 extern int SSL_get_error(const SSL *, int);
@@ -99,24 +100,25 @@ struct ssl_func {
 #define SSL_free (* (void (*)(SSL *)) ssl_sw[0].ptr)
 #define SSL_accept (* (int (*)(SSL *)) ssl_sw[1].ptr)
 #define SSL_connect (* (int (*)(SSL *)) ssl_sw[2].ptr)
-#define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[3].ptr)
-#define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[4].ptr)
-#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[5].ptr)
-#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[6].ptr)
-#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[7].ptr)
-#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[8].ptr)
-#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[9].ptr)
-#define SSL_library_init (* (int (*)(void)) ssl_sw[10].ptr)
+#define SSL_shutdown (* (int (*)(SSL *)) ssl_sw[3].ptr)
+#define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[4].ptr)
+#define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[5].ptr)
+#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[6].ptr)
+#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[7].ptr)
+#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[8].ptr)
+#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[9].ptr)
+#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[10].ptr)
+#define SSL_library_init (* (int (*)(void)) ssl_sw[11].ptr)
 #define SSL_CTX_use_PrivateKey_file (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[11].ptr)
-#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
         const char *, int)) ssl_sw[12].ptr)
+#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
+        const char *, int)) ssl_sw[13].ptr)
 #define SSL_CTX_set_default_passwd_cb \
-  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[13].ptr)
-#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[14].ptr)
-#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[15].ptr)
+  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[14].ptr)
+#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[15].ptr)
+#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[16].ptr)
 #define SSL_CTX_use_certificate_chain_file \
-  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[16].ptr)
+  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[17].ptr)
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
 #define CRYPTO_set_locking_callback \
@@ -134,6 +136,7 @@ static struct ssl_func ssl_sw[] = {
   {"SSL_free",   NULL},
   {"SSL_accept",   NULL},
   {"SSL_connect",   NULL},
+  {"SSL_shutdown",   NULL},
   {"SSL_read",   NULL},
   {"SSL_write",   NULL},
   {"SSL_get_error",  NULL},
@@ -5079,8 +5082,8 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
   w = 1;
   do {
     // we still need to fetch it (see WinSock comments elsewhere for what
-    // happens if you don't. Doing this on a NON-BLOCKINGT socket would
-    // as data may still be incoming (but we don';t wanna hear about it),
+    // happens if you don't. Doing this on a NON-BLOCKING socket would
+    // as data may still be incoming (but we don't wanna hear about it),
     // still cause a disaster every once in a while, producing 'aborted'
     // socket errors client-side.
     fd_set fds;
@@ -5154,6 +5157,12 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
 
 static void close_connection(struct mg_connection *conn) {
   if (conn->ssl) {
+	// see http://www.openssl.org/docs/ssl/SSL_set_shutdown.html#NOTES
+	// and http://www.openssl.org/docs/ssl/SSL_shutdown.html
+	SSL_shutdown(conn->ssl);
+	// don't call SSL_shutdown() a second time as that would make us 
+	// block & wait for the client to complete the close, which would
+	// be a server vulnerability.
     SSL_free(conn->ssl);
     conn->ssl = NULL;
   }
