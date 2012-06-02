@@ -59,7 +59,7 @@ static const char *default_options[] = {
 	"ssi_pattern",			 "**.html$|**.htm|**.shtml$|**.shtm$",
 	"enable_keep_alive",     "yes",
 	//"ssi_marker",			 "{!--#,}",
-	"keep_alive_timeout",    "0",
+	"keep_alive_timeout",    "5",
 
     NULL
 };
