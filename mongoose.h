@@ -47,9 +47,9 @@ struct mg_request_info {
   char *uri;                       // URL-decoded URI
   char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
   const char *http_version;        // E.g. "1.0", "1.1"
-  char *query_string;    // URL part after '?' (not including '?') or NULL
+  char *query_string;              // URL part after '?' (not including '?') or NULL
   char *path_info;                 // PATH_INFO part of the URL
-  char *remote_user;     // Authenticated user, or NULL if no auth used
+  char *remote_user;               // Authenticated user, or NULL if no auth used
   const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
   const char *log_severity;        // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
   const char *log_dstfile;         // Mongoose preferred log file path, MG_EVENT_LOG only
@@ -283,6 +283,15 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // Use this before proceeding and writing content data if you want your 
 // access log to show the correct (actual) number.
 void mg_mark_end_of_header_transmission(struct mg_connection *conn);
+
+// Return !0 when the headers have already been sent, 0 if not.
+//
+// To be more specific, this function will return -1 when all HTTP headers
+// have been written (and anything sent now is considered part of the content),
+// while a return value of +1 indicates that the HTTP response has been
+// written but that you MAY decide to write some more headers to 
+// augment the HTTP header set being transmitted.
+int mg_have_headers_been_sent(const struct mg_connection *conn);
 
 // Send data to the browser using printf() semantics.
 //

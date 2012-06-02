@@ -1413,7 +1413,7 @@ static const char *suggest_connection_header(struct mg_connection *conn) {
 }
 
 /*
-Send HTTP error response headers.
+Send HTTP error response headers, if we still can. Log the error anyway.
 
 'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
 
@@ -1474,23 +1474,25 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     }
     DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
+    if (!mg_have_headers_been_sent(conn)) {
+      mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
   
-    /* issue #229: Only include the content-length if there is a response body.
-     Otherwise an incorrect Content-Type generates a warning in
-     some browsers when a static file request returns a 304
-     "not modified" error. */
-    if (len > 0) {
-      mg_printf(conn, "Content-Length: %d\r\n"
-                "Content-Type: text/plain\r\n", len);
-    }
-    mg_printf(conn, "Connection: %s\r\n\r\n",
-              suggest_connection_header(conn));
+      /* issue #229: Only include the content-length if there is a response body.
+       Otherwise an incorrect Content-Type generates a warning in
+       some browsers when a static file request returns a 304
+       "not modified" error. */
+      if (len > 0) {
+        mg_printf(conn, "Content-Length: %d\r\n"
+                  "Content-Type: text/plain\r\n", len);
+      }
+      mg_printf(conn, "Connection: %s\r\n\r\n",
+                suggest_connection_header(conn));
 
-    mg_mark_end_of_header_transmission(conn);
-    if (len > 0)
-    {
-      mg_write(conn, conn->request_info.status_custom_description, len);
+      mg_mark_end_of_header_transmission(conn);
+      if (len > 0)
+      {
+        mg_write(conn, conn->request_info.status_custom_description, len);
+      }
     }
   }
   // kill lingering reference to local storage:
@@ -2320,6 +2322,15 @@ void mg_mark_end_of_header_transmission(struct mg_connection *conn) {
   // incidentally, current total header length would now equal (-1 - conn->num_bytes_sent)
   if (conn && conn->num_bytes_sent < 0)
     conn->num_bytes_sent = 0;
+}
+
+int mg_have_headers_been_sent(const struct mg_connection *conn) {
+  // When the HTTP header has been sent, it's no use to send more to override, so we 
+  // do NOT check against what you might expect initially, i.e. 'if (conn && conn->num_bytes_sent >= 0)'
+  // but rather:
+  if (conn)
+    return (conn->num_bytes_sent >= 0 ? -1 : conn->num_bytes_sent != -1);
+  return 0;
 }
 
 int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
@@ -3508,14 +3519,14 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
     // Read from file, exit the loop on error
     if ((num_read = fread(buf, 1, (size_t)to_read, fp)) == 0)
     {
-      conn->request_info.status_code = 578; // signal internal error in access log file at least
+      send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
       break;
     }
 
     // Send read bytes to the client, exit the loop on error
     if ((num_written = mg_write(conn, buf, (size_t)num_read)) != num_read)
     {
-      conn->request_info.status_code = 580; // signal internal error or premature close by client in access log file at least
+      send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
       break;
     }
     // Both read and write were successful, adjust counters
@@ -4125,7 +4136,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
   FILE *fp;
   int rc;
 
-  conn->request_info.status_code = mg_stat(path, &st) == 0 ? 200 : 201;
+  conn->request_info.status_code = (mg_stat(path, &st) == 0 ? 200 : 201);
 
   if ((rc = put_dir(path)) == 0) {
     mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n", conn->request_info.status_code);
@@ -4418,9 +4429,9 @@ static void handle_request(struct mg_connection *conn) {
     send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
-    send_http_error(conn, 403, NULL, "Access Forbidden");
+    send_http_error(conn, 403, NULL, "No peeking at the passowrds file!");
   } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
-    send_http_error(conn, 404, NULL, "Not Found");
+    send_http_error(conn, 404, NULL, "DocumentRoot has not been properly configured.");
   } else if ((!strcmp(ri->request_method, "PUT") ||
         !strcmp(ri->request_method, "DELETE")) &&
       (is_empty(get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE)) ||

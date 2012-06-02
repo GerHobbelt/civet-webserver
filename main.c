@@ -635,7 +635,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					FD_ZERO(&read_set);
 					max_fd = -1;
 					assert(!"Should never get here");
-                    request_info->status_code = 579; // internal error in our custom handler
+                    mg_send_http_error(conn, 579, NULL, "select() failure"); // internal error in our custom handler
 					break;
 				}
 				else
@@ -664,9 +664,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 						bufferFill = mg_write(conn, data, bufferSize);
 						if (bufferFill < 0)
 						{
-							// TODO: report failure to handle request after all
-							mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
-							request_info->status_code = 579; // internal error in our custom handler
+							mg_send_http_error(conn, 579, NULL, "POST /_echo: write error at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
 							break;
 						}
 						bufferFill = bufferSize - bufferFill;
@@ -699,8 +697,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 				wlen = mg_write(conn, data, bufferFill);
 				if (bufferFill != wlen)
 				{
-					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
-                    request_info->status_code = 580; // internal error in our custom handler
+					mg_send_http_error(conn, 580, NULL, "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen); // internal error in our custom handler
 				}
 				if (wlen > 0)
 					bufferFill -= wlen;
@@ -750,7 +747,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       if (len != mg_write(conn, data, len))
 	  {
-        request_info->status_code = 580; // internal error in our custom handler or client closed connection prematurely
+        mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
 	  }
       return (void *)1;
     }
