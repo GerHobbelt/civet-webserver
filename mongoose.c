@@ -52,6 +52,11 @@ void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
 }
 
 
+#if !defined(WSAID_DISCONNECTEX)
+typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved);
+#define WSAID_DISCONNECTEX     {0x7fda2e11,0x8630,0x436f,{0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57}}
+#endif
+
 static LPFN_DISCONNECTEX DisconnectExPtr = 0;
 static CRITICAL_SECTION DisconnectExPtrCS;
 
@@ -102,7 +107,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
   return ret;
 }
 
-static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
 {
   LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
 
@@ -111,7 +116,7 @@ static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, 
 
 #else // _WIN32
 
-static int DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
+static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
 {
   return 0;
 }
@@ -5319,7 +5324,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
 
   if (linger_timeout > 0)
-	(void) DisconnectEx(sock, 0, 0, 0);
+	(void) __DisconnectEx(sock, 0, 0, 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
   (void) closesocket(sock);
