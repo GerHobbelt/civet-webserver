@@ -4596,11 +4596,12 @@ static int set_ports_option(struct mg_context *ctx) {
   int reuseaddr = 1;
 #endif // !_WIN32
   int success = 1;
-  int on = 1;
+  int on;
   SOCKET sock;
   struct vec vec;
-  struct socket so, *listener;
+  struct socket so = {0}, *listener;
   long int num;
+  int keep_alive_timeout;
   char * chknum = NULL;
 
   num = strtol(get_option(ctx, KEEP_ALIVE_TIMEOUT), &chknum, 10);
@@ -4608,6 +4609,8 @@ static int set_ports_option(struct mg_context *ctx) {
     mg_cry(fc(ctx), "%s: Invalid socket timeout '%s'", __func__, get_option(ctx, KEEP_ALIVE_TIMEOUT));
     success = 0;
   }
+  on = (num > 0);
+  keep_alive_timeout = num;
 
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
@@ -4657,6 +4660,7 @@ static int set_ports_option(struct mg_context *ctx) {
           *listener = so;
           listener->sock = sock;
           set_close_on_exec(listener->sock);
+		  set_timeout(listener, keep_alive_timeout);
           listener->next = ctx->listening_sockets;
           ctx->listening_sockets = listener;
         }
@@ -5289,10 +5293,8 @@ static int is_valid_uri(const char *uri) {
 
 static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
-  int keep_alive_enabled;
+  //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
-
-  keep_alive_enabled = !strcmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes");
 
   do {
     reset_per_request_attributes(conn);
@@ -5356,7 +5358,7 @@ static void process_new_connection(struct mg_connection *conn) {
 #if defined(MG_PROXY_SUPPORT)
            (conn->peer ||
 #endif
-            (keep_alive_enabled && should_keep_alive(conn))
+            should_keep_alive(conn)
 #if defined(MG_PROXY_SUPPORT)
            )
 #endif
@@ -5709,7 +5711,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     free_context(ctx);
     return NULL;
   }
-
+  
   // NOTE(lsm): order is important here. SSL certificates must
   // be initialized before listening ports. UID must be set last.
   if (!set_gpass_option(ctx) ||
