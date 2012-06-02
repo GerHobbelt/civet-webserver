@@ -45,7 +45,6 @@ static struct mg_context *ctx;      // Set by start_mongoose()
 #endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num) {
-	fprintf(stderr, "\nsignal: %d\n", sig_num);
   exit_flag = sig_num;
 }
 
@@ -660,7 +659,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
 			if (gotNow == 0)
 			{
-				mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
+				DEBUG_TRACE(("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize));
 				break;
 			}
           gotSize += gotNow;
