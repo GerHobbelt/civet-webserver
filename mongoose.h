@@ -42,29 +42,30 @@ struct mg_ip_address {
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
-  void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
-  const char *request_method;  // "GET", "POST", etc
-  char *uri;             // URL-decoded URI
-  char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
-  const char *http_version;    // E.g. "1.0", "1.1"
+  void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  const char *request_method;      // "GET", "POST", etc
+  char *uri;                       // URL-decoded URI
+  char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
+  const char *http_version;        // E.g. "1.0", "1.1"
   char *query_string;    // URL part after '?' (not including '?') or NULL
+  char *path_info;                 // PATH_INFO part of the URL
   char *remote_user;     // Authenticated user, or NULL if no auth used
-  const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
-  const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
-  const char *log_dstfile; // Mongoose preferred log file path, MG_EVENT_LOG only
-  time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
-  struct mg_ip_address remote_ip;        // Client's IP address
-  int remote_port;       // Client's port
-  struct mg_ip_address local_ip;        // This machine's IP address which receives/services the request
-  int local_port;       // Server's port
-  int status_code;       // HTTP reply status code, e.g. 200
+  const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
+  const char *log_severity;        // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
+  const char *log_dstfile;         // Mongoose preferred log file path, MG_EVENT_LOG only
+  time_t log_timestamp;            // log timestamp (UTC), MG_EVENT_LOG only
+  struct mg_ip_address remote_ip;  // Client's IP address
+  int remote_port;                 // Client's port
+  struct mg_ip_address local_ip;   // This machine's IP address which receives/services the request
+  int local_port;                  // Server's port
+  int status_code;                 // HTTP reply status code, e.g. 200
   char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
-  int is_ssl;            // 1 if SSL-ed, 0 if not
-  int num_headers;       // Number of headers
+  int is_ssl;                      // 1 if SSL-ed, 0 if not
+  int num_headers;                 // Number of headers
   struct mg_header {
-    char *name;          // HTTP header name
-    char *value;         // HTTP header value
-  } http_headers[64];    // Maximum 64 headers
+    char *name;                    // HTTP header name
+    char *value;                   // HTTP header value
+  } http_headers[64];              // Maximum 64 headers
 };
 
 // Various events on which user-defined function is called by Mongoose.

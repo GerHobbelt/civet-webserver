@@ -344,7 +344,6 @@ struct mg_connection {
   int64_t content_len;        // Content-Length header value
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
-  char *path_info;            // PATH_INFO part of the URL
   int buf_size;               // Buffer size
   int request_len;            // Size of the request + headers in a buffer
   int data_len;               // Total size of data in a buffer
@@ -2515,7 +2514,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
           // conn->path_info is pointing to the local variable "path" declared
           // in handle_request(), so PATH_INFO is not valid after
           // handle_request returns.
-          conn->path_info = p + 1;
+          conn->request_info.path_info = p + 1;
           memmove(p + 2, p + 1, strlen(p + 1) + 1);  // +1 is for trailing \0
           p[1] = '/';
           break;
@@ -3890,8 +3889,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   if ((s = getenv("PATH")) != NULL)
     addenv(blk, "PATH=%s", s);
 
-  if (conn->path_info != NULL) {
-    addenv(blk, "PATH_INFO=%s", conn->path_info);
+  if (conn->request_info.path_info != NULL) {
+    addenv(blk, "PATH_INFO=%s", conn->request_info.path_info);
   }
 
 #if defined(_WIN32)
@@ -4476,6 +4475,7 @@ static void handle_request(struct mg_connection *conn) {
   }
   // and reset stack storage reference(s):
   ri->phys_path = NULL;
+  ri->path_info = NULL; // see convert_uri_to_file_name()
 }
 
 static void close_all_listening_sockets(struct mg_context *ctx) {
@@ -5063,7 +5063,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->request_method = NULL;
   ri->uri = NULL;
   ri->http_version = NULL;
-  conn->path_info = NULL;
+  ri->path_info = NULL;
   ri->num_headers = 0;
   ri->status_code = -1;
 
