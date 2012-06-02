@@ -2425,10 +2425,6 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-  //change_slashes_to_backslashes(buf);
-#endif // _WIN32
-
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);
 	size_t cgi_exts_len = strlen(cgi_exts);
