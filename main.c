@@ -32,7 +32,7 @@
 
 
 
-#define MAX_OPTIONS 40
+#define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
 static volatile int exit_flag;
