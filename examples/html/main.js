@@ -7,8 +7,9 @@ var chat = {
   maxVisibleMessages: 10,
   errorMessageFadeOutTimeoutMs: 2000,
   errorMessageFadeOutTimer: null,
-  lastMessageId: 0,
+  lastMessageId: 0,  // tracks the last message we received/sent; hence 1 below the NEXT messageId to use for a chat message but never mind that as the chat SERVER will assign IDs
   getMessagesIntervalMs: 1000,
+  getMessagesTimer: null
 };
 
 chat.normalizeText = function(text) {
@@ -34,8 +35,19 @@ chat.refresh = function(data) {
         .addClass(entry.user ? '' : 'message-text-server')
         .html(chat.normalizeText(entry.text))
         .appendTo(row);
-      chat.lastMessageId = Math.max(chat.lastMessageId, entry.id) + 1;
+      if (entry.force_id && 0) {
+        chat.lastMessageId = entry.force_id;
+        // and go fetch the last remains, pronto...
+      } else {
+        chat.lastMessageId = Math.max(chat.lastMessageId, entry.id);
+      }
     });
+    // thanks to closures + timer, you'll get 'very odd' behaviour under load when
+    // you're not making absolutely sure that the next refresh request will
+    // ALWAYS have the latest intel on our beloved lastMessageId.
+    // Hence we must kill & requeue the refresh request given the very probably 
+    // updated lastMessageId we're now aware of:
+    chat.queueRefresh();
   }
 
   // Keep only chat.maxVisibleMessages, delete older ones.
@@ -50,10 +62,48 @@ chat.getMessages = function() {
     url: chat.backendUrl + '/ajax/get_messages',
     data: {last_id: chat.lastMessageId},
     success: chat.refresh,
-    error: function() {
+    error: function(o, t, e) {
+      var msg = "JSONP error: " + t + " for /ajax/get_messages: " + (e.message || '???') + " (" + o.status + ", " + o.statusText + ") ";
+      if (console && typeof(console.log) === 'function')
+        console.log(msg, o, e);
+      var row = $('<div>').addClass('message-row').appendTo('#mml');
+      var timestamp = (new Date()).toLocaleTimeString();
+      $('<span>')
+        .addClass('message-timestamp')
+        .html('[' + timestamp + ']')
+        .prependTo(row);
+      $('<span>')
+        .addClass('message-user')
+        .html(chat.normalizeText('[interchange]') + ':')
+        .appendTo(row);
+      $('<span>')
+        .addClass('message-text')
+        .addClass('message-error')
+        .html(chat.normalizeText(msg))
+        .appendTo(row);
+
+      // Keep only chat.maxVisibleMessages, delete older ones.
+      while ($('#mml').children().length > chat.maxVisibleMessages) {
+        $('#mml div:first-child').remove();
+      }
+
+      // wait a few seconds before trying again:
+      chat.queueRefresh(5000);
     },
   });
-  window.setTimeout(chat.getMessages, chat.getMessagesIntervalMs);
+  // given the code in chat.refresh(), chances are that this one
+  // will be killed; if we didn't you'll get in trouble with
+  // out-of-sync lastMessageId's under load.
+  // However, this one has it's use as it'll keep the pipe going
+  // while things are quiet in Chatville.
+  chat.queueRefresh();
+};
+
+chat.queueRefresh = function(timeout) {
+  // kill any pending refresh timer and set a new one:
+  if (chat.getMessagesTimer)
+    window.clearTimeout(chat.getMessagesTimer);
+  chat.getMessagesTimer = window.setTimeout(chat.getMessages, timeout || chat.getMessagesIntervalMs);
 };
 
 chat.handleMenuItemClick = function(ev) {

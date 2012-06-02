@@ -78,22 +78,29 @@ static void get_qsvar(const struct mg_request_info *request_info,
   mg_get_var(qs, strlen(qs == NULL ? "" : qs), name, dst, dst_len);
 }
 
-// Get a get of messages with IDs greater than last_id and transform them
+// Get a set of messages with IDs greater than last_id and transform them
 // into a JSON string. Return that string to the caller. The string is
 // dynamically allocated, caller must free it. If there are no messages,
 // NULL is returned.
 static char *messages_to_json(long last_id) {
   const struct message *message;
   int max_msgs, len;
-  char buf[sizeof(messages)];  // Large enough to hold all messages
+  char buf[ARRAY_SIZE(messages) * (sizeof(*message) + 70)];  // Large enough to hold all messages.
 
   // Read-lock the ringbuffer. Loop over all messages, making a JSON string.
   pthread_rwlock_rdlock(&rwlock);
   len = 0;
   max_msgs = sizeof(messages) / sizeof(messages[0]);
+  DEBUG_TRACE(("JSON: fetching msgs from %ld onwards; server has %d up to id=%ld", last_id, max_msgs, last_message_id));
   // If client is too far behind, return all messages.
   if (last_message_id - last_id > max_msgs) {
     last_id = last_message_id - max_msgs;
+  }
+  // If client is way up ahead, there's gone something terribly wrong! 
+  if (last_message_id - last_id < 0) {
+    len += mg_snq0printf(NULL, buf + len, sizeof(buf) - len,
+		"{user: \x01ServerBot\x02, text: \x01We're pooped; you're at #%lu while I don't know about anything beyond #%lu; picking up from there...\x02, timestamp: %lu, id: %lu, force_id: %lu},",
+        last_id, last_message_id, (unsigned long)time(NULL), last_message_id, last_message_id - max_msgs);
   }
   for (; last_id < last_message_id; last_id++) {
     message = &messages[last_id % max_msgs];
@@ -103,15 +110,110 @@ static char *messages_to_json(long last_id) {
     // buf is allocated on stack and hopefully is large enough to hold all
     // messages (it may be too small if the ringbuffer is full and all
     // messages are large. in this case asserts will trigger).
-    len += snprintf(buf + len, sizeof(buf) - len,
-        "{user: '%s', text: '%s', timestamp: %lu, id: %lu},",
-        message->user, message->text, message->timestamp, message->id);
+    len += mg_snq0printf(NULL, buf + len, sizeof(buf) - len,
+        "{user: \x01%s\x02, text: \x01%s\x02, timestamp: %lu, id: %lu},",
+        message->user, message->text, (unsigned long)message->timestamp, message->id);
     assert(len > 0);
     assert((size_t) len < sizeof(buf));
   }
   pthread_rwlock_unlock(&rwlock);
+  if (len > 0)
+  {
+	char *d;
+	int i, j, in_string;
 
-  return len == 0 ? NULL : strdup(buf);
+	// strip off trailing ',' --> output is '{...}' instead of '{...},'
+	if (buf[len - 1] == ',')
+	  buf[--len] = 0;
+	/*
+	now encode the json output as embedded quotes and stuff would 
+	otherwise break the generated output.
+
+	That's why we use the 'magicky' \x01 and \x02 as 'string delimiters' 
+	in that snprintf() up there... (we use mg_vsnq0printf() as we don't 
+	want any yammering to the server console when the buffer overflows)
+	*/
+	d = malloc(len * 4); // not strdup! allow space for encoding
+	for (j = i = in_string = 0; i < len; i++)
+	{
+	  switch (buf[i])
+	  {
+	  case '\x01':
+		// start of string:
+		if (!in_string) {
+		  in_string = 1;
+		  d[j++] = '\'';
+		  continue;
+		}
+		goto encode_hex;
+
+	  case '\x02':
+		// end of string:
+		if (in_string) {
+		  in_string = 0;
+		  d[j++] = '\'';
+		  continue;
+		}
+		goto encode_hex;
+
+	  case '\'':
+	  case '"':
+		// encode quotes in string
+		assert(in_string);
+		d[j++] = '\\';
+		d[j++] = buf[i];
+		continue;
+
+	  case '\n':
+		if (in_string) {
+		  d[j++] = '\\';
+		  d[j++] = 'n';
+		}
+		else {
+		  d[j++] = buf[i];
+		}
+		continue;
+
+	  case '\r':
+		if (in_string) {
+		  d[j++] = '\\';
+		  d[j++] = 'r';
+		}
+		else {
+		  d[j++] = buf[i];
+		}
+		continue;
+
+	  case '\t':
+		if (in_string) {
+		  d[j++] = '\\';
+		  d[j++] = 't';
+		}
+		else {
+		  d[j++] = buf[i];
+		}
+		continue;
+
+	  default:
+		if (buf[i] >= 32 && buf[i] < 127) {
+		  d[j++] = buf[i];
+		  continue;
+		}
+encode_hex:
+		j += mg_snq0printf(NULL, d + j, 5, "\\x%02x", buf[i] & 0xFF);
+		continue;
+
+	  case 0:
+		assert(!"Should never get here");
+		break;
+	  }
+	}
+	d[j] = 0;
+	len = j;
+	return d;
+  }
+
+  return NULL;
 }
 
 // If "callback" param is present in query string, this is JSONP call.
@@ -147,7 +249,7 @@ static void ajax_get_messages(struct mg_connection *conn) {
   }
 
   if (is_jsonp) {
-    mg_printf(conn, "%s", ")");
+    mg_printf(conn, ")");
   }
 }
 
@@ -155,7 +257,7 @@ static void ajax_get_messages(struct mg_connection *conn) {
 static struct message *new_message(void) {
   static int size = sizeof(messages) / sizeof(messages[0]);
   struct message *message = &messages[last_message_id % size];
-  message->id = last_message_id++;
+  message->id = ++last_message_id;
   message->timestamp = time(0);
   return message;
 }
@@ -191,10 +293,10 @@ static void ajax_send_message(struct mg_connection *conn) {
     pthread_rwlock_unlock(&rwlock);
   }
 
-  mg_printf(conn, "%s", text[0] == '\0' ? "false" : "true");
+  mg_printf(conn, text[0] == '\0' ? "false" : "true");
 
   if (is_jsonp) {
-    mg_printf(conn, "%s", ")");
+    mg_printf(conn, ")");
   }
 }
 
@@ -331,9 +433,9 @@ static void redirect_to_ssl(struct mg_connection *conn) {
               p - host, host, ri->uri);
     mg_mark_end_of_header_transmission(conn);
   } else {
-    mg_printf(conn, "%s", "HTTP/1.1 500 Error\r\n\r\n");
+    mg_printf(conn, "HTTP/1.1 500 Error\r\n\r\n");
     mg_mark_end_of_header_transmission(conn);
-    mg_printf(conn, "%s", "Host: header is not set");
+    mg_printf(conn, "Host: header is not set");
   }
 }
 
