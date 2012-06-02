@@ -5168,11 +5168,18 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->phys_path = NULL;
   ri->remote_user = NULL;
   ri->request_method = NULL;
+  ri->query_string = NULL;
   ri->uri = NULL;
   ri->http_version = NULL;
   ri->path_info = NULL;
   ri->num_headers = 0;
   ri->status_code = -1;
+  ri->status_custom_description = NULL;
+
+  ri->log_message = NULL;
+  ri->log_severity = 0;
+  ri->log_dstfile = NULL;
+  ri->log_timestamp = 0;
 
   conn->num_bytes_sent = -1;
   conn->consumed_content = 0;
