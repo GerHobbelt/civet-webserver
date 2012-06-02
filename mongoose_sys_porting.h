@@ -109,7 +109,7 @@
 typedef long off_t;
 #define BUFSIZ  4096
 
-#define errno   GetLastError()
+#define errno   ((int)GetLastError())
 #define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
 #endif // _WIN32_WCE
 
@@ -137,7 +137,7 @@ typedef long off_t;
 #endif // _MSC_VER
 #endif // _MSC_VER
 
-#define ERRNO   ((int)GetLastError())
+#define ERRNO   (GetLastError() ? (int)GetLastError() : errno)
 #define NO_SOCKLEN_T
 #define SSL_LIB   "ssleay32.dll"
 #define CRYPTO_LIB  "libeay32.dll"

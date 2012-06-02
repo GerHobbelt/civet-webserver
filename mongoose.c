@@ -2018,8 +2018,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   DEBUG_TRACE(("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
         CREATE_NEW_PROCESS_GROUP, envblk, dir, &si, &pi) == 0) {
-    mg_cry(conn, "%s: CreateProcess(%s): %d",
-        __func__, cmdline, ERRNO);
+    mg_cry(conn, "%s: CreateProcess(%s): %d (%s)",
+        __func__, cmdline, ERRNO, mg_strerror(ERRNO));
     pi.hProcess = (pid_t) -1;
   } else {
     (void) close(fd_stdin);
@@ -4742,14 +4742,14 @@ static int set_ports_option(struct mg_context *ctx) {
                        sizeof(on)) != 0 ||
             bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
             listen(sock, SOMAXCONN) != 0) {
-          closesocket(sock);
-          mg_cry(fc(ctx), "%s: cannot bind to %.*s: %s", __func__,
+          mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
                  vec.len, vec.ptr, mg_strerror(ERRNO));
+		  closesocket(sock);
           success = 0;
         } else if ((listener = (struct socket *)
                     calloc(1, sizeof(*listener))) == NULL) {
-          closesocket(sock);
           mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
+		  closesocket(sock);
           success = 0;
         } else {
           *listener = so;
@@ -5778,15 +5778,15 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 
   // Start master (listening) thread
   if (start_thread(ctx, (mg_thread_func_t) master_thread, ctx) != 0) {
-    mg_cry(fc(ctx), "Cannot start master thread: %d", ERRNO);
+    mg_cry(fc(ctx), "Cannot start master thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
     free_context(ctx);
     return NULL;
   }
 
   // Start worker threads
-  for (i = 0; i < atoi(get_option(ctx, NUM_THREADS)); i++) {
+  for (i = atoi(get_option(ctx, NUM_THREADS)); i > 0; i--) {
     if (start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
-      mg_cry(fc(ctx), "Cannot start worker thread: %d", ERRNO);
+      mg_cry(fc(ctx), "Cannot start worker thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
     } else {
       (void) pthread_mutex_lock(&ctx->mutex);
       ctx->num_threads++;
