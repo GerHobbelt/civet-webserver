@@ -1058,7 +1058,7 @@ int main(int argc, char *argv[]) {
          server_name, mg_get_option(ctx, "listening_ports"),
          mg_get_option(ctx, "document_root"));
   while (exit_flag == 0 && !mg_get_stop_flag(ctx)) {
-    mg_sleep(10);
+    mg_sleep(100);
   }
   printf("Exiting on signal %d/%d, waiting for all threads to finish...",
         exit_flag, mg_get_stop_flag(ctx));
