@@ -413,7 +413,7 @@ static const char *call_user_conn_option_get(struct mg_connection *conn, const c
 
 static int is_empty(const char *str)
 {
-	return !str || !*str;
+    return !str || !*str;
 }
 
 static int get_option_index(const char *name) {
@@ -433,9 +433,9 @@ static int get_option_index(const char *name) {
 const char *mg_get_option(struct mg_context *ctx, const char *name) {
   const char *rv = call_user_option_get(ctx, name);
   if (!rv) {
-	int i = get_option_index(name);
+    int i = get_option_index(name);
     if (i == -1) {
-	  return NULL;
+      return NULL;
     } else if (ctx == NULL || ctx->config[i] == NULL) {
       return "";
     } else {
@@ -448,9 +448,9 @@ const char *mg_get_option(struct mg_context *ctx, const char *name) {
 const char *mg_get_conn_option(struct mg_connection *conn, const char *name) {
   const char *rv = call_user_conn_option_get(conn, name);
   if (!rv) {
-	int i = get_option_index(name);
+    int i = get_option_index(name);
     if (i == -1) {
-	  return NULL;
+      return NULL;
     } else if (conn == NULL || conn->ctx == NULL || conn->ctx->config[i] == NULL) {
       return "";
     } else {
@@ -472,12 +472,12 @@ static const char *get_option(struct mg_context *ctx, mg_option_index_t index) {
   assert(index >= 0 && index < NUM_OPTIONS);
   rv = call_user_option_get(ctx, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
   if (rv) 
-	return rv;
+    return rv;
 
   if (ctx == NULL || ctx->config[index] == NULL)
-	return "";
+    return "";
   else 
-	return ctx->config[index];
+    return ctx->config[index];
 }
 
 static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t index) {
@@ -485,12 +485,12 @@ static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t
   assert(index >= 0 && index < NUM_OPTIONS);
   rv = call_user_conn_option_get(conn, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
   if (rv) 
-	return rv;
+    return rv;
 
   if (conn == NULL || conn->ctx == NULL || conn->ctx->config[index] == NULL)
-	return "";
+    return "";
   else 
-	return conn->ctx->config[index];
+    return conn->ctx->config[index];
 }
 
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
@@ -633,7 +633,7 @@ const char *mg_strerror(int errcode)
 
    (Note: this is 'thread safe _enough_': we don't care that multiple threads
           can bang up this 'connection', just as long as 'ctx' is
-		  written atomically (the write is one opcode).)
+          written atomically (the write is one opcode).)
 */
 static struct mg_connection *fc(struct mg_context *ctx) {
   static struct mg_connection fake_connection = {0};
@@ -1354,7 +1354,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   int i, j, len, res;
 
   if (pattern_len == -1)
-	pattern_len = strlen(pattern);
+    pattern_len = strlen(pattern);
   if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
@@ -2512,7 +2512,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);
-	size_t cgi_exts_len = strlen(cgi_exts);
+    size_t cgi_exts_len = strlen(cgi_exts);
 
     // Support PATH_INFO for CGI scripts.
     for (p = buf + strlen(buf); p > buf + 1; p--) {
@@ -2619,7 +2619,7 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
         closesocket(sock);
       }
       else {
-		if (result) freeaddrinfo(result);
+        if (result) freeaddrinfo(result);
         return newconn;
       }
     }
@@ -3169,7 +3169,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
     }
 
     if (*f_user && *f_domain &&
-		!strcmp(ah.user, f_user) &&
+        !strcmp(ah.user, f_user) &&
         !strcmp(auth_domain, f_domain))
       return check_password(
             conn->request_info.request_method,
@@ -3233,7 +3233,7 @@ static int is_authorized_for_put(struct mg_connection *conn) {
   const char *pwd_filepath = get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE);
 
   if (!is_empty(pwd_filepath)) {
-	fp = mg_fopen(pwd_filepath, "r");
+    fp = mg_fopen(pwd_filepath, "r");
     if (fp != NULL) {
       ret = authorize(conn, fp);
       (void) mg_fclose(fp);
@@ -4561,7 +4561,7 @@ static void handle_request(struct mg_connection *conn) {
     }
 #if !defined(NO_CGI)
   } else if (match_prefix(get_conn_option(conn, CGI_EXTENSIONS),
-	                      -1,
+                          -1,
                           path) > 0) {
     if (strcmp(ri->request_method, "POST") &&
         strcmp(ri->request_method, "GET")) {
@@ -5569,12 +5569,12 @@ static void worker_thread(struct mg_context *ctx) {
     // Thanks to Johannes Winkelmann for the patch.
     conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
     get_socket_ip_address(&conn->request_info.remote_ip, &conn->client.rsa);
-	// get the actual local IP address+port the client connected to:
-	if (0 != getsockname(conn->client.sock, &conn->client.lsa.u.sa, &conn->client.lsa.len))
-	{
-		mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-		//conn->client.lsa.len = 0;
-	}
+    // get the actual local IP address+port the client connected to:
+    if (0 != getsockname(conn->client.sock, &conn->client.lsa.u.sa, &conn->client.lsa.len))
+    {
+        mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+        //conn->client.lsa.len = 0;
+    }
     conn->request_info.local_port = get_socket_port(&conn->client.lsa);
     get_socket_ip_address(&conn->request_info.local_ip, &conn->client.lsa);
     conn->request_info.is_ssl = conn->client.is_ssl;
