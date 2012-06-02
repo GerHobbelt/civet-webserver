@@ -176,7 +176,7 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
 int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *ri, const char *name);
 
 /*
-Send HTTP error response headers.
+Send HTTP error response headers, if we still can. Log the error anyway.
 
 'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
 
@@ -187,7 +187,6 @@ void mg_send_http_error(struct mg_connection *conn, int status, const char *reas
 	__attribute__((format(printf, 4, 5)))
 #endif
 ;
-
 void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
 
 

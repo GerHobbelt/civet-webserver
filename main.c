@@ -32,7 +32,7 @@
 
 
 
-#define MAX_OPTIONS 40
+#define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
 static volatile int exit_flag;
@@ -45,7 +45,6 @@ static struct mg_context *ctx;      // Set by start_mongoose()
 #endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num) {
-	fprintf(stderr, "\nsignal: %d\n", sig_num);
   exit_flag = sig_num;
 }
 
@@ -60,10 +59,14 @@ static const char *default_options[] = {
 	"ssi_pattern",			 "**.html$|**.htm|**.shtml$|**.shtm$",
 	"enable_keep_alive",     "yes",
 	//"ssi_marker",			 "{!--#,}",
-	"keep_alive_timeout",    "0",
+	"keep_alive_timeout",    "5",
 
     NULL
 };
+
+#if defined(_WIN32)
+static int error_dialog_shown_previously = 0;
+#endif
 
 void die(const char *fmt, ...) {
   va_list ap;
@@ -74,7 +77,11 @@ void die(const char *fmt, ...) {
   va_end(ap);
 
 #if defined(_WIN32)
-  MessageBoxA(NULL, msg, "Error", MB_OK);
+  if (!error_dialog_shown_previously)
+  {
+	  MessageBoxA(NULL, msg, "Error", MB_OK);
+	  error_dialog_shown_previously = 1;
+  }
 #else
   fprintf(stderr, "%s\n", msg);
 #endif
@@ -106,18 +113,9 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 }
 
 static void verify_document_root(const char *root) {
-  const char *p, *path;
-  char buf[PATH_MAX];
   struct mgstat st;
 
-  path = root;
-  if ((p = strchr(root, ',')) != NULL && (size_t) (p - root) < sizeof(buf)) {
-    memcpy(buf, root, p - root);
-    buf[p - root] = '\0';
-    path = buf;
-  }
-
-    if (mg_stat(path, &st) != 0 || !st.is_directory) {
+    if (mg_stat(root, &st) != 0 || !st.is_directory) {
         die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
     }
 }
@@ -126,9 +124,8 @@ static void verify_document_root(const char *root) {
 static void set_option(char **options, const char *name, const char *value) {
   int i;
 
-  if (!strcmp(name, "document_root") || !(strcmp(name, "r"))) {
-    verify_document_root(value);
-  }
+  if (mg_get_option_long_name(name))
+	  name = mg_get_option_long_name(name);
 
     for (i = 0; i < MAX_OPTIONS * 2; i += 2) {
         // replace option value when it was set before: command line overrules config file, which overrules global defaults.
@@ -144,7 +141,7 @@ static void set_option(char **options, const char *name, const char *value) {
     }
 
     if (i > MAX_OPTIONS * 2 - 2) {
-        die("%s", "Too many options specified");
+        die("Too many options specified");
     }
 }
 
@@ -415,6 +412,31 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
 }
 
 
+/*
+Ths bit of code shows how one can go about providing something very much like 
+IP-based and/or Name-based Virtual Hosting.
+
+When you have your local DNS (or hosts file for that matter) configured to
+point the 'localhost-9.lan' domain name at IP address 127.0.0.9 and then run
+mongoose on your localhost and visit
+  http://127.0.0.2/
+for an example of IP-based Virtual Hosting, or
+  http://localhost-9.lan/
+for an example of Host-based Virtual Hosting, you will see another website 
+located in ./documentation: the mongoose documentation pages.
+If you visit
+  http://127.0.0.1/
+or
+  http://127.0.0.9/
+instead you will visit the website located in ./test/
+
+---
+
+Off Topic: one can override other options on a per-connection / request basis
+           as well. This applies to all options which' values are fetched by
+		   mongoose through the internal get_conn_option() call - grep
+		   mongoose.c for that one if you like.
+*/
 // typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 static const char *option_get_callback(struct mg_context *ctx, struct mg_connection *conn, const char *name)
 {
@@ -423,12 +445,21 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
 	{
 		struct mg_request_info *request_info = mg_get_request_info(conn);
 		
-		if (!request_info->local_ip.is_ip6 && request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.2(!) */)
+		if (/* IP-based Virtual Hosting */
+			(!request_info->local_ip.is_ip6 && 
+			 request_info->local_ip.ip_addr.v4[0] == 127 && 
+			 request_info->local_ip.ip_addr.v4[1] == 0 && 
+			 request_info->local_ip.ip_addr.v4[2] == 0 &&
+			 request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
+			/* Name-based Virtual Hosting */
+			0 < mg_match_prefix("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
 		{
 			static char docu_site_docroot[PATH_MAX] = "";
 
 			if (!*docu_site_docroot)
 			{
+				// use the CTX-based get-option call so our recursive invocation 
+				// skips this bit of code as 'conn == NULL' then:
 				mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../documentation", mg_get_option(ctx, name));
 			}
 			return docu_site_docroot;
@@ -447,6 +478,26 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   const char * uri;
   unsigned short crc;
   struct t_stat ** st;
+
+  if (event == MG_INIT0)
+  {
+	verify_document_root(mg_get_conn_option(conn, "document_root"));
+	return (void *)1;
+  }
+
+#if defined(_WIN32)
+  if (event == MG_EVENT_LOG && 
+	  strstr(request_info->log_message, "cannot bind to") &&
+	  !strcmp(request_info->log_severity, "error"))
+  {
+	  if (!error_dialog_shown_previously)
+	  {
+		  MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
+		  error_dialog_shown_previously = 1;
+	  }
+	  return 0;
+  }
+#endif
 
 #if 0
   if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
@@ -618,7 +669,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					FD_ZERO(&read_set);
 					max_fd = -1;
 					assert(!"Should never get here");
-                    request_info->status_code = 579; // internal error in our custom handler
+                    mg_send_http_error(conn, 579, NULL, "select() failure"); // internal error in our custom handler
 					break;
 				}
 				else
@@ -647,9 +698,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 						bufferFill = mg_write(conn, data, bufferSize);
 						if (bufferFill < 0)
 						{
-							// TODO: report failure to handle request after all
-							mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
-							request_info->status_code = 579; // internal error in our custom handler
+							mg_send_http_error(conn, 579, NULL, "POST /_echo: write error at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
 							break;
 						}
 						bufferFill = bufferSize - bufferFill;
@@ -660,7 +709,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
 			if (gotNow == 0)
 			{
-				mg_write2log(conn, "-", time(NULL), "info", "POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
+				DEBUG_TRACE(("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize));
 				break;
 			}
           gotSize += gotNow;
@@ -682,8 +731,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 				wlen = mg_write(conn, data, bufferFill);
 				if (bufferFill != wlen)
 				{
-					mg_write2log(conn, "-", time(NULL), "error", "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen);
-                    request_info->status_code = 580; // internal error in our custom handler
+					mg_send_http_error(conn, 580, NULL, "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen); // internal error in our custom handler
 				}
 				if (wlen > 0)
 					bufferFill -= wlen;
@@ -733,7 +781,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       if (len != mg_write(conn, data, len))
 	  {
-        request_info->status_code = 580; // internal error in our custom handler or client closed connection prematurely
+        mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
 	  }
       return (void *)1;
     }
@@ -829,7 +877,7 @@ static void start_mongoose(int argc, char *argv[]) {
   }
 
   if (ctx == NULL) {
-    die("%s", "Failed to start Mongoose. Maybe some options are "
+    die("Failed to start Mongoose. Maybe some options are "
         "assigned bad values?\nTry to run with '-e error_log.txt' "
         "and check error_log.txt for more information.");
   }
@@ -1063,7 +1111,7 @@ int main(int argc, char *argv[]) {
          server_name, mg_get_option(ctx, "listening_ports"),
          mg_get_option(ctx, "document_root"));
   while (exit_flag == 0 && !mg_get_stop_flag(ctx)) {
-    mg_sleep(10);
+    mg_sleep(100);
   }
   printf("Exiting on signal %d/%d, waiting for all threads to finish...",
         exit_flag, mg_get_stop_flag(ctx));

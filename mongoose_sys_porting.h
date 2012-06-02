@@ -57,12 +57,43 @@
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600 // To make it link in VS200x (with IPv6 support from Vista onwards)
+#define _WIN32_WINNT 0x0501 // 0x0600 // To make it link in VS200x (with IPv6 support from Vista onwards)
 #endif
 // load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <mswsock.h>
+
+//
+// _WIN32_WINNT version constants           <sdkddkver.h>
+//
+#ifndef _WIN32_WINNT_NT4                    
+#define _WIN32_WINNT_NT4                    0x0400
+#endif
+#ifndef _WIN32_WINNT_WIN2K                  
+#define _WIN32_WINNT_WIN2K                  0x0500
+#endif
+#ifndef _WIN32_WINNT_WINXP                  
+#define _WIN32_WINNT_WINXP                  0x0501
+#endif
+#ifndef _WIN32_WINNT_WS03                   
+#define _WIN32_WINNT_WS03                   0x0502
+#endif
+#ifndef _WIN32_WINNT_WIN6                   
+#define _WIN32_WINNT_WIN6                   0x0600
+#endif
+#ifndef _WIN32_WINNT_VISTA                  
+#define _WIN32_WINNT_VISTA                  0x0600
+#endif
+#ifndef _WIN32_WINNT_WS08                   
+#define _WIN32_WINNT_WS08                   0x0600
+#endif
+#ifndef _WIN32_WINNT_LONGHORN               
+#define _WIN32_WINNT_LONGHORN               0x0600
+#endif
+#ifndef _WIN32_WINNT_WIN7                   
+#define _WIN32_WINNT_WIN7                   0x0601
+#endif
 
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
@@ -78,7 +109,7 @@
 typedef long off_t;
 #define BUFSIZ  4096
 
-#define errno   GetLastError()
+#define errno   ((int)GetLastError())
 #define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
 #endif // _WIN32_WCE
 
@@ -106,7 +137,7 @@ typedef long off_t;
 #endif // _MSC_VER
 #endif // _MSC_VER
 
-#define ERRNO   ((int)GetLastError())
+#define ERRNO   (GetLastError() ? (int)GetLastError() : errno)
 #define NO_SOCKLEN_T
 #define SSL_LIB   "ssleay32.dll"
 #define CRYPTO_LIB  "libeay32.dll"
@@ -294,7 +325,7 @@ typedef int SOCKET;
 #endif
 
 
-#if defined(DEBUG)
+#if defined(DEBUG) || defined(_DEBUG)
 #define DEBUG_TRACE(x) do { \
   flockfile(stdout); \
   printf("*** %lu.%p.%s.%d: ", \

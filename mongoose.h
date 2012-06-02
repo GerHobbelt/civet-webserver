@@ -48,6 +48,7 @@ struct mg_request_info {
   char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
   const char *http_version;    // E.g. "1.0", "1.1"
   char *query_string;    // URL part after '?' (not including '?') or NULL
+  char *path_info;            // PATH_INFO part of the URL
   char *remote_user;     // Authenticated user, or NULL if no auth used
   const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
   const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
@@ -243,6 +244,17 @@ const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);
 
+// Return the long name of a given option 'name' (where 'name' can itself be
+// either the short or long name).
+// Use this API to convert option names for various sources to the single
+// long name format: one name fits all.
+//
+// See for example main.c for one possible use: there this call is used to
+// make sure that command line options, config file entries and hardcoded
+// defaults don't inadvertedly produce duplicate option entries in the
+// options[] list.
+const char *mg_get_option_long_name(const char *name);
+
 #define MG_ENTRIES_PER_CONFIG_OPTION 3
 
 
@@ -272,6 +284,15 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // access log to show the correct (actual) number.
 void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 
+// Return !0 when the headers have already been sent, 0 if not.
+//
+// To be more specific, this function will return -1 when all HTTP headers
+// have been written (and anything sent now is considered part of the content),
+// while a return value of +1 indicates that the HTTP response has been
+// written but that you MAY decide to write some more headers to 
+// augment the HTTP header set being transmitted.
+int mg_have_headers_been_sent(const struct mg_connection *conn);
+
 // Send data to the browser using printf() semantics.
 //
 // Works exactly like mg_write(), but allows to do message formatting.
@@ -299,7 +320,9 @@ int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
 
 
 // Send contents of the entire file together with HTTP headers.
-void mg_send_file(struct mg_connection *conn, const char *path);
+//
+// Return 0 on success, negative number of I/O failed, positive non-zero when file does not exist (404)
+int mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.
