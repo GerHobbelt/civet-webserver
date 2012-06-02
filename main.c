@@ -64,6 +64,10 @@ static const char *default_options[] = {
     NULL
 };
 
+#if defined(_WIN32)
+static int error_dialog_shown_previously = 0;
+#endif
+
 void die(const char *fmt, ...) {
   va_list ap;
   char msg[200];
@@ -73,7 +77,11 @@ void die(const char *fmt, ...) {
   va_end(ap);
 
 #if defined(_WIN32)
-  MessageBoxA(NULL, msg, "Error", MB_OK);
+  if (!error_dialog_shown_previously)
+  {
+	  MessageBoxA(NULL, msg, "Error", MB_OK);
+	  error_dialog_shown_previously = 1;
+  }
 #else
   fprintf(stderr, "%s\n", msg);
 #endif
@@ -442,6 +450,20 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	verify_document_root(mg_get_conn_option(conn, "document_root"));
 	return (void *)1;
   }
+
+#if defined(_WIN32)
+  if (event == MG_EVENT_LOG && 
+	  strstr(request_info->log_message, "cannot bind to") &&
+	  !strcmp(request_info->log_severity, "error"))
+  {
+	  if (!error_dialog_shown_previously)
+	  {
+		  MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
+		  error_dialog_shown_previously = 1;
+	  }
+	  return 0;
+  }
+#endif
 
 #if 0
   if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
