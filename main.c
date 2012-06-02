@@ -105,18 +105,9 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 }
 
 static void verify_document_root(const char *root) {
-  const char *p, *path;
-  char buf[PATH_MAX];
   struct mgstat st;
 
-  path = root;
-  if ((p = strchr(root, ',')) != NULL && (size_t) (p - root) < sizeof(buf)) {
-    memcpy(buf, root, p - root);
-    buf[p - root] = '\0';
-    path = buf;
-  }
-
-    if (mg_stat(path, &st) != 0 || !st.is_directory) {
+    if (mg_stat(root, &st) != 0 || !st.is_directory) {
         die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
     }
 }
@@ -125,9 +116,8 @@ static void verify_document_root(const char *root) {
 static void set_option(char **options, const char *name, const char *value) {
   int i;
 
-  if (!strcmp(name, "document_root") || !(strcmp(name, "r"))) {
-    verify_document_root(value);
-  }
+  if (mg_get_option_long_name(name))
+	  name = mg_get_option_long_name(name);
 
     for (i = 0; i < MAX_OPTIONS * 2; i += 2) {
         // replace option value when it was set before: command line overrules config file, which overrules global defaults.
@@ -446,6 +436,12 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   const char * uri;
   unsigned short crc;
   struct t_stat ** st;
+
+  if (event == MG_INIT0)
+  {
+	verify_document_root(mg_get_conn_option(conn, "document_root"));
+	return (void *)1;
+  }
 
 #if 0
   if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)

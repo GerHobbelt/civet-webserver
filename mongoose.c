@@ -349,6 +349,8 @@ static int is_empty(const char *str)
 static int get_option_index(const char *name) {
   int i;
 
+  if (!name) 
+	return -1;
   for (i = 0; config_options[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
     if ((config_options[i][0] && strcmp(config_options[i], name) == 0) ||
         strcmp(config_options[i + 1], name) == 0) {
@@ -386,6 +388,13 @@ const char *mg_get_conn_option(struct mg_connection *conn, const char *name) {
     }
   }
   return rv;
+}
+
+const char *mg_get_option_long_name(const char *name) {
+  int i = get_option_index(name);
+  if (i >= 0)
+    return config_options[i * MG_ENTRIES_PER_CONFIG_OPTION + 1];
+  return NULL;
 }
 
 static const char *get_option(struct mg_context *ctx, mg_option_index_t index) {

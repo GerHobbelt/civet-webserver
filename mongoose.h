@@ -243,6 +243,17 @@ const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);
 
+// Return the long name of a given option 'name' (where 'name' can itself be
+// either the short or long name).
+// Use this API to convert option names for various sources to the single
+// long name format: one name fits all.
+//
+// See for example main.c for one possible use: there this call is used to
+// make sure that command line options, config file entries and hardcoded
+// defaults don't inadvertedly produce duplicate option entries in the
+// options[] list.
+const char *mg_get_option_long_name(const char *name);
+
 #define MG_ENTRIES_PER_CONFIG_OPTION 3
 
 
