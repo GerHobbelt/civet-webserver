@@ -39,7 +39,8 @@
 #define MAX_CGI_ENVIR_VARS 64
 
 
-#ifdef _WIN32
+#if defined(_WIN32)
+
 static CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 
 void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
@@ -49,7 +50,73 @@ void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
 void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
   LeaveCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
 }
-#endif
+
+
+static LPFN_DISCONNECTEX DisconnectExPtr = 0;
+static CRITICAL_SECTION DisconnectExPtrCS;
+
+static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+    return 0;
+}
+
+static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
+{
+  /*
+    Note  The function pointer for the DisconnectEx function must be obtained
+          at run time by making a call to the WSAIoctl function with the
+          SIO_GET_EXTENSION_FUNCTION_POINTER opcode specified. The input buffer
+          passed to the WSAIoctl function must contain WSAID_DISCONNECTEX, a
+          globally unique identifier (GUID) whose value identifies the
+          DisconnectEx extension function.
+          On success, the output returned by the WSAIoctl function contains
+          a pointer to the DisconnectEx function. The WSAID_DISCONNECTEX GUID
+          is defined in the Mswsock.h header file.
+  */
+  LPFN_DISCONNECTEX ret;
+
+  EnterCriticalSection(&DisconnectExPtrCS);
+
+  if (!DisconnectExPtr && sock)
+  {
+    GUID dcex = WSAID_DISCONNECTEX;
+    LPFN_DISCONNECTEX DisconnectExPtr = 0;
+    DWORD len = 0;
+    int rv;
+
+    rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
+                  &DisconnectExPtr, sizeof(DisconnectExPtr),
+                  &len, 0, 0);
+    if (rv)
+    {
+      DisconnectExPtr = dummy_disconnectEx;
+    }
+  }
+  if (DisconnectExPtr)
+    ret = DisconnectExPtr;
+  else
+    ret = dummy_disconnectEx;
+
+  LeaveCriticalSection(&DisconnectExPtrCS);
+
+  return ret;
+}
+
+static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+  LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
+
+  return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
+}
+
+#else // _WIN32
+
+static int DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
+{
+  return 0;
+}
+
+#endif // _WIN32
 
 
 
@@ -431,12 +498,11 @@ static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
 #if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+  // Only Windoze Vista (and newer) have inet_ntop()
   inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
             (void *) &usa->u.sin.sin_addr :
             (void *) &usa->u.sin6.sin6_addr), buf, len);
-#elif defined(_WIN32) && (!defined(_MSC_VER) || _MSC_VER < 1300)
-  // Only Windoze Vista (and newer) have inet_ntop()
-  //
+#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP) 
   // We use WSAAddressToString since it is supported on Windows XP and later
   {
     DWORD l = len;
@@ -444,11 +510,12 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
       buf[0] = '\0';
     }
   }
-#elif defined(_WIN32) && (!defined(_MSC_VER) || _MSC_VER < 1300)
-  // Only Windoze Vista (and newer) have inet_ntop()
-  //
+#elif defined(_WIN32)
   // WARNING: ntoa() is very probably not thread-safe on your platform!
+  //          (we'll abuse the (DisconnectExPtrCS) critical section to cover this up as well...)
+  EnterCriticalSection(&DisconnectExPtrCS);
   strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
+  LeaveCriticalSection(&DisconnectExPtrCS);
 #else
   inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
 #endif
@@ -4422,7 +4489,8 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
 }
 
 static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
-#if defined(USE_IPV6)
+#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+  // Only Windoze Vista (and newer) have inet_pton()
   struct in_addr a = {0};
   struct in6_addr a6 = {0};
 
@@ -4440,6 +4508,32 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
   } else {
     return 0;
   }
+#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP) 
+  // We use WSAStringToAddress since it is supported on Windows XP and later
+  struct in_addr a = {0};
+  INT l;
+#if defined(USE_IPV6)
+  struct in6_addr a6 = {0};
+
+  l = sizeof(a6);
+  if (!WSAStringToAddressA(addr_buf, AF_INET6, NULL, (LPSOCKADDR)&a6, &l)) {
+	assert(l == sizeof(a6));
+    usa->len = sizeof(usa->u.sin6);
+    usa->u.sin6.sin6_family = AF_INET6;
+    usa->u.sin6.sin6_port = htons((uint16_t) port);
+    usa->u.sin6.sin6_addr = a6;
+	return 1;
+  }
+#endif
+  l = sizeof(a);
+  if (!WSAStringToAddressA(addr_buf, AF_INET, NULL, (LPSOCKADDR)&a, &l)) {
+	assert(l == sizeof(a));
+    usa->len = sizeof(usa->u.sin);
+    usa->u.sin.sin_family = AF_INET;
+    usa->u.sin.sin_port = htons((uint16_t) port);
+    usa->u.sin.sin_addr = a;
+  }
+  return 0;
 #else
   int a, b, c, d, len;
 
@@ -4979,67 +5073,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->request_len = conn->data_len = 0;
   conn->must_close = 0;
 }
-
-#if defined(_WIN32)
-
-static LPFN_DISCONNECTEX DisconnectExPtr = 0;
-static CRITICAL_SECTION DisconnectExPtrCS;
-
-static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
-    return 0;
-}
-
-static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
-{
-  /*
-    Note  The function pointer for the DisconnectEx function must be obtained
-          at run time by making a call to the WSAIoctl function with the
-          SIO_GET_EXTENSION_FUNCTION_POINTER opcode specified. The input buffer
-          passed to the WSAIoctl function must contain WSAID_DISCONNECTEX, a
-          globally unique identifier (GUID) whose value identifies the
-          DisconnectEx extension function.
-          On success, the output returned by the WSAIoctl function contains
-          a pointer to the DisconnectEx function. The WSAID_DISCONNECTEX GUID
-          is defined in the Mswsock.h header file.
-  */
-  LPFN_DISCONNECTEX ret;
-
-  EnterCriticalSection(&DisconnectExPtrCS);
-
-  if (!DisconnectExPtr && sock)
-  {
-    GUID dcex = WSAID_DISCONNECTEX;
-    LPFN_DISCONNECTEX DisconnectExPtr = 0;
-    DWORD len = 0;
-    int rv;
-
-    rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
-                  &DisconnectExPtr, sizeof(DisconnectExPtr),
-                  &len, 0, 0);
-    if (rv)
-    {
-      DisconnectExPtr = dummy_disconnectEx;
-    }
-  }
-  if (DisconnectExPtr)
-    ret = DisconnectExPtr;
-  else
-    ret = dummy_disconnectEx;
-
-  LeaveCriticalSection(&DisconnectExPtrCS);
-
-  return ret;
-}
-
-static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
-  LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
-
-  return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
-}
-
-#endif // _WIN32
 
 static void close_socket_gracefully(struct mg_connection *conn) {
   char buf[BUFSIZ];
