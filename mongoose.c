@@ -1409,11 +1409,11 @@ static void vsend_http_error(struct mg_connection *conn, int status,
      Otherwise an incorrect Content-Type generates a warning in
      some browsers when a static file request returns a 304
      "not modified" error. */
-    if(len > 0) {
-      mg_printf(conn, "Content-Type: text/plain\r\n");
+    if (len > 0) {
+      mg_printf(conn, "Content-Length: %d\r\n"
+                "Content-Type: text/plain\r\n", len);
     }
-    mg_printf(conn, "Content-Length: %d\r\n"
-              "Connection: %s\r\n\r\n", len,
+    mg_printf(conn, "Connection: %s\r\n\r\n",
               suggest_connection_header(conn));
 
     mg_mark_end_of_header_transmission(conn);
