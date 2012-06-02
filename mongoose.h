@@ -320,7 +320,9 @@ int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
 
 
 // Send contents of the entire file together with HTTP headers.
-void mg_send_file(struct mg_connection *conn, const char *path);
+//
+// Return 0 on success, negative number of I/O failed, positive non-zero when file does not exist (404)
+int mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.

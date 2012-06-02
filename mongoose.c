@@ -3506,9 +3506,17 @@ static void handle_directory_request(struct mg_connection *conn,
 }
 
 // Send len bytes from the opened file to the client.
-static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
+//
+// 'len' may be larger than the amount of data actually available
+// in the file; this will not be considered an error and send_file_data()
+// will cope seamlessly with this situation.
+//
+// Return negative number on error; otherwise return the number of bytes
+// actually written.
+static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
   char buf[DATA_COPY_BUFSIZ];
   int to_read, num_read, num_written;
+  int64_t wlen = 0;
 
   while (len > 0) {
     // Calculate how much to read from the file in the buffer
@@ -3516,22 +3524,27 @@ static void send_file_data(struct mg_connection *conn, FILE *fp, int64_t len) {
     if ((int64_t) to_read > len)
       to_read = (int) len;
 
+    if (feof(fp))
+        break;
+
     // Read from file, exit the loop on error
     if ((num_read = fread(buf, 1, (size_t)to_read, fp)) == 0)
     {
       send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
-      break;
+      return -2;
     }
 
     // Send read bytes to the client, exit the loop on error
     if ((num_written = mg_write(conn, buf, (size_t)num_read)) != num_read)
     {
       send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
-      break;
+      return -1;
     }
     // Both read and write were successful, adjust counters
     len -= num_written;
+    wlen += num_written;
   }
+  return wlen;
 }
 
 static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
@@ -3542,7 +3555,8 @@ static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
   strftime(buf, buf_len, "%a, %d %b %Y %H:%M:%S GMT", gmtime(t));
 }
 
-static void handle_file_request(struct mg_connection *conn, const char *path,
+// return negative number on error; 0 on success
+static int handle_file_request(struct mg_connection *conn, const char *path,
                                 struct mgstat *stp) {
   char date[64], lm[64], etag[64], range[64];
   const char *hdr;
@@ -3560,7 +3574,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
   if ((fp = mg_fopen(path, "rb")) == NULL) {
     send_http_error(conn, 500, NULL,
         "fopen(%s): %s", path, mg_strerror(ERRNO));
-    return;
+    return -1;
   }
   set_close_on_exec(fileno(fp));
 
@@ -3585,7 +3599,7 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
   (void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx",
       (unsigned long) stp->mtime, (unsigned long) stp->size);
 
-  (void) mg_printf(conn,
+  n = mg_printf(conn,
       "HTTP/1.1 %d %s\r\n"
       "Date: %s\r\n"
       "Last-Modified: %s\r\n"
@@ -3598,19 +3612,23 @@ static void handle_file_request(struct mg_connection *conn, const char *path,
       conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code), date, lm, etag, (int) mime_vec.len,
       mime_vec.ptr, cl, suggest_connection_header(conn), range);
   mg_mark_end_of_header_transmission(conn);
+  n--; // 0 --> -1
 
-  if (strcmp(conn->request_info.request_method, "HEAD") != 0) {
-    send_file_data(conn, fp, cl);
+  if (n > 0 &&
+      strcmp(conn->request_info.request_method, "HEAD") != 0) {
+    n = (send_file_data(conn, fp, cl) >= 0);
   }
   (void) mg_fclose(fp);
+  return (n > 0 ? 0 : -1);
 }
 
-void mg_send_file(struct mg_connection *conn, const char *path) {
+int mg_send_file(struct mg_connection *conn, const char *path) {
   struct mgstat st;
   if (mg_stat(path, &st) == 0) {
-    handle_file_request(conn, path, &st);
+    return handle_file_request(conn, path, &st);
   } else {
-    send_http_error(conn, 404, NULL, "File not found");
+    send_http_error(conn, 404, NULL, "File not found: (%s)", path);
+    return 404;
   }
 }
 
@@ -4068,7 +4086,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
                       (size_t)(data_len - headers_len));
 
   // Read the rest of CGI output and send to the client
-  send_file_data(conn, out, INT64_MAX);
+  (void)send_file_data(conn, out, INT64_MAX);
 
 done:
   if (pid != (pid_t) -1) {
@@ -4165,15 +4183,17 @@ static void put_file(struct mg_connection *conn, const char *path) {
   }
 }
 
-static void send_ssi_file(struct mg_connection *, const char *, FILE *, int);
+static int send_ssi_file(struct mg_connection *, const char *, FILE *, int);
 
-static void do_ssi_include(struct mg_connection *conn, const char *ssi,
-                           char *tag, int include_level) {
-  char file_name[SSI_LINE_BUFSIZ], path[PATH_MAX], *p;
+// Return 0 on success; non-zero on error, where negative number is a fatal I/O failure.
+static int do_ssi_include(struct mg_connection *conn, const char *ssi,
+                           const char tag[PATH_MAX+64], int include_level) {
+  char file_name[PATH_MAX+64], path[PATH_MAX], *p;
   FILE *fp;
+  int rv;
 
-  // sscanf() is safe here, since send_ssi_file() also uses buffer
-  // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
+  // sscanf() is safe here, since send_ssi_file() guarantees that tag is 
+  // no larger than PATH_MAX+64 bytes, so strlen(tag) is always < PATH_MAX+64.
   if (sscanf(tag, " virtual=\"%[^\"]\"", file_name) == 1) {
     // File name is relative to the webserver root
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
@@ -4192,58 +4212,88 @@ static void do_ssi_include(struct mg_connection *conn, const char *ssi,
         sizeof(path) - strlen(path), "%s", file_name);
   } else {
     mg_cry(conn, "Bad SSI #include: [%s]", tag);
-    return;
+    return 1;
   }
 
   p = conn->request_info.phys_path;
+  rv = 0;
   conn->request_info.phys_path = path;
   if (!call_user(conn, MG_SSI_INCLUDE_REQUEST)) {
     if ((fp = mg_fopen(path, "rb")) == NULL) {
       mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
           tag, path, mg_strerror(ERRNO));
+      rv = 2;
     } else {
       set_close_on_exec(fileno(fp));
       if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS), 
-		               -1, 
-					   path) > 0) {
-        send_ssi_file(conn, path, fp, include_level + 1);
+                       -1, 
+                       path) > 0) {
+        if (send_ssi_file(conn, path, fp, include_level + 1) < 0)
+          rv = -1;
       } else {
-        send_file_data(conn, fp, INT64_MAX);
+        if (send_file_data(conn, fp, INT64_MAX) < 0)
+          rv = -1;
       }
       (void) mg_fclose(fp);
     }
   }
   conn->request_info.phys_path = p;
+  return rv;
 }
 
 #if !defined(NO_POPEN)
-static void do_ssi_exec(struct mg_connection *conn, char *tag) {
+
+static int do_ssi_exec(struct mg_connection *conn, const char *tag) {
   char cmd[SSI_LINE_BUFSIZ];
   FILE *fp;
 
   // sscanf() is safe here, since send_ssi_file() also uses buffer
   // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
   if (sscanf(tag, " \"%[^\"]\"", cmd) != 1) {
-    mg_cry(conn, "Bad SSI #exec: [%s]", tag);
+    send_http_error(conn, 580, NULL, "Bad SSI #exec: [%s]", tag);
+    return -1;
   } else if ((fp = popen(cmd, "r")) == NULL) {
-    mg_cry(conn, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
+    send_http_error(conn, 580, NULL, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
+    return -1;
   } else {
-    send_file_data(conn, fp, INT64_MAX);
+    int rv = (send_file_data(conn, fp, INT64_MAX) < 0);
     (void) pclose(fp);
+    return rv;
   }
 }
 #endif // !NO_POPEN
 
-static void send_ssi_file(struct mg_connection *conn, const char *path,
+static const char *memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
+{
+    if (haysize < needlesize)
+        return NULL;
+    haysize -= needlesize - 1;
+    while (haysize > 0)
+    {
+        const char *p = memchr(haystack, needle[0], haysize);
+        if (!p)
+            return NULL;
+        // as we fixed haysize we can now simply check if the needle is here:
+        if (!memcmp(p, needle, needlesize))
+            return p;
+        // be blunt; no BM-like speedup for this search...
+        p++;
+        haysize -= p - haystack;
+        haystack = p;
+    }
+    return NULL;
+}
+
+static int send_ssi_file(struct mg_connection *conn, const char *path,
                           FILE *fp, int include_level) {
-  char buf[SSI_LINE_BUFSIZ];
-  int ch, len, in_ssi_tag;
+  char buf[SSI_LINE_BUFSIZ + 64];
+  int rlen, roff, taglen;
   struct vec ssi_start = {0}, ssi_end = {0};
   const char *m;
 
   if (include_level > 10) {
     mg_cry(conn, "SSI #include level is too deep (%s)", path);
-    return;
+    return 1;
   }
 
   m = next_option(get_conn_option(conn, SSI_MARKER), &ssi_start, NULL);
@@ -4257,59 +4307,105 @@ static void send_ssi_file(struct mg_connection *conn, const char *path,
     ssi_end.len = 1;
   }
 
-  in_ssi_tag = 0;
-  len = 0;
+  rlen = 0;
+  roff = 0;
+  taglen = ssi_start.len;
 
-  while ((ch = fgetc(fp)) != EOF) {
-    if (in_ssi_tag && ch == ssi_end.ptr[0]) {
-      in_ssi_tag = 0;
-      buf[len++] = (char) ch;
-      buf[len] = '\0';
-      assert(len <= (int) sizeof(buf));
-      if (len < (int)ssi_start.len + 1 || memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
-        // Not an SSI tag, pass it
-        (void) mg_write(conn, buf, (size_t)len);
-      } else {
-        if (!memcmp(buf + ssi_start.len, "include", 7)) {
-          do_ssi_include(conn, path, buf + ssi_start.len + 7, include_level);
+  for(;;)
+  {
+    const char *b = buf;
+    rlen = (int)fread(buf + roff, 1, sizeof(buf) - roff, fp);
+    if (rlen <= 0)
+      break;
+    rlen += roff;
+    for(;;)
+    {
+        const char *e;
+        const char *s;
+        if (rlen < taglen)
+        {
+            if (b > buf)
+            {
+                memmove(buf, b, rlen);
+            }
+            roff = rlen;
+            break;
+        }
+        s = memfind(b, rlen, ssi_start.ptr, taglen);
+        if (!s)
+        {
+            if (rlen >= taglen && mg_write(conn, b, rlen - taglen + 1) != rlen - taglen + 1)
+            {
+                mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen - taglen + 1, path);
+                return -1;
+            }
+            memmove(buf, b + rlen - taglen + 1, taglen - 1);
+            roff = taglen - 1;
+            break;
+        }
+        // flush part before start tag:
+        if (s > b && mg_write(conn, b, s - b) != s - b)
+        {
+            mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)(s - b), path);
+            return -1;
+        }
+        rlen -= s - b;
+        b = s;
+        s += taglen + 1;
+        e = memfind(s, rlen - (s - b), ssi_end.ptr, ssi_end.len);
+        if (!e)
+        {
+            // shift to start; load more data and retry, if possible:
+            s -= taglen + 1;
+            if (s == buf || feof(fp))
+            {
+                /* in this case we already have max data loaded: overlong SSI tag! */
+                mg_send_http_error(conn, 580, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
+                return -1;
+            }
+            memmove(buf, s, rlen - (s - b));
+            roff = rlen - (s - b);
+            break;
+        }
+        s--;
+        // skip whitespace:
+        s += strspn(s, " \t\r\n");
+
+        if (!memcmp(s, "include", 7)) {
+          if (e - s - 7 > PATH_MAX + 64)
+          {
+            mg_send_http_error(conn, 580, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
+            return -1;
+          }
+          else
+          {
+            do_ssi_include(conn, path, s + 7, include_level);
+          }
 #if !defined(NO_POPEN)
-        } else if (!memcmp(buf + ssi_start.len, "exec", 4)) {
-          do_ssi_exec(conn, buf + ssi_start.len + 4);
+        } else if (!memcmp(s, "exec", 4)) {
+          if (do_ssi_exec(conn, s + 4))
+            return -1;
 #endif // !NO_POPEN
         } else {
+          // shouldn't we log the error and abort? Nope, in this case we decide to go on. Unsupported SSI features are ignored.
           mg_cry(conn, "%s: unknown SSI command: \"%s\"", path, buf);
         }
-      }
-      len = 0;
-    } else if (in_ssi_tag) {
-      if (len == (int)ssi_start.len && memcmp(buf, ssi_start.ptr, ssi_start.len) != 0) {
-        // Not an SSI tag
-        in_ssi_tag = 0;
-      } else if (len == (int) sizeof(buf) - 2) {
-        mg_cry(conn, "%s: SSI tag is too large", path);
-        len = 0;
-      }
-      buf[len++] = ch & 0xff;
-    } else if (ch == ssi_start.ptr[0]) {
-      in_ssi_tag = 1;
-      if (len > 0) {
-        (void) mg_write(conn, buf, (size_t)len);
-      }
-      len = 0;
-      buf[len++] = ch & 0xff;
-    } else {
-      buf[len++] = ch & 0xff;
-      if (len == (int) sizeof(buf)) {
-        (void) mg_write(conn, buf, (size_t)len);
-        len = 0;
-      }
+        s = e + ssi_end.len;
+        rlen -= s - b;
+        b = s;
     }
   }
-
   // Send the rest of buffered data
-  if (len > 0) {
-    (void) mg_write(conn, buf, (size_t)len);
+  rlen += roff;
+  if (rlen > 0)
+  {
+    if (mg_write(conn, buf, rlen) != rlen)
+    {
+        mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen, path);
+        return -1;
+    }
   }
+  return 0;
 }
 
 static void handle_ssi_file_request(struct mg_connection *conn,
