@@ -133,7 +133,7 @@ static void set_option(char **options, const char *name, const char *value) {
     }
 
     if (i > MAX_OPTIONS * 2 - 2) {
-        die("%s", "Too many options specified");
+        die("Too many options specified");
     }
 }
 
@@ -824,7 +824,7 @@ static void start_mongoose(int argc, char *argv[]) {
   }
 
   if (ctx == NULL) {
-    die("%s", "Failed to start Mongoose. Maybe some options are "
+    die("Failed to start Mongoose. Maybe some options are "
         "assigned bad values?\nTry to run with '-e error_log.txt' "
         "and check error_log.txt for more information.");
   }
