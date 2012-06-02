@@ -5032,11 +5032,16 @@ static BOOL DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, 
 
 #endif // _WIN32
 
-static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
+static void close_socket_gracefully(struct mg_connection *conn) {
   char buf[BUFSIZ];
   struct linger linger;
   int n, w;
   int linger_timeout = 1 * 1000;
+  SOCKET sock;
+
+  if (!conn || conn->client.sock == INVALID_SOCKET)
+	  return;
+  sock = conn->client.sock;
 
   /*
 
@@ -5101,15 +5106,17 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
     case 1:
       // only fetch RX data when there actually is some:
       n = pull(NULL, sock, NULL, buf, sizeof(buf));
+	  DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
       if (n < 0)
       {
         w = 0;
         linger_timeout = 0;
         break;
       }
-      // fall through:
+      // fall through: connection closed from the other side. Don't count this against our linger time.
       if (n == 0)
       {
+		tv.tv_sec = tv.tv_usec = 0;
     case 0:
         // timeout expired or remote close signaled:
         n = 0;
@@ -5126,8 +5133,10 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
           w = wr_pending;
         }
       }
+#else
+	  w = 0;
 #endif
-       break;
+      break;
 
     default:
       // fatality:
@@ -5137,22 +5146,28 @@ static void close_socket_gracefully(SOCKET sock, struct mg_context *ctx) {
       break;
     }
     //printf("graceful close: %d/%d/%d/%d\n", n, w, linger_timeout, sv);
-  } while ((n > 0 || w > 0) && linger_timeout > 0 && mg_get_stop_flag(ctx) == 0);
+  } while ((n > 0 || w > 0) && linger_timeout > 0 && mg_get_stop_flag(conn->ctx) == 0);
 
   // Set linger option to avoid socket hanging out after close. This prevent
   // ephemeral port exhaust problem under high QPS.
   //
-  // Note: as we've already spent the entire 'linger timeout' time in user land
-  //       (that is: in the code above), we always have linger_timeout==0 by
-  //       now so the remainder of the code will be a *DIS*graveful close.
-  //       Which suits us fine as either it took too long to our taste
-  //       OR an error occurred already.
-  linger.l_onoff = 0;
-  linger.l_linger = 0;
+  // Note: as we've already spent part of the 'linger timeout' time in user land
+  //       (that is: in the code above), we have a possibly reduced linger 
+  //       time by now. 
+  //       Also note that linger_timeout==0 by now when a failure has been 
+  //       observed above: in that case we do NOT want to linger any longer
+  //       so this will then be a *DIS*graveful close.
+  linger.l_onoff = (linger_timeout > 0);
+  linger.l_linger = (linger_timeout + 999) / 1000; // round up
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+  DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
+
+  if (linger_timeout > 0)
+	(void) DisconnectEx(sock, 0, 0, 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
   (void) closesocket(sock);
+  conn->client.sock = INVALID_SOCKET;
 }
 
 static void close_connection(struct mg_connection *conn) {
@@ -5166,11 +5181,7 @@ static void close_connection(struct mg_connection *conn) {
     SSL_free(conn->ssl);
     conn->ssl = NULL;
   }
-
-  if (conn->client.sock != INVALID_SOCKET) {
-    close_socket_gracefully(conn->client.sock, conn->ctx);
-    conn->client.sock = INVALID_SOCKET;
-  }
+  close_socket_gracefully(conn);
 }
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
