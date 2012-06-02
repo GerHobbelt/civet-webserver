@@ -325,7 +325,7 @@ typedef int SOCKET;
 #endif
 
 
-#if defined(DEBUG)
+#if defined(DEBUG) || defined(_DEBUG)
 #define DEBUG_TRACE(x) do { \
   flockfile(stdout); \
   printf("*** %lu.%p.%s.%d: ", \
