@@ -1331,10 +1331,14 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *header = mg_get_header(conn, "Connection");
 
   return (!conn->must_close &&
-          !conn->request_info.status_code != 401 &&
+          (conn->request_info.status_code == 401 ||
+           conn->request_info.status_code == 200 ||
+           conn->request_info.status_code == 206 ||
+           conn->request_info.status_code == 100) &&
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
-          ((header == NULL && http_version && !strcmp(http_version, "1.1")) ||
-           (header != NULL && !mg_strcasecmp(header, "keep-alive"))));
+          (header == NULL ? 
+           (http_version && !strcmp(http_version, "1.1")) :
+           !mg_strcasecmp(header, "keep-alive")));
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
