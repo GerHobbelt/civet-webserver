@@ -4220,20 +4220,21 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
     return 1;
   }
 
+  // remember the original value in 'p', reset it when we're done processing the SSI element
   p = conn->request_info.phys_path;
   rv = 0;
   conn->request_info.phys_path = path;
   if (!call_user(conn, MG_SSI_INCLUDE_REQUEST)) {
-    if ((fp = mg_fopen(path, "rb")) == NULL) {
+    if ((fp = mg_fopen(conn->request_info.phys_path, "rb")) == NULL) {
       mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
-          tag, path, mg_strerror(ERRNO));
+          tag, conn->request_info.phys_path, mg_strerror(ERRNO));
       rv = 2;
     } else {
       set_close_on_exec(fileno(fp));
       if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS), 
                        -1, 
-                       path) > 0) {
-        if (send_ssi_file(conn, path, fp, include_level + 1) < 0)
+                       conn->request_info.phys_path) > 0) {
+        if (send_ssi_file(conn, conn->request_info.phys_path, fp, include_level + 1) < 0)
           rv = -1;
       } else {
         if (send_file_data(conn, fp, INT64_MAX) < 0)
