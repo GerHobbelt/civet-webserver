@@ -9,9 +9,11 @@ static void *callback(enum mg_event event,
   if (event == MG_NEW_REQUEST) {
     // Echo requested URI back to the client
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n\r\n"
-              "%s", ri->uri);
+		      "Content-Length: %u\r\n"
+              "Content-Type: text/plain\r\n\r\n",
+			  (unsigned int)strlen(ri->uri));
     mg_mark_end_of_header_transmission(conn);
+    mg_printf(conn, "%s", ri->uri);
     return "";  // Mark as processed
   } else {
     return NULL;
