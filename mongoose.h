@@ -33,11 +33,12 @@ struct socket;         // Handle for the socket related to a client / server con
 
 // The IP address: IPv4 or IPv6
 struct mg_ip_address {
-	unsigned is_ip6: 1; // flag: 1: struct contains an IPv6 address, 0: IPv4 address
-	union {
-		unsigned short int v4[4];
-		unsigned short int v6[8];
-	} ip_addr;
+  unsigned is_ip6: 1; // flag: 1: struct contains an IPv6 address, 0: IPv4 address
+  union {
+    // these are in 'network order', i.e. 127.0.0.1 would give v4[0] == 127 and v[3] == 1
+    unsigned short int v4[4];
+    unsigned short int v6[8];
+  } ip_addr;
 };
 
 // This structure contains information about the HTTP request.
@@ -70,38 +71,38 @@ struct mg_request_info {
 
 // Various events on which user-defined function is called by Mongoose.
 enum mg_event {
-  MG_NEW_REQUEST,   // New HTTP request has arrived from the client
-  MG_REQUEST_COMPLETE,  // Mongoose has finished handling the request
+  MG_NEW_REQUEST,           // New HTTP request has arrived from the client
+  MG_REQUEST_COMPLETE,      // Mongoose has finished handling the request
   MG_SSI_INCLUDE_REQUEST,   // Page includes an SSI request (file is specified in request_info::phys_path)
-  MG_HTTP_ERROR,    // HTTP error must be returned to the client
-  MG_EVENT_LOG,     // Mongoose logs an event, request_info.log_message
-  MG_INIT_SSL,      // Mongoose initializes SSL. The SSL context is passed 
-                    // to the callback function as part of a 'faked/empty' 
-					// mg_connection struct (no ugly type casting required 
-					// any more!)
-  MG_INIT0,         // Mongoose starts and has just initialized the network
-                    // stack and is about to start the mongoose threads.
-  MG_INIT_CLIENT_CONN,  // Mongoose has opened a connection to a client.
-                    // This is the first time that the 'conn' parameter is
-					// valid for the given thread: now is the start of 
-					// this connection's lifetime.
-  MG_EXIT_CLIENT_CONN,  // Mongoose is going to close the client connection.
-                    // Note that you won't receive the EXIT1 event when 
-					// a thread crashes; also note that you may receive
-					// this event for a connection for which you haven't
-					// received a 'init' event! The latter happens when 
-					// mongoose has its reasons to not serve the client.
-					// This event is also the end of this particular 'conn'
-					// connection's lifetime.
-  MG_ENTER_MASTER,  // Mongoose started the master thread
-  MG_EXIT_MASTER,   // The master thread is about to close
-  MG_EXIT_SERVER, 
+  MG_HTTP_ERROR,            // HTTP error must be returned to the client
+  MG_EVENT_LOG,             // Mongoose logs an event, request_info.log_message
+  MG_INIT_SSL,              // Mongoose initializes SSL. The SSL context is passed
+                            // to the callback function as part of a 'faked/empty'
+                            // mg_connection struct (no ugly type casting required
+                            // any more!)
+  MG_INIT0,                 // Mongoose starts and has just initialized the network
+                            // stack and is about to start the mongoose threads.
+  MG_INIT_CLIENT_CONN,      // Mongoose has opened a connection to a client.
+                            // This is the first time that the 'conn' parameter is
+                            // valid for the given thread: now is the start of
+                            // this connection's lifetime.
+  MG_EXIT_CLIENT_CONN,      // Mongoose is going to close the client connection.
+                            // Note that you won't receive the EXIT1 event when
+                            // a thread crashes; also note that you may receive
+                            // this event for a connection for which you haven't
+                            // received a 'init' event! The latter happens when
+                            // mongoose has its reasons to not serve the client.
+                            // This event is also the end of this particular 'conn'
+                            // connection's lifetime.
+  MG_ENTER_MASTER,          // Mongoose started the master thread
+  MG_EXIT_MASTER,           // The master thread is about to close
+  MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
   // fix: numbers were added to fix the abi in case mongoose core and callback
 
-  MG_EXIT0          // Mongoose terminates and has already terminated its 
-                    // threads. This one is the counterpart of MG_INIT0, so 
-					// to speak.
+  MG_EXIT0                  // Mongoose terminates and has already terminated its
+                            // threads. This one is the counterpart of MG_INIT0, so
+                            // to speak.
 };
 
 // Prototype for the user-defined function. Mongoose calls this function
@@ -238,7 +239,7 @@ const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 
 
 // Return array of strings that represent all mongoose configuration options.
-// For each option, a short name, long name, and default value is returned 
+// For each option, a short name, long name, and default value is returned
 // (i.e. a total of MG_ENTRIES_PER_CONFIG_OPTION elements per entry).
 //
 // Array is NULL terminated.
@@ -280,7 +281,7 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 
 // Mark the end of the tranmission of HTTP headers.
 //
-// Use this before proceeding and writing content data if you want your 
+// Use this before proceeding and writing content data if you want your
 // access log to show the correct (actual) number.
 void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 
@@ -289,15 +290,15 @@ void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 // To be more specific, this function will return -1 when all HTTP headers
 // have been written (and anything sent now is considered part of the content),
 // while a return value of +1 indicates that the HTTP response has been
-// written but that you MAY decide to write some more headers to 
+// written but that you MAY decide to write some more headers to
 // augment the HTTP header set being transmitted.
 int mg_have_headers_been_sent(const struct mg_connection *conn);
 
 // Send data to the browser using printf() semantics.
 //
 // Works exactly like mg_write(), but allows to do message formatting.
-// 
-// Note that mg_printf() uses an internal buffer which is allocated 
+//
+// Note that mg_printf() uses an internal buffer which is allocated
 // on the heap; the buffer is sized to fit the formatted output, so
 // arbitrary lengths of text are accepted, but very large texts will
 // incur an additional O(N * logK(N)) overhead as mg_printf() needs
@@ -309,12 +310,12 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // number of bytes in the formatted output, excluding the NUL sentinel.
 int mg_printf(struct mg_connection *, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 2, 3)))
+    __attribute__((format(printf, 2, 3)))
 #endif
 ;
 
 // Send data to the browser using vprintf() semantics.
-// 
+//
 // See mg_printf() for the applicable conditions, caveats and return values.
 int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
 
@@ -418,7 +419,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const cha
 // Is to mg_vsnprintf() what printf() is to vprintf().
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 4, 5)))
+    __attribute__((format(printf, 4, 5)))
 #endif
 ;
 
@@ -432,14 +433,14 @@ int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const c
 // Is to mg_vsnq0printf() what printf() is to vprintf().
 int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 4, 5)))
+    __attribute__((format(printf, 4, 5)))
 #endif
-	;
+    ;
 
-// Writes suitably sized, heap allocated, string buffer in *buf_ref and returns 
-// output length (excluding NUL sentinel). 
+// Writes suitably sized, heap allocated, string buffer in *buf_ref and returns
+// output length (excluding NUL sentinel).
 //
-// When max_buflen is set to zero, an arbitrary large buffer may be allocated; 
+// When max_buflen is set to zero, an arbitrary large buffer may be allocated;
 // otherwise the output buffer size will be limited to max_buflen: when the
 // output would overflow the buffer in that case, the string " (...)\n" is
 // appended at the very end for easier use in logging and other reporting
@@ -450,9 +451,9 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, const ch
 //
 // The variable referenced by buf_ref is guaranteed to be set to NULL or a valid value
 // as returned by malloc/realloc(3).
-int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, ...) 
+int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 4, 5)))
+    __attribute__((format(printf, 4, 5)))
 #endif
 ;
 
@@ -462,9 +463,9 @@ int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, 
 
 // Structure used by mg_stat() function. Uses 64 bit file length.
 struct mgstat {
-	int is_directory;  // Directory marker
-	int64_t size;      // File size
-	time_t mtime;      // Modification time
+    int is_directory;  // Directory marker
+    int64_t size;      // File size
+    time_t mtime;      // Modification time
 };
 
 // return 0 when file/directory exists; fills the mgstat struct with last-modified timestamp and file size.
@@ -477,12 +478,12 @@ FILE *mg_fopen(const char *path, const char *mode);
 int mg_fclose(FILE *fp);
 
 
-// Print error message to the opened error log stream. 
+// Print error message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_cry(struct mg_connection *conn, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 2, 3)))
+    __attribute__((format(printf, 2, 3)))
 #endif
 ;
 // Print error message to the opened error log stream.
@@ -518,7 +519,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
 void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
 #ifdef __GNUC__
-	__attribute__((format(printf, 5, 6)))
+    __attribute__((format(printf, 5, 6)))
 #endif
 ;
 // Print log message to the opened error log stream.

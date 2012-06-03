@@ -110,15 +110,15 @@ static void test_get_request_info(struct mg_connection *conn) {
   mg_printf(conn, "Query string: [%s]\n",
             ri->query_string ? ri->query_string: "");
   if (ri->remote_ip.is_ip6)
-    mg_printf(conn, "Remote IP: [%u:%u:%u:%u:%u:%u:%u:%u]\n", 
-			ri->remote_ip.ip_addr.v6[0], ri->remote_ip.ip_addr.v6[1], 
-			ri->remote_ip.ip_addr.v6[2], ri->remote_ip.ip_addr.v6[3], 
-			ri->remote_ip.ip_addr.v6[4], ri->remote_ip.ip_addr.v6[5], 
-			ri->remote_ip.ip_addr.v6[6], ri->remote_ip.ip_addr.v6[7]);
+    mg_printf(conn, "Remote IP: [%u:%u:%u:%u:%u:%u:%u:%u]\n",
+            ri->remote_ip.ip_addr.v6[0], ri->remote_ip.ip_addr.v6[1],
+            ri->remote_ip.ip_addr.v6[2], ri->remote_ip.ip_addr.v6[3],
+            ri->remote_ip.ip_addr.v6[4], ri->remote_ip.ip_addr.v6[5],
+            ri->remote_ip.ip_addr.v6[6], ri->remote_ip.ip_addr.v6[7]);
   else
-    mg_printf(conn, "Remote IP: [%u.%u.%u.%u]\n", 
-			ri->remote_ip.ip_addr.v4[0], ri->remote_ip.ip_addr.v4[1], 
-			ri->remote_ip.ip_addr.v4[2], ri->remote_ip.ip_addr.v4[3]);
+    mg_printf(conn, "Remote IP: [%u.%u.%u.%u]\n",
+            ri->remote_ip.ip_addr.v4[0], ri->remote_ip.ip_addr.v4[1],
+            ri->remote_ip.ip_addr.v4[2], ri->remote_ip.ip_addr.v4[3]);
   mg_printf(conn, "Remote port: [%d]\n", ri->remote_port);
   mg_printf(conn, "Remote user: [%s]\n",
             ri->remote_user ? ri->remote_user : "");

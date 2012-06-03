@@ -67,31 +67,31 @@
 //
 // _WIN32_WINNT version constants           <sdkddkver.h>
 //
-#ifndef _WIN32_WINNT_NT4                    
+#ifndef _WIN32_WINNT_NT4
 #define _WIN32_WINNT_NT4                    0x0400
 #endif
-#ifndef _WIN32_WINNT_WIN2K                  
+#ifndef _WIN32_WINNT_WIN2K
 #define _WIN32_WINNT_WIN2K                  0x0500
 #endif
-#ifndef _WIN32_WINNT_WINXP                  
+#ifndef _WIN32_WINNT_WINXP
 #define _WIN32_WINNT_WINXP                  0x0501
 #endif
-#ifndef _WIN32_WINNT_WS03                   
+#ifndef _WIN32_WINNT_WS03
 #define _WIN32_WINNT_WS03                   0x0502
 #endif
-#ifndef _WIN32_WINNT_WIN6                   
+#ifndef _WIN32_WINNT_WIN6
 #define _WIN32_WINNT_WIN6                   0x0600
 #endif
-#ifndef _WIN32_WINNT_VISTA                  
+#ifndef _WIN32_WINNT_VISTA
 #define _WIN32_WINNT_VISTA                  0x0600
 #endif
-#ifndef _WIN32_WINNT_WS08                   
+#ifndef _WIN32_WINNT_WS08
 #define _WIN32_WINNT_WS08                   0x0600
 #endif
-#ifndef _WIN32_WINNT_LONGHORN               
+#ifndef _WIN32_WINNT_LONGHORN
 #define _WIN32_WINNT_LONGHORN               0x0600
 #endif
-#ifndef _WIN32_WINNT_WIN7                   
+#ifndef _WIN32_WINNT_WIN7
 #define _WIN32_WINNT_WIN7                   0x0601
 #endif
 
@@ -347,7 +347,7 @@ typedef int socklen_t;
 #endif // NO_SOCKLEN_T
 
 /* buffer size that will fit both IPv4 and IPv6 addresses formatted by ntoa() / ntop() */
-#define SOCKADDR_NTOA_BUFSIZE			42
+#define SOCKADDR_NTOA_BUFSIZE           42
 
 /* buffer size used when copying data to/from file/socket/... */
 #define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
@@ -369,10 +369,10 @@ typedef int socklen_t;
 #undef _POSIX_THREADS
 
 #undef _POSIX_READER_WRITER_LOCKS
-#define _POSIX_READER_WRITER_LOCKS	200809L
+#define _POSIX_READER_WRITER_LOCKS  200809L
 
 #undef _POSIX_SPIN_LOCKS
-#define _POSIX_SPIN_LOCKS			200809L
+#define _POSIX_SPIN_LOCKS           200809L
 
 #undef _POSIX_BARRIERS
 
@@ -393,11 +393,11 @@ int pthread_cond_destroy(pthread_cond_t *cv);
 pthread_t pthread_self(void);
 
 typedef struct {
-	unsigned rw: 1;
+    unsigned rw: 1;
 #if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
-	SRWLOCK lock;
+    SRWLOCK lock;
 #else
-	pthread_mutex_t mutex;
+    pthread_mutex_t mutex;
 #endif
 } pthread_rwlock_t;
 
@@ -406,9 +406,9 @@ typedef void pthread_rwlockattr_t;
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr);
 
 #if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
-#define PTHREAD_RWLOCK_INITIALIZER			{ 0, RTL_SRWLOCK_INIT }
+#define PTHREAD_RWLOCK_INITIALIZER          { 0, RTL_SRWLOCK_INIT }
 #else
-#define PTHREAD_RWLOCK_INITIALIZER			{ 0 }
+#define PTHREAD_RWLOCK_INITIALIZER          { 0 }
 #endif
 
 int pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
@@ -416,7 +416,7 @@ int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
-//#define PTHREAD_SPINLOCK_INITIALIZER		PTHREAD_MUTEX_INITIALIZER
+//#define PTHREAD_SPINLOCK_INITIALIZER      PTHREAD_MUTEX_INITIALIZER
 
 typedef pthread_mutex_t pthread_spinlock_t;
 

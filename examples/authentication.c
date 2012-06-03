@@ -27,10 +27,10 @@ static int
 login_page(struct mg_connection *conn)
 {
     char        name[100], pass[100], uri[100];
-	const char  *cookies[20];
-	struct mg_request_info *ri = mg_get_request_info(conn);
-	const char  *qs = ri->query_string;
-	size_t       qslen = strlen(qs == NULL ? "" : qs);
+    const char  *cookies[20];
+    struct mg_request_info *ri = mg_get_request_info(conn);
+    const char  *qs = ri->query_string;
+    size_t       qslen = strlen(qs == NULL ? "" : qs);
 
     mg_get_var(qs, qslen, "name", name, ARRAY_SIZE(name));
     mg_get_var(qs, qslen, "pass", pass, ARRAY_SIZE(pass));
@@ -44,15 +44,15 @@ login_page(struct mg_connection *conn)
      * redirect back to the page where we have been redirected to login.
      */
     if (strcmp(name, "admin") == 0 && strcmp(pass, "admin") == 0) {
-		const char  **cookie;
-		for (cookie = &cookies[0]; *cookie; cookie++)
-		{
-			if (*cookie == NULL || sscanf(*cookie, "uri=%99s", uri) != 1)
-			{
-				(void) strcpy(uri, "/");
-				break;
-			}
-		}
+        const char  **cookie;
+        for (cookie = &cookies[0]; *cookie; cookie++)
+        {
+            if (*cookie == NULL || sscanf(*cookie, "uri=%99s", uri) != 1)
+            {
+                (void) strcpy(uri, "/");
+                break;
+            }
+        }
         /* Set allow=yes cookie, which is expected by authorize() */
         mg_printf(conn, "HTTP/1.1 301 Moved Permanently\r\n"
             "Location: %s\r\n"
@@ -61,7 +61,7 @@ login_page(struct mg_connection *conn)
     } else {
         /* Print login page */
         mg_printf(conn, "HTTP/1.1 200 OK\r\n"
-			"Set-Cookie: allow=no; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;\r\n" /* destroy cookie if it exists already */
+            "Set-Cookie: allow=no; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;\r\n" /* destroy cookie if it exists already */
             "content-Type: text/html\r\n\r\n");
         mg_mark_end_of_header_transmission(conn);
         mg_printf(conn, ""
@@ -72,26 +72,26 @@ login_page(struct mg_connection *conn)
             "<input type=submit value=Login></input>"
             "</form>");
     }
-	return 1;
+    return 1;
 }
 
 static int
 authorize(struct mg_connection *conn)
 {
     const char *cookies[20];
-	const char *cookie = NULL;
-	int i;
-	const struct mg_request_info *ri = mg_get_request_info(conn);
+    const char *cookie = NULL;
+    int i;
+    const struct mg_request_info *ri = mg_get_request_info(conn);
 
-	mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Cookie");
-	for (i = 0; cookies[i]; i++)
-	{
-		if (strstr(cookies[i], "allow=") != NULL)
-		{
-			cookie = cookies[i];
-			break;
-		}
-	}
+    mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Cookie");
+    for (i = 0; cookies[i]; i++)
+    {
+        if (strstr(cookies[i], "allow=") != NULL)
+        {
+            cookie = cookies[i];
+            break;
+        }
+    }
 
     if (!strcmp(ri->uri, "/login")) {
         /* Always authorize accesses to the login page */
@@ -106,57 +106,57 @@ authorize(struct mg_connection *conn)
             "Location: /login\r\n\r\n", ri->uri);
         mg_mark_end_of_header_transmission(conn);
     }
-	return 1;
+    return 1;
 }
 
 static const struct srv_pages_config {
-	enum mg_event event;
-	const char *uri;
-	int (*func)(struct mg_connection *conn);
+    enum mg_event event;
+    const char *uri;
+    int (*func)(struct mg_connection *conn);
 } srv_pages_config[] = {
-	{MG_NEW_REQUEST, "/login$", &login_page},
-	{MG_NEW_REQUEST, "/**", &authorize},
-	{0, NULL, NULL}
+    {MG_NEW_REQUEST, "/login$", &login_page},
+    {MG_NEW_REQUEST, "/**", &authorize},
+    {0, NULL, NULL}
 };
 
 static void *callback(enum mg_event event,
-		struct mg_connection *conn) 
+        struct mg_connection *conn)
 {
-	int i;
-	const struct mg_request_info *ri = mg_get_request_info(conn);
+    int i;
+    const struct mg_request_info *ri = mg_get_request_info(conn);
 
-	for (i = 0; srv_pages_config[i].uri != NULL; i++) 
-	{
-		if (event == srv_pages_config[i].event &&
-			(event == MG_HTTP_ERROR ||
-			-1 < mg_match_prefix(srv_pages_config[i].uri, strlen(srv_pages_config[i].uri), ri->uri))) 
-		{
-			if (srv_pages_config[i].func(conn) != 0)
-				return "processed";
-		}
-	}
+    for (i = 0; srv_pages_config[i].uri != NULL; i++)
+    {
+        if (event == srv_pages_config[i].event &&
+            (event == MG_HTTP_ERROR ||
+            -1 < mg_match_prefix(srv_pages_config[i].uri, strlen(srv_pages_config[i].uri), ri->uri)))
+        {
+            if (srv_pages_config[i].func(conn) != 0)
+                return "processed";
+        }
+    }
 
-	return NULL;
+    return NULL;
 }
 
 int
 main(void)
 {
-	struct mg_context *ctx;
-	const char *options[] = {"listening_ports", "8080"};
-	const struct mg_user_class_t ucb = {
-		callback,  // User-defined callback function
-		NULL       // Arbitrary user-defined data
-	};
+    struct mg_context *ctx;
+    const char *options[] = {"listening_ports", "8080"};
+    const struct mg_user_class_t ucb = {
+        callback,  // User-defined callback function
+        NULL       // Arbitrary user-defined data
+    };
 
-	ctx = mg_start(&ucb, options);
+    ctx = mg_start(&ucb, options);
 #if !defined(WIN32)
-	pause();
+    pause();
 #else
-	while (!mg_get_stop_flag(ctx)) {
-		mg_sleep(10);
-	}
-	mg_stop(ctx);
+    while (!mg_get_stop_flag(ctx)) {
+        mg_sleep(10);
+    }
+    mg_stop(ctx);
 #endif
-	return 0;
+    return 0;
 }

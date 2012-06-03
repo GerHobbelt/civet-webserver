@@ -43,43 +43,43 @@ struct socket *mg_get_socket(struct mg_connection *conn)
 
 struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
 {
-	return conn ? &conn->request_info : NULL;
+    return conn ? &conn->request_info : NULL;
 }
 
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn)
 {
-	return conn ? conn->num_bytes_sent > 0 ? conn->num_bytes_sent : 0 : 0;
+    return conn ? conn->num_bytes_sent > 0 ? conn->num_bytes_sent : 0 : 0;
 }
 
 int64_t mg_get_num_bytes_received(struct mg_connection *conn)
 {
-	return conn ? conn->consumed_content : 0;
+    return conn ? conn->consumed_content : 0;
 }
 
 int mg_set_non_blocking_mode(struct socket *sock, int on)
 {
-	return sock ? !!set_non_blocking_mode(sock->sock, on) : -1;
+    return sock ? !!set_non_blocking_mode(sock->sock, on) : -1;
 }
 
 int mg_shutdown(struct socket *sock, int how)
 {
-	return sock ? shutdown(sock->sock, how) : -1;
+    return sock ? shutdown(sock->sock, how) : -1;
 }
 
 int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen)
 {
-	int rv = setsockopt(sock->sock, level, optname, optval, optlen);
+    int rv = setsockopt(sock->sock, level, optname, optval, optlen);
 
-	return rv;
+    return rv;
 }
 
 int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref)
 {
-	socklen_t optlen = 0;
-	int rv = getsockopt(sock->sock, level, optname, optval, &optlen);
+    socklen_t optlen = 0;
+    int rv = getsockopt(sock->sock, level, optname, optval, &optlen);
 
-	*optlen_ref = optlen;
-	return rv;
+    *optlen_ref = optlen;
+    return rv;
 }
 
 
@@ -102,18 +102,18 @@ int mg_set_nodelay_mode(struct socket *sock, int on)
 int mg_set_socket_keepalive(struct socket *sock, int on)
 {
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-	BOOL v_on = !!on;
+    BOOL v_on = !!on;
 #else
-	int v_on = !!on;
+    int v_on = !!on;
 #endif
-	if (!sock) return -1;
+    if (!sock) return -1;
     return setsockopt(sock->sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&v_on, sizeof(v_on));
 }
 
 int mg_set_socket_timeout(struct socket *sock, int seconds)
 {
-	if (!sock) return -1;
-	return set_timeout(sock, seconds);
+    if (!sock) return -1;
+    return set_timeout(sock, seconds);
 }
 
 /*
@@ -122,26 +122,26 @@ ntop()/ntoa() replacement with IPv6 + IPv4 support.
 remote = 1 will print the remote IP address, while
 remote = 0 will print the local IP address
 
-'dst' is also returned as function result; on error, 'dst' will 
+'dst' is also returned as function result; on error, 'dst' will
 contain an empty string.
 */
-char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote) 
+char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote)
 {
-	if (!dst) return NULL;
-	dst[0] = 0;
+    if (!dst) return NULL;
+    dst[0] = 0;
 
-	if (sock)
-	{
-		char src_addr[SOCKADDR_NTOA_BUFSIZE];
+    if (sock)
+    {
+        char src_addr[SOCKADDR_NTOA_BUFSIZE];
 
-		sockaddr_to_string(src_addr, sizeof(src_addr), (remote ? &sock->rsa : &sock->lsa));
-		// only copy IP address in its entirety or not at all:
-		if (dstlen > strlen(src_addr))
-		{
-			strcpy(dst, src_addr);
-		}
-	}
-	return dst;
+        sockaddr_to_string(src_addr, sizeof(src_addr), (remote ? &sock->rsa : &sock->lsa));
+        // only copy IP address in its entirety or not at all:
+        if (dstlen > strlen(src_addr))
+        {
+            strcpy(dst, src_addr);
+        }
+    }
+    return dst;
 }
 
 /*
@@ -152,11 +152,11 @@ remote = 0 will produce the local port for the given connection (socket)
 */
 unsigned short int mg_get_socket_port(const struct socket *sock, int remote)
 {
-	if (!sock) return 0;
-	if (remote)
-		return get_socket_port(&sock->rsa);
-	else
-		return get_socket_port(&sock->lsa);
+    if (!sock) return 0;
+    if (remote)
+        return get_socket_port(&sock->rsa);
+    else
+        return get_socket_port(&sock->lsa);
 }
 
 /*
@@ -169,12 +169,12 @@ Return 0 on success, non-zero on error.
 */
 int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote)
 {
-	if (!dst || !sock) return -1;
-	if (remote)
-		get_socket_ip_address(dst, &sock->rsa);
-	else
-		get_socket_ip_address(dst, &sock->lsa);
-	return 0;
+    if (!dst || !sock) return -1;
+    if (remote)
+        get_socket_ip_address(dst, &sock->rsa);
+    else
+        get_socket_ip_address(dst, &sock->lsa);
+    return 0;
 }
 
 
@@ -209,47 +209,47 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 {
-	int buffered_len, nread;
+    int buffered_len, nread;
 
-	assert((conn->content_len == -1 && conn->consumed_content == 0) ||
-		(conn->content_len == 0 && conn->consumed_content > 0) ||
-		conn->consumed_content <= conn->content_len);
-	DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)max_bufsize,
-		conn->content_len, conn->consumed_content));
-	nread = 0;
-	if (conn->consumed_content < conn->content_len)
-	{
-		// How many bytes of data we have buffered in the request buffer?
-		buffered_len = conn->data_len - conn->request_len;
-		assert(buffered_len >= 0);
+    assert((conn->content_len == -1 && conn->consumed_content == 0) ||
+        (conn->content_len == 0 && conn->consumed_content > 0) ||
+        conn->consumed_content <= conn->content_len);
+    DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)max_bufsize,
+        conn->content_len, conn->consumed_content));
+    nread = 0;
+    if (conn->consumed_content < conn->content_len)
+    {
+        // How many bytes of data we have buffered in the request buffer?
+        buffered_len = conn->data_len - conn->request_len;
+        assert(buffered_len >= 0);
 
-		// Return buffered data back if we haven't done that yet.
-		if (conn->consumed_content < (int64_t) buffered_len) {
-			buffered_len -= (int) conn->consumed_content;
-			if (max_bufsize < (size_t) buffered_len) {
-				buffered_len = max_bufsize;
-			}
-			nread = mg_read(conn, buf, buffered_len);
-			buf = (char *) buf + buffered_len;
-			max_bufsize -= buffered_len;
-		}
-	}
+        // Return buffered data back if we haven't done that yet.
+        if (conn->consumed_content < (int64_t) buffered_len) {
+            buffered_len -= (int) conn->consumed_content;
+            if (max_bufsize < (size_t) buffered_len) {
+                buffered_len = max_bufsize;
+            }
+            nread = mg_read(conn, buf, buffered_len);
+            buf = (char *) buf + buffered_len;
+            max_bufsize -= buffered_len;
+        }
+    }
 
-	// We have returned all buffered data. Read new data from the remote socket.
-	if (max_bufsize > 0) {
-		int n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
-		if (n > 0) {
-			conn->consumed_content += n;
-			nread += n;
-		}
-	}
-	return nread;
+    // We have returned all buffered data. Read new data from the remote socket.
+    if (max_bufsize > 0) {
+        int n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
+        if (n > 0) {
+            conn->consumed_content += n;
+            nread += n;
+        }
+    }
+    return nread;
 }
 
 void mg_close_connection(struct mg_connection *conn)
 {
     close_connection(conn);
-	free(conn);
+    free(conn);
 }
 
 
@@ -283,7 +283,7 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 {
     time_t timestamp = time(NULL);
 
-	mg_vwrite2log(conn, NULL, timestamp, severity, fmt, args);
+    mg_vwrite2log(conn, NULL, timestamp, severity, fmt, args);
 }
 
 
@@ -332,75 +332,75 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
 
 int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
 {
-	if (!str || !pattern) return -1;
+    if (!str || !pattern) return -1;
 
-	return match_prefix(pattern, pattern_len, str);
+    return match_prefix(pattern, pattern_len, str);
 }
 
-time_t mg_parse_date_string(const char *datetime) 
+time_t mg_parse_date_string(const char *datetime)
 {
-	if (!datetime)
-		return (time_t)0;
+    if (!datetime)
+        return (time_t)0;
 
-	return parse_date_string(datetime);
+    return parse_date_string(datetime);
 }
 
 
 static void set_header_ptr(const char **dst, int dstsize, int idx, const char *value)
 {
-	if (dst && idx >= 0 && idx < dstsize)
-	{
-		dst[idx] = value;
-	}
+    if (dst && idx >= 0 && idx < dstsize)
+    {
+        dst[idx] = value;
+    }
 }
 
-int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *conn, const char *name) 
+int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *conn, const char *name)
 {
-	int i;
-	int cnt = 0;
-	const struct mg_request_info *ri = &conn->request_info;
+    int i;
+    int cnt = 0;
+    const struct mg_request_info *ri = &conn->request_info;
 
-	set_header_ptr(dst, dst_buffersize, 0, NULL);
-	for (i = 0; i < ri->num_headers; i++)
-	{
-		if (!mg_strcasecmp(name, ri->http_headers[i].name))
-		{
-			set_header_ptr(dst, dst_buffersize, cnt++, ri->http_headers[i].value);
-		}
-	}
-	set_header_ptr(dst, dst_buffersize, cnt, NULL);
-	set_header_ptr(dst, dst_buffersize, dst_buffersize - 1, NULL);
+    set_header_ptr(dst, dst_buffersize, 0, NULL);
+    for (i = 0; i < ri->num_headers; i++)
+    {
+        if (!mg_strcasecmp(name, ri->http_headers[i].name))
+        {
+            set_header_ptr(dst, dst_buffersize, cnt++, ri->http_headers[i].value);
+        }
+    }
+    set_header_ptr(dst, dst_buffersize, cnt, NULL);
+    set_header_ptr(dst, dst_buffersize, dst_buffersize - 1, NULL);
 
-	return cnt;
+    return cnt;
 }
 
 void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
 {
-	va_list ap;
+    va_list ap;
 
-	va_start(ap, fmt);
-	vsend_http_error(conn, status, reason, fmt, ap);
-	va_end(ap);
+    va_start(ap, fmt);
+    vsend_http_error(conn, status, reason, fmt, ap);
+    va_end(ap);
 }
 
 void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap)
 {
-	vsend_http_error(conn, status, reason, fmt, ap);
+    vsend_http_error(conn, status, reason, fmt, ap);
 }
 
 void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm)
 {
-	gmt_time_string(buf, bufsize, tm);
+    gmt_time_string(buf, bufsize, tm);
 }
 
 const char *mg_suggest_connection_header(struct mg_connection *conn)
 {
-	return suggest_connection_header(conn);
+    return suggest_connection_header(conn);
 }
 
 void mg_connection_must_close(struct mg_connection *conn)
 {
-	conn->must_close = 1;
+    conn->must_close = 1;
 }
 
 
@@ -410,65 +410,65 @@ void mg_connection_must_close(struct mg_connection *conn)
 
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
 {
-	int rv = -1;
-	if (conns)
-	{
-		int i;
+    int rv = -1;
+    if (conns)
+    {
+        int i;
 #ifdef WIN32
-		SOCKET socks[2];
+        SOCKET socks[2];
 #else
-		int socks[2];
+        int socks[2];
 #endif
 
-		conns[0] = (struct mg_connection *)calloc(1, sizeof(*conns[0]));
-		conns[1] = (struct mg_connection *)calloc(1, sizeof(*conns[1]));
-		if (!conns[0] || !conns[1])
-		{
-			mg_cry(fc(ctx), "%s: calloc: %s", __func__, mg_strerror(ERRNO));
-		}
-		else
-		{
-			rv = dumb_socketpair(socks, 0);
-			if (rv)
-			{
-				mg_cry(fc(ctx), "%s: socketpair: %s", __func__, mg_strerror(ERRNO));
-			}
-			else
-			{
-				for (i = 0; i <= 1; i++)
-				{
-					struct mg_connection *newconn = conns[i];
+        conns[0] = (struct mg_connection *)calloc(1, sizeof(*conns[0]));
+        conns[1] = (struct mg_connection *)calloc(1, sizeof(*conns[1]));
+        if (!conns[0] || !conns[1])
+        {
+            mg_cry(fc(ctx), "%s: calloc: %s", __func__, mg_strerror(ERRNO));
+        }
+        else
+        {
+            rv = dumb_socketpair(socks, 0);
+            if (rv)
+            {
+                mg_cry(fc(ctx), "%s: socketpair: %s", __func__, mg_strerror(ERRNO));
+            }
+            else
+            {
+                for (i = 0; i <= 1; i++)
+                {
+                    struct mg_connection *newconn = conns[i];
 
-					newconn->birth_time = time(NULL);
-					newconn->ctx = ctx;
-					newconn->client.sock = socks[i];
-					newconn->client.rsa.u.sin.sin_family = AF_INET;
-					newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-					newconn->client.rsa.u.sin.sin_port = 0; 
-					newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
-					newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
-					if (0 != getsockname(socks[i], &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
-					{
-						mg_cry(newconn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-						newconn->client.lsa.len = 0;
-						rv = -1;
-					}
-				}
+                    newconn->birth_time = time(NULL);
+                    newconn->ctx = ctx;
+                    newconn->client.sock = socks[i];
+                    newconn->client.rsa.u.sin.sin_family = AF_INET;
+                    newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                    newconn->client.rsa.u.sin.sin_port = 0;
+                    newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
+                    newconn->client.lsa.len = sizeof(newconn->client.lsa.u);
+                    if (0 != getsockname(socks[i], &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
+                    {
+                        mg_cry(newconn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+                        newconn->client.lsa.len = 0;
+                        rv = -1;
+                    }
+                }
 
-				if (rv)
-				{
-					closesocket(socks[0]);
-					closesocket(socks[1]);
-				}
-			}
-		}
+                if (rv)
+                {
+                    closesocket(socks[0]);
+                    closesocket(socks[1]);
+                }
+            }
+        }
 
-		if (rv)
-		{
-			free(conns[0]);
-			free(conns[1]);
-			conns[0] = conns[1] = NULL;
-		}
+        if (rv)
+        {
+            free(conns[0]);
+            free(conns[1]);
+            conns[0] = conns[1] = NULL;
+        }
     }
-	return rv;
+    return rv;
 }

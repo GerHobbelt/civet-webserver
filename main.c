@@ -46,15 +46,15 @@ static void WINCDECL signal_handler(int sig_num) {
 }
 
 static const char *default_options[] = {
-    "document_root",         "./test",
-	"listening_ports",       "8081",                         // "8081,8082s"
-    //"ssl_certificate",     "ssl_cert.pem",
-    "num_threads",           "5",
-    "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
-	"access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
-	"keep_alive_timeout",    "5",
+  "document_root",         "./test",
+  "listening_ports",       "8081",                         // "8081,8082s"
+  //"ssl_certificate",     "ssl_cert.pem",
+  "num_threads",           "5",
+  "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
+  "access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
+  "keep_alive_timeout",    "5",
 
-    NULL
+  NULL
 };
 
 #if defined(_WIN32)
@@ -72,8 +72,8 @@ void die(const char *fmt, ...) {
 #if defined(_WIN32)
   if (!error_dialog_shown_previously)
   {
-	  MessageBoxA(NULL, msg, "Error", MB_OK);
-	  error_dialog_shown_previously = 1;
+    MessageBoxA(NULL, msg, "Error", MB_OK);
+    error_dialog_shown_previously = 1;
   }
 #else
   fprintf(stderr, "%s\n", msg);
@@ -83,8 +83,8 @@ void die(const char *fmt, ...) {
 }
 
 static void show_usage_and_exit(const struct mg_context *ctx) {
-    const char **names;
-    int i;
+  const char **names;
+  int i;
 
   fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka\n", mg_version());
   fprintf(stderr, "Usage:\n");
@@ -108,9 +108,9 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 static void verify_document_root(const char *root) {
   struct mgstat st;
 
-    if (mg_stat(root, &st) != 0 || !st.is_directory) {
-        die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
-    }
+  if (mg_stat(root, &st) != 0 || !st.is_directory) {
+    die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
+  }
 }
 
 
@@ -118,24 +118,24 @@ static void set_option(char **options, const char *name, const char *value) {
   int i;
 
   if (mg_get_option_long_name(name))
-	  name = mg_get_option_long_name(name);
+    name = mg_get_option_long_name(name);
 
-    for (i = 0; i < MAX_OPTIONS * 2; i += 2) {
-        // replace option value when it was set before: command line overrules config file, which overrules global defaults.
-        if (options[i] == NULL) {
-            options[i] = mg_strdup(name);
-            options[i + 1] = mg_strdup(value);
-            break;
-        } else if (strcmp(options[i], name) == 0) {
-            free(options[i + 1]);
-            options[i + 1] = mg_strdup(value);
-            break;
-        }
+  for (i = 0; i < MAX_OPTIONS * 2; i += 2) {
+    // replace option value when it was set before: command line overrules config file, which overrules global defaults.
+    if (options[i] == NULL) {
+      options[i] = mg_strdup(name);
+      options[i + 1] = mg_strdup(value);
+      break;
+    } else if (strcmp(options[i], name) == 0) {
+      free(options[i + 1]);
+      options[i + 1] = mg_strdup(value);
+      break;
     }
+  }
 
-    if (i > MAX_OPTIONS * 2 - 2) {
-        die("Too many options specified");
-    }
+  if (i > MAX_OPTIONS * 2 - 2) {
+    die("Too many options specified");
+  }
 }
 
 static void process_command_line_arguments(char *argv[], char **options) {
@@ -159,15 +159,15 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
   fp = mg_fopen(config_file, "r");
 
-    // If config file was set in command line and open failed, exit
-    if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
-        die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
-    }
+  // If config file was set in command line and open failed, exit
+  if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
+    die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
+  }
 
-    // use the default values for starters (so that all options have a known reasonable value):
-    for (i = 0; default_options[i]; i += 2) {
-        set_option(options, default_options[i], default_options[i+1]);
-    }
+  // use the default values for starters (so that all options have a known reasonable value):
+  for (i = 0; default_options[i]; i += 2) {
+    set_option(options, default_options[i], default_options[i+1]);
+  }
 
   // Load config file settings first
   if (fp != NULL) {
@@ -230,21 +230,21 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
   if (event == MG_INIT0)
   {
-	verify_document_root(mg_get_conn_option(conn, "document_root"));
-	return (void *)1;
+    verify_document_root(mg_get_conn_option(conn, "document_root"));
+    return (void *)1;
   }
 
 #if defined(_WIN32)
-  if (event == MG_EVENT_LOG && 
-	  strstr(request_info->log_message, "cannot bind to") &&
-	  !strcmp(request_info->log_severity, "error"))
+  if (event == MG_EVENT_LOG &&
+      strstr(request_info->log_message, "cannot bind to") &&
+      !strcmp(request_info->log_severity, "error"))
   {
-	  if (!error_dialog_shown_previously)
-	  {
-		  MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
-		  error_dialog_shown_previously = 1;
-	  }
-	  return 0;
+    if (!error_dialog_shown_previously)
+    {
+      MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
+      error_dialog_shown_previously = 1;
+    }
+    return 0;
   }
 #endif
 
@@ -254,14 +254,14 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   }
 
   {
-	int file_found;
-	struct mgstat fst;
+    int file_found;
+    struct mgstat fst;
 
-	assert(request_info->phys_path);
-	file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
-	if (file_found) {
-	  return NULL; // let mongoose handle the default of 'file exists'...
-	}
+    assert(request_info->phys_path);
+    file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
+    if (file_found) {
+      return NULL; // let mongoose handle the default of 'file exists'...
+    }
 
 #ifdef _WIN32
     // Send the systray icon as favicon
@@ -287,9 +287,9 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       mg_mark_end_of_header_transmission(conn);
 
       if (len != mg_write(conn, data, len))
-	  {
+      {
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
-	  }
+      }
       return (void *)1;
     }
 #endif
@@ -310,7 +310,7 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
     case CTRL_CLOSE_EVENT:
     case CTRL_BREAK_EVENT:
       exit_flag = 1000 + signal_type;
-	  //mg_signal_stop(ctx);
+      //mg_signal_stop(ctx);
       return TRUE;
 
     // Pass other signals to the next handler.
@@ -325,28 +325,28 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 
 
 static void start_mongoose(int argc, char *argv[]) {
-    char *options[MAX_OPTIONS * 2] = { NULL };
-    int i;
-    struct mg_user_class_t userdef = {
-        &event_callback,
-        0,
-        0,
-        0,
-        0
-    };
+  char *options[MAX_OPTIONS * 2] = { NULL };
+  int i;
+  struct mg_user_class_t userdef = {
+      &event_callback,
+      0,
+      0,
+      0,
+      0
+  };
 
-    /* Edit passwords file if -A option is specified */
-    if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
-        if (argc != 6) {
-            show_usage_and_exit(ctx);
-        }
-        exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
+  /* Edit passwords file if -A option is specified */
+  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
+    if (argc != 6) {
+      show_usage_and_exit(ctx);
     }
+    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
+  }
 
-    /* Show usage if -h or --help options are specified */
-    if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
-        show_usage_and_exit(ctx);
-    }
+  /* Show usage if -h or --help options are specified */
+  if (argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))) {
+    show_usage_and_exit(ctx);
+  }
 
   /* Update config based on command line arguments */
   process_command_line_arguments(argv, options);
@@ -363,7 +363,7 @@ static void start_mongoose(int argc, char *argv[]) {
 #if defined(_WIN32)
   if (!SetConsoleCtrlHandler(mg_win32_break_handler, TRUE))
   {
-	die("Failed to set up the Win32 console Ctrl-Break handler.");
+    die("Failed to set up the Win32 console Ctrl-Break handler.");
   }
 #endif
 

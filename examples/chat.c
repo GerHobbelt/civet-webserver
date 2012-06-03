@@ -96,10 +96,10 @@ static char *messages_to_json(long last_id) {
   if (last_message_id - last_id > max_msgs) {
     last_id = last_message_id - max_msgs;
   }
-  // If client is way up ahead, there's gone something terribly wrong! 
+  // If client is way up ahead, there's gone something terribly wrong!
   if (last_message_id - last_id < 0) {
     len += mg_snq0printf(NULL, buf + len, sizeof(buf) - len,
-		"{user: \x01ServerBot\x02, text: \x01We're pooped; you're at #%lu while I don't know about anything beyond #%lu; picking up from there...\x02, timestamp: %lu, id: %lu, force_id: %lu},",
+        "{user: \x01ServerBot\x02, text: \x01We're pooped; you're at #%lu while I don't know about anything beyond #%lu; picking up from there...\x02, timestamp: %lu, id: %lu, force_id: %lu},",
         last_id, last_message_id, (unsigned long)time(NULL), last_message_id, last_message_id - max_msgs);
   }
   for (; last_id < last_message_id; last_id++) {
@@ -119,98 +119,98 @@ static char *messages_to_json(long last_id) {
   pthread_rwlock_unlock(&rwlock);
   if (len > 0)
   {
-	char *d;
-	int i, j, in_string;
+    char *d;
+    int i, j, in_string;
 
-	// strip off trailing ',' --> output is '{...}' instead of '{...},'
-	if (buf[len - 1] == ',')
-	  buf[--len] = 0;
-	/*
-	now encode the json output as embedded quotes and stuff would 
-	otherwise break the generated output.
+    // strip off trailing ',' --> output is '{...}' instead of '{...},'
+    if (buf[len - 1] == ',')
+      buf[--len] = 0;
+    /*
+    now encode the json output as embedded quotes and stuff would
+    otherwise break the generated output.
 
-	That's why we use the 'magicky' \x01 and \x02 as 'string delimiters' 
-	in that snprintf() up there... (we use mg_vsnq0printf() as we don't 
-	want any yammering to the server console when the buffer overflows)
-	*/
-	d = malloc(len * 4); // not strdup! allow space for encoding
-	for (j = i = in_string = 0; i < len; i++)
-	{
-	  switch (buf[i])
-	  {
-	  case '\x01':
-		// start of string:
-		if (!in_string) {
-		  in_string = 1;
-		  d[j++] = '\'';
-		  continue;
-		}
-		goto encode_hex;
+    That's why we use the 'magicky' \x01 and \x02 as 'string delimiters'
+    in that snprintf() up there... (we use mg_vsnq0printf() as we don't
+    want any yammering to the server console when the buffer overflows)
+    */
+    d = malloc(len * 4); // not strdup! allow space for encoding
+    for (j = i = in_string = 0; i < len; i++)
+    {
+      switch (buf[i])
+      {
+      case '\x01':
+        // start of string:
+        if (!in_string) {
+          in_string = 1;
+          d[j++] = '\'';
+          continue;
+        }
+        goto encode_hex;
 
-	  case '\x02':
-		// end of string:
-		if (in_string) {
-		  in_string = 0;
-		  d[j++] = '\'';
-		  continue;
-		}
-		goto encode_hex;
+      case '\x02':
+        // end of string:
+        if (in_string) {
+          in_string = 0;
+          d[j++] = '\'';
+          continue;
+        }
+        goto encode_hex;
 
-	  case '\'':
-	  case '"':
-		// encode quotes in string
-		assert(in_string);
-		d[j++] = '\\';
-		d[j++] = buf[i];
-		continue;
+      case '\'':
+      case '"':
+        // encode quotes in string
+        assert(in_string);
+        d[j++] = '\\';
+        d[j++] = buf[i];
+        continue;
 
-	  case '\n':
-		if (in_string) {
-		  d[j++] = '\\';
-		  d[j++] = 'n';
-		}
-		else {
-		  d[j++] = buf[i];
-		}
-		continue;
+      case '\n':
+        if (in_string) {
+          d[j++] = '\\';
+          d[j++] = 'n';
+        }
+        else {
+          d[j++] = buf[i];
+        }
+        continue;
 
-	  case '\r':
-		if (in_string) {
-		  d[j++] = '\\';
-		  d[j++] = 'r';
-		}
-		else {
-		  d[j++] = buf[i];
-		}
-		continue;
+      case '\r':
+        if (in_string) {
+          d[j++] = '\\';
+          d[j++] = 'r';
+        }
+        else {
+          d[j++] = buf[i];
+        }
+        continue;
 
-	  case '\t':
-		if (in_string) {
-		  d[j++] = '\\';
-		  d[j++] = 't';
-		}
-		else {
-		  d[j++] = buf[i];
-		}
-		continue;
+      case '\t':
+        if (in_string) {
+          d[j++] = '\\';
+          d[j++] = 't';
+        }
+        else {
+          d[j++] = buf[i];
+        }
+        continue;
 
-	  default:
-		if (buf[i] >= 32 && buf[i] < 127) {
-		  d[j++] = buf[i];
-		  continue;
-		}
+      default:
+        if (buf[i] >= 32 && buf[i] < 127) {
+          d[j++] = buf[i];
+          continue;
+        }
 encode_hex:
-		j += mg_snq0printf(NULL, d + j, 5, "\\x%02x", buf[i] & 0xFF);
-		continue;
+        j += mg_snq0printf(NULL, d + j, 5, "\\x%02x", buf[i] & 0xFF);
+        continue;
 
-	  case 0:
-		assert(!"Should never get here");
-		break;
-	  }
-	}
-	d[j] = 0;
-	len = j;
-	return d;
+      case 0:
+        assert(!"Should never get here");
+        break;
+      }
+    }
+    d[j] = 0;
+    len = j;
+    return d;
   }
 
   return NULL;

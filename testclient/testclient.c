@@ -66,7 +66,7 @@ int is_quit_key_pressed(void)
   return bingo;
 }
 
-int sockvprintf(SOCKET soc, const char * fmt, va_list vl) 
+int sockvprintf(SOCKET soc, const char * fmt, va_list vl)
 {
   char buf[1024*8];
   int len = vsprintf_s(buf, sizeof(buf), fmt, vl);
@@ -75,7 +75,7 @@ int sockvprintf(SOCKET soc, const char * fmt, va_list vl)
 }
 
 
-int sockprintf(SOCKET soc, const char * fmt, ...) 
+int sockprintf(SOCKET soc, const char * fmt, ...)
 {
   int ret = -1;
   va_list vl;
@@ -172,10 +172,10 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
         char * headEnd = strnstr(buf,"\xD\xA\xD\xA", chunkSize + 3);
         if (headEnd) {
           headEnd+=4;
-          chunkSize -= (headEnd - buf) - 3; 
+          chunkSize -= (headEnd - buf) - 3;
           assert(chunkSize >= 0);
           assert(chunkSize < 2E9);
-          assert((headEnd - buf) - 3 > 0); 
+          assert((headEnd - buf) - 3 > 0);
           io->totalHeadersData += (headEnd - buf) - 3;
           if (chunkSize>0) {
             io->totalData += chunkSize;
@@ -186,7 +186,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
         }
         else
         {
-          // else: we haven't received all headers entirely yet 
+          // else: we haven't received all headers entirely yet
           io->totalHeadersData += chunkSize;
           if (verbose > 2) printf("h:%d/%d\n", (int)chunkSize, (int)io->totalHeadersData);
         }
@@ -476,7 +476,7 @@ int WINAPI ClientMain(void * clientNo) {
 
   */
   {
-	// force BLOCKING socket:
+    // force BLOCKING socket:
     unsigned long _on = 0;
     ioctlsocket(soc, FIONBIO, &_on);
   }
@@ -501,8 +501,8 @@ int WINAPI ClientMain(void * clientNo) {
     linger.l_onoff = 1;
     linger.l_linger = linger_timeout;
     setsockopt(soc, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
-	
-	// Send FIN to the client
+    
+    // Send FIN to the client
     //(void) shutdown(soc, SHUT_WR);  -- done that above already
 
     // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
@@ -692,8 +692,8 @@ int SingleClientTestAutomatic(unsigned long initialPostSize) {
 
     if (previously_expectedData >= expectedData && previously_expectedData != 0)
     {
-        // no change / deterioration in test case: stop the incrementing runs
-        break;
+      // no change / deterioration in test case: stop the incrementing runs
+      break;
     }
 
     postSize = (postSize!=0) ? (postSize<<1) : 1;
@@ -722,16 +722,16 @@ int main(int argc, char * argv[]) {
   if (argc > 1 && !strcmp(argv[1], "-h"))
   {
     printf(""
-        "commandline arguments:\n"
-        "\n"
-        "  [testcase] [client count] [test cycles]\n"
-        "\n"
-        "defaults:\n"
-        "\n"
-        "  0 %d %d\n"
-        "\n"
-        "  where testcase==0 means: ALL testcases.\n",
-        CLIENTCOUNT, TESTCYCLES);
+           "commandline arguments:\n"
+           "\n"
+           "  [testcase] [client count] [test cycles]\n"
+           "\n"
+           "defaults:\n"
+           "\n"
+           "  0 %d %d\n"
+           "\n"
+           "  where testcase==0 means: ALL testcases.\n",
+           CLIENTCOUNT, TESTCYCLES);
     exit(1);
   }
 
