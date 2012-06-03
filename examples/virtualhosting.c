@@ -640,8 +640,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 		}
 
         while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
-		  int gotNow = 0;
-		{
+			int gotNow = 0;
 			// check whether there's anything available:
 			fd_set read_set;
 			struct timeval tv;
@@ -705,37 +704,23 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 					}
 				}
 			}
-		  }
 
 			if (gotNow == 0)
 			{
 				DEBUG_TRACE(("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize));
 				break;
 			}
-          gotSize += gotNow;
+	        gotSize += gotNow;
         }
 		mg_set_non_blocking_mode(mg_get_socket(conn), 0);
 		//mg_write(conn, data, gotSize);
-		if (bufferFill > 0)
+		if (bufferFill > 0 && mg_get_stop_flag(ctx) == 0)
 		{
-			int wlen;
-
-			do
+			int wlen = mg_write(conn, data, bufferFill);
+			if (bufferFill != wlen)
 			{
-				unsigned long dataReady = 0;
-			    if (mg_ioctlsocket(mg_get_socket(conn), FIONREAD, &dataReady) < 0)
-					wlen = -1;
-				else
-					wlen = dataReady;
-
-				wlen = mg_write(conn, data, bufferFill);
-				if (bufferFill != wlen)
-				{
-					mg_send_http_error(conn, 580, NULL, "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen); // internal error in our custom handler
-				}
-				if (wlen > 0)
-					bufferFill -= wlen;
-			} while (bufferFill > 0 && mg_get_stop_flag(ctx) == 0 && wlen != 0);
+				mg_send_http_error(conn, 580, NULL, "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen); // internal error in our custom handler
+			}
 		}
         free(data);
       }
