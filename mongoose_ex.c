@@ -75,7 +75,7 @@ int mg_setsockopt(struct socket *sock, int level, int optname, const void *optva
 
 int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref)
 {
-	int optlen = 0;
+	socklen_t optlen = 0;
 	int rv = getsockopt(sock->sock, level, optname, optval, &optlen);
 
 	*optlen_ref = optlen;
@@ -87,8 +87,11 @@ int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, siz
 // http://www.techrepublic.com/article/tcpip-options-for-high-performance-data-transmission/1050878
 int mg_set_nodelay_mode(struct socket *sock, int on)
 {
-#if !defined(SOL_TCP) || (defined(_WIN32) && !defined(__SYMBIAN32__))
+#if !defined(SOL_TCP) && (defined(_WIN32) && !defined(__SYMBIAN32__))
     DWORD v_on = !!on;
+    return setsockopt(sock->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
+#elif !defined(SOL_TCP)
+    int v_on = !!on;
     return setsockopt(sock->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
 #else
     int v_on = !!on;
@@ -111,12 +114,6 @@ int mg_set_socket_timeout(struct socket *sock, int seconds)
 {
 	if (!sock) return -1;
 	return set_timeout(sock, seconds);
-}
-
-int mg_ioctlsocket(struct socket *sock, long int cmd, unsigned long int *arg)
-{
-	if (!sock) return -1;
-	return ioctlsocket(sock->sock, cmd, arg);
 }
 
 /*
@@ -193,12 +190,12 @@ void mg_signal_stop(struct mg_context *ctx)
 }
 
 
-void mg_FD_SET(struct socket *socket, struct fd_set *set, int *max_fd)
+void mg_FD_SET(struct socket *socket, fd_set *set, int *max_fd)
 {
     add_to_set(socket->sock, set, max_fd);
 }
 
-int mg_FD_ISSET(struct socket *socket, struct fd_set *set)
+int mg_FD_ISSET(struct socket *socket, fd_set *set)
 {
     return FD_ISSET(socket->sock, set);
 }

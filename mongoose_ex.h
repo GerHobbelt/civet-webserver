@@ -32,7 +32,6 @@ extern "C" {
 #endif // __cplusplus
 
 struct socket;          // Handle for the socket related to a client / server connection
-struct fd_set;
 
 
 // Obtain the user-defined data & functions as set up at the start of the thread (i.e. the context)
@@ -96,9 +95,6 @@ int mg_set_socket_timeout(struct socket *sock, int seconds);
 // set socket to non-blocking mode.
 int mg_set_non_blocking_mode(struct socket *sock, int on);
 
-// generic interface: ioctlsocket()
-int mg_ioctlsocket(struct socket *sock, long int cmd, unsigned long int *arg);
-
 // shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
 int mg_shutdown(struct socket *sock, int how);
 
@@ -106,10 +102,10 @@ int mg_setsockopt(struct socket *sock, int level, int optname, const void *optva
 int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref);
 
 // Same as FD_SET() but also keeps track of the maximum handle value in *max_fd for use with, for example, select()
-void mg_FD_SET(struct socket *socket, struct fd_set *set, int *max_fd);
+void mg_FD_SET(struct socket *socket, fd_set *set, int *max_fd);
 
 // Same as FD_ISSET but now for mongoose sockets (struct socket)
-int mg_FD_ISSET(struct socket *socket, struct fd_set *set);
+int mg_FD_ISSET(struct socket *socket, fd_set *set);
 
 // set up a outgoing client connection: connect to the given host/port
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl);

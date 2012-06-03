@@ -248,6 +248,7 @@ int mg_mkdir(const char *path, int mode);
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include <stdint.h>

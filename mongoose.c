@@ -1843,14 +1843,6 @@ FILE *mg_fopen(const char *path, const char *mode) {
   return _wfopen(wbuf, wmode);
 }
 
-int mg_fclose(FILE *fp)
-{
-  if (fp != NULL && fp != stderr && fp != stdout && fp != stdin) {
-    return fclose(fp);
-  }
-  return 0;
-}
-
 int mg_stat(const char *path, struct mgstat *stp) {
   int ok = -1; // Error
   wchar_t wbuf[PATH_MAX];
@@ -2045,7 +2037,7 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
   return ioctlsocket(sock, FIONBIO, &_on);
 }
 
-#else
+#else // WIN32
 
 FILE *mg_fopen(const char *path, const char *mode) {
   if (!path || !path[0] || !mode || !mode[0]) {
@@ -2197,7 +2189,7 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
   flags = !!on;
   flags = setsockopt(sock, SOL_SOCKET, SO_NONBLOCK, &flags, sizeof(flags));
 #endif
-#if defined(F_GETFL)
+#if defined(F_GETFL) && defined(F_SETFL)
   flags = fcntl(sock, F_GETFL, 0);
   if (flags != -1) {
 #if defined(O_NONBLOCK)
@@ -2212,12 +2204,21 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
     else
       flags &= ~F_NDELAY;
 #endif
-    flags = fcntl(s, F_SETFL, flags);
+    flags = fcntl(sock, F_SETFL, flags);
   }
 #endif
   return flags;
 }
+
 #endif // _WIN32
+
+int mg_fclose(FILE *fp)
+{
+  if (fp != NULL && fp != stderr && fp != stdout && fp != stdin) {
+    return fclose(fp);
+  }
+  return 0;
+}
 
 // Write data to the IO channel - opened file descriptor, socket or SSL
 // descriptor. Return number of bytes written.
@@ -2510,7 +2511,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   rewrite = get_conn_option(conn, REWRITE);
   while ((rewrite = next_option(rewrite, &a, &b)) != NULL) {
     if ((match_len = match_prefix(a.ptr, a.len, uri)) > 0) {
-      mg_snprintf(conn, buf, buf_len, "%.*s%s", b.len, b.ptr, uri + match_len);
+      mg_snprintf(conn, buf, buf_len, "%.*s%s", (int)b.len, b.ptr, uri + match_len);
       break;
     }
   }
@@ -3200,7 +3201,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   while ((list = next_option(list, &uri_vec, &filename_vec)) != NULL) {
     if (!memcmp(conn->request_info.uri, uri_vec.ptr, uri_vec.len)) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
-          filename_vec.len, filename_vec.ptr);
+          (int)filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
         mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(errno));
       }
@@ -3904,7 +3905,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   slash = strrchr(conn->request_info.uri, '/');
   if ((s = strrchr(prog, '/')) == NULL)
     s = prog;
-  addenv(blk, "SCRIPT_NAME=%.*s%s", slash - conn->request_info.uri,
+  addenv(blk, "SCRIPT_NAME=%.*s%s", (int)(slash - conn->request_info.uri),
          conn->request_info.uri, s);
 
   addenv(blk, "SCRIPT_FILENAME=%s", prog);
@@ -3967,7 +3968,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   // Add user-specified variables
   s = get_conn_option(conn, CGI_ENVIRONMENT);
   while ((s = next_option(s, &var_vec, NULL)) != NULL) {
-    addenv(blk, "%.*s", var_vec.len, var_vec.ptr);
+    addenv(blk, "%.*s", (int)var_vec.len, var_vec.ptr);
   }
 
   blk->vars[blk->nvars++] = NULL;
@@ -4823,7 +4824,7 @@ static int set_ports_option(struct mg_context *ctx) {
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
       mg_cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
-          __func__, vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|p]");
+          __func__, (int)vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|p]");
       success = 0;
     } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
       mg_cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
@@ -4856,7 +4857,7 @@ static int set_ports_option(struct mg_context *ctx) {
             bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
             listen(sock, SOMAXCONN) != 0) {
           mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
-                 vec.len, vec.ptr, mg_strerror(ERRNO));
+                 (int)vec.len, vec.ptr, mg_strerror(ERRNO));
 		  closesocket(sock);
           success = 0;
         } else if ((listener = (struct socket *)
