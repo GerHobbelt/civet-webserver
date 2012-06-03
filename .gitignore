@@ -4,12 +4,14 @@
 *.o
 *.lo
 *.la
+*.so
 *.aps
 .deps
 .libs
 Makefile.in
 
 *.exe
+*.dll
 *.depend
 *.layout
 *.res
@@ -24,6 +26,8 @@ win32/msvc2010/ipch/
 
 _mongoose.dll
 mongoose.lib
+mongoose.exe
+mongoose
 
 documentation/_vti_cnf/
 documentation/images/_vti_cnf/
