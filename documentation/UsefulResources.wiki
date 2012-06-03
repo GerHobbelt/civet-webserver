@@ -1,8 +1,8 @@
-#summary A collection of useful resources
+# A collection of useful resources
 
 This page is designed to be a collection of useful and informative resources about Mongoose around the web.
 
-== Presentations ==
+## Presentations 
 
 ----
 

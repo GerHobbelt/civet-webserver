@@ -1,14 +1,14 @@
-#summary Windows installation, and typical usage on Windows platform
-#labels Featured,Phase-Deploy
+# Windows installation, and typical usage on Windows platform
 
-= Installing and configuring Mongoose on Windows =
+## Installing and configuring Mongoose on Windows 
+
 Sections: <wiki:toc max_depth== >
 
 *Note: Please put your comments in the proper Wiki. Problems must
 be posted at [http://code.google.com/p/mongoose/issues/list Bugs],
 comments involving Linux, etc., should go in the proper Wiki.*
 
-== Important instructions for installing version 2.9 as a Windows Service ==
+### Important instructions for installing version 2.9 as a Windows Service
 
 {{{
 WARNING!
@@ -62,7 +62,7 @@ To uninstall mongoose:
 3. Note: the entire mongoose subfolder will be deleted!
 }}}
 
-== Installing and configuring Mongoose on Windows in general ==
+### Installing and configuring Mongoose on Windows in general 
 
 To install Mongoose on Windows, download and run the Mongoose [http://code.google.com/p/mongoose/downloads/list installer]. By default, the installer tries to setup Mongoose as [http://en.wikipedia.org/wiki/Windows_service Windows service] to start automatically when Windows starts. Administrator privileges are required for that. Alternatively, this can be disabled by unchecking appropriate checkbox on the installer's first page. In this case, Mongoose can be started as Windows console application.
 
@@ -78,7 +78,8 @@ Any time you change the configuration by changing option values, saving and clos
 
 If you have Windows firewall running, it may block web connections to your machine. This means that while you can access your web pages from the machine that runs Mongoose, you may not access them from other computers. To allow web connections to the machine, go to the control panel, windows firewall, add exception, add port, TCP port 80 and TCP port 443.
 
-== Advanced usage ==
+## Advanced usage
+
    * Installing Mongoose is not necessary for make it work. `mongoose.exe` is self-sufficient executable file. Installation procedure does not copy any DLLs or write into registry; it merely unpacks files into a directory and registers a Windows service. If you wish to share some files really quickly, just copy `mongoose.exe` into the directory you wish to share, and double-click it. This will run Mongoose in console mode, on port 8080. Point your browser to http://your_machine:8080 to see shared files. 
    * Setting *cgi_interp* option is not the only way of running CGI scripts. You can leave this option unset. In this case, the first line of your CGI script must be `#!c:\full\path\to\cgi_interpreter`. This allows to run CGI scripts with different CGI interpreters, for example, Perl, PHP, at the same time.
    * It is possible to restrict access to the web server to certain machines only. To do that, set *acl* option this way: `acl -0.0.0.0/0,+machine1,+machine2`, where `machine1`, `machine2` are IP addresses of the machines allowed to connect.
@@ -95,7 +96,8 @@ c:\mongoose-2.1\mongoose.exe -A C:\global_passwords.txt mydomain.com user2 passw
 ...
 }}}
 
-==How To Set Up PHP==
+## How To Set Up PHP
+
 One of the great things about the Mongoose server is that it is
 easy to set up the server-side language *PHP* for use either
 locally (at IP address `127.0.0.1`, which is usually named

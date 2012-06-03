@@ -1,13 +1,14 @@
-#labels Phase-Deploy
-#This is a list of common problems encountered when configuring Mongoose 
+# Phase-Deploy
 
-= Introduction =
+This is a list of common problems encountered when configuring Mongoose 
+
+## Introduction 
 
 Once Mongoose has been successfully installed (very simple if you choose the Standalone executable, more complicated if you choose the Windows Service version), all pages will be served successfully, some pages will be served, no pages will be served, or Mongoose may just exit immediately (2.9) with a strange error message.
 
 This document will eventually list all the problems that users find, with solutions.
 
-= Common errors =
+## Common errors 
 
   * *Mongoose fails to start:* If Mongoose exits immediately when run, this usually indicates a syntax error in the configuration file (named `mongoose.conf` by default) or the command-line arguments. Syntax checking is omitted from Mongoose to keep its size low. However, the Manual should be of help. Note: the syntax changed dramatically between releases 2.8 and 2.9. Rewriting configuration directives will be necessary; you cannot use 2.8 directives with the 2.9 executable file.
 

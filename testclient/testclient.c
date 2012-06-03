@@ -155,7 +155,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
       if (chunkSize > 0)
       {
         int copylen;
-        if (dataReady >= chunkSize)
+        if (dataReady >= (unsigned)chunkSize)
           dataReady -= chunkSize;
         else
           dataReady = 0;

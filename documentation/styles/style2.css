@@ -1,0 +1,182 @@
+﻿@import url(layout.css);
+body {
+	margin: 0px;
+	background-color: #555533;
+	font-family: Georgia, "Times New Roman", Times, serif;
+	font-size: 0.8em;
+	padding: 0px;
+}
+/* Styles for DIV tags */
+#container {
+	border-right: 5px solid #666644;
+	border-left: 5px solid #666644;
+	border-bottom: 5px solid #666644;
+	background-color: #283227;
+	background-image:  url("../images/leftphoto.jpg");
+	background-repeat: no-repeat;
+	background-position: left top;
+	background-attachment: scroll;
+}
+#masthead {
+	background-color: #EEEECC;
+	border-top: 0;
+	border-right: 0;
+	border-left: 0;
+	padding: 15px;
+}
+#navigation {
+	background-color: #CCCC99;
+	margin-left: 160px;
+	text-align: center;
+}
+html>body #navigation {
+	overflow: hidden;
+}
+#content_container {
+	background-color:#FFFFFF;
+	padding: 0px;
+}
+#column_left {
+	float: left;
+}
+#column_right {
+	background-color: #F9F9EC;
+	padding-bottom: 30px;
+	background-repeat: repeat-x;
+	background-position: left bottom;
+	background-attachment: scroll;
+}
+#image {
+	margin-bottom: 6px;
+	margin-left: 6px;
+}
+#footer {
+	background-color: #F9F9EC;
+	color: #666644;
+	background-repeat: repeat-x;
+	background-position: bottom;
+	padding-top: 8px;
+	padding-bottom: 8px;
+}
+/* Styles for Masthead */
+#masthead h1 {
+	color: #555533;
+	font-style: italic;
+	font-size: 2.6em;
+	margin: 0px;
+	text-align: right;
+}
+#masthead h3 {
+	margin-top: .4em;
+	color: #999977;
+	margin-bottom: 0px;
+	text-align: right;
+	font-size: 1.4em;
+	font-style: italic;
+	font-weight: normal;
+}
+#masthead a {
+	color: #555533;
+	text-decoration: none;
+}
+/* Styles for Navigation */
+#navigation ul {
+	list-style-type: none;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+}
+#navigation li {
+	float: left;
+}
+#navigation a {
+	margin: 0 1px;
+	padding: 5px;
+	border: 1px solid #cc9;
+	display: block;
+	text-decoration: none;
+}
+#navigation a:hover {
+	color: #eec;
+	text-decoration: none;
+	background-color: #664;
+	border: 1px solid #cc9;
+}
+/* Styles for Right Column */
+#column_right h4 {
+	color: #666644;
+	margin-top: 0px;
+}
+#column_right p {
+	color: #444422;
+	margin-top: 0px;
+	font-size: 0.9em;
+}
+#column_right a {
+	color: #6A6AB4;
+}
+#column_right a:hover {
+	background-color: #EEEECC;
+}
+/* Styles for Left Column */
+h1 {
+	font-size: xx-large;
+	color: #222200;
+	margin-top: 0px;
+}
+h2 {
+	font-size: x-large;
+	color: #333311;
+	margin-top: 0px;
+}
+h3 {
+	font-size: large;
+	color: #444422;
+	margin-top: 0px;
+}
+h4 {
+	font-size: medium;
+	color: #555533;
+	margin-top: 0px;
+}
+h5 { 
+	font-size: x-small;
+	margin-top: 0px;
+}
+h6 { 
+	font-size: xx-small;
+	margin-top: 0px;
+}
+a {
+	color: #6A6AB4;
+}
+a:hover {
+	background-color: #EEEECC;
+}
+/* Styles for Footer */
+#footer p {
+	margin: 0;
+	font-size: 0.75em;
+	text-align: left;
+}
+#copyright {
+	float: right;
+	text-align: right;
+}
+#copyright p {
+	font-size: 0.75em;
+}
+#footer a {
+	color: #555522;
+	font-weight: bold;
+	text-decoration: underline;
+}
+#footer a:hover {
+	text-decoration: none;
+}
+.style_bold {
+	font-weight: bold;
+}
+.style_italic {
+	font-style: italic;
+}

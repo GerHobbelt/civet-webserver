@@ -42,29 +42,30 @@ struct mg_ip_address {
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
-  void *req_user_data;   // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
-  const char *request_method;  // "GET", "POST", etc
-  char *uri;             // URL-decoded URI
-  char *phys_path;       // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
-  const char *http_version;    // E.g. "1.0", "1.1"
-  char *query_string;    // URL part after '?' (not including '?') or NULL
-  char *remote_user;     // Authenticated user, or NULL if no auth used
-  const char *log_message;     // Mongoose error/warn/... log message, MG_EVENT_LOG only
-  const char *log_severity; // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
-  const char *log_dstfile; // Mongoose preferred log file path, MG_EVENT_LOG only
-  time_t log_timestamp;  // log timestamp (UTC), MG_EVENT_LOG only
-  struct mg_ip_address remote_ip;        // Client's IP address
-  int remote_port;       // Client's port
-  struct mg_ip_address local_ip;        // This machine's IP address which receives/services the request
-  int local_port;       // Server's port
-  int status_code;       // HTTP reply status code, e.g. 200
+  void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  const char *request_method;      // "GET", "POST", etc
+  char *uri;                       // URL-decoded URI
+  char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
+  const char *http_version;        // E.g. "1.0", "1.1"
+  char *query_string;              // URL part after '?' (not including '?') or NULL
+  char *path_info;                 // PATH_INFO part of the URL
+  char *remote_user;               // Authenticated user, or NULL if no auth used
+  const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
+  const char *log_severity;        // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
+  const char *log_dstfile;         // Mongoose preferred log file path, MG_EVENT_LOG only
+  time_t log_timestamp;            // log timestamp (UTC), MG_EVENT_LOG only
+  struct mg_ip_address remote_ip;  // Client's IP address
+  int remote_port;                 // Client's port
+  struct mg_ip_address local_ip;   // This machine's IP address which receives/services the request
+  int local_port;                  // Server's port
+  int status_code;                 // HTTP reply status code, e.g. 200
   char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
-  int is_ssl;            // 1 if SSL-ed, 0 if not
-  int num_headers;       // Number of headers
+  int is_ssl;                      // 1 if SSL-ed, 0 if not
+  int num_headers;                 // Number of headers
   struct mg_header {
-    char *name;          // HTTP header name
-    char *value;         // HTTP header value
-  } http_headers[64];    // Maximum 64 headers
+    char *name;                    // HTTP header name
+    char *value;                   // HTTP header value
+  } http_headers[64];              // Maximum 64 headers
 };
 
 // Various events on which user-defined function is called by Mongoose.
@@ -123,7 +124,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
-// calls this function for every unidentified option.
+// calls this function for every unidentified (global) option.
 //
 // Parameters:
 //   ctx: the server context.
@@ -138,7 +139,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *name, const char *value);
 
 // Prototype for the final user-defined option processing function. Mongoose
-// calls this function once after all options have been processed: this callback
+// calls this function once after all (global) options have been processed: this callback
 // is usually used to set the default values for any user options which have not
 // been configured yet.
 //
@@ -154,13 +155,14 @@ typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 //
 // Parameters:
 //   ctx: the server context.
+//   conn: the current connection, NULL if not available.
 //   name: (string) the option identifier.
 //
 // Return:
-//   If handler returns the non-NULL option value string.
+//   If handler returns the non-NULL option value string, that value is used.
 //   If handler returns zero, that means that the handler has not processed
-//   the option.
-typedef const char * (*mg_option_get_callback_t)(const struct mg_context *ctx, const char *name);
+//   the option (and possibly a default value is used instead).
+typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
@@ -223,13 +225,37 @@ void mg_stop(struct mg_context *);
 // If given parameter name is not valid, NULL is returned. For valid
 // names, return value is guaranteed to be non-NULL. If parameter is not
 // set, zero-length string is returned.
-const char *mg_get_option(const struct mg_context *ctx, const char *name);
+const char *mg_get_option(struct mg_context *ctx, const char *name);
+
+
+// Get the value of particular (possibly connection specific) configuration parameter.
+// The value returned is read-only. Mongoose does not allow changing
+// configuration for a connection at run time.
+// If given parameter name is not valid, NULL is returned. For valid
+// names, return value is guaranteed to be non-NULL. If parameter is not
+// set, zero-length string is returned.
+const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 
 
 // Return array of strings that represent all mongoose configuration options.
-// For each option, a short name, long name, and default value is returned.
+// For each option, a short name, long name, and default value is returned 
+// (i.e. a total of MG_ENTRIES_PER_CONFIG_OPTION elements per entry).
+//
 // Array is NULL terminated.
 const char **mg_get_valid_option_names(void);
+
+// Return the long name of a given option 'name' (where 'name' can itself be
+// either the short or long name).
+// Use this API to convert option names for various sources to the single
+// long name format: one name fits all.
+//
+// See for example main.c for one possible use: there this call is used to
+// make sure that command line options, config file entries and hardcoded
+// defaults don't inadvertedly produce duplicate option entries in the
+// options[] list.
+const char *mg_get_option_long_name(const char *name);
+
+#define MG_ENTRIES_PER_CONFIG_OPTION 3
 
 
 // Add, edit or delete the entry in the passwords file.
@@ -258,6 +284,15 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // access log to show the correct (actual) number.
 void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 
+// Return !0 when the headers have already been sent, 0 if not.
+//
+// To be more specific, this function will return -1 when all HTTP headers
+// have been written (and anything sent now is considered part of the content),
+// while a return value of +1 indicates that the HTTP response has been
+// written but that you MAY decide to write some more headers to 
+// augment the HTTP header set being transmitted.
+int mg_have_headers_been_sent(const struct mg_connection *conn);
+
 // Send data to the browser using printf() semantics.
 //
 // Works exactly like mg_write(), but allows to do message formatting.
@@ -285,7 +320,9 @@ int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
 
 
 // Send contents of the entire file together with HTTP headers.
-void mg_send_file(struct mg_connection *conn, const char *path);
+//
+// Return 0 on success, negative number of I/O failed, positive non-zero when file does not exist (404)
+int mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.

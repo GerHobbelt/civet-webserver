@@ -46,7 +46,36 @@ struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn);
 int64_t mg_get_num_bytes_received(struct mg_connection *conn);
 
-struct socket *mg_get_client_socket(struct mg_connection *conn);
+struct socket *mg_get_socket(struct mg_connection *conn);
+
+/*
+ntop()/ntoa() replacement with IPv6 + IPv4 support.
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+'dst' is also returned as function result; on error, 'dst' will 
+contain an empty string.
+*/
+char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote);
+
+/*
+ntoh() replacement for IPv6 + IPv4 support.
+
+remote = 1 will produce the remote port, while
+remote = 0 will produce the local port for the given connection (socket)
+*/
+unsigned short int mg_get_socket_port(const struct socket *sock, int remote);
+
+/*
+IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+Return 0 on success, non-zero on error.
+*/
+int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote);
 
 // Return the current 'stop_flag' state value for the given thread context.
 int mg_get_stop_flag(struct mg_context *ctx);
@@ -147,7 +176,7 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
 int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *ri, const char *name);
 
 /*
-Send HTTP error response headers.
+Send HTTP error response headers, if we still can. Log the error anyway.
 
 'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
 
@@ -158,12 +187,11 @@ void mg_send_http_error(struct mg_connection *conn, int status, const char *reas
 	__attribute__((format(printf, 4, 5)))
 #endif
 ;
-
 void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
 
 
 // Returns a string useful as Connection: header value, depending on the current state of connection
-const char *mg_suggest_connection_header(const struct mg_connection *conn);
+const char *mg_suggest_connection_header(struct mg_connection *conn);
 
 // signal mongoose that the server should close the connection with the client once the current request has been serviced.
 void mg_connection_must_close(struct mg_connection *conn);

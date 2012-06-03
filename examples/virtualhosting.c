@@ -27,6 +27,9 @@
 #include <winsvc.h>
 #endif // _WIN32
 
+#include <upskirt/src/markdown.h>
+#include <upskirt/html/html.h>
+
 
 
 #define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
@@ -52,7 +55,10 @@ static const char *default_options[] = {
     "num_threads",           "5",
     "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
 	"access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
+	"index_files",			 "default.html",
+	"ssi_pattern",			 "**.html$|**.htm|**.shtml$|**.shtm$",
 	"enable_keep_alive",     "yes",
+	//"ssi_marker",			 "{!--#,}",
 	"keep_alive_timeout",    "5",
 
     NULL
@@ -251,6 +257,219 @@ unsigned short crc16(const void * data, unsigned long bitCount) {
   return r;
 }
 
+static int report_markdown_failure(struct mg_connection *conn, int is_inline_production, int response_code, const char *fmt, ...)
+{
+	va_list args;
+
+	if (is_inline_production)
+	{
+		mg_printf(conn, "<h1 style=\"color: red;\">Error: %d - %s</h1>\n", response_code, mg_get_response_code_text(response_code));
+		va_start(args, fmt);
+		mg_vprintf(conn, fmt, args);
+		va_end(args);
+	}
+	else
+	{
+		va_start(args, fmt);
+		mg_vsend_http_error(conn, response_code, NULL, fmt, args);
+		va_end(args);
+	}
+	return -1;
+}
+
+
+int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, int is_inline_production)
+{
+#define SD_READ_UNIT 1024
+#define SD_OUTPUT_UNIT 64
+
+	struct mg_request_info *ri = mg_get_request_info(conn);
+	struct sd_buf *ib, *ob;
+	int ret;
+	unsigned int enabled_extensions = MKDEXT_TABLES | MKDEXT_FENCED_CODE | MKDEXT_EMAIL_FRIENDLY;
+	unsigned int render_flags = 0; // HTML_SKIP_HTML | HTML_SKIP_STYLE | HTML_HARD_WRAP;
+
+	struct sd_callbacks callbacks;
+	struct html_renderopt options;
+	struct sd_markdown *markdown;
+
+	/* opening the file */
+	FILE *in;
+
+	assert(ri->phys_path);
+	/* opening the file */
+	in = mg_fopen(ri->phys_path, "r");
+	if (!in)
+	{
+		return report_markdown_failure(conn, is_inline_production, 404, "Unable to open input file: [%s] %s", ri->uri, mg_strerror(errno));
+	}
+
+	/* reading everything */
+	ib = sd_bufnew(SD_READ_UNIT);
+	if (SD_BUF_OK != sd_bufgrow(ib, (size_t)st->size))
+	{
+		mg_fclose(in);
+		sd_bufrelease(ib);
+		return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while loading Markdown input file: [%s]", ri->uri);
+	}
+	ret = fread(ib->data, 1, ib->asize, in);
+	if (ret > 0)
+	{
+		ib->size += ret;
+		mg_fclose(in);
+	}
+	else
+	{
+		mg_fclose(in);
+		sd_bufrelease(ib);
+		return report_markdown_failure(conn, is_inline_production, 500, "Cannot read from input file: [%s] %s", ri->uri, mg_strerror(errno));
+	}
+
+	/* performing markdown parsing */
+	ob = sd_bufnew(SD_OUTPUT_UNIT);
+
+	sdhtml_renderer(&callbacks, &options, render_flags);
+	markdown = sd_markdown_new(enabled_extensions, 16, &callbacks, &options);
+	if (!markdown)
+	{
+		sd_bufrelease(ib);
+		sd_bufrelease(ob);
+		return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while processing Markdown input file: [%s]", ri->uri);
+	}
+	sd_markdown_render(ob, ib->data, ib->size, markdown);
+	sd_markdown_free(markdown);
+
+	if (!is_inline_production)
+	{
+		/* write the appropriate headers */
+		char date[64], lm[64], etag[64], range[64];
+		time_t curtime = time(NULL);
+		const char *hdr;
+		int64_t cl, r1, r2;
+		int n;
+
+		ri->status_code = 200;
+
+		cl = ob->size;
+
+		range[0] = '\0';
+
+#if 0
+		// If Range: header specified, act accordingly
+		r1 = r2 = 0;
+		hdr = mg_get_header(conn, "Range");
+		if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
+			conn->request_info.status_code = 206;
+			(void) fseeko(fp, (off_t) r1, SEEK_SET);
+			cl = n == 2 ? r2 - r1 + 1: cl - r1;
+			(void) mg_snprintf(conn, range, sizeof(range),
+				"Content-Range: bytes "
+				"%" INT64_FMT "-%"
+				INT64_FMT "/%" INT64_FMT "\r\n",
+				r1, r1 + cl - 1, stp->size);
+		}
+#endif
+
+		// Prepare Etag, Date, Last-Modified headers. Must be in UTC, according to
+		// http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
+		mg_gmt_time_string(date, sizeof(date), &curtime);
+		mg_gmt_time_string(lm, sizeof(lm), &st->mtime);
+		(void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx", (unsigned long) st->mtime, (unsigned long) st->size);
+
+		(void) mg_printf(conn,
+			"HTTP/1.1 %d %s\r\n"
+			"Date: %s\r\n"
+			"Last-Modified: %s\r\n"
+			"Etag: \"%s\"\r\n"
+			"Content-Type: text/html\r\n"
+			"Content-Length: %" INT64_FMT "\r\n"
+			"Connection: %s\r\n"
+			// "Accept-Ranges: bytes\r\n"
+			"%s\r\n"
+			, ri->status_code, mg_get_response_code_text(ri->status_code)
+			, date, lm, etag
+			, cl
+			, mg_suggest_connection_header(conn)
+			, range
+			);
+        mg_mark_end_of_header_transmission(conn);
+
+		ret = (int)cl;
+		if (strcmp(ri->request_method, "HEAD") != 0) {
+			ret = mg_write(conn, ob->data, (size_t)cl);
+		}
+	}
+	else
+	{
+		ret = mg_write(conn, ob->data, ob->size);
+	}
+
+	/* cleanup */
+	sd_bufrelease(ib);
+	sd_bufrelease(ob);
+
+	return ret;
+}
+
+
+/*
+Ths bit of code shows how one can go about providing something very much like 
+IP-based and/or Name-based Virtual Hosting.
+
+When you have your local DNS (or hosts file for that matter) configured to
+point the 'localhost-9.lan' domain name at IP address 127.0.0.9 and then run
+mongoose on your localhost and visit
+  http://127.0.0.2/
+for an example of IP-based Virtual Hosting, or
+  http://localhost-9.lan/
+for an example of Host-based Virtual Hosting, you will see another website 
+located in ./documentation: the mongoose documentation pages.
+If you visit
+  http://127.0.0.1/
+or
+  http://127.0.0.9/
+instead you will visit the website located in ./test/
+
+---
+
+Off Topic: one can override other options on a per-connection / request basis
+           as well. This applies to all options which' values are fetched by
+		   mongoose through the internal get_conn_option() call - grep
+		   mongoose.c for that one if you like.
+*/
+// typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
+static const char *option_get_callback(struct mg_context *ctx, struct mg_connection *conn, const char *name)
+{
+	// check local IP for IP-based Virtual Hosting & switch DocumentRoot for the connection accordingly:
+	if (conn && !strcmp("document_root", name))
+	{
+		struct mg_request_info *request_info = mg_get_request_info(conn);
+		
+		if (/* IP-based Virtual Hosting */
+			(!request_info->local_ip.is_ip6 && 
+			 request_info->local_ip.ip_addr.v4[0] == 127 && 
+			 request_info->local_ip.ip_addr.v4[1] == 0 && 
+			 request_info->local_ip.ip_addr.v4[2] == 0 &&
+			 request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
+			/* Name-based Virtual Hosting */
+			0 < mg_match_prefix("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
+		{
+			static char docu_site_docroot[PATH_MAX] = "";
+
+			if (!*docu_site_docroot)
+			{
+				// use the CTX-based get-option call so our recursive invocation 
+				// skips this bit of code as 'conn == NULL' then:
+				mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../documentation", mg_get_option(ctx, name));
+			}
+			return docu_site_docroot;
+		}
+	}
+	return NULL; // let mongoose handle it by himself
+}
+
+
+
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   struct mg_request_info *request_info = mg_get_request_info(conn);
@@ -267,7 +486,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   }
 
 #if defined(_WIN32)
-  if (event == MG_EVENT_LOG &&
+  if (event == MG_EVENT_LOG && 
 	  strstr(request_info->log_message, "cannot bind to") &&
 	  !strcmp(request_info->log_severity, "error"))
   {
@@ -279,6 +498,29 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 	  return 0;
   }
 #endif
+
+#if 0
+  if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
+  {
+	printf("Boom?\n");
+  }
+#endif
+
+  if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
+	struct mgstat st;
+	int file_found;
+
+	assert(request_info->phys_path);
+	file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
+	if (file_found) {
+	  // are we looking for HTML output of MarkDown file?
+      if (mg_match_prefix("**.md$|**.wiki$", -1, request_info->phys_path) > 0) {
+		serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
+		return "";
+	  }
+	  return NULL; // let mongoose handle the default of 'file exists'...
+	}
+  }
 
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
@@ -583,7 +825,7 @@ static void start_mongoose(int argc, char *argv[]) {
         0,
         0,
         0,
-        0
+        option_get_callback
     };
 
     /* Edit passwords file if -A option is specified */

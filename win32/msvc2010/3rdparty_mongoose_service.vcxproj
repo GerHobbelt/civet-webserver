@@ -476,6 +476,9 @@
     <ClInclude Include="..\..\win32\resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\upskirt\mvc\libupskirt.vcxproj">
+      <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
+    </ProjectReference>
     <ProjectReference Include="3rdparty_mongoose.vcxproj">
       <Project>{233653b7-8908-b7f0-5035-6c77fdbb99cf}</Project>
     </ProjectReference>

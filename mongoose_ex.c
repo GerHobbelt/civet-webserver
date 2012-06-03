@@ -36,7 +36,7 @@ struct mg_context *mg_get_context(struct mg_connection *conn)
     return conn ? conn->ctx : NULL;
 }
 
-struct socket *mg_get_client_socket(struct mg_connection *conn)
+struct socket *mg_get_socket(struct mg_connection *conn)
 {
     return conn ? &conn->client : NULL;
 }
@@ -92,25 +92,95 @@ int mg_set_nodelay_mode(struct socket *sock, int on)
     return setsockopt(sock->sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
 #else
     int v_on = !!on;
-    return setsockopt(sock->sock, SOL_TCP, TCP_NODELAY, &v_on, sizeof (v_on));
+    return setsockopt(sock->sock, SOL_TCP, TCP_NODELAY, (void *)&v_on, sizeof (v_on));
 #endif
 }
 
 int mg_set_socket_keepalive(struct socket *sock, int on)
 {
-    BOOL v_on = !!on;
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+	BOOL v_on = !!on;
+#else
+	int v_on = !!on;
+#endif
+	if (!sock) return -1;
     return setsockopt(sock->sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&v_on, sizeof(v_on));
 }
 
 int mg_set_socket_timeout(struct socket *sock, int seconds)
 {
+	if (!sock) return -1;
 	return set_timeout(sock, seconds);
 }
 
 int mg_ioctlsocket(struct socket *sock, long int cmd, unsigned long int *arg)
 {
+	if (!sock) return -1;
 	return ioctlsocket(sock->sock, cmd, arg);
 }
+
+/*
+ntop()/ntoa() replacement with IPv6 + IPv4 support.
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+'dst' is also returned as function result; on error, 'dst' will 
+contain an empty string.
+*/
+char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote) 
+{
+	if (!dst) return NULL;
+	dst[0] = 0;
+
+	if (sock)
+	{
+		char src_addr[SOCKADDR_NTOA_BUFSIZE];
+
+		sockaddr_to_string(src_addr, sizeof(src_addr), (remote ? &sock->rsa : &sock->lsa));
+		// only copy IP address in its entirety or not at all:
+		if (dstlen > strlen(src_addr))
+		{
+			strcpy(dst, src_addr);
+		}
+	}
+	return dst;
+}
+
+/*
+ntoh() replacement for IPv6 + IPv4 support.
+
+remote = 1 will produce the remote port, while
+remote = 0 will produce the local port for the given connection (socket)
+*/
+unsigned short int mg_get_socket_port(const struct socket *sock, int remote)
+{
+	if (!sock) return 0;
+	if (remote)
+		return get_socket_port(&sock->rsa);
+	else
+		return get_socket_port(&sock->lsa);
+}
+
+/*
+IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
+
+remote = 1 will print the remote IP address, while
+remote = 0 will print the local IP address
+
+Return 0 on success, non-zero on error.
+*/
+int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote)
+{
+	if (!dst || !sock) return -1;
+	if (remote)
+		get_socket_ip_address(dst, &sock->rsa);
+	else
+		get_socket_ip_address(dst, &sock->lsa);
+	return 0;
+}
+
+
 
 int mg_get_stop_flag(struct mg_context *ctx)
 {
@@ -267,8 +337,6 @@ int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
 {
 	if (!str || !pattern) return -1;
 
-	if (pattern_len < 0)
-		pattern_len = (int)strlen(pattern);
 	return match_prefix(pattern, pattern_len, str);
 }
 
@@ -328,7 +396,7 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm)
 	gmt_time_string(buf, bufsize, tm);
 }
 
-const char *mg_suggest_connection_header(const struct mg_connection *conn)
+const char *mg_suggest_connection_header(struct mg_connection *conn)
 {
 	return suggest_connection_header(conn);
 }
@@ -337,7 +405,6 @@ void mg_connection_must_close(struct mg_connection *conn)
 {
 	conn->must_close = 1;
 }
-
 
 
 
