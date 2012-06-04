@@ -458,11 +458,6 @@
     <ClCompile Include="..\..\examples\chat.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{233653b7-8908-b7f0-5035-6c77fdbb99cf}</Project>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="..\..\examples\html\favicon.ico" />
     <None Include="..\..\examples\html\index.html" />
     <None Include="..\..\examples\html\jquery.js" />
@@ -470,6 +465,11 @@
     <None Include="..\..\examples\html\logo.png" />
     <None Include="..\..\examples\html\main.js" />
     <None Include="..\..\examples\html\style.css" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="3rdparty_mongoose.vcxproj">
+      <Project>{d5ddf8e5-f0fd-f3f4-76cb-c1fff33fe20d}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

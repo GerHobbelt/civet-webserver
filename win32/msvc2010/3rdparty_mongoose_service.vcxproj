@@ -476,11 +476,8 @@
     <ClInclude Include="..\..\win32\resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\upskirt\mvc\libupskirt.vcxproj">
-      <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
-    </ProjectReference>
     <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{233653b7-8908-b7f0-5035-6c77fdbb99cf}</Project>
+      <Project>{d5ddf8e5-f0fd-f3f4-76cb-c1fff33fe20d}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
