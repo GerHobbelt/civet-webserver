@@ -1907,7 +1907,7 @@ static int closedir(DIR *dir) {
   return result;
 }
 
-struct dirent * readdir(DIR *dir) {
+static struct dirent * readdir(DIR *dir) {
   struct dirent *result = 0;
 
   if (dir) {
