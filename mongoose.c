@@ -20,6 +20,8 @@
 
 #include "mongoose.h"
 
+#define SAFE_STR(s)     ((s) ? (s) : "")
+
 
 
 #define MONGOOSE_VERSION "3.2"
