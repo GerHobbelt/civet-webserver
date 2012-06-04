@@ -315,7 +315,7 @@ typedef int SOCKET;
 #endif
 
 
-/* <bel>: Local fix for some linux sdk headers that do not know these options */
+/* <bel>: Local fix for some linux SDK headers that do not know these options */
 #ifndef SOMAXCONN
 #define SOMAXCONN 128
 #endif
@@ -434,24 +434,25 @@ int pthread_spin_unlock(pthread_spinlock_t *lock);
 #endif
 
 
-
 #if defined(_WIN32_WCE)
+
 time_t time(time_t *ptime);
-
 struct tm *localtime(const time_t *ptime, struct tm *ptm);
-
 struct tm *gmtime(const time_t *ptime, struct tm *ptm);
-
 static size_t strftime(char *dst, size_t dst_size, const char *fmt,
                        const struct tm *tm);
 
 #endif
 
+#endif // _WIN32 -- for pthread and time lib support
 
+
+#undef UNUSED_PARAMETER
+#if defined(__GNUC__)
+#define UNUSED_PARAMETER(p)     p __attribute__((unused))
 #else
-
-
-#endif // _WIN32
+#define UNUSED_PARAMETER(p)     p
+#endif
 
 
 

@@ -291,16 +291,6 @@ int mg_get_lasterror(void)
 }
 
 
-void mg_flockfile(FILE *fp)
-{
-    flockfile(fp);
-}
-
-void mg_funlockfile(FILE *fp)
-{
-    funlockfile(fp);
-}
-
 
 int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
 {

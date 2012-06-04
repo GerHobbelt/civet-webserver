@@ -19,17 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_sys_porting.h"
-
-#undef UNUSED_PARAMETER
-#ifdef __GNUC__
-#define UNUSED_PARAMETER(p)     p __attribute__((unused))
-#else
-#define UNUSED_PARAMETER(p)     p
-#endif
-
-
-#include "mongoose_ex.h"  // mg_thread_func_t
+#include "mongoose.h"
 
 
 

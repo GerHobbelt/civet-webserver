@@ -114,10 +114,6 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 int mg_get_lasterror(void);
 
 
-void mg_flockfile(FILE *fp);
-
-void mg_funlockfile(FILE *fp);
-
 
 
 typedef void * (*mg_thread_func_t)(void *);
