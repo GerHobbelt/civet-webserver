@@ -534,6 +534,25 @@ Win32 system error codes
 const char *mg_strerror(int errcode);
 
 
+// Obtain the user-defined data & functions as set up at the start of the thread (i.e. the context)
+struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx);
+
+// Obtain the mongoose context definition for the given connection.
+struct mg_context *mg_get_context(struct mg_connection *conn);
+
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
+
+
+// Return the current 'stop_flag' state value for the given thread context.
+//
+// When this is non-zero, it means the mongoose server is terminating and all threads it has created
+// should be / are already terminating.
+int mg_get_stop_flag(struct mg_context *ctx);
+
+// Indicate that the application should shut down (probably due to a fatal failure?)
+void mg_signal_stop(struct mg_context *ctx);
+
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

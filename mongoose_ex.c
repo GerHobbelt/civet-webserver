@@ -26,24 +26,9 @@
 #include "mongoose.c"
 
 
-struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx)
-{
-    return ctx ? &ctx->user_functions : NULL;
-}
-
-struct mg_context *mg_get_context(struct mg_connection *conn)
-{
-    return conn ? conn->ctx : NULL;
-}
-
 struct socket *mg_get_socket(struct mg_connection *conn)
 {
     return conn ? &conn->client : NULL;
-}
-
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
-{
-    return conn ? &conn->request_info : NULL;
 }
 
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn)
@@ -176,19 +161,6 @@ int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *soc
         get_socket_ip_address(dst, &sock->lsa);
     return 0;
 }
-
-
-
-int mg_get_stop_flag(struct mg_context *ctx)
-{
-    return ctx && ctx->stop_flag;
-}
-
-void mg_signal_stop(struct mg_context *ctx)
-{
-  ctx->stop_flag = 1;
-}
-
 
 void mg_FD_SET(struct socket *socket, fd_set *set, int *max_fd)
 {

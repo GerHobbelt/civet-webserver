@@ -1,6 +1,5 @@
 
-#include "mongoose_sys_porting.h"
-#include "mongoose_ex.h"
+#include "mongoose.h"
 
 static void *callback(enum mg_event event,
                       struct mg_connection *conn) {

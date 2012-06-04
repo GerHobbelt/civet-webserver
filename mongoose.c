@@ -4642,6 +4642,7 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
     usa->u.sin.sin_addr = a;
+    return 1;
   }
   return 0;
 #else
@@ -4655,11 +4656,10 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
     usa->u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
-  } else {
-    return 0;
+    return 1;
   }
+  return 0;
 #endif
-  return 1;
 }
 
 // Valid listening port specification is: [ip_address:]port[s|p]
@@ -5984,3 +5984,31 @@ const char *mg_get_response_code_text(int response_code)
   default:    return "Unknown Response Code";
   }
 }
+
+struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx)
+{
+    return ctx ? &ctx->user_functions : NULL;
+}
+
+struct mg_context *mg_get_context(struct mg_connection *conn)
+{
+    return conn ? conn->ctx : NULL;
+}
+
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
+{
+  return conn ? &conn->request_info : NULL;
+}
+
+
+
+int mg_get_stop_flag(struct mg_context *ctx)
+{
+    return ctx && ctx->stop_flag;
+}
+
+void mg_signal_stop(struct mg_context *ctx)
+{
+  ctx->stop_flag = 1;
+}
+

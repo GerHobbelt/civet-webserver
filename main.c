@@ -224,9 +224,7 @@ static void init_server_name(void) {
 
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
-  struct mg_context *ctx = mg_get_context(conn);
   struct mg_request_info *request_info = mg_get_request_info(conn);
-  int i;
 
   if (event == MG_INIT0)
   {

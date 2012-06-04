@@ -19,11 +19,10 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_sys_porting.h"
 #include "mongoose_ex.h"
-#include "win32/resource.h"
 
 #ifdef _WIN32
+#include "win32/resource.h"
 #include <winsvc.h>
 #endif // _WIN32
 

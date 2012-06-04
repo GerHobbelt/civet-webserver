@@ -34,14 +34,6 @@ extern "C" {
 struct socket;          // Handle for the socket related to a client / server connection
 
 
-// Obtain the user-defined data & functions as set up at the start of the thread (i.e. the context)
-struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx);
-
-// Obtain the mongoose context definition for the given connection.
-struct mg_context *mg_get_context(struct mg_connection *conn);
-
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
-
 int64_t mg_get_num_bytes_sent(struct mg_connection *conn);
 int64_t mg_get_num_bytes_received(struct mg_connection *conn);
 
@@ -75,12 +67,6 @@ remote = 0 will print the local IP address
 Return 0 on success, non-zero on error.
 */
 int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote);
-
-// Return the current 'stop_flag' state value for the given thread context.
-int mg_get_stop_flag(struct mg_context *ctx);
-
-// Indicate that the application should shut down (probably due to a fatal failure?)
-void mg_signal_stop(struct mg_context *ctx);
 
 
 // Disable or enable the Nagle algorithm on a socket.

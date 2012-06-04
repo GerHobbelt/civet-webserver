@@ -10,13 +10,11 @@
  * Mongoose code.
  */
 
-#include "mongoose_sys_porting.h"
+#include "mongoose.h"
 
 #ifdef _WIN32
 #include <winsvc.h>
 #endif
-
-#include "mongoose_ex.h"
 
 #define MAX_USER_LEN  20
 #define MAX_MESSAGE_LEN  100
