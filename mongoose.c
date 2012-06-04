@@ -1388,10 +1388,12 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *header = mg_get_header(conn, "Connection");
 
   return (!conn->must_close &&
-          (conn->request_info.status_code == 401 ||
-           conn->request_info.status_code == 200 ||
-           conn->request_info.status_code == 206 ||
-           conn->request_info.status_code == 100) &&
+          conn->request_info.status_code != 401 &&
+		  // only okay persistence when we see legal response codes; 
+		  // anything else means we're foobarred ourselves already, 
+		  // so it's time to close and let them retry.
+          conn->request_info.status_code < 500 &&
+          conn->request_info.status_code >= 100 &&
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
           (header == NULL ?
            (http_version && !strcmp(http_version, "1.1")) :
