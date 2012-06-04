@@ -327,10 +327,15 @@ typedef int SOCKET;
 
 
 #if defined(DEBUG) || defined(_DEBUG)
+#if defined(PTW32_VERSION)
+#define MG_PTHREAD_SELF()	pthread_self().p
+#else
+#define MG_PTHREAD_SELF()	(void *)pthread_self()
+#endif
 #define DEBUG_TRACE(x) do { \
   flockfile(stdout); \
   printf("*** %lu.%p.%s.%d: ", \
-         (unsigned long) time(NULL), (void *) pthread_self(), \
+         (unsigned long) time(NULL), MG_PTHREAD_SELF(), \
          __func__, __LINE__); \
   printf x; \
   putchar('\n'); \

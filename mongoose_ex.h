@@ -48,7 +48,7 @@ remote = 0 will print the local IP address
 'dst' is also returned as function result; on error, 'dst' will
 contain an empty string.
 */
-char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct socket *sock, int remote);
+char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct mg_connection *conn, int remote);
 
 /*
 ntoh() replacement for IPv6 + IPv4 support.
@@ -56,7 +56,7 @@ ntoh() replacement for IPv6 + IPv4 support.
 remote = 1 will produce the remote port, while
 remote = 0 will produce the local port for the given connection (socket)
 */
-unsigned short int mg_get_socket_port(const struct socket *sock, int remote);
+unsigned short int mg_get_socket_port(const struct mg_connection *conn, int remote);
 
 /*
 IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
@@ -66,32 +66,32 @@ remote = 0 will print the local IP address
 
 Return 0 on success, non-zero on error.
 */
-int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct socket *sock, int remote);
+int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct mg_connection *conn, int remote);
 
 
 // Disable or enable the Nagle algorithm on a socket.
-int mg_set_nodelay_mode(struct socket *sock, int on);
+int mg_set_nodelay_mode(struct mg_connection *conn, int on);
 
 // Disable or enable the socket SO_KEEPALIVE option.
-int mg_set_socket_keepalive(struct socket *sock, int on);
+int mg_set_socket_keepalive(struct mg_connection *conn, int on);
 
 // Set the read/write/user timeout on a socket.
-int mg_set_socket_timeout(struct socket *sock, int seconds);
+int mg_set_socket_timeout(struct mg_connection *conn, int seconds);
 
 // set socket to non-blocking mode.
-int mg_set_non_blocking_mode(struct socket *sock, int on);
+int mg_set_non_blocking_mode(struct mg_connection *conn, int on);
 
 // shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
-int mg_shutdown(struct socket *sock, int how);
+int mg_shutdown(struct mg_connection *conn, int how);
 
-int mg_setsockopt(struct socket *sock, int level, int optname, const void *optval, size_t optlen);
-int mg_getsockopt(struct socket *sock, int level, int optname, void *optval, size_t *optlen_ref);
+int mg_setsockopt(struct mg_connection *conn, int level, int optname, const void *optval, size_t optlen);
+int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optval, size_t *optlen_ref);
 
 // Same as FD_SET() but also keeps track of the maximum handle value in *max_fd for use with, for example, select()
-void mg_FD_SET(struct socket *socket, fd_set *set, int *max_fd);
+void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 
 // Same as FD_ISSET but now for mongoose sockets (struct socket)
-int mg_FD_ISSET(struct socket *socket, fd_set *set);
+int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
 // set up a outgoing client connection: connect to the given host/port
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl);

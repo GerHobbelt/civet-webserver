@@ -630,12 +630,12 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       int bufferFill = 0;
       char * data = (char*) ((dataSize>0) ? malloc(bufferSize) : 0);
       if (data) {
-        mg_set_non_blocking_mode(mg_get_socket(conn), 1);
+        mg_set_non_blocking_mode(conn, 1);
         {
           const int tcpbuflen = 1 * 1024 * 1024;
 
-          mg_setsockopt(mg_get_socket(conn), SOL_SOCKET, SO_RCVBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
-          mg_setsockopt(mg_get_socket(conn), SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+          mg_setsockopt(conn, SOL_SOCKET, SO_RCVBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+          mg_setsockopt(conn, SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
         }
 
         while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
@@ -659,7 +659,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
             max_fd = -1;
 
             // Add listening sockets to the read set
-            mg_FD_SET(mg_get_socket(conn), &read_set, &max_fd);
+            mg_FD_SET(conn, &read_set, &max_fd);
             if (select(max_fd + 1, &read_set, NULL, NULL, &tv2) < 0)
             {
               // signal a fatal failure:
@@ -672,7 +672,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
             }
             else
             {
-              if (mg_FD_ISSET(mg_get_socket(conn), &read_set))
+              if (mg_FD_ISSET(conn, &read_set))
               {
                 break;
               }
@@ -711,7 +711,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
           }
           gotSize += gotNow;
         }
-        mg_set_non_blocking_mode(mg_get_socket(conn), 0);
+        mg_set_non_blocking_mode(conn, 0);
         //mg_write(conn, data, gotSize);
         if (bufferFill > 0 && mg_get_stop_flag(ctx) == 0)
         {
