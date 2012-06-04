@@ -4642,6 +4642,7 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
     usa->u.sin.sin_addr = a;
+    return 1;
   }
   return 0;
 #else
@@ -4655,11 +4656,10 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
     usa->u.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
-  } else {
-    return 0;
+    return 1;
   }
+  return 0;
 #endif
-  return 1;
 }
 
 // Valid listening port specification is: [ip_address:]port[s|p]
