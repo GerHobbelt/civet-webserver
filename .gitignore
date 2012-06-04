@@ -23,7 +23,6 @@ win32/msvc2010/ipch/
 *.suo
 *.sdf
 *.opensdf
-*.user
 
 _mongoose.dll
 mongoose.lib
