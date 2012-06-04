@@ -138,7 +138,9 @@ typedef long off_t;
 #endif // _MSC_VER
 
 #define ERRNO   (GetLastError() ? (int)GetLastError() : errno)
+#if !(defined(_MSC_VER) && (_MSC_VER >= 1600) && defined(_WINSOCK2API_)) // Microsoft: socklen_t exists in ws2tcpip.h in Windows SDK 7.0A+
 #define NO_SOCKLEN_T
+#endif
 #define SSL_LIB   "ssleay32.dll"
 #define CRYPTO_LIB  "libeay32.dll"
 #define DIRSEP '\\'
@@ -185,8 +187,17 @@ typedef long off_t;
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 void mgW32_flockfile(FILE *x);
 void mgW32_funlockfile(FILE *x);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 #define flockfile mgW32_flockfile
 #define funlockfile mgW32_funlockfile
 
@@ -196,6 +207,10 @@ void mgW32_funlockfile(FILE *x);
 
 #if !defined(HAVE_PTHREAD)
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 typedef HANDLE pthread_mutex_t;
 typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
 typedef DWORD pthread_t;
@@ -204,6 +219,10 @@ struct timespec {
   long tv_nsec;
   long tv_sec;
 };
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #else
 
@@ -227,6 +246,10 @@ typedef __int64   int64_t;
 #define INT64_MAX  9223372036854775807LL
 #endif // HAVE_STDINT
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 // POSIX dirent interface
 struct dirent {
   char d_name[PATH_MAX];
@@ -241,6 +264,10 @@ typedef struct DIR {
 int mg_rename(const char* oldname, const char* newname);
 int mg_remove(const char *path);
 int mg_mkdir(const char *path, int mode);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #else    // UNIX  specific
 
@@ -332,15 +359,15 @@ typedef int SOCKET;
 #else
 #define MG_PTHREAD_SELF()	(void *)pthread_self()
 #endif
-#define DEBUG_TRACE(x) do { \
-  flockfile(stdout); \
-  printf("*** %lu.%p.%s.%d: ", \
-         (unsigned long) time(NULL), MG_PTHREAD_SELF(), \
-         __func__, __LINE__); \
-  printf x; \
-  putchar('\n'); \
-  fflush(stdout); \
-  funlockfile(stdout); \
+#define DEBUG_TRACE(x) do {									\
+  flockfile(stdout);										\
+  printf("*** %lu.%p.%s.%d: ",								\
+         (unsigned long) time(NULL), MG_PTHREAD_SELF(),		\
+         __func__, __LINE__);								\
+  printf x;													\
+  putchar('\n');											\
+  fflush(stdout);											\
+  funlockfile(stdout);										\
 } while (0)
 #else
 #define DEBUG_TRACE(x)
@@ -367,6 +394,10 @@ typedef int socklen_t;
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
 #if !defined(HAVE_PTHREAD)
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
 /*
  * POSIX pthread features support:
@@ -431,16 +462,28 @@ int pthread_spin_lock(pthread_spinlock_t *lock);
 //int pthread_spin_trylock(pthread_spinlock_t *lock);
 int pthread_spin_unlock(pthread_spinlock_t *lock);
 
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 #endif
 
 
 #if defined(_WIN32_WCE)
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
 time_t time(time_t *ptime);
 struct tm *localtime(const time_t *ptime, struct tm *ptm);
 struct tm *gmtime(const time_t *ptime, struct tm *ptm);
 static size_t strftime(char *dst, size_t dst_size, const char *fmt,
                        const struct tm *tm);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif
 

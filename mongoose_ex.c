@@ -43,36 +43,36 @@ int64_t mg_get_num_bytes_received(struct mg_connection *conn)
 
 int mg_set_non_blocking_mode(struct mg_connection *conn, int on)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	    return !!set_non_blocking_mode(conn->client.sock, on);
-	return -1;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        return !!set_non_blocking_mode(conn->client.sock, on);
+    return -1;
 }
 
 int mg_shutdown(struct mg_connection *conn, int how)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	    return shutdown(conn->client.sock, how);
-	return -1;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        return shutdown(conn->client.sock, how);
+    return -1;
 }
 
 int mg_setsockopt(struct mg_connection *conn, int level, int optname, const void *optval, size_t optlen)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	    return setsockopt(conn->client.sock, level, optname, optval, optlen);
-	return -1;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        return setsockopt(conn->client.sock, level, optname, optval, optlen);
+    return -1;
 }
 
 int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optval, size_t *optlen_ref)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	{
-		socklen_t optlen = 0;
-		int rv = getsockopt(conn->client.sock, level, optname, optval, &optlen);
+    if (conn && conn->client.sock != INVALID_SOCKET)
+    {
+        socklen_t optlen = 0;
+        int rv = getsockopt(conn->client.sock, level, optname, optval, &optlen);
 
-		*optlen_ref = optlen;
-		return rv;
-	}
-	return -1;
+        *optlen_ref = optlen;
+        return rv;
+    }
+    return -1;
 }
 
 
@@ -80,41 +80,41 @@ int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optv
 // http://www.techrepublic.com/article/tcpip-options-for-high-performance-data-transmission/1050878
 int mg_set_nodelay_mode(struct mg_connection *conn, int on)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	{
+    if (conn && conn->client.sock != INVALID_SOCKET)
+    {
 #if !defined(SOL_TCP) && (defined(_WIN32) && !defined(__SYMBIAN32__))
-		DWORD v_on = !!on;
-		return setsockopt(conn->client.sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
+        DWORD v_on = !!on;
+        return setsockopt(conn->client.sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
 #elif !defined(SOL_TCP)
-		int v_on = !!on;
-		return setsockopt(conn->client.sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
+        int v_on = !!on;
+        return setsockopt(conn->client.sock, IPPROTO_TCP, TCP_NODELAY, (void *)&v_on, sizeof(v_on));
 #else
-		int v_on = !!on;
-		return setsockopt(conn->client.sock, SOL_TCP, TCP_NODELAY, (void *)&v_on, sizeof (v_on));
+        int v_on = !!on;
+        return setsockopt(conn->client.sock, SOL_TCP, TCP_NODELAY, (void *)&v_on, sizeof (v_on));
 #endif
-	}
-	return -1;
+    }
+    return -1;
 }
 
 int mg_set_socket_keepalive(struct mg_connection *conn, int on)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	{
+    if (conn && conn->client.sock != INVALID_SOCKET)
+    {
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-	    BOOL v_on = !!on;
+        BOOL v_on = !!on;
 #else
-	    int v_on = !!on;
+        int v_on = !!on;
 #endif
-	    return setsockopt(conn->client.sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&v_on, sizeof(v_on));
-	}
-	return -1;
+        return setsockopt(conn->client.sock, SOL_SOCKET, SO_KEEPALIVE, (void *)&v_on, sizeof(v_on));
+    }
+    return -1;
 }
 
 int mg_set_socket_timeout(struct mg_connection *conn, int seconds)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	    return set_timeout(&conn->client, seconds);
-	return -1;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        return set_timeout(&conn->client, seconds);
+    return -1;
 }
 
 /*
@@ -131,7 +131,7 @@ char *mg_sockaddr_to_string(char *dst, size_t dstlen, const struct mg_connection
     if (!dst) return NULL;
     dst[0] = 0;
 
-	if (conn && conn->client.sock != INVALID_SOCKET)
+    if (conn && conn->client.sock != INVALID_SOCKET)
     {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
 
@@ -153,14 +153,14 @@ remote = 0 will produce the local port for the given connection (socket)
 */
 unsigned short int mg_get_socket_port(const struct mg_connection *conn, int remote)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	{
-		if (remote)
-			return get_socket_port(&conn->client.rsa);
-		else
-			return get_socket_port(&conn->client.lsa);
-	}
-	return 0;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+    {
+        if (remote)
+            return get_socket_port(&conn->client.rsa);
+        else
+            return get_socket_port(&conn->client.lsa);
+    }
+    return 0;
 }
 
 /*
@@ -173,28 +173,28 @@ Return 0 on success, non-zero on error.
 */
 int mg_get_socket_ip_address(struct mg_ip_address *dst, const struct mg_connection *conn, int remote)
 {
-	if (dst && conn && conn->client.sock != INVALID_SOCKET)
-	{
-		if (remote)
-			get_socket_ip_address(dst, &conn->client.rsa);
-		else
-			get_socket_ip_address(dst, &conn->client.lsa);
-		return 0;
-	}
-	return -1;
+    if (dst && conn && conn->client.sock != INVALID_SOCKET)
+    {
+        if (remote)
+            get_socket_ip_address(dst, &conn->client.rsa);
+        else
+            get_socket_ip_address(dst, &conn->client.lsa);
+        return 0;
+    }
+    return -1;
 }
 
 void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-	    add_to_set(conn->client.sock, set, max_fd);
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        add_to_set(conn->client.sock, set, max_fd);
 }
 
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
 {
-	if (conn && conn->client.sock != INVALID_SOCKET)
-		return FD_ISSET(conn->client.sock, set);
-	return 0;
+    if (conn && conn->client.sock != INVALID_SOCKET)
+        return FD_ISSET(conn->client.sock, set);
+    return 0;
 }
 
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl)
