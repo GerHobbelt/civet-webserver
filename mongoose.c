@@ -3850,6 +3850,8 @@ static void handle_request(struct mg_connection *conn) {
   }
   else {
       path[0] = '\0';
+      stat_result = 0;
+      memset(&st, 0, sizeof(struct mgstat));
   }
 
   DEBUG_TRACE(("%s", ri->uri));
