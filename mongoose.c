@@ -827,14 +827,18 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
 static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
-  if (conn->must_close ||
-      conn->request_info.status_code == 401 ||
-      mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") != 0 ||
-      (header != NULL && mg_strcasecmp(header, "keep-alive") != 0) ||
-      (header == NULL && http_version && strcmp(http_version, "1.1"))) {
-    return 0;
-  }
-  return 1;
+
+  return (!conn->must_close &&
+          conn->request_info.status_code != 401 &&
+		  // only okay persistence when we see legal response codes;
+		  // anything else means we're foobarred ourselves already,
+		  // so it's time to close and let them retry.
+          conn->request_info.status_code < 500 &&
+          conn->request_info.status_code >= 100 &&
+          !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
+          (header == NULL ?
+           (http_version && !strcmp(http_version, "1.1")) :
+           !mg_strcasecmp(header, "keep-alive")));
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn) {
@@ -4066,7 +4070,7 @@ static void master_thread(struct mg_context *ctx) {
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #endif
-  
+
 #if defined(ISSUE_317)
   struct sched_param sched_param;
   sched_param.sched_priority = sched_get_priority_max(SCHED_RR);
