@@ -1908,7 +1908,7 @@ static int closedir(DIR *dir) {
   return result;
 }
 
-struct dirent * readdir(DIR *dir) {
+static struct dirent *readdir(DIR *dir) {
   struct dirent *result = 0;
 
   if (dir) {
@@ -3212,9 +3212,11 @@ static void send_authorization_request(struct mg_connection *conn) {
   conn->request_info.status_code = 401;
   (void) mg_printf(conn,
       "HTTP/1.1 401 Unauthorized\r\n"
+      "Connection: %s\r\n"
       "Content-Length: 0\r\n"
       "WWW-Authenticate: Digest qop=\"auth\", "
       "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
+      suggest_connection_header(conn),
       get_conn_option(conn, AUTHENTICATION_DOMAIN),
       (unsigned long) time(NULL));
   mg_mark_end_of_header_transmission(conn);
@@ -3465,8 +3467,9 @@ static void handle_directory_request(struct mg_connection *conn,
   conn->must_close = 1;
   mg_printf(conn, "%s",
             "HTTP/1.1 200 OK\r\n"
-            "Connection: close\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n\r\n");
+            "Connection: %s\r\n"
+            "Content-Type: text/html; charset=utf-8\r\n\r\n",
+            suggest_connection_header(conn));
   mg_mark_end_of_header_transmission(conn);
   mg_printf(conn,
       "<html><head><title>Index of %s</title>"
@@ -5425,12 +5428,13 @@ static void handle_proxy_request(struct mg_connection *conn) {
   }
 }
 
-static int is_valid_uri(const char *uri) {
-  // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
-  // URI can be an asterisk (*) or should start with slash.
-  return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
-}
 #endif /* proxy support */
+
+static int is_valid_uri(const char *uri) {
+	// Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
+	// URI can be an asterisk (*) or should start with slash.
+	return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
+}
 
 static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
@@ -5456,9 +5460,11 @@ static void process_new_connection(struct mg_connection *conn) {
     // Nul-terminate the request cause parse_http_request() uses sscanf
     conn->buf[conn->request_len - 1] = '\0';
     if (!parse_http_request(conn->buf, ri)
+        || (
 #if defined(MG_PROXY_SUPPORT)
-        || (!conn->client.is_proxy && !is_valid_uri(ri->uri))
+            !conn->client.is_proxy &&
 #endif
+            !is_valid_uri(ri->uri))
        ) {
       // Do not put garbage in the access log, just send it back to the client
       send_http_error(conn, 400, NULL,
