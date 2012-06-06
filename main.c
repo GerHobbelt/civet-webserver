@@ -414,7 +414,7 @@ static void WINAPI ServiceMain(void) {
 
 static NOTIFYICONDATAA TrayIcon;
 
-static void edit_config_file(struct mg_context *ctx) {
+static void edit_config_file(const struct mg_context *ctx) {
   const char **names, *value;
   FILE *fp;
   int i;
