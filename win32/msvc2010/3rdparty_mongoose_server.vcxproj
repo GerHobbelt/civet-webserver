@@ -499,11 +499,6 @@
   <ItemGroup>
     <ResourceCompile Include="..\..\win32\res.rc" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{d5ddf8e5-f0fd-f3f4-76cb-c1fff33fe20d}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

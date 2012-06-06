@@ -467,14 +467,11 @@
     <ClCompile Include="..\..\examples\virtualhosting.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread.2010.vcxproj">
-      <Project>{5d459ba0-5eeb-47d3-a1c4-6b55c8d37ec0}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\upskirt\mvc\libupskirt.vcxproj">
-      <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
+    <ProjectReference Include="..\..\upskirt\mvc\upskirt.vcxproj">
+      <Project>{17794a55-de45-431f-baee-b92226bf831e}</Project>
     </ProjectReference>
     <ProjectReference Include="3rdparty_mongoose_pthread.vcxproj">
-      <Project>{27c0e30d-4275-486f-96a7-24ce8f80c967}</Project>
+      <Project>{5da681a2-3c45-2e42-0e35-0d24831144d8}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

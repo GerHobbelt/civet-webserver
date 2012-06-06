@@ -468,7 +468,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{d5ddf8e5-f0fd-f3f4-76cb-c1fff33fe20d}</Project>
+      <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
