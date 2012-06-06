@@ -19,8 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_sys_porting.h"
-#include "mongoose_ex.h"
+#include "mongoose_ex.h"    // mg_send_http_error()
 #include "win32/resource.h"
 
 #ifdef _WIN32
@@ -326,11 +325,8 @@ static void start_mongoose(int argc, char *argv[]) {
   char *options[MAX_OPTIONS * 2] = { NULL };
   int i;
   struct mg_user_class_t userdef = {
-      &event_callback,
       0,
-      0,
-      0,
-      0
+	  &event_callback
   };
 
   /* Edit passwords file if -A option is specified */

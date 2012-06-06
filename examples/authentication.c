@@ -1,6 +1,5 @@
 
-#include "mongoose_sys_porting.h"
-#include "mongoose_ex.h"
+#include "mongoose_ex.h"  // mg_get_headers(), mg_match_prefix()
 
 
 /*
@@ -145,8 +144,8 @@ main(void)
     struct mg_context *ctx;
     const char *options[] = {"listening_ports", "8080"};
     const struct mg_user_class_t ucb = {
-        callback,  // User-defined callback function
-        NULL       // Arbitrary user-defined data
+        NULL,      // Arbitrary user-defined data
+		callback   // User-defined callback function
     };
 
     ctx = mg_start(&ucb, options);
