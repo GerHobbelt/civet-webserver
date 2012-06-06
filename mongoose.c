@@ -1480,7 +1480,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 
     if (!mg_have_headers_been_sent(conn)) {
       mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
-  
+
       /* issue #229: Only include the content-length if there is a response body.
        Otherwise an incorrect Content-Type generates a warning in
        some browsers when a static file request returns a 304
@@ -6199,7 +6199,7 @@ static void master_thread(struct mg_context *ctx) {
     pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
   }
 #endif
-  
+
   // fix: issue 345 for the master thread (TODO: set the priority in the callback)
   call_user_over_ctx(ctx, 0, MG_ENTER_MASTER);
 
@@ -6377,7 +6377,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     free_context(ctx);
     return NULL;
   }
-  
+
   // NOTE(lsm): order is important here. SSL certificates must
   // be initialized before listening ports. UID must be set last.
   if (!set_gpass_option(ctx) ||
