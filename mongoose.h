@@ -126,13 +126,12 @@ typedef void * (*mg_callback_t)(enum mg_event event,
                                 struct mg_connection *conn);
 
 // Prototype for the user-defined function. Mongoose calls this function
-// each time it needs password in order to perform Digest Authentication
+// each time it needs a password in order to perform Digest Authentication
 // of the received request.
 //
 // Parameters:
-//   user_data:     user-defined pointer passed to mg_start().
-//   request_info:  information about HTTP request to be authenticated.
-//   username:      the username, password for which is needed.
+//   conn:          the connection which processes the HTTP request.
+//   username:      the username for which a password is needed.
 //   len_password:  size of the buffer pointed by the 'password' parameter.
 //   password:      the buffer where user should store the requested password.
 //
@@ -140,70 +139,67 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //   2 - escape authorization and handle request
 //   1 - perform authorization
 //   0 - don't authorize and send 401
-typedef int (*mg_password_callback_t)(
-                                void *user_data,
-                                const struct mg_request_info *request_info,
-                                char *username,
-                                size_t len_password,
-                                char password[]);
+//
+// Notes:
+//   You can access the user data through the mg_get_user_data() and mg_get_context()
+//   API functions.
+typedef int (*mg_password_callback_t)(struct mg_connection *conn,
+                                const char *username,
+                                char password[],
+								size_t password_bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
-// each time it receives request body or part of the request body from network.
+// each time it receives a part of the request body from the network.
 //
-// In order to deduce if whole body was received, accumulate value of 'len_buff'
+// In order to deduce if the whole body has been received, accumulate value of 'len_buff'
 // parameter and compare it to the value of the Content-Length header
 // (request_info->content_len).
-// 
-// If this callback is provided by user, the body will be not stored into file
+//
+// If this callback is provided by the user, the body will be not stored into the file
 // system / socket.
 //
 // Parameters:
-//   user_data:     user-defined pointer passed to mg_start().
-//   request_info:  information about HTTP request, body of which is received.
+//   conn:          the connection which processes the HTTP request.
 //   len_buff:      number of bytes in the buffer.
 //   buff:          buffer where the received part of body or whole body is stored.
 //
 // Returns:
-//   number of successfully stored bytes.
+//   The number of successfully processed bytes.
 //   Should be equal to len_buff. Otherwise body receiving will be interrupted
-//   and error response will be send to the remote peer.
-typedef int (*mg_receive_callback_t)(
-                                void *user_data,
-                                const struct mg_request_info *request_info,
-                                size_t len_buff,
-                                const char *buff);
+//   and error response will be sent to the remote peer.
+typedef int (*mg_receive_callback_t)(struct mg_connection *conn,
+                                const char *buf,
+								size_t bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
-// each time it sends body while processing the GET request.
+// each time it sends part of the content body while processing the GET request.
 //
-// This callback is called at least twice per request. The first time - in order
+// This callback is called at least twice per request. The first time in order
 // to get full length of the body to be sent and it's mime type (see
 // 'content_length' and 'mime' parameters).
-// The second and the rest times - to get part of body to be sent.
-// The function is not called anymore when all content_length bytes were send,
-// or if error occurred during sending.
-// 
-// If this callback is provided by user, the files or dynamic generated content
-// will be not sent.
+// The second and subsequent times to obtain another part of the body to be sent.
+// The function is not called anymore when all content_length bytes have been sent,
+// or if an error occurred during sending.
+//
+// If this callback is provided by the user, the files or dynamic generated content
+// will be not be sent.
 //
 // Parameters:
-//   user_data:     user-defined pointer passed to mg_start().
-//   request_info:  information about GET request, body for which is being sent.
+//   conn:          the connection which processes the HTTP request.
 //   len_buff:      length of buffer where user has to store body or part of it.
-//   buff:          buffer where the body or part of body to be sent is stored.
-//                  Can be NULL.
-//   content_length:the full length of the body. Can be NULL. 
-//   mime:          the type of mime to be used as a value for the Content-Type
+//   buff:          buffer where part of the body to be sent is stored.
+//                  Will be NULL to signal this is the initial call to obtain
+//                  the Content-Length info from the user.
+//   content_length:the full length of the body. Can be NULL.
+//   mime:          the mime type to be used as a value for the Content-Type
 //                  header. Can be NULL.
 //
 // Returns:
-//   number of bytes stored into the buffer.
-//   If zero or negative, sending will be stopped, connection will be closed.
-typedef int (*mg_send_callback_t)(
-                                void    *user_data,
-                                const struct mg_request_info *request_info,
-                                size_t  len_buff,
-                                char    *buff,
+//   The number of bytes stored into the buffer.
+//   If zero or negative, sending will be stopped and the connection will be closed.
+typedef int (*mg_send_callback_t)(struct mg_connection *conn,
+                                char    *buf,
+								size_t  bufsize,
                                 size_t  *content_length,
                                 char*   *mime);
 
@@ -252,14 +248,17 @@ typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct 
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
 typedef struct mg_user_class_t {
-  mg_callback_t user_callback;  // User-defined callback function
   void *user_data;              // Arbitrary user-defined data
+  mg_callback_t               user_callback;  // User-defined event handling callback function
 
-  mg_option_decode_callback_t user_option_decode;  // User-defined option decode/processing callback function
-  mg_option_fill_callback_t user_option_fill;      // User-defined option callback function which fills any non-configured options with sensible defaults
-  mg_option_get_callback_t user_option_get;        // User-defined callback function which delivers the value for the given option
+  mg_option_decode_callback_t user_option_decode; // User-defined option decode/processing callback function
+  mg_option_fill_callback_t	  user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
+  mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
+
+  mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication
+  mg_receive_callback_t       receive_callback;   // Exposes received body data to user. Can act as substitute for file system I/O.
+  mg_send_callback_t          send_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 } mg_user_class_t;
-
 
 
 
@@ -294,46 +293,6 @@ typedef struct mg_user_class_t {
 //   web server context, or NULL on error.
 struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
                             const char **options);
-
-// Set of user-defined callbacks that are part of Server configuration.
-// For more details see correspondent callback definition.
-struct mg_callbacks {
-    void                    *user_data;         // Context provided by user. This context will be provided back to user while invoking any of callbacks.
-    mg_callback_t           event_callback;     // General events, like NEW_REQUEST, ERROR, REQUEST_COMPLETED etc.
-    mg_password_callback_t  password_callback;  // Requests for password needed to complete Digest Authentication
-    mg_receive_callback_t   receive_callback;   // Exposes to user received body. Replaces file system !!!
-    mg_send_callback_t      send_callback;      // Requests user for body to be sent with HTTP response. Replaces file system !!!
-};
-
-// Server configuration.
-// Should be provided while calling mg_start_ext().
-//
-// user_callbacks - various callbacks that may be provided by user.
-//           Anyone of them is optional and can be set to null.
-//           See struct mg_callbacks for more info.
-//
-// options - NULL terminated list of option_name, option_value pairs that
-//           specify Mongoose configuration parameters.
-//           Please refer to http://code.google.com/p/mongoose/wiki/MongooseManual
-//           for the list of valid option and their possible values.
-//
-struct mg_cfg {
-    struct mg_callbacks user_callbacks;
-    const char **options;
-};
-
-// Start web server.
-//
-// Extends the mg_start in order to enable user to set various callbacks at
-// start time.
-//
-// Parameters:
-//   cfg: structure that unites callbacks and server configuration.
-//        For more details see struct mg_cfg.
-//
-// Return:
-//   web server context, or NULL on error.
-struct mg_context *mg_start_ext(struct mg_cfg* cfg);
 
 
 // Stop the web server.
@@ -465,7 +424,7 @@ int mg_read(struct mg_connection *, void *buf, size_t len);
 //      mg_send_reject(pConn, 500, NULL, NULL, NULL);
 //      mg_send_reject(pConn, 405, NULL, NULL, "Allow: GET, PUT, DELETE", NULL);
 //      mg_send_reject(pConn, 403, "User is not registered", NULL);
-// 
+//
 int mg_send_reject(struct mg_connection *conn, int status_code,
                    char* body, char* mime, ...);
 
