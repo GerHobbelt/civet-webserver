@@ -186,7 +186,7 @@ int main(void) {
   const char *options[] = {"listening_ports", LISTENING_PORT, NULL};
   const struct mg_user_class_t ucb = {
     NULL,      // Arbitrary user-defined data
-	callback   // User-defined callback function
+    callback   // User-defined callback function
   };
 
   ctx = mg_start(&ucb, options);

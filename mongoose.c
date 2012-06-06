@@ -1389,9 +1389,9 @@ static int should_keep_alive(struct mg_connection *conn) {
 
   return (!conn->must_close &&
           conn->request_info.status_code != 401 &&
-		  // only okay persistence when we see legal response codes;
-		  // anything else means we're foobarred ourselves already,
-		  // so it's time to close and let them retry.
+          // only okay persistence when we see legal response codes;
+          // anything else means we're foobarred ourselves already,
+          // so it's time to close and let them retry.
           conn->request_info.status_code < 500 &&
           conn->request_info.status_code >= 100 &&
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
@@ -5431,9 +5431,9 @@ static void handle_proxy_request(struct mg_connection *conn) {
 #endif /* proxy support */
 
 static int is_valid_uri(const char *uri) {
-	// Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
-	// URI can be an asterisk (*) or should start with slash.
-	return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
+    // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
+    // URI can be an asterisk (*) or should start with slash.
+    return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
 }
 
 static void process_new_connection(struct mg_connection *conn) {

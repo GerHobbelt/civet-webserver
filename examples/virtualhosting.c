@@ -806,7 +806,7 @@ static void start_mongoose(int argc, char *argv[]) {
   int i;
   struct mg_user_class_t userdef = {
       0,
-	  &event_callback,
+      &event_callback,
       0,
       0,
       option_get_callback

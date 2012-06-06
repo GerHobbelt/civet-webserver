@@ -477,7 +477,7 @@ int main(void) {
   struct mg_context *ctx;
   const struct mg_user_class_t ucb = {
     NULL,           // Arbitrary user-defined data
-	event_handler   // User-defined callback function
+    event_handler   // User-defined callback function
   };
 
   // Initialize random number generator. It will be used later on for

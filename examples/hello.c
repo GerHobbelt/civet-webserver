@@ -6,7 +6,7 @@ static void *callback(enum mg_event event,
   if (event == MG_NEW_REQUEST) {
     const char *content = "hello from mongoose!";
     mg_printf(conn,
-	          "HTTP/1.1 200 OK\r\n"
+              "HTTP/1.1 200 OK\r\n"
               "Content-Length: %u\r\n"        // Always set Content-Length
               "Content-Type: text/plain\r\n\r\n",
               (unsigned int)strlen(content));
