@@ -259,6 +259,84 @@ typedef void * (*mg_thread_func_t)(void *);
 
 static const char *http_500_error = "Internal Server Error";
 
+
+
+#if defined(_WIN32)
+
+#if !defined(WSAID_DISCONNECTEX)
+typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved);
+#define WSAID_DISCONNECTEX     {0x7fda2e11,0x8630,0x436f,{0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57}}
+#endif
+
+static LPFN_DISCONNECTEX DisconnectExPtr = 0;
+static CRITICAL_SECTION DisconnectExPtrCS;
+
+static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+  return 0;
+}
+
+static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
+{
+  /*
+    Note  The function pointer for the DisconnectEx function must be obtained
+          at run time by making a call to the WSAIoctl function with the
+          SIO_GET_EXTENSION_FUNCTION_POINTER opcode specified. The input buffer
+          passed to the WSAIoctl function must contain WSAID_DISCONNECTEX, a
+          globally unique identifier (GUID) whose value identifies the
+          DisconnectEx extension function.
+          On success, the output returned by the WSAIoctl function contains
+          a pointer to the DisconnectEx function. The WSAID_DISCONNECTEX GUID
+          is defined in the Mswsock.h header file.
+  */
+  LPFN_DISCONNECTEX ret;
+
+  EnterCriticalSection(&DisconnectExPtrCS);
+
+  if (!DisconnectExPtr && sock)
+  {
+    GUID dcex = WSAID_DISCONNECTEX;
+    LPFN_DISCONNECTEX DisconnectExPtr = 0;
+    DWORD len = 0;
+    int rv;
+
+    rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
+                  &DisconnectExPtr, sizeof(DisconnectExPtr),
+                  &len, 0, 0);
+    if (rv)
+    {
+      DisconnectExPtr = dummy_disconnectEx;
+    }
+  }
+  if (DisconnectExPtr)
+    ret = DisconnectExPtr;
+  else
+    ret = dummy_disconnectEx;
+
+  LeaveCriticalSection(&DisconnectExPtrCS);
+
+  return ret;
+}
+
+static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
+{
+  LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
+
+  return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
+}
+
+#else // _WIN32
+
+static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
+{
+  return 0;
+}
+
+#endif // _WIN32
+
+
+
+
 // Snatched from OpenSSL includes. I put the prototypes here to be independent
 // from the OpenSSL source installation. Having this, mongoose + SSL can be
 // built on any system with binary SSL libraries installed.
@@ -275,6 +353,7 @@ typedef struct ssl_ctx_st SSL_CTX;
 extern void SSL_free(SSL *);
 extern int SSL_accept(SSL *);
 extern int SSL_connect(SSL *);
+extern int SSL_shutdown(SSL *);
 extern int SSL_read(SSL *, void *, int);
 extern int SSL_write(SSL *, const void *, int);
 extern int SSL_get_error(const SSL *, int);
@@ -304,24 +383,25 @@ struct ssl_func {
 #define SSL_free (* (void (*)(SSL *)) ssl_sw[0].ptr)
 #define SSL_accept (* (int (*)(SSL *)) ssl_sw[1].ptr)
 #define SSL_connect (* (int (*)(SSL *)) ssl_sw[2].ptr)
-#define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[3].ptr)
-#define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[4].ptr)
-#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[5].ptr)
-#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[6].ptr)
-#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[7].ptr)
-#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[8].ptr)
-#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[9].ptr)
-#define SSL_library_init (* (int (*)(void)) ssl_sw[10].ptr)
+#define SSL_shutdown (* (int (*)(SSL *)) ssl_sw[3].ptr)
+#define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[4].ptr)
+#define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[5].ptr)
+#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[6].ptr)
+#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[7].ptr)
+#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[8].ptr)
+#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[9].ptr)
+#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[10].ptr)
+#define SSL_library_init (* (int (*)(void)) ssl_sw[11].ptr)
 #define SSL_CTX_use_PrivateKey_file (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[11].ptr)
-#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
         const char *, int)) ssl_sw[12].ptr)
+#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
+        const char *, int)) ssl_sw[13].ptr)
 #define SSL_CTX_set_default_passwd_cb \
-  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[13].ptr)
-#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[14].ptr)
-#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[15].ptr)
+  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[14].ptr)
+#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[15].ptr)
+#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[16].ptr)
 #define SSL_CTX_use_certificate_chain_file \
-  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[16].ptr)
+  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[17].ptr)
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
 #define CRYPTO_set_locking_callback \
@@ -336,34 +416,35 @@ struct ssl_func {
 // of respective functions. The macros above (like SSL_connect()) are really
 // just calling these functions indirectly via the pointer.
 static struct ssl_func ssl_sw[] = {
-  {"SSL_free",   NULL},
-  {"SSL_accept",   NULL},
-  {"SSL_connect",   NULL},
-  {"SSL_read",   NULL},
-  {"SSL_write",   NULL},
-  {"SSL_get_error",  NULL},
-  {"SSL_set_fd",   NULL},
-  {"SSL_new",   NULL},
-  {"SSL_CTX_new",   NULL},
-  {"SSLv23_server_method", NULL},
-  {"SSL_library_init",  NULL},
-  {"SSL_CTX_use_PrivateKey_file", NULL},
-  {"SSL_CTX_use_certificate_file",NULL},
-  {"SSL_CTX_set_default_passwd_cb",NULL},
-  {"SSL_CTX_free",  NULL},
-  {"SSL_load_error_strings", NULL},
-  {"SSL_CTX_use_certificate_chain_file", NULL},
-  {NULL,    NULL}
+  {"SSL_free",                              NULL},
+  {"SSL_accept",                            NULL},
+  {"SSL_connect",                           NULL},
+  {"SSL_shutdown",                          NULL},
+  {"SSL_read",                              NULL},
+  {"SSL_write",                             NULL},
+  {"SSL_get_error",                         NULL},
+  {"SSL_set_fd",                            NULL},
+  {"SSL_new",                               NULL},
+  {"SSL_CTX_new",                           NULL},
+  {"SSLv23_server_method",                  NULL},
+  {"SSL_library_init",                      NULL},
+  {"SSL_CTX_use_PrivateKey_file",           NULL},
+  {"SSL_CTX_use_certificate_file",          NULL},
+  {"SSL_CTX_set_default_passwd_cb",         NULL},
+  {"SSL_CTX_free",                          NULL},
+  {"SSL_load_error_strings",                NULL},
+  {"SSL_CTX_use_certificate_chain_file",    NULL},
+  {NULL,                                    NULL}
 };
 
 // Similar array as ssl_sw. These functions could be located in different lib.
 static struct ssl_func crypto_sw[] = {
-  {"CRYPTO_num_locks",  NULL},
-  {"CRYPTO_set_locking_callback", NULL},
-  {"CRYPTO_set_id_callback", NULL},
-  {"ERR_get_error",  NULL},
-  {"ERR_error_string", NULL},
-  {NULL,    NULL}
+  {"CRYPTO_num_locks",                      NULL},
+  {"CRYPTO_set_locking_callback",           NULL},
+  {"CRYPTO_set_id_callback",                NULL},
+  {"ERR_get_error",                         NULL},
+  {"ERR_error_string",                      NULL},
+  {NULL,                                    NULL}
 };
 #endif // NO_SSL_DL
 
@@ -410,7 +491,7 @@ enum {
   PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
-  ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
+  ENABLE_KEEP_ALIVE, SOCKET_LINGER_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
   DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
   NUM_OPTIONS
@@ -431,6 +512,7 @@ static const char *config_options[] = {
   "g", "global_passwords_file", NULL,
   "i", "index_files", "index.html,index.htm,index.cgi,index.shtml,index.php",
   "k", "enable_keep_alive", "no",
+  "L", "socket_linger_timeout",         "5",
   "l", "access_control_list", NULL,
   "M", "max_request_size", "16384",
   "m", "extra_mime_types", NULL,
@@ -827,14 +909,18 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
 static int should_keep_alive(const struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
-  if (conn->must_close ||
-      conn->request_info.status_code == 401 ||
-      mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") != 0 ||
-      (header != NULL && mg_strcasecmp(header, "keep-alive") != 0) ||
-      (header == NULL && http_version && strcmp(http_version, "1.1"))) {
-    return 0;
-  }
-  return 1;
+
+  return (!conn->must_close &&
+          conn->request_info.status_code != 401 &&
+		  // only okay persistence when we see legal response codes;
+		  // anything else means we're foobarred ourselves already,
+		  // so it's time to close and let them retry.
+          conn->request_info.status_code < 500 &&
+          conn->request_info.status_code >= 100 &&
+          !mg_strcasecmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes") &&
+          (header == NULL ?
+           (http_version && !strcmp(http_version, "1.1")) :
+           !mg_strcasecmp(header, "keep-alive")));
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn) {
@@ -1242,12 +1328,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 }
 #endif // !NO_CGI
 
-static int set_non_blocking_mode(SOCKET sock) {
-  unsigned long on = 1;
-  return ioctlsocket(sock, FIONBIO, &on);
+static int set_non_blocking_mode(SOCKET sock, int on) {
+  unsigned long _on = !!on;
+  return ioctlsocket(sock, FIONBIO, &_on);
 }
 
-#else
+#else // WIN32
 static int mg_stat(const char *path, struct mgstat *stp) {
   struct stat st;
   int ok;
@@ -1333,14 +1419,38 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
 }
 #endif // !NO_CGI
 
-static int set_non_blocking_mode(SOCKET sock) {
-  int flags;
+static int set_non_blocking_mode(SOCKET sock, int on) {
+  int flags = -1;
 
+#if defined(FIONBIO) // VMS
+  flags = !!on;
+  flags = ioctl(sock, FIONBIO, &flags);
+#endif
+#if defined(SO_NONBLOCK) // BeOS et al
+  flags = !!on;
+  flags = setsockopt(sock, SOL_SOCKET, SO_NONBLOCK, &flags, sizeof(flags));
+#endif
+#if defined(F_GETFL) && defined(F_SETFL)
   flags = fcntl(sock, F_GETFL, 0);
-  (void) fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-
-  return 0;
+  if (flags != -1) {
+#if defined(O_NONBLOCK)
+    if (on)
+      flags |= O_NONBLOCK;
+    else
+      flags &= ~O_NONBLOCK;
+#endif
+#if defined(F_NDELAY)
+    if (on)
+      flags |= F_NDELAY;
+    else
+      flags &= ~F_NDELAY;
+#endif
+    flags = fcntl(sock, F_SETFL, flags);
+  }
+#endif
+  return flags;
 }
+
 #endif // _WIN32
 
 // Write data to the IO channel - opened file descriptor, socket or SSL
@@ -3432,6 +3542,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
   for (sp = ctx->listening_sockets; sp != NULL; sp = tmp) {
     tmp = sp->next;
     (void) closesocket(sp->sock);
+    sp->sock = INVALID_SOCKET;
     free(sp);
   }
 }
@@ -3814,43 +3925,156 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->must_close = 0;
 }
 
-static void close_socket_gracefully(SOCKET sock) {
+static void close_socket_gracefully(struct mg_connection *conn) {
   char buf[BUFSIZ];
   struct linger linger;
-  int n;
+  int n, w;
+  int linger_timeout = atoi(get_conn_option(conn, SOCKET_LINGER_TIMEOUT)) * 1000;
+  SOCKET sock;
 
-  // Set linger option to avoid socket hanging out after close. This prevent
-  // ephemeral port exhaust problem under high QPS.
-  linger.l_onoff = 1;
-  linger.l_linger = 1;
-  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+  if (!conn || conn->client.sock == INVALID_SOCKET)
+      return;
+  sock = conn->client.sock;
+
+  /*
+
+  ( http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx )
+  linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+
+  The issues are gone as soon as you do the graceful close on a BLOCKING socket - with a little
+  help from select(): essentially we do the linger timeout in userland entirely by fetching
+  pending (surplus) RX data with a timeout upper bound of the configured linger timeout.
+
+  The major point is that:
+
+  - you must use BLOCKING sockets by the time you decide to go into graceful close.
+
+  - you need to fetch pending RX data after shutdown(WR), i.e. flush the TCP RX buffer at least.
+    (One would really like to wait until all pending TX is done: we can only check for it
+    on Linux, but we do not have that ironclad guarantee on other platforms such as
+    Win32/WinSock - it just turns out that for our test scenarios at least, it is sufficient
+    to wait-and-check before calling closesocket() after all.)
+
+  - only set LINGER ON for the BLOCKING socket (or you're toast)
+
+  */
+
+  // See http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
+  // linger: "Note that enabling a nonzero timeout on a nonblocking socket is not recommended."
+  //
+  // Also consider http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+  // and in particular the section titled "Some notes on non-blocking sockets".
+
+  // older mongoose set socket to non-blocking. That turned out to be VERY evil.
+  // Now we set socket to BLOCKING before we go into the 'graceful close' phase:
+  set_non_blocking_mode(sock, 0);
 
   // Send FIN to the client
   (void) shutdown(sock, SHUT_WR);
-  set_non_blocking_mode(sock);
 
-  // Read and discard pending data. If we do not do that and close the
+  // Read and discard pending incoming data. If we do not do that and close the
   // socket, the data in the send buffer may be discarded. This
   // behaviour is seen on Windows, when client keeps sending data
-  // when server decide to close the connection; then when client
+  // when server decides to close the connection; then when client
   // does recv() it gets no data back.
+  w = 1;
   do {
-    n = pull(NULL, sock, NULL, buf, sizeof(buf));
-  } while (n > 0);
+    // we still need to fetch it (see WinSock comments elsewhere for what
+    // happens if you don't. Doing this on a NON-BLOCKING socket would
+    // as data may still be incoming (but we don't wanna hear about it),
+    // still cause a disaster every once in a while, producing 'aborted'
+    // socket errors client-side.
+    fd_set fds;
+    struct timeval tv = {0};
+    int sv;
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 100 * 1000;
+
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
+    sv = select(sock + 1, &fds, 0, 0, &tv);
+    switch (sv)
+    {
+    case 1:
+      // only fetch RX data when there actually is some:
+      n = pull(NULL, sock, NULL, buf, sizeof(buf));
+      DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
+      if (n < 0)
+      {
+        w = 0;
+        linger_timeout = 0;
+        break;
+      }
+      // fall through: connection closed from the other side. Don't count this against our linger time.
+      if (n == 0)
+      {
+        tv.tv_sec = tv.tv_usec = 0;
+    case 0:
+        // timeout expired or remote close signaled:
+        n = 0;
+        linger_timeout -= tv.tv_sec * 1000;
+        linger_timeout -= tv.tv_usec / 1000;
+      }
+#if defined(SIOCOUTQ)
+      w = 0;
+      // as we can detect how much TX data is pending, we can use that to terminate faster:
+      {
+        int wr_pending = 0;
+        if (ioctl(sock, SIOCOUTQ, &wr_pending))
+        {
+          w = wr_pending;
+        }
+      }
+#else
+      w = 0;
+#endif
+      break;
+
+    default:
+      // fatality:
+      n = 0;
+      w = 0;
+      linger_timeout = 0;
+      break;
+    }
+    //printf("graceful close: %d/%d/%d/%d\n", n, w, linger_timeout, sv);
+  } while ((n > 0 || w > 0) && linger_timeout > 0 && mg_get_stop_flag(conn->ctx) == 0);
+
+  // Set linger option to avoid socket hanging out after close. This prevent
+  // ephemeral port exhaust problem under high QPS.
+  //
+  // Note: as we've already spent part of the 'linger timeout' time in user land
+  //       (that is: in the code above), we have a possibly reduced linger
+  //       time by now.
+  //       Also note that linger_timeout==0 by now when a failure has been
+  //       observed above: in that case we do NOT want to linger any longer
+  //       so this will then be a *DIS*graveful close.
+  linger.l_onoff = (linger_timeout > 0);
+  linger.l_linger = (linger_timeout + 999) / 1000; // round up
+  setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
+  DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
+
+  if (linger_timeout > 0)
+    (void) __DisconnectEx(sock, 0, 0, 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
   (void) closesocket(sock);
+  conn->client.sock = INVALID_SOCKET;
 }
 
 static void close_connection(struct mg_connection *conn) {
   if (conn->ssl) {
+    // see http://www.openssl.org/docs/ssl/SSL_set_shutdown.html#NOTES
+    // and http://www.openssl.org/docs/ssl/SSL_shutdown.html
+    SSL_shutdown(conn->ssl);
+    // don't call SSL_shutdown() a second time as that would make us
+    // block & wait for the client to complete the close, which would
+    // be a server vulnerability.
     SSL_free(conn->ssl);
     conn->ssl = NULL;
   }
-
-  if (conn->client.sock != INVALID_SOCKET) {
-    close_socket_gracefully(conn->client.sock);
-  }
+  close_socket_gracefully(conn);
 }
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
@@ -3883,10 +4107,8 @@ static int is_valid_uri(const char *uri) {
 
 static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
-  int keep_alive_enabled;
+  //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
-
-  keep_alive_enabled = !strcmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes");
 
   do {
     reset_per_request_attributes(conn);
@@ -3901,7 +4123,7 @@ static void process_new_connection(struct mg_connection *conn) {
       send_http_error(conn, 413, "Request Too Large", "");
       return;
     } if (conn->request_len <= 0) {
-      return;  // Remote end closed the connection
+      return;  // Remote end closed the connection or malformed request
     }
 
     // Nul-terminate the request cause parse_http_request() uses sscanf
@@ -3927,6 +4149,7 @@ static void process_new_connection(struct mg_connection *conn) {
     }
     if (ri->remote_user != NULL) {
       free((void *) ri->remote_user);
+      ri->remote_user = NULL;
     }
   } while (conn->ctx->stop_flag == 0 &&
            keep_alive_enabled &&
@@ -4066,7 +4289,7 @@ static void master_thread(struct mg_context *ctx) {
 #if defined(_WIN32)
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 #endif
-  
+
 #if defined(ISSUE_317)
   struct sched_param sched_param;
   sched_param.sched_priority = sched_get_priority_max(SCHED_RR);
@@ -4086,12 +4309,13 @@ static void master_thread(struct mg_context *ctx) {
     tv.tv_usec = 200 * 1000;
 
     if (select(max_fd + 1, &read_set, NULL, NULL, &tv) < 0) {
-#ifdef _WIN32
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
-      mg_sleep(1000);
-#endif // _WIN32
+      //
+      // [i_a]: always sleep a bit on error, unless the error is due to a stop signal
+      if (ctx->stop_flag == 0)
+        mg_sleep(10);
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
@@ -4157,13 +4381,14 @@ static void free_context(struct mg_context *ctx) {
 void mg_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 
-  // Wait until mg_fini() stops
+  // Wait until mg_finish() stops
   while (ctx->stop_flag != 2) {
-    mg_sleep(10);
+    (void) mg_sleep(10);
   }
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
+  DeleteCriticalSection(&DisconnectExPtrCS);
   (void) WSACleanup();
 #endif // _WIN32
 }
@@ -4178,6 +4403,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
   InitializeCriticalSection(&global_log_file_lock);
+  InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #endif // _WIN32
 
   // Allocate context and initialize reasonable general case defaults.
