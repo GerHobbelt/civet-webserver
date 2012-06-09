@@ -248,11 +248,12 @@ typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct 
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
 typedef struct mg_user_class_t {
-  void *user_data;              // Arbitrary user-defined data
+  void *                      user_data;          // Arbitrary user-defined data
+
   mg_callback_t               user_callback;  // User-defined event handling callback function
 
   mg_option_decode_callback_t user_option_decode; // User-defined option decode/processing callback function
-  mg_option_fill_callback_t	  user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
+  mg_option_fill_callback_t   user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
   mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
 
   mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication

@@ -1234,7 +1234,7 @@ int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
 }
 
 // Skip the characters until one of the delimiters characters found.
-// 0-terminate resulting word. Skip the delimiter and following whitespaces if any.
+// 0-terminate resulting word. Skip the delimiter and following whitespace if any.
 // Advance pointer to buffer to the next word. Return found 0-terminated word.
 // Delimiters can be quoted with quotechar.
 static char *skip_quoted(char **buf, const char *delimiters, const char *whitespace, char quotechar) {
@@ -1396,9 +1396,9 @@ static int should_keep_alive(struct mg_connection *conn) {
 
   return (!conn->must_close &&
           conn->request_info.status_code != 401 &&
-		  // only okay persistence when we see legal response codes; 
-		  // anything else means we're foobarred ourselves already, 
-		  // so it's time to close and let them retry.
+		  // only okay persistence when we see legal response codes;
+		  // anything else means we're foobarred ourselves already,
+          // so it's time to close and let them retry.
           conn->request_info.status_code < 500 &&
           conn->request_info.status_code >= 100 &&
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
@@ -2343,7 +2343,10 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
       n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
-      if (n <= 0) {
+	  if (n < 0) {
+		// always propagate the error
+		return n;
+	  } else if (n == 0) {
         break;
       }
       buf = (char *) buf + n;
@@ -3923,7 +3926,7 @@ static int is_valid_http_method(const char *method) {
 static int parse_http_request(char *buf, struct mg_request_info *ri) {
   int status = 0;
 
-  // RFC says that all initial whitespaces should be ignored
+  // RFC says that all initial whitespace should be ignored
   while (*buf != '\0' && isspace(* (unsigned char *) buf)) {
     buf++;
   }
@@ -3954,7 +3957,10 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
   request_len = 0;
   while (*nread < bufsiz && request_len == 0) {
     n = pull(fp, sock, ssl, buf + *nread, bufsiz - *nread);
-    if (n <= 0) {
+	if (n < 0) {
+	  // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
+	  return -1;
+	} else if (n == 0) {
       break;
     } else {
       *nread += n;
@@ -4231,7 +4237,8 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     send_http_error(conn, 417, NULL, "");
   } else {
     if (expect != NULL) {
-      (void) mg_printf(conn, "%s", "HTTP/1.1 100 Continue\r\n\r\n");
+      if (mg_printf(conn, "HTTP/1.1 100 Continue\r\n\r\n") <= 0)
+		goto failure;
       mg_mark_end_of_header_transmission(conn);
     }
 
@@ -4244,7 +4251,8 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       if ((int64_t) buffered_len > conn->content_len) {
         buffered_len = (int) conn->content_len;
       }
-      push(fp, sock, ssl, &cb, buffered, (int64_t) buffered_len);
+      if (push(fp, sock, ssl, &cb, buffered, (int64_t) buffered_len) != buffered_len)
+		goto failure;
       conn->consumed_content += buffered_len;
     }
 
@@ -4266,7 +4274,8 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
 
     // Each error code path in this function must send an error
     if (!success) {
-      send_http_error(conn, 577, NULL, "");
+failure:
+	  send_http_error(conn, 577, NULL, "");
     }
   }
 
@@ -5018,7 +5027,7 @@ static void handle_request(struct mg_connection *conn) {
     send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
     // Do not allow to view passwords files
-    send_http_error(conn, 403, NULL, "No peeking at the passowrds file!");
+    send_http_error(conn, 403, NULL, "No peeking at the passwords file!");
   } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
     send_http_error(conn, 404, NULL, "DocumentRoot has not been properly configured.");
   } else if ((!strcmp(ri->request_method, "PUT") ||
@@ -5819,12 +5828,12 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   //       Also note that linger_timeout==0 by now when a failure has been
   //       observed above: in that case we do NOT want to linger any longer
   //       so this will then be a *DIS*graveful close.
-  linger.l_onoff = (linger_timeout > 0);
+  linger.l_onoff = (linger_timeout > 0 && mg_get_stop_flag(conn->ctx) == 0);
   linger.l_linger = (linger_timeout + 999) / 1000; // round up
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
   DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
 
-  if (linger_timeout > 0)
+  if (linger.l_onoff > 0)
     (void) __DisconnectEx(sock, 0, 0, 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
@@ -5941,9 +5950,9 @@ static void handle_proxy_request(struct mg_connection *conn) {
 #endif /* proxy support */
 
 static int is_valid_uri(const char *uri) {
-	// Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
-	// URI can be an asterisk (*) or should start with slash.
-	return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
+  // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
+  // URI can be an asterisk (*) or should start with slash.
+  return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
 }
 
 static void process_new_connection(struct mg_connection *conn) {
@@ -5967,7 +5976,7 @@ static void process_new_connection(struct mg_connection *conn) {
       return;  // Remote end closed the connection or malformed request
     }
 
-    // Nul-terminate the request cause parse_http_request() uses sscanf
+    // Nul-terminate the request cause parse_http_request() is C-string based
     conn->buf[conn->request_len - 1] = '\0';
     if (!parse_http_request(conn->buf, ri)
         || (

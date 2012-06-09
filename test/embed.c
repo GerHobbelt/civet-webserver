@@ -185,8 +185,8 @@ int main(void) {
   struct mg_context *ctx;
   const char *options[] = {"listening_ports", LISTENING_PORT, NULL};
   const struct mg_user_class_t ucb = {
-    callback,  // User-defined callback function
-    NULL       // Arbitrary user-defined data
+    NULL,      // Arbitrary user-defined data
+    callback   // User-defined callback function
   };
 
   ctx = mg_start(&ucb, options);
