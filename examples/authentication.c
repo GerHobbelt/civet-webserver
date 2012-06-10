@@ -128,7 +128,7 @@ static void *callback(enum mg_event event,
     {
         if (event == srv_pages_config[i].event &&
             (event == MG_HTTP_ERROR ||
-            -1 < mg_match_prefix(srv_pages_config[i].uri, strlen(srv_pages_config[i].uri), ri->uri)))
+            -1 < mg_match_prefix(srv_pages_config[i].uri, -1, ri->uri)))
         {
             if (srv_pages_config[i].func(conn) != 0)
                 return "processed";

@@ -68,6 +68,10 @@ typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, 
 #define WSAID_DISCONNECTEX     {0x7fda2e11,0x8630,0x436f,{0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57}}
 #endif
 
+#ifndef SIO_GET_EXTENSION_FUNCTION_POINTER  
+#define SIO_GET_EXTENSION_FUNCTION_POINTER  (0x80000000|0x40000000|0x08000000|6)
+#endif
+
 static LPFN_DISCONNECTEX DisconnectExPtr = 0;
 static CRITICAL_SECTION DisconnectExPtrCS;
 
@@ -943,7 +947,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
       {
         char tbuf[40];
 
-        rv += fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
+        rv += (int)fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
       }
       rv += fprintf(fp, "[%s] ", severity);
       if (conn != NULL)
@@ -1111,7 +1115,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
   // MSVC produces -1 on printf("%s", str) for very long 'str'!
     n = (int) buflen - 1;
     buf[n] = '\0';
-    n = strlen(buf);
+    n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     mg_cry(conn, "truncating vsnprintf buffer: [%.*s]",
         n > 200 ? 200 : n, buf);
@@ -1151,7 +1155,7 @@ int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, si
     // MSVC produces -1 on printf("%s", str) for very long 'str'!
     n = (int) buflen - 1;
     buf[n] = '\0';
-    n = strlen(buf);
+    n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     n = (int) buflen - 1;
   }
@@ -1210,13 +1214,13 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
     // MSVC produces -1 on printf("%s", str) for very long 'str'!
     n = size - 1;
     buf[n] = '\0';
-    n = strlen(buf);
+    n = (int)strlen(buf);
   } else if (n >= size) {
     // truncated output:
     strcpy(buf + size - 1 - 7, " (...)\n"); // mark the string as clipped
     //n = size - 1;
     //buf[n] = '\0';
-    n = strlen(buf);
+    n = (int)strlen(buf);
   }
   else {
     buf[n] = '\0';
@@ -1356,7 +1360,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   int i, j, len, res;
 
   if (pattern_len == -1)
-    pattern_len = strlen(pattern);
+    pattern_len = (int)strlen(pattern);
   if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
     res = match_prefix(pattern, or_str - pattern, str);
     return res > 0 ? res :
@@ -1374,9 +1378,9 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
       i++;
       if (pattern[i] == '*') {
         i++;
-        len = strlen(str + j);
+        len = (int)strlen(str + j);
       } else {
-        len = strcspn(str + j, "/");
+        len = (int)strcspn(str + j, "/");
       }
       if (i == pattern_len) {
         return j + len;
@@ -1461,7 +1465,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
     if (conn->request_info.status_custom_description)
-      len = strlen(conn->request_info.status_custom_description);
+      len = (int)strlen(conn->request_info.status_custom_description);
     else
       conn->request_info.status_custom_description = buf;
     p = strchr(conn->request_info.status_custom_description, '\t');
@@ -2250,7 +2254,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     if (ssl != NULL) {
       n = SSL_write(ssl, buf + sent, k);
     } else if (fp != NULL) {
-      n = fwrite(buf + sent, 1, (size_t)k, fp);
+      n = (int)fwrite(buf + sent, 1, (size_t)k, fp);
       if (ferror(fp))
         n = -1;
     } else {
@@ -2314,7 +2318,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     if (conn->consumed_content < (int64_t) buffered_len) {
       buffered_len -= (int) conn->consumed_content;
       if (len < (size_t) buffered_len) {
-        buffered_len = len;
+        buffered_len = (int)len;
       }
       memcpy(buf, buffered, (size_t)buffered_len);
       len -= buffered_len;
@@ -2470,7 +2474,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
       // Decode variable into destination buffer
       if ((size_t) (s - p) < dst_len) {
-        len = url_decode(p, (size_t)(s - p), dst, dst_len, 1);
+        len = (int)url_decode(p, (size_t)(s - p), dst, dst_len, 1);
       }
       break;
     }
@@ -2489,7 +2493,7 @@ int mg_get_cookie(const struct mg_connection *conn, const char *cookie_name,
     return -1;
   }
 
-  name_len = strlen(cookie_name);
+  name_len = (int)strlen(cookie_name);
   end = s + strlen(s);
 
   for (; (s = strstr(s, cookie_name)) != NULL; s += name_len)
@@ -2527,7 +2531,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   rewrite = get_conn_option(conn, REWRITE);
   while ((rewrite = next_option(rewrite, &a, &b)) != NULL) {
-    if ((match_len = match_prefix(a.ptr, a.len, uri)) > 0) {
+    if ((match_len = match_prefix(a.ptr, (int)a.len, uri)) > 0) {
       mg_snprintf(conn, buf, buf_len, "%.*s%s", (int)b.len, b.ptr, uri + match_len);
       break;
     }
@@ -2535,7 +2539,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);
-    size_t cgi_exts_len = strlen(cgi_exts);
+    int cgi_exts_len = (int)strlen(cgi_exts);
 
     // Support PATH_INFO for CGI scripts.
     for (p = buf + strlen(buf); p > buf + 1; p--) {
@@ -3554,14 +3558,16 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
         break;
 
     // Read from file, exit the loop on error
-    if ((num_read = fread(buf, 1, (size_t)to_read, fp)) == 0)
+	num_read = (int)fread(buf, 1, (size_t)to_read, fp);
+    if (num_read == 0)
     {
       send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
       return -2;
     }
 
     // Send read bytes to the client, exit the loop on error
-    if ((num_written = mg_write(conn, buf, (size_t)num_read)) != num_read)
+	num_written = mg_write(conn, buf, (size_t)num_read);
+    if (num_written != num_read)
     {
       send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
       return -1;
@@ -4358,7 +4364,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
 
   rlen = 0;
   roff = 0;
-  taglen = ssi_start.len;
+  taglen = (int)ssi_start.len;
 
   for(;;)
   {
@@ -4558,7 +4564,7 @@ static void handle_request(struct mg_connection *conn) {
   if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
     *conn->request_info.query_string++ = '\0';
   }
-  uri_len = strlen(ri->uri);
+  uri_len = (int)strlen(ri->uri);
   url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
   remove_double_dots_and_double_slashes(ri->uri);
   stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
@@ -5814,7 +5820,11 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
   InitializeCriticalSection(&global_log_file_lock);
+#if _WIN32_WINNT >= 0x403
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
+#else
+  InitializeCriticalSection(&DisconnectExPtrCS);
+#endif
 #endif // _WIN32
 
   // Allocate context and initialize reasonable general case defaults.
