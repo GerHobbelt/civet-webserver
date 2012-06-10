@@ -5,14 +5,6 @@
 // 1. type "make" in the directory where this file lives
 // 2. point your browser to http://127.0.0.1:8081
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
-#include <string.h>
-#include <time.h>
-#include <stdarg.h>
-#include <pthread.h>
-
 #include "mongoose.h"
 
 #define MAX_USER_LEN  20
@@ -75,7 +67,7 @@ static void get_qsvar(const struct mg_request_info *request_info,
   mg_get_var(qs, strlen(qs == NULL ? "" : qs), name, dst, dst_len);
 }
 
-// Get a get of messages with IDs greater than last_id and transform them
+// Get a set of messages with IDs greater than last_id and transform them
 // into a JSON string. Return that string to the caller. The string is
 // dynamically allocated, caller must free it. If there are no messages,
 // NULL is returned.
@@ -122,7 +114,7 @@ static int handle_jsonp(struct mg_connection *conn,
   if (cb[0] != '\0') {
     mg_printf(conn, "%s(", cb);
   }
- 
+
   return cb[0] == '\0' ? 0 : 1;
 }
 
@@ -134,6 +126,7 @@ static void ajax_get_messages(struct mg_connection *conn,
   int is_jsonp;
 
   mg_printf(conn, "%s", ajax_reply_start);
+  mg_mark_end_of_header_transmission(conn);
   is_jsonp = handle_jsonp(conn, request_info);
 
   get_qsvar(request_info, "last_id", last_id, sizeof(last_id));
@@ -143,7 +136,7 @@ static void ajax_get_messages(struct mg_connection *conn,
   }
 
   if (is_jsonp) {
-    mg_printf(conn, "%s", ")");
+    mg_printf(conn, ")");
   }
 }
 
@@ -170,6 +163,7 @@ static void ajax_send_message(struct mg_connection *conn,
   int is_jsonp;
 
   mg_printf(conn, "%s", ajax_reply_start);
+  mg_mark_end_of_header_transmission(conn);
   is_jsonp = handle_jsonp(conn, request_info);
 
   get_qsvar(request_info, "text", text, sizeof(text));
@@ -186,10 +180,10 @@ static void ajax_send_message(struct mg_connection *conn,
     pthread_rwlock_unlock(&rwlock);
   }
 
-  mg_printf(conn, "%s", text[0] == '\0' ? "false" : "true");
+  mg_printf(conn, text[0] == '\0' ? "false" : "true");
 
   if (is_jsonp) {
-    mg_printf(conn, "%s", ")");
+    mg_printf(conn, ")");
   }
 }
 
@@ -201,6 +195,7 @@ static void redirect_to_login(struct mg_connection *conn,
       "Set-Cookie: original_url=%s\r\n"
       "Location: %s\r\n\r\n",
       request_info->uri, login_url);
+  mg_mark_end_of_header_transmission(conn);
 }
 
 // Return 1 if username/password is allowed, 0 otherwise.
@@ -281,6 +276,7 @@ static void authorize(struct mg_connection *conn,
         "Set-Cookie: original_url=/; max-age=0\r\n"  // Delete original_url
         "Location: /\r\n\r\n",
         session->session_id, session->user);
+    mg_mark_end_of_header_transmission(conn);
   } else {
     // Authentication failure, redirect to login.
     redirect_to_login(conn, request_info);
@@ -320,8 +316,9 @@ static void redirect_to_ssl(struct mg_connection *conn,
     mg_printf(conn, "HTTP/1.1 302 Found\r\n"
               "Location: https://%.*s:8082/%s:8082\r\n\r\n",
               (int) (p - host), host, request_info->uri);
+    mg_mark_end_of_header_transmission(conn);
   } else {
-    mg_printf(conn, "%s", "HTTP/1.1 500 Error\r\n\r\nHost: header is not set");
+    mg_send_http_error(conn, 500, NULL, "Host: header is not set");
   }
 }
 
@@ -370,7 +367,8 @@ int main(void) {
 
   // Setup and start Mongoose
   ctx = mg_start(&event_handler, NULL, options);
-  assert(ctx != NULL);
+  if (!ctx)
+    exit(EXIT_FAILURE);
 
   // Wait until enter is pressed, then exit
   printf("Chat server started on ports %s, press enter to quit.\n",

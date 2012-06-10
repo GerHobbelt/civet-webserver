@@ -21,7 +21,7 @@
 #ifndef MONGOOSE_HEADER_INCLUDED
 #define MONGOOSE_HEADER_INCLUDED
 
-#include <stddef.h>
+#include "mongoose_sys_porting.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,26 +29,36 @@ extern "C" {
 
 struct mg_context;     // Handle for the HTTP service itself
 struct mg_connection;  // Handle for the individual connection
+struct socket;         // Handle for the socket related to a client / server connection
 
+// The IP address: IPv4 or IPv6
+struct mg_ip_address {
+  unsigned is_ip6: 1; // flag: 1: struct contains an IPv6 address, 0: IPv4 address
+  union {
+    // these are in 'network order', i.e. 127.0.0.1 would give v4[0] == 127 and v[3] == 1
+    unsigned short int v4[4];
+    unsigned short int v6[8];
+  } ip_addr;
+};
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *user_data;       // User-defined pointer passed to mg_start()
-  char *request_method;  // "GET", "POST", etc
-  char *uri;             // URL-decoded URI
-  char *http_version;    // E.g. "1.0", "1.1"
-  char *query_string;    // URL part after '?' (not including '?') or NULL
-  char *remote_user;     // Authenticated user, or NULL if no auth used
-  char *log_message;     // Mongoose error log message, MG_EVENT_LOG only
-  long remote_ip;        // Client's IP address
-  int remote_port;       // Client's port
-  int status_code;       // HTTP reply status code, e.g. 200
-  int is_ssl;            // 1 if SSL-ed, 0 if not
-  int num_headers;       // Number of headers
+  const char *request_method;      // "GET", "POST", etc
+  char *uri;                       // URL-decoded URI
+  const char *http_version;        // E.g. "1.0", "1.1"
+  char *query_string;              // URL part after '?' (not including '?') or NULL
+  char *remote_user;               // Authenticated user, or NULL if no auth used
+  const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
+  struct mg_ip_address remote_ip;  // Client's IP address
+  int remote_port;                 // Client's port
+  int status_code;                 // HTTP reply status code, e.g. 200
+  int is_ssl;                      // 1 if SSL-ed, 0 if not
+  int num_headers;                 // Number of headers
   struct mg_header {
-    char *name;          // HTTP header name
-    char *value;         // HTTP header value
-  } http_headers[64];    // Maximum 64 headers
+    char *name;                    // HTTP header name
+    char *value;                   // HTTP header value
+  } http_headers[64];              // Maximum 64 headers
 };
 
 // Various events on which user-defined function is called by Mongoose.
@@ -154,6 +164,20 @@ int mg_modify_passwords_file(const char *passwords_file_name,
 // Send data to the client.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
+// Mark the end of the tranmission of HTTP headers.
+//
+// Use this before proceeding and writing content data if you want your
+// access log to show the correct (actual) number.
+void mg_mark_end_of_header_transmission(struct mg_connection *conn);
+
+// Return !0 when the headers have already been sent, 0 if not.
+//
+// To be more specific, this function will return -1 when all HTTP headers
+// have been written (and anything sent now is considered part of the content),
+// while a return value of +1 indicates that the HTTP response has been
+// written but that you MAY decide to write some more headers to
+// augment the HTTP header set being transmitted.
+int mg_have_headers_been_sent(const struct mg_connection *conn);
 
 // Send data to the browser using printf() semantics.
 //
@@ -169,7 +193,9 @@ __attribute__((format(printf, 2, 3)))
 
 
 // Send contents of the entire file together with HTTP headers.
-void mg_send_file(struct mg_connection *conn, const char *path);
+//
+// Return 0 on success, negative number of I/O failed, positive non-zero when file does not exist (404)
+int mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.
@@ -229,6 +255,80 @@ const char *mg_version(void);
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
+
+
+// Return the HTTP response code string for the given response code
+const char *mg_get_response_code_text(int response_code);
+
+
+// --- helper functions ---
+
+// Compare two strings to a maximum length of n characters; the comparison is case-insensitive.
+// Return the (s1 - s2) last character difference value, which is zero(0) when both strings are equal.
+int mg_strncasecmp(const char *s1, const char *s2, size_t len);
+
+// same as strncasecmp() but without any string length limit
+int mg_strcasecmp(const char *s1, const char *s2);
+
+// Allocate space for a copy of the given string on the heap.
+// The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).
+// The returned pointer is either NULL on failure or pointing at the ('len' length bound) copied string.
+char * mg_strndup(const char *str, size_t len);
+
+// Same as strndup() but here the entire input string is copied and the allocated space is large
+// enough contain that number of characters.
+char * mg_strdup(const char *str);
+
+// Like vsnprintf(), but never returns negative value, or the value
+// that is larger than a supplied buffer.
+//
+// Barfs a hairball when a destination buffer would be undersized (logs a failure message).
+//
+// Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
+// in his audit report.
+int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
+
+// Is to mg_vsnprintf() what printf() is to vprintf().
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+#ifdef __GNUC__
+    __attribute__((format(printf, 4, 5)))
+#endif
+;
+
+
+
+// Structure used by mg_stat() function. Uses 64 bit file length.
+struct mgstat {
+    int is_directory;  // Directory marker
+    int64_t size;      // File size
+    time_t mtime;      // Modification time
+};
+
+// return 0 when file/directory exists; fills the mgstat struct with last-modified timestamp and file size.
+int mg_stat(const char *path, struct mgstat *stp);
+
+
+/*
+Like strerror() but with included support for the same functionality for
+Win32 system error codes
+*/
+const char *mg_strerror(int errcode);
+
+
+// Obtain the mongoose context definition for the given connection.
+struct mg_context *mg_get_context(struct mg_connection *conn);
+
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
+
+
+// Return the current 'stop_flag' state value for the given thread context.
+//
+// When this is non-zero, it means the mongoose server is terminating and all threads it has created
+// should be / are already terminating.
+int mg_get_stop_flag(struct mg_context *ctx);
+
+// Indicate that the application should shut down (probably due to a fatal failure?)
+void mg_signal_stop(struct mg_context *ctx);
 
 
 #ifdef __cplusplus
