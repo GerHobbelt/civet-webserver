@@ -401,9 +401,9 @@ int main(void) {
     WSAStartup(MAKEWORD(2,2), &data);
     InitializeCriticalSection(&global_log_file_lock);
 #if _WIN32_WINNT >= 0x403
-	InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
+    InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
-	InitializeCriticalSection(&DisconnectExPtrCS);
+    InitializeCriticalSection(&DisconnectExPtrCS);
 #endif
   }
 #endif // _WIN32

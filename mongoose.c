@@ -68,7 +68,7 @@ typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, 
 #define WSAID_DISCONNECTEX     {0x7fda2e11,0x8630,0x436f,{0xa0, 0x31, 0xf5, 0x36, 0xa6, 0xee, 0xc1, 0x57}}
 #endif
 
-#ifndef SIO_GET_EXTENSION_FUNCTION_POINTER  
+#ifndef SIO_GET_EXTENSION_FUNCTION_POINTER
 #define SIO_GET_EXTENSION_FUNCTION_POINTER  (0x80000000|0x40000000|0x08000000|6)
 #endif
 
@@ -140,6 +140,7 @@ static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwRe
 
 
 
+#if !defined(NO_SSL)
 
 // Snatched from OpenSSL includes. I put the prototypes here to be independent
 // from the OpenSSL source installation. Having this, mongoose + SSL can be
@@ -242,7 +243,6 @@ static struct ssl_func ssl_sw[] = {
 };
 
 // Similar array as ssl_sw. These functions could be located in different lib.
-#if !defined(NO_SSL)
 static struct ssl_func crypto_sw[] = {
   {"CRYPTO_num_locks",                      NULL},
   {"CRYPTO_set_locking_callback",           NULL},
@@ -251,8 +251,19 @@ static struct ssl_func crypto_sw[] = {
   {"ERR_error_string",                      NULL},
   {NULL,                                    NULL}
 };
-#endif // NO_SSL
 #endif // NO_SSL_DL
+#else // NO_SSL
+
+typedef struct bogus_ssl_st SSL;
+typedef struct bogus_ssl_ctx_st SSL_CTX;
+
+#define SSL_free(ssl)           (void)0
+#define SSL_shutdown(ssl)       0
+#define SSL_read(ssl, p, l)     (-1)
+#define SSL_write(ssl, p, l)    (-1)
+#define SSL_CTX_free(ctx)       (void)0
+
+#endif // NO_SSL
 
 static const char *month_names[] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -520,7 +531,7 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
 #elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP)
   // We use WSAAddressToString since it is supported on Windows XP and later
   {
-    DWORD l = len;
+    DWORD l = (DWORD)len;
     if (WSAAddressToStringA((LPSOCKADDR)&usa->u.sa, usa->len, NULL, buf, &l)) {
       buf[0] = '\0';
     }
@@ -2569,11 +2580,15 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   return stat_result;
 }
 
+#if !defined(NO_SSL)
 static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
   return (conn->ssl = SSL_new(conn->ctx->ssl_ctx)) != NULL &&
     SSL_set_fd(conn->ssl, conn->client.sock) == 1 &&
     func(conn->ssl) == 1;
 }
+#else // NO_SSL
+#define sslize(conn, f)     0
+#endif // NO_SSL
 
 static struct mg_connection *mg_connect(struct mg_connection *conn,
                                  const char *host, int port, int use_ssl) {
@@ -3558,7 +3573,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
         break;
 
     // Read from file, exit the loop on error
-	num_read = (int)fread(buf, 1, (size_t)to_read, fp);
+    num_read = (int)fread(buf, 1, (size_t)to_read, fp);
     if (num_read == 0)
     {
       send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
@@ -3566,7 +3581,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
     }
 
     // Send read bytes to the client, exit the loop on error
-	num_written = mg_write(conn, buf, (size_t)num_read);
+    num_written = mg_write(conn, buf, (size_t)num_read);
     if (num_written != num_read)
     {
       send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
@@ -4662,11 +4677,13 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
     usa->u.sin6.sin6_family = AF_INET6;
     usa->u.sin6.sin6_port = htons((uint16_t) port);
     usa->u.sin6.sin6_addr = a6;
+    return 1;
   } else if (inet_pton(AF_INET, addr_buf, &a) > 0) {
     usa->len = sizeof(usa->u.sin);
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
     usa->u.sin.sin_addr = a;
+    return 1;
   } else {
     return 0;
   }
@@ -4744,12 +4761,12 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
     usa->len = sizeof(usa->u.sin6);
     usa->u.sin6.sin6_family = AF_INET6;
     usa->u.sin6.sin6_port = htons((uint16_t) port);
-    //usa->u.sin6.sin6_addr = in6addr_loopback;
+    //usa->u.sin6.sin6_addr = in6addr_any;
 #else
     usa->len = sizeof(usa->u.sin);
     usa->u.sin.sin_family = AF_INET;
     usa->u.sin.sin_port = htons((uint16_t) port);
-    //usa->u.sin.sin_addr = htonl(INADDR_LOOPBACK);
+    //usa->u.sin.sin_addr = htonl(INADDR_ANY);
 #endif
   }
 
