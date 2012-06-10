@@ -44,6 +44,14 @@
 
 #if defined(_WIN32)
 
+int mgW32_get_errno(void) {
+  DWORD e1 = GetLastError();
+  DWORD e2 = WSAGetLastError();
+  int e3 = errno;
+
+  return (e2 ? e2 : e1 ? e1 : e3);
+}
+
 static CRITICAL_SECTION global_log_file_lock;
 
 void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
@@ -1401,7 +1409,8 @@ static int should_keep_alive(struct mg_connection *conn) {
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
           (header == NULL ?
            (http_version && !strcmp(http_version, "1.1")) :
-           !mg_strcasecmp(header, "keep-alive")));
+           !mg_strcasecmp(header, "keep-alive")) &&
+          mg_get_stop_flag(conn->ctx) == 0);
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
@@ -4601,6 +4610,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
     sp->sock = INVALID_SOCKET;
     free(sp);
   }
+  ctx->listening_sockets = NULL;
 }
 
 static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
@@ -5554,13 +5564,13 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
   (void) pthread_mutex_unlock(&ctx->mutex);
 }
 
-static void accept_new_connection(const struct socket *listener,
+static int accept_new_connection(const struct socket *listener,
                                   struct mg_context *ctx) {
   struct socket accepted = {0};  // NIL all connection parameters to prevent surprises in user code accessing any of these.
   char src_addr[SOCKADDR_NTOA_BUFSIZE];
   int allowed;
 
-  accepted.rsa.len = sizeof(accepted.rsa.u.sin);
+  accepted.rsa.len = listener->lsa.len; // making sure both peers use the same IPvX records, otherwise accept() will b0rk
   accepted.lsa = listener->lsa;
   accepted.sock = accept(listener->sock, &accepted.rsa.u.sa, &accepted.rsa.len);
   if (accepted.sock != INVALID_SOCKET) {
@@ -5570,7 +5580,7 @@ static void accept_new_connection(const struct socket *listener,
       mg_cry(fc(ctx), "%s: %s failed to set the socket timeout",
           __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa));
       (void) closesocket(accepted.sock);
-      return;
+      return 0; // this is NOT a GRAVE error; this is not cause enough to go and unbind/rebind the listeners!
     }
 
     allowed = check_acl(ctx, &accepted.rsa);
@@ -5584,6 +5594,23 @@ static void accept_new_connection(const struct socket *listener,
       mg_cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
       (void) closesocket(accepted.sock);
     }
+    return 0;
+  }
+  else {
+    const char *errmsg = mg_strerror(ERRNO);
+    sockaddr_to_string(src_addr, sizeof(src_addr), &listener->lsa);
+    mg_cry(fc(ctx), "%s: accept() failed for listener %s : %s", __func__, src_addr, errmsg);
+    /*
+    This is a VERY SEVERE ERROR: when this happens, the next thing that will
+    happen with very high probability is that the next round of select()
+    will detect that the incoming connection has not been accepted and hence
+    fire immediately, resulting in maximum CPU usage in the main thread.
+
+    It is therefore better to unbind and rebind to the listening port(s)
+    in order to clear/discard the incoming connection attempt which failed
+    to be accepted.
+    */
+    return -1;
   }
 }
 
@@ -5642,7 +5669,19 @@ static void master_thread(struct mg_context *ctx) {
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
-          accept_new_connection(sp, ctx);
+          if (accept_new_connection(sp, ctx)) {
+            // severe failure; unbind and rebind to listening sockets
+            // in order to discard pending incoming connections:
+            close_all_listening_sockets(ctx);
+            do {
+              // sleep to unload the CPU in case of very grave issues
+              mg_sleep(MG_SELECT_TIMEOUT_MSECS);
+              if (set_ports_option(ctx))
+                break;
+              // failed to rebind; retry after another bit of sleep
+            } while (ctx->stop_flag == 0);
+            break; // do NOT check the other (now invalid) listeners!
+          }
         }
       }
     }

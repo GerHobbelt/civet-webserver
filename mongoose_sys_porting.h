@@ -147,7 +147,7 @@ typedef long off_t;
 #endif // _MSC_VER
 #endif // _MSC_VER
 
-#define ERRNO   (GetLastError() ? (int)GetLastError() : errno)
+#define ERRNO   mgW32_get_errno()
 #if !(defined(_MSC_VER) && (_MSC_VER >= 1600) && defined(_WINSOCK2API_)) // Microsoft: socklen_t exists in ws2tcpip.h in Windows SDK 7.0A+
 #define NO_SOCKLEN_T
 #endif
@@ -200,6 +200,8 @@ typedef long off_t;
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+int mgW32_get_errno(void);
 
 void mgW32_flockfile(FILE *x);
 void mgW32_funlockfile(FILE *x);
