@@ -438,6 +438,7 @@ static struct ssl_func ssl_sw[] = {
 };
 
 // Similar array as ssl_sw. These functions could be located in different lib.
+#if !defined(NO_SSL)
 static struct ssl_func crypto_sw[] = {
   {"CRYPTO_num_locks",                      NULL},
   {"CRYPTO_set_locking_callback",           NULL},
@@ -446,6 +447,7 @@ static struct ssl_func crypto_sw[] = {
   {"ERR_error_string",                      NULL},
   {NULL,                                    NULL}
 };
+#endif // NO_SSL
 #endif // NO_SSL_DL
 
 static const char *month_names[] = {
@@ -652,13 +654,6 @@ static void cry(struct mg_connection *conn, const char *fmt, ...) {
     }
   }
   conn->request_info.log_message = NULL;
-}
-
-// Return OpenSSL error message
-static const char *ssl_error(void) {
-  unsigned long err;
-  err = ERR_get_error();
-  return err == 0 ? "" : ERR_error_string(err, NULL);
 }
 
 // Return fake connection structure. Used for logging, if connection
@@ -2763,18 +2758,15 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 // Upon every read operation, increase nread by the number of bytes read.
 static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
-  int n, request_len;
+  int request_len, n = 0;
 
-  request_len = 0;
-  while (*nread < bufsiz && request_len == 0) {
-    n = pull(fp, sock, ssl, buf + *nread, bufsiz - *nread);
-    if (n <= 0) {
-      break;
-    } else {
+  do {
+    request_len = get_request_len(buf, *nread);
+    if (request_len == 0 &&
+        (n = pull(fp, sock, ssl, buf + *nread, bufsiz - *nread)) > 0) {
       *nread += n;
-      request_len = get_request_len(buf, *nread);
     }
-  }
+  } while (*nread < bufsiz && request_len == 0 && n > 0);
 
   return request_len;
 }
@@ -3106,7 +3098,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // HTTP headers.
   data_len = 0;
   headers_len = read_request(out, INVALID_SOCKET, NULL,
-      buf, sizeof(buf), &data_len);
+                             buf, sizeof(buf), &data_len);
   if (headers_len <= 0) {
     send_http_error(conn, 500, http_500_error,
                     "CGI program sent malformed HTTP headers: [%.*s]",
@@ -3768,6 +3760,13 @@ static int set_uid_option(struct mg_context *ctx) {
 #if !defined(NO_SSL)
 static pthread_mutex_t *ssl_mutexes;
 
+// Return OpenSSL error message
+static const char *ssl_error(void) {
+  unsigned long err;
+  err = ERR_get_error();
+  return err == 0 ? "" : ERR_error_string(err, NULL);
+}
+
 static void ssl_locking_callback(int mode, int mutex_num, const char *file,
                                  int line) {
   line = 0;    // Unused
@@ -4112,12 +4111,9 @@ static void process_new_connection(struct mg_connection *conn) {
 
   do {
     reset_per_request_attributes(conn);
-
-    // If next request is not pipelined, read it in
-    if ((conn->request_len = get_request_len(conn->buf, conn->data_len)) == 0) {
-      conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
-          conn->buf, conn->buf_size, &conn->data_len);
-    }
+    conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
+                                     conn->buf, conn->buf_size,
+                                     &conn->data_len);
     assert(conn->data_len >= conn->request_len);
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, "Request Too Large", "");
