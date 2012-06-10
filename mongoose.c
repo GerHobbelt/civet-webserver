@@ -18,6 +18,204 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#if defined(_WIN32)
+#define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
+#else
+#define _XOPEN_SOURCE 600     // For flockfile() on Linux
+#define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
+#define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
+#define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
+#endif
+
+#if defined(__SYMBIAN32__)
+#define NO_SSL // SSL is not supported
+#define NO_CGI // CGI is not supported
+#define PATH_MAX FILENAME_MAX
+#endif // __SYMBIAN32__
+
+#ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <signal.h>
+#include <fcntl.h>
+#endif // !_WIN32_WCE
+
+#include <time.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <assert.h>
+#include <string.h>
+#include <ctype.h>
+#include <limits.h>
+#include <stddef.h>
+#include <stdio.h>
+
+#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
+#define _WIN32_WINNT 0x0400 // To make it link in VS2005
+#include <windows.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+
+#ifndef _WIN32_WCE
+#include <process.h>
+#include <direct.h>
+#include <io.h>
+#else // _WIN32_WCE
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define NO_CGI // WinCE has no pipes
+
+typedef long off_t;
+#define BUFSIZ  4096
+
+#define errno   GetLastError()
+#define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
+#endif // _WIN32_WCE
+
+#define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
+      ((uint64_t)((uint32_t)(hi))) << 32))
+#define RATE_DIFF 10000000 // 100 nsecs
+#define EPOCH_DIFF MAKEUQUAD(0xd53e8000, 0x019db1de)
+#define SYS2UNIX_TIME(lo, hi) \
+  (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
+
+// Visual Studio 6 does not know __func__ or __FUNCTION__
+// The rest of MS compilers use __FUNCTION__, not C99 __func__
+// Also use _strtoui64 on modern M$ compilers
+#if defined(_MSC_VER) && _MSC_VER < 1300
+#define STRX(x) #x
+#define STR(x) STRX(x)
+#define __func__ "line " STR(__LINE__)
+#define strtoull(x, y, z) strtoul(x, y, z)
+#define strtoll(x, y, z) strtol(x, y, z)
+#else
+#define __func__  __FUNCTION__
+#define strtoull(x, y, z) _strtoui64(x, y, z)
+#define strtoll(x, y, z) _strtoi64(x, y, z)
+#endif // _MSC_VER
+
+#define ERRNO   GetLastError()
+#define NO_SOCKLEN_T
+#define SSL_LIB   "ssleay32.dll"
+#define CRYPTO_LIB  "libeay32.dll"
+#define DIRSEP '\\'
+#define IS_DIRSEP_CHAR(c) ((c) == '/' || (c) == '\\')
+#define O_NONBLOCK  0
+#if !defined(EWOULDBLOCK)
+#define EWOULDBLOCK  WSAEWOULDBLOCK
+#endif // !EWOULDBLOCK
+#define _POSIX_
+#define INT64_FMT  "I64d"
+
+#define WINCDECL __cdecl
+#define SHUT_WR 1
+#define snprintf _snprintf
+#define vsnprintf _vsnprintf
+#define mg_sleep(x) Sleep(x)
+
+#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
+#define popen(x, y) _popen(x, y)
+#define pclose(x) _pclose(x)
+#define close(x) _close(x)
+#define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
+#define RTLD_LAZY  0
+#define fseeko(x, y, z) fseek((x), (y), (z))
+#define fdopen(x, y) _fdopen((x), (y))
+#define write(x, y, z) _write((x), (y), (unsigned) z)
+#define read(x, y, z) _read((x), (y), (unsigned) z)
+#define flockfile(x) EnterCriticalSection(&global_log_file_lock)
+#define funlockfile(x) LeaveCriticalSection(&global_log_file_lock)
+
+#if !defined(fileno)
+#define fileno(x) _fileno(x)
+#endif // !fileno MINGW #defines fileno
+
+typedef HANDLE pthread_mutex_t;
+typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
+typedef DWORD pthread_t;
+#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
+
+struct timespec {
+  long tv_nsec;
+  long tv_sec;
+};
+
+static int pthread_mutex_lock(pthread_mutex_t *);
+static int pthread_mutex_unlock(pthread_mutex_t *);
+static FILE *mg_fopen(const char *path, const char *mode);
+
+#if defined(HAVE_STDINT)
+#include <stdint.h>
+#else
+typedef unsigned int  uint32_t;
+typedef unsigned short  uint16_t;
+typedef unsigned __int64 uint64_t;
+typedef __int64   int64_t;
+#define INT64_MAX  9223372036854775807
+#endif // HAVE_STDINT
+
+// POSIX dirent interface
+struct dirent {
+  char d_name[PATH_MAX];
+};
+
+typedef struct DIR {
+  HANDLE   handle;
+  WIN32_FIND_DATAW info;
+  struct dirent  result;
+} DIR;
+
+#else    // UNIX  specific
+#include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <netdb.h>
+
+#include <pwd.h>
+#include <unistd.h>
+#include <dirent.h>
+#if !defined(NO_SSL_DL) && !defined(NO_SSL)
+#include <dlfcn.h>
+#endif
+#include <pthread.h>
+#if defined(__MACH__)
+#define SSL_LIB   "libssl.dylib"
+#define CRYPTO_LIB  "libcrypto.dylib"
+#else
+#if !defined(SSL_LIB)
+#define SSL_LIB   "libssl.so"
+#endif
+#if !defined(CRYPTO_LIB)
+#define CRYPTO_LIB  "libcrypto.so"
+#endif
+#endif
+#define DIRSEP   '/'
+#define IS_DIRSEP_CHAR(c) ((c) == '/')
+#ifndef O_BINARY
+#define O_BINARY  0
+#endif // O_BINARY
+#define closesocket(a) close(a)
+#define mg_fopen(x, y) fopen(x, y)
+#define mg_mkdir(x, y) mkdir(x, y)
+#define mg_remove(x) remove(x)
+#define mg_rename(x, y) rename(x, y)
+#define mg_sleep(x) usleep((x) * 1000)
+#define ERRNO errno
+#define INVALID_SOCKET (-1)
+#define INT64_FMT PRId64
+typedef int SOCKET;
+#define WINCDECL
+
+#endif // End of Windows and UNIX specific includes
+
 #include "mongoose.h"
 
 
@@ -30,14 +228,14 @@
 
 #if defined(_WIN32)
 
-static CRITICAL_SECTION traceCS;  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+static CRITICAL_SECTION global_log_file_lock;
 
 void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
-  EnterCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+  EnterCriticalSection(&global_log_file_lock);
 }
 
 void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
-  LeaveCriticalSection(&traceCS);  // <bel>: fix: Log for Win32 is out of order / lines are incomplete
+  LeaveCriticalSection(&global_log_file_lock);
 }
 
 
@@ -216,6 +414,7 @@ static struct ssl_func ssl_sw[] = {
 };
 
 // Similar array as ssl_sw. These functions could be located in different lib.
+#if !defined(NO_SSL)
 static struct ssl_func crypto_sw[] = {
   {"CRYPTO_num_locks",                      NULL},
   {"CRYPTO_set_locking_callback",           NULL},
@@ -224,6 +423,7 @@ static struct ssl_func crypto_sw[] = {
   {"ERR_error_string",                      NULL},
   {NULL,                                    NULL}
 };
+#endif // NO_SSL
 #endif // NO_SSL_DL
 
 static const char *month_names[] = {
@@ -1023,12 +1223,6 @@ void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args) {
 }
 
 
-// Return OpenSSL error message
-static const char *ssl_error(void) {
-  unsigned long err;
-  err = ERR_get_error();
-  return err == 0 ? "" : ERR_error_string(err, NULL);
-}
 
 const char *mg_version(void) {
   return MONGOOSE_VERSION;
@@ -3683,22 +3877,20 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 // Upon every read operation, increase nread by the number of bytes read.
 static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
-  int n, request_len;
+  int request_len, n = 0;
 
-  request_len = 0;
-  while (*nread < bufsiz && request_len == 0) {
-    n = pull(fp, sock, ssl, buf + *nread, bufsiz - *nread);
-	if (n < 0) {
-	  // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
-	  return -1;
-	} else if (n == 0) {
-      break;
-    } else {
+  do {
+    request_len = get_request_len(buf, *nread);
+    if (request_len == 0 &&
+        (n = pull(fp, sock, ssl, buf + *nread, bufsiz - *nread)) > 0) {
       *nread += n;
-      request_len = get_request_len(buf, *nread);
     }
-  }
+  } while (*nread < bufsiz && request_len == 0 && n > 0);
 
+  if (n < 0) {
+    // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
+    return -1;
+  }
   return request_len;
 }
 
@@ -4046,7 +4238,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // HTTP headers.
   data_len = 0;
   headers_len = read_request(out, INVALID_SOCKET, NULL,
-      buf, sizeof(buf), &data_len);
+                             buf, sizeof(buf), &data_len);
   if (headers_len <= 0) {
     send_http_error(conn, 500, NULL,
                     "CGI program sent malformed HTTP headers: [%.*s]",
@@ -5023,6 +5215,13 @@ static int set_uid_option(struct mg_context *ctx) {
 #if !defined(NO_SSL)
 static pthread_mutex_t *ssl_mutexes;
 
+// Return OpenSSL error message
+static const char *ssl_error(void) {
+  unsigned long err;
+  err = ERR_get_error();
+  return err == 0 ? "" : ERR_error_string(err, NULL);
+}
+
 static void ssl_locking_callback(int mode, int mutex_num, const char *file,
                                  int line) {
   line = 0;    // Unused
@@ -5452,12 +5651,9 @@ static void process_new_connection(struct mg_connection *conn) {
 
   do {
     reset_per_request_attributes(conn);
-
-    // If next request is not pipelined, read it in
-    if ((conn->request_len = get_request_len(conn->buf, conn->data_len)) == 0) {
-      conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
-          conn->buf, conn->buf_size, &conn->data_len);
-    }
+    conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
+                                     conn->buf, conn->buf_size,
+                                     &conn->data_len);
     assert(conn->data_len >= conn->request_len);
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, NULL, "");

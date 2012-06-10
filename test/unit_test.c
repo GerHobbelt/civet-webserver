@@ -1,5 +1,11 @@
 #include "mongoose_ex.c"
 
+#define FATAL(str, line) do {                     \
+  printf("Fail on line %d: [%s]\n", line, str);   \
+  abort();                                        \
+} while (0)
+#define ASSERT(expr) do { if (!(expr)) FATAL(#expr, __LINE__); } while (0)
+
 static void test_should_keep_alive(void) {
   struct mg_connection conn;
   struct mg_context ctx;
@@ -13,59 +19,119 @@ static void test_should_keep_alive(void) {
   parse_http_request(req1, &conn.request_info);
 
   ctx.config[ENABLE_KEEP_ALIVE] = "no";
-  assert(should_keep_alive(&conn) == 0);
+  ASSERT(should_keep_alive(&conn) == 0);
 
   ctx.config[ENABLE_KEEP_ALIVE] = "yes";
-  assert(should_keep_alive(&conn) == 1);
+  ASSERT(should_keep_alive(&conn) == 1);
 
   conn.must_close = 1;
-  assert(should_keep_alive(&conn) == 0);
+  ASSERT(should_keep_alive(&conn) == 0);
 
   conn.must_close = 0;
   parse_http_request(req2, &conn.request_info);
-  assert(should_keep_alive(&conn) == 0);
+  ASSERT(should_keep_alive(&conn) == 0);
 
   parse_http_request(req3, &conn.request_info);
-  assert(should_keep_alive(&conn) == 0);
+  ASSERT(should_keep_alive(&conn) == 0);
 
   parse_http_request(req4, &conn.request_info);
-  assert(should_keep_alive(&conn) == 1);
+  ASSERT(should_keep_alive(&conn) == 1);
 
   conn.request_info.status_code = 401;
-  //assert(should_keep_alive(&conn) == 0);
+  //ASSERT(should_keep_alive(&conn) == 0);
 
   conn.request_info.status_code = 200;
   conn.must_close = 1;
-  assert(should_keep_alive(&conn) == 0);
+  ASSERT(should_keep_alive(&conn) == 0);
+}
+
+static void test_parse_http_request() {
+  struct mg_request_info ri;
+  char req1[] = "GET / HTTP/1.1\r\n\r\n";
+  char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
+  char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
+
+  ASSERT(parse_http_request(req1, &ri) == 1);
+  ASSERT(strcmp(ri.http_version, "1.1") == 0);
+  ASSERT(ri.num_headers == 0);
+
+  ASSERT(parse_http_request(req2, &ri) == 0);
+
+  // TODO(lsm): Fix this. Bah is not a valid header.
+  ASSERT(parse_http_request(req3, &ri) == 1);
+  ASSERT(ri.num_headers == 1);
+  ASSERT(strcmp(ri.http_headers[0].name, "Bah\r\n") == 0);
+
+  // TODO(lsm): add more tests. 
+}
+
+static void test_should_keep_alive(void) {
+  struct mg_connection conn;
+  struct mg_context ctx;
+  char req1[] = "GET / HTTP/1.1\r\n\r\n";
+  char req2[] = "GET / HTTP/1.0\r\n\r\n";
+  char req3[] = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
+  char req4[] = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n";
+
+  memset(&conn, 0, sizeof(conn));
+  conn.ctx = &ctx;
+  parse_http_request(req1, &conn.request_info);
+
+  ctx.config[ENABLE_KEEP_ALIVE] = "no";
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  ctx.config[ENABLE_KEEP_ALIVE] = "yes";
+  ASSERT(should_keep_alive(&conn) == 1);
+
+  conn.must_close = 1;
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  conn.must_close = 0;
+  parse_http_request(req2, &conn.request_info);
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  parse_http_request(req3, &conn.request_info);
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  parse_http_request(req4, &conn.request_info);
+  ASSERT(should_keep_alive(&conn) == 1);
+
+  conn.request_info.status_code = 401;
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  conn.request_info.status_code = 200;
+  conn.must_close = 1;
+  ASSERT(should_keep_alive(&conn) == 0);
 }
 
 static void test_match_prefix(void) {
-  assert(match_prefix("/a/", 3, "/a/b/c") == 3);
-  assert(match_prefix("/a/", 3, "/ab/c") == -1);
-  assert(match_prefix("/*/", 3, "/ab/c") == 4);
-  assert(match_prefix("**", 2, "/a/b/c") == 6);
-  assert(match_prefix("/*", 2, "/a/b/c") == 2);
-  assert(match_prefix("*/*", 3, "/a/b/c") == 2);
-  assert(match_prefix("**/", 3, "/a/b/c") == 5);
-  assert(match_prefix("**.foo|**.bar", 13, "a.bar") == 5);
-  assert(match_prefix("a|b|cd", 6, "cdef") == 2);
-  assert(match_prefix("a|b|c?", 6, "cdef") == 2);
-  assert(match_prefix("a|?|cd", 6, "cdef") == 1);
-  assert(match_prefix("/a/**.cgi", 9, "/foo/bar/x.cgi") == -1);
-  assert(match_prefix("/a/**.cgi", 9, "/a/bar/x.cgi") == 12);
-  assert(match_prefix("**/", 3, "/a/b/c") == 5);
-  assert(match_prefix("**/$", 4, "/a/b/c") == -1);
-  assert(match_prefix("**/$", 4, "/a/b/") == 5);
-  assert(match_prefix("$", 1, "") == 0);
-  assert(match_prefix("$", 1, "x") == -1);
-  assert(match_prefix("*$", 2, "x") == 1);
-  assert(match_prefix("/$", 2, "/") == 1);
-  assert(match_prefix("**/$", 4, "/a/b/c") == -1);
-  assert(match_prefix("**/$", 4, "/a/b/") == 5);
-  assert(match_prefix("*", 1, "/hello/") == 0);
-  assert(match_prefix("**.a$|**.b$", 11, "/a/b.b/") == -1);
-  assert(match_prefix("**.a$|**.b$", 11, "/a/b.b") == 6);
-  assert(match_prefix("**.a$|**.b$", 11, "/a/b.a") == 6);
+  ASSERT(match_prefix("/api", 4, "/api") == 4);
+  ASSERT(match_prefix("/a/", 3, "/a/b/c") == 3);
+  ASSERT(match_prefix("/a/", 3, "/ab/c") == -1);
+  ASSERT(match_prefix("/*/", 3, "/ab/c") == 4);
+  ASSERT(match_prefix("**", 2, "/a/b/c") == 6);
+  ASSERT(match_prefix("/*", 2, "/a/b/c") == 2);
+  ASSERT(match_prefix("*/*", 3, "/a/b/c") == 2);
+  ASSERT(match_prefix("**/", 3, "/a/b/c") == 5);
+  ASSERT(match_prefix("**.foo|**.bar", 13, "a.bar") == 5);
+  ASSERT(match_prefix("a|b|cd", 6, "cdef") == 2);
+  ASSERT(match_prefix("a|b|c?", 6, "cdef") == 2);
+  ASSERT(match_prefix("a|?|cd", 6, "cdef") == 1);
+  ASSERT(match_prefix("/a/**.cgi", 9, "/foo/bar/x.cgi") == -1);
+  ASSERT(match_prefix("/a/**.cgi", 9, "/a/bar/x.cgi") == 12);
+  ASSERT(match_prefix("**/", 3, "/a/b/c") == 5);
+  ASSERT(match_prefix("**/$", 4, "/a/b/c") == -1);
+  ASSERT(match_prefix("**/$", 4, "/a/b/") == 5);
+  ASSERT(match_prefix("$", 1, "") == 0);
+  ASSERT(match_prefix("$", 1, "x") == -1);
+  ASSERT(match_prefix("*$", 2, "x") == 1);
+  ASSERT(match_prefix("/$", 2, "/") == 1);
+  ASSERT(match_prefix("**/$", 4, "/a/b/c") == -1);
+  ASSERT(match_prefix("**/$", 4, "/a/b/") == 5);
+  ASSERT(match_prefix("*", 1, "/hello/") == 0);
+  ASSERT(match_prefix("**.a$|**.b$", 11, "/a/b.b/") == -1);
+  ASSERT(match_prefix("**.a$|**.b$", 11, "/a/b.b") == 6);
+  ASSERT(match_prefix("**.a$|**.b$", 11, "/a/b.a") == 6);
 }
 
 static void test_remove_double_dots() {
@@ -85,7 +151,7 @@ static void test_remove_double_dots() {
   for (i = 0; i < ARRAY_SIZE(data); i++) {
     //printf("[%s] -> [%s]\n", data[i].before, data[i].after);
     remove_double_dots_and_double_slashes(data[i].before);
-    assert(strcmp(data[i].before, data[i].after) == 0);
+    ASSERT(strcmp(data[i].before, data[i].after) == 0);
   }
 }
 
@@ -95,80 +161,80 @@ static void test_IPaddr_parsing() {
     struct socket s;
     
     memset(&sa, 0, sizeof(sa));
-    assert(!parse_ipvX_addr_string("example.com", 80, &sa));
-    assert(parse_ipvX_addr_string("10.11.12.13", 80, &sa));
-    assert(sa.u.sa.sa_family == AF_INET);
-    assert(sa.u.sa.sa_data[0] == 0);
-    assert(sa.u.sa.sa_data[1] == 80);
-    assert(sa.u.sa.sa_data[2] == 10);
-    assert(sa.u.sa.sa_data[3] == 11);
-    assert(sa.u.sa.sa_data[4] == 12);
-    assert(sa.u.sa.sa_data[5] == 13);
+    ASSERT(!parse_ipvX_addr_string("example.com", 80, &sa));
+    ASSERT(parse_ipvX_addr_string("10.11.12.13", 80, &sa));
+    ASSERT(sa.u.sa.sa_family == AF_INET);
+    ASSERT(sa.u.sa.sa_data[0] == 0);
+    ASSERT(sa.u.sa.sa_data[1] == 80);
+    ASSERT(sa.u.sa.sa_data[2] == 10);
+    ASSERT(sa.u.sa.sa_data[3] == 11);
+    ASSERT(sa.u.sa.sa_data[4] == 12);
+    ASSERT(sa.u.sa.sa_data[5] == 13);
 
     memset(&s, 0, sizeof(s));
     memset(&v, 0, sizeof(v));
     v.ptr = "example.com:80";
     v.len = strlen(v.ptr);
-    assert(!parse_port_string(&v, &s));
+    ASSERT(!parse_port_string(&v, &s));
     v.ptr = ":80";
     v.len = strlen(v.ptr);
-    assert(!parse_port_string(&v, &s));
+    ASSERT(!parse_port_string(&v, &s));
     v.ptr = "80";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sin.sin_port == htons(80));
-    assert(!s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sin.sin_port == htons(80));
+    ASSERT(!s.is_ssl);
     v.ptr = "443s";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sin.sin_port == htons(443));
-    assert(s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sin.sin_port == htons(443));
+    ASSERT(s.is_ssl);
     v.ptr = "10.11.12.13:80";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sa.sa_family == AF_INET);
-    assert(s.lsa.u.sa.sa_data[0] == 0);
-    assert(s.lsa.u.sa.sa_data[1] == 80);
-    assert(s.lsa.u.sa.sa_data[2] == 10);
-    assert(s.lsa.u.sa.sa_data[3] == 11);
-    assert(s.lsa.u.sa.sa_data[4] == 12);
-    assert(s.lsa.u.sa.sa_data[5] == 13);
-    assert(!s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sa.sa_family == AF_INET);
+    ASSERT(s.lsa.u.sa.sa_data[0] == 0);
+    ASSERT(s.lsa.u.sa.sa_data[1] == 80);
+    ASSERT(s.lsa.u.sa.sa_data[2] == 10);
+    ASSERT(s.lsa.u.sa.sa_data[3] == 11);
+    ASSERT(s.lsa.u.sa.sa_data[4] == 12);
+    ASSERT(s.lsa.u.sa.sa_data[5] == 13);
+    ASSERT(!s.is_ssl);
 
     v.ptr = "  20.21.22.23:280s,  ";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sa.sa_family == AF_INET);
-    assert(s.lsa.u.sa.sa_data[0] == 280 / 256);
-    assert(s.lsa.u.sa.sa_data[1] == 280 % 256);
-    assert(s.lsa.u.sa.sa_data[2] == 20);
-    assert(s.lsa.u.sa.sa_data[3] == 21);
-    assert(s.lsa.u.sa.sa_data[4] == 22);
-    assert(s.lsa.u.sa.sa_data[5] == 23);
-    assert(s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sa.sa_family == AF_INET);
+    ASSERT(s.lsa.u.sa.sa_data[0] == 280 / 256);
+    ASSERT(s.lsa.u.sa.sa_data[1] == 280 % 256);
+    ASSERT(s.lsa.u.sa.sa_data[2] == 20);
+    ASSERT(s.lsa.u.sa.sa_data[3] == 21);
+    ASSERT(s.lsa.u.sa.sa_data[4] == 22);
+    ASSERT(s.lsa.u.sa.sa_data[5] == 23);
+    ASSERT(s.is_ssl);
 
     v.ptr = "[10.11.12.13]:180     ,    ";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sa.sa_family == AF_INET);
-    assert(s.lsa.u.sa.sa_data[0] == 0);
-    assert(s.lsa.u.sa.sa_data[1] == (char)180);
-    assert(s.lsa.u.sa.sa_data[2] == 10);
-    assert(s.lsa.u.sa.sa_data[3] == 11);
-    assert(s.lsa.u.sa.sa_data[4] == 12);
-    assert(s.lsa.u.sa.sa_data[5] == 13);
-    assert(!s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sa.sa_family == AF_INET);
+    ASSERT(s.lsa.u.sa.sa_data[0] == 0);
+    ASSERT(s.lsa.u.sa.sa_data[1] == (char)180);
+    ASSERT(s.lsa.u.sa.sa_data[2] == 10);
+    ASSERT(s.lsa.u.sa.sa_data[3] == 11);
+    ASSERT(s.lsa.u.sa.sa_data[4] == 12);
+    ASSERT(s.lsa.u.sa.sa_data[5] == 13);
+    ASSERT(!s.is_ssl);
 
     v.ptr = "80  ,  ";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sin.sin_port == htons(80));
-    assert(!s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sin.sin_port == htons(80));
+    ASSERT(!s.is_ssl);
     v.ptr = "443s  ,  ";
     v.len = strlen(v.ptr);
-    assert(parse_port_string(&v, &s));
-    assert(s.lsa.u.sin.sin_port == htons(443));
-    assert(s.is_ssl);
+    ASSERT(parse_port_string(&v, &s));
+    ASSERT(s.lsa.u.sin.sin_port == htons(443));
+    ASSERT(s.is_ssl);
 
 
     // TODO: test these:
@@ -186,44 +252,44 @@ static void test_logpath_fmt() {
     c.ctx = &ctx;
 
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
-    assert(path);
-    assert(0 == strcmp(path, "_.long-blubb"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "_.long-blubb"));
 
     c.request_info.uri = "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!";
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
-    assert(path);
-    assert(0 == strcmp(path, "http.example"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "http.example"));
 
     c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
-    assert(path);
-    assert(0 == strcmp(path, "_Y/http.exam"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "_Y/http.exam"));
 
     c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
-    assert(path);
-    assert(0 == strcmp(path, "_Y/_/_d/_m/b"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "_Y/_/_d/_m/b"));
 
 
     c.request_info.uri = NULL;
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
-    assert(path);
-    assert(0 == strcmp(path, "_.long-blubber.log"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "_.long-blubber.log"));
 
     c.request_info.uri = "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!";
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
-    assert(path);
-    assert(0 == strcmp(path, "http.example.com.sample.page.tree.long-blubber.log"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "http.example.com.sample.page.tree.long-blubber.log"));
 
     c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
-    assert(path);
-    assert(0 == strcmp(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.396693b9/14/02/blubber.log"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.396693b9/14/02/blubber.log"));
 
     c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....?&_&_&_&_&_ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
-    assert(path);
-    assert(0 == strcmp(path, "2009/__________ohhhhh.you_shouldn_t_have._Now_let_s_seed2d6cc07/14/02/blubber.log"));
+    ASSERT(path);
+    ASSERT(0 == strcmp(path, "2009/__________ohhhhh.you_shouldn_t_have._Now_let_s_seed2d6cc07/14/02/blubber.log"));
 }
 
 
@@ -263,59 +329,59 @@ static void test_header_processing()
     strcpy(buf, input);
 
     rv = get_request_len(buf, strlen(buf));
-    assert(rv > 0 && rv < (int)strlen(buf));
-    assert(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
+    ASSERT(rv > 0 && rv < (int)strlen(buf));
+    ASSERT(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
     buf[rv] = 0;
     p = buf;
     parse_http_headers(&p, &c.request_info);
-    assert(p > buf);
-    assert(*p == 0);
-    assert(c.request_info.num_headers == 11);
+    ASSERT(p > buf);
+    ASSERT(*p == 0);
+    ASSERT(c.request_info.num_headers == 11);
 
     values[0] = mg_get_header(&c, "Set-Cookie");
-    assert(values[0]);
+    ASSERT(values[0]);
 
     rv = mg_get_headers(values, 64, &c, "Set-Cookie");
-    assert(rv == 2);
-    assert(values[0]);
-    assert(values[1]);
-    assert(!values[2]);
+    ASSERT(rv == 2);
+    ASSERT(values[0]);
+    ASSERT(values[1]);
+    ASSERT(!values[2]);
 
     rv = mg_get_headers(values, 2, &c, "Set-Cookie");
-    assert(rv == 2);
-    assert(values[0]);
-    assert(!values[1]);
+    ASSERT(rv == 2);
+    ASSERT(values[0]);
+    ASSERT(!values[1]);
 
     rv = mg_get_headers(values, 1, &c, "Set-Cookie");
-    assert(rv == 2);
-    assert(!values[0]);
+    ASSERT(rv == 2);
+    ASSERT(!values[0]);
 
     values[0] = mg_get_header(&c, "p3p");
-    assert(values[0]);
+    ASSERT(values[0]);
 
     values[0] = mg_get_header(&c, "NID");
-    assert(!values[0]);
+    ASSERT(!values[0]);
 
     values[0] = mg_get_header(&c, "PREF");
-    assert(!values[0]);
+    ASSERT(!values[0]);
 
     values[0] = mg_get_header(&c, "Cache-Control");
-    assert(values[0]);
+    ASSERT(values[0]);
 
     values[0] = mg_get_header(&c, "X-XSS-Protection");
-    assert(values[0]);
+    ASSERT(values[0]);
 
     rv = mg_get_headers(values, 64, &c, "Content-Type");
-    assert(values[0]);
-    assert(rv == 1);
+    ASSERT(values[0]);
+    ASSERT(rv == 1);
 
     rv = mg_get_headers(values, 64, &c, "content-type");
-    assert(values[0]);
-    assert(rv == 1);
+    ASSERT(values[0]);
+    ASSERT(rv == 1);
 
     rv = mg_get_headers(values, 64, &c, "CONTENT-TYPE");
-    assert(values[0]);
-    assert(rv == 1);
+    ASSERT(values[0]);
+    ASSERT(rv == 1);
 }
 
 
@@ -332,27 +398,27 @@ static void test_client_connect() {
     c.ctx = &ctx;
 
     g = mg_connect(&c, "example.com", 80, 0);
-    assert(g);
+    ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
-    assert(rv == 18);
+    ASSERT(rv == 18);
     mg_shutdown(g, SHUT_WR);
     rv = mg_pull(g, buf, sizeof(buf));
-    assert(rv > 0);
+    ASSERT(rv > 0);
     close_connection(g);
     free(g);
 
 
     g = mg_connect(&c, "google.com", 80, 1);
-    assert(!g);
+    ASSERT(!g);
     g = mg_connect(&c, "google.com", 80, 0);
-    assert(g);
+    ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
-    assert(rv == 18);
+    ASSERT(rv == 18);
     mg_shutdown(g, SHUT_WR);
     rv = mg_pull(g, buf, sizeof(buf));
-    assert(rv > 0);
+    ASSERT(rv > 0);
     mg_close_connection(g);
     //free(g);
 }
@@ -366,6 +432,7 @@ int main(void) {
   test_logpath_fmt();
   test_header_processing();
   test_should_keep_alive();
+  test_parse_http_request();
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   {
