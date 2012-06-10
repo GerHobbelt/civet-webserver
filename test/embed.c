@@ -21,14 +21,8 @@
 // Unit test for the mongoose web server. Tests embedded API.
 
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#ifndef _WIN32
-#include <unistd.h>
-#endif
-
 #include "mongoose.h"
+
 
 #if !defined(LISTENING_PORT)
 #define LISTENING_PORT "23456"

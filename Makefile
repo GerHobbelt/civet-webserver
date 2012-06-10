@@ -45,9 +45,9 @@ mac:
 	$(CC) mongoose.c main.c -pthread -o $(PROG) $(CFLAGS)
 
 solaris:
-	gcc mongoose.c -pthread -lnsl \
+	$(CC) mongoose.c -pthread -lnsl \
 		-lsocket -fpic -fPIC -shared -o $(LIB) $(CFLAGS)
-	gcc mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
+	$(CC) mongoose.c main.c -pthread -lnsl -lsocket -o $(PROG) $(CFLAGS)
 
 
 ##########################################################################
@@ -112,15 +112,15 @@ windows:
 	$(CL) mongoose.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
-#MINGWDBG= -DDEBUG -O0
+#MINGWDBG= -DDEBUG -O0 -ggdb
 MINGWDBG= -DNDEBUG -Os
-#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
-MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG)
+MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
+#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT
 mingw:
 	windres win32\res.rc win32\res.o
-	gcc $(MINGWOPT) mongoose.c -lws2_32 \
+	$(CC) $(MINGWOPT) mongoose.c -lws2_32 \
 		-shared -Wl,--out-implib=$(PROG).lib -o _$(PROG).dll
-	gcc $(MINGWOPT) mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
+	$(CC) $(MINGWOPT) -Iwin32 mongoose.c main.c win32\res.o -lws2_32 -ladvapi32 \
 		-o $(PROG).exe
 
 
@@ -143,4 +143,11 @@ release: clean
 	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar --exclude \*.hg --exclude \*.svn --exclude \*.swp --exclude \*.nfs\* -czf x mongoose && mv x mongoose/$$F
 
 clean:
-	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz
+	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz $(PROG).exe *.dll *.lib
+
+
+# dependencies
+.PHONY: mongoose.c main.c
+
+mongoose.c:    mongoose.h mongoose_sys_porting.h
+main.c:        mongoose.h mongoose_sys_porting.h
