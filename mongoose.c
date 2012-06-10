@@ -1392,6 +1392,13 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
   return j;
 }
 
+// return non-zero when the given status_code is a probably legal
+// HTTP/WebSockets/... response code, i.e. is a value in the range
+// 1xx..5xx, 1xxx..4xxx
+static int is_legal_response_code(int status) {
+    return (status >= 100 && status < 600) || (status >= 1000 && status < 5000);
+}
+
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
 // set up, for example if request parsing failed.
@@ -1405,7 +1412,7 @@ static int should_keep_alive(struct mg_connection *conn) {
           // anything else means we're foobarred ourselves already,
           // so it's time to close and let them retry.
           conn->request_info.status_code < 500 &&
-          conn->request_info.status_code >= 100 &&
+          is_legal_response_code(conn->request_info.status_code) &&
           !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
           (header == NULL ?
            (http_version && !strcmp(http_version, "1.1")) :
@@ -1968,7 +1975,7 @@ static int kill(pid_t pid, int sig_num) {
 
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
-                           int fd_stdout, const char *dir) {
+                           int fd_stdout, int fd_stderr, const char *dir) {
   HANDLE me;
   char *p;
   const char *interp;
@@ -1988,6 +1995,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       &si.hStdInput, 0, TRUE, DUPLICATE_SAME_ACCESS);
   (void) DuplicateHandle(me, (HANDLE) _get_osfhandle(fd_stdout), me,
       &si.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+  (void) DuplicateHandle(me, (HANDLE) _get_osfhandle(fd_stderr), me,
+      &si.hStdError, 0, TRUE, DUPLICATE_SAME_ACCESS);
 
   // If CGI file is a script, try to read the interpreter line
   interp = get_conn_option(conn, CGI_INTERPRETER);
@@ -2022,8 +2031,10 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   } else {
     (void) close(fd_stdin);
     (void) close(fd_stdout);
+    (void) close(fd_stderr);
   }
 
+  (void) CloseHandle(si.hStdError);
   (void) CloseHandle(si.hStdOutput);
   (void) CloseHandle(si.hStdInput);
   (void) CloseHandle(pi.hThread);
@@ -2134,7 +2145,7 @@ static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func
 #ifndef NO_CGI
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
-                           int fd_stdout, const char *dir) {
+                           int fd_stdout, int fd_stderr, const char *dir) {
   pid_t pid;
   const char *interp;
 
@@ -2151,10 +2162,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       mg_cry(conn, "%s: dup2(%d, 0): %s", __func__, fd_stdin, mg_strerror(ERRNO));
     } else if (dup2(fd_stdout, 1) == -1) {
       mg_cry(conn, "%s: dup2(%d, 1): %s", __func__, fd_stdout, mg_strerror(ERRNO));
+    } else if (dup2(fd_stderr, 2) == -1) {
+        mg_cry(conn, "%s: dup2(%d, 2): %s", __func__, fd_stderr, mg_strerror(ERRNO));
     } else {
-      (void) dup2(fd_stdout, 2);
       (void) close(fd_stdin);
       (void) close(fd_stdout);
+      (void) close(fd_stderr);
 
       // Execute CGI program. No need to lock: new process
       interp = get_conn_option(conn, CGI_INTERPRETER);
@@ -2172,6 +2185,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     // Parent. Close stdio descriptors
     (void) close(fd_stdin);
     (void) close(fd_stdout);
+    (void) close(fd_stderr);
   }
 
   return pid;
@@ -3990,12 +4004,12 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 }
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
-  int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
+  int headers_len, data_len, i, fd_stdin[2], fd_stdout[2], fd_stderr[2];
   const char *status;
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
-  FILE *in, *out;
+  FILE *in, *out, *err;
   pid_t pid;
 
   prepare_cgi_environment(conn, prog, &blk);
@@ -4017,20 +4031,21 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
 
   pid = (pid_t) -1;
-  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = -1;
+  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = fd_stderr[0] = fd_stderr[1] = -1;
   in = out = NULL;
 
-  if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0) {
+  if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0 || pipe(fd_stderr) != 0) {
     send_http_error(conn, 500, NULL,
         "Cannot create CGI pipe: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
-          fd_stdin[0], fd_stdout[1], dir)) == (pid_t) -1) {
+          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
     send_http_error(conn, 500, NULL,
         "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
-      (out = fdopen(fd_stdout[0], "rb")) == NULL) {
+      (out = fdopen(fd_stdout[0], "rb")) == NULL ||
+      (err = fdopen(fd_stderr[0], "rb")) == NULL) {
     send_http_error(conn, 500, NULL,
         "fopen: %s", mg_strerror(ERRNO));
     goto done;
@@ -4038,12 +4053,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   setbuf(in, NULL);
   setbuf(out, NULL);
+  setbuf(err, NULL);
 
   // spawn_process() must close those!
   // If we don't mark them as closed, close() attempt before
   // return from this function throws an exception on Windows.
   // Windows does not like when closed descriptor is closed again.
-  fd_stdin[0] = fd_stdout[1] = -1;
+  fd_stdin[0] = fd_stdout[1] = fd_stderr[1] = -1;
 
   // Send POST data to the CGI process if needed
   if (!strcmp(conn->request_info.request_method, "POST") &&
@@ -4072,10 +4088,16 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   if ((status = get_header(&ri, "Status")) != NULL) {
     char * chknum = NULL;
     conn->request_info.status_code = strtol(status, &chknum, 10);
-    if ((chknum != NULL) && (*chknum == ' '))
-      status = chknum + 1;
+    if (chknum != NULL)
+      status = chknum + strspn(chknum, " ");
     else
       status = NULL;
+    if (!is_legal_response_code(conn->request_info.status_code)) {
+      send_http_error(conn, 500, NULL,
+            "CGI program sent malformed HTTP Status header: [%s]",
+            status);
+      goto done;
+    }
   } else if (get_header(&ri, "Location") != NULL) {
     conn->request_info.status_code = 302;
   } else {
@@ -4087,7 +4109,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     conn->must_close = 1;
   }
 
-  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, status ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
+  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, !is_empty(status) ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
@@ -4114,6 +4136,9 @@ done:
   if (fd_stdout[1] != -1) {
     (void) close(fd_stdout[1]);
   }
+  if (fd_stderr[1] != -1) {
+      (void) close(fd_stderr[1]);
+  }
 
   if (in != NULL) {
     (void) fclose(in);
@@ -4125,6 +4150,12 @@ done:
     (void) fclose(out);
   } else if (fd_stdout[0] != -1) {
     (void) close(fd_stdout[0]);
+  }
+
+  if (err != NULL) {
+    (void) fclose(err);
+  } else if (fd_stderr[0] != -1) {
+    (void) close(fd_stderr[0]);
   }
 }
 #endif // !NO_CGI
@@ -5400,9 +5431,9 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
 }
 
 static int is_valid_uri(const char *uri) {
-    // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
-    // URI can be an asterisk (*) or should start with slash.
-    return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
+  // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
+  // URI can be an asterisk (*) or should start with slash.
+  return (uri[0] == '/' || (uri[0] == '*' && uri[1] == '\0'));
 }
 
 static void process_new_connection(struct mg_connection *conn) {
