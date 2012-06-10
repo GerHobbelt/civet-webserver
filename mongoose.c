@@ -528,14 +528,10 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
             (void *) &usa->u.sin.sin_addr :
             (void *) &usa->u.sin6.sin6_addr), buf, len);
-#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP)
-  // We use WSAAddressToString since it is supported on Windows XP and later
-  {
-    DWORD l = (DWORD)len;
-    if (WSAAddressToStringA((LPSOCKADDR)&usa->u.sa, usa->len, NULL, buf, &l)) {
-      buf[0] = '\0';
-    }
-  }
+#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN2K)
+  // do not use WSAAddressToString() as that one formats the output as [address]:port while we only want to print <address> here
+  if (getnameinfo(&usa->u.sa, usa->len, buf, len, NULL, 0, NI_NUMERICHOST))
+    buf[0] = '\0';
 #elif defined(_WIN32)
   // WARNING: ntoa() is very probably not thread-safe on your platform!
   //          (we'll abuse the (DisconnectExPtrCS) critical section to cover this up as well...)
@@ -4687,32 +4683,39 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
   } else {
     return 0;
   }
-#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP)
+#elif !defined(_WIN32) || (defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
   // We use WSAStringToAddress since it is supported on Windows XP and later
-  struct in_addr a = {0};
-  INT l;
+  struct addrinfo hints = {0};
+  struct addrinfo *rset = NULL;
 #if defined(USE_IPV6)
-  struct in6_addr a6 = {0};
-
-  l = sizeof(a6);
-  if (!WSAStringToAddressA(addr_buf, AF_INET6, NULL, (LPSOCKADDR)&a6, &l)) {
-    assert(l == sizeof(a6));
-    usa->len = sizeof(usa->u.sin6);
-    usa->u.sin6.sin6_family = AF_INET6;
-    usa->u.sin6.sin6_port = htons((uint16_t) port);
-    usa->u.sin6.sin6_addr = a6;
-    return 1;
-  }
+  hints.ai_family = AF_UNSPEC;
+#else
+  hints.ai_family = AF_INET;
 #endif
-  l = sizeof(a);
-  if (!WSAStringToAddressA(addr_buf, AF_INET, NULL, (LPSOCKADDR)&a, &l)) {
-    assert(l == sizeof(a));
-    usa->len = sizeof(usa->u.sin);
-    usa->u.sin.sin_family = AF_INET;
-    usa->u.sin.sin_port = htons((uint16_t) port);
-    usa->u.sin.sin_addr = a;
-    return 1;
+  hints.ai_socktype = SOCK_STREAM; // TCP
+  hints.ai_flags = AI_NUMERICHOST;
+  if (!getaddrinfo(addr_buf, NULL, &hints, &rset) && rset) {
+    memcpy(&usa->u.sa, rset->ai_addr, rset->ai_addrlen);
+#if defined(USE_IPV6)
+	if (rset->ai_family == PF_INET6) {
+      usa->len = sizeof(usa->u.sin6);
+	  assert(rset->ai_addrlen == sizeof(usa->u.sin6));
+      assert(usa->u.sin6.sin6_family == AF_INET6);
+      usa->u.sin6.sin6_port = htons((uint16_t) port);
+	  freeaddrinfo(rset);
+      return 1;
+    } else
+#endif
+	if (rset->ai_family == PF_INET) {
+	  usa->len = sizeof(usa->u.sin);
+	  assert(rset->ai_addrlen == sizeof(usa->u.sin));
+	  assert(usa->u.sin.sin_family == AF_INET);
+      usa->u.sin.sin_port = htons((uint16_t) port);
+	  freeaddrinfo(rset);
+      return 1;
+    }
   }
+  if (rset) freeaddrinfo(rset);
   return 0;
 #else
   int a, b, c, d, len;
