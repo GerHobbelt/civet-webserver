@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_ex.h"    // mg_send_http_error()
+#include "mongoose.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"
@@ -50,7 +50,7 @@ static void die(const char *fmt, ...) {
   va_end(ap);
 
 #if defined(_WIN32)
-  MessageBox(NULL, msg, "Error", MB_OK);
+  MessageBoxA(NULL, msg, "Error", MB_OK);
 #else
   fprintf(stderr, "%s\n", msg);
 #endif
@@ -84,7 +84,7 @@ static void verify_document_root(const char *root) {
   struct stat st;
 
   if (stat(root, &st) != 0 || !S_ISDIR(st.st_mode)) {
-    die("Invalid root directory: [%s]: %s", root, strerror(errno));
+    die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
   }
 }
 
@@ -113,7 +113,7 @@ static void set_option(char **options, const char *name, const char *value) {
   }
 
   if (i == MAX_OPTIONS - 3) {
-    die("%s", "Too many options specified");
+    die("Too many options specified");
   }
 }
 
@@ -136,11 +136,11 @@ static void process_command_line_arguments(char *argv[], char **options) {
              (int) (p - argv[0]), argv[0], DIRSEP, CONFIG_FILE);
   }
 
-  fp = fopen(config_file, "r");
+  fp = mg_fopen(config_file, "r");
 
   // If config file was set in command line and open failed, die
   if (cmd_line_opts_start == 2 && fp == NULL) {
-    die("Cannot open config file %s: %s", config_file, strerror(errno));
+    die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
   }
 
   // Load config file settings first
@@ -179,7 +179,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
       }
     }
 
-    (void) fclose(fp);
+    (void) mg_fclose(fp);
   }
 
   // Now handle command line flags. They override config file settings.
@@ -271,7 +271,7 @@ static void WINAPI ServiceMain(void) {
 #define ID_SEPARATOR 103
 #define ID_INSTALL_SERVICE 104
 #define ID_REMOVE_SERVICE 105
-#define ID_ICON 200
+
 static NOTIFYICONDATAA TrayIcon;
 
 static void edit_config_file(void) {
@@ -281,9 +281,9 @@ static void edit_config_file(void) {
   char cmd[200];
 
   // Create config file if it is not present yet
-  if ((fp = fopen(config_file, "r")) != NULL) {
-    fclose(fp);
-  } else if ((fp = fopen(config_file, "a+")) != NULL) {
+  if ((fp = mg_fopen(config_file, "r")) != NULL) {
+    mg_fclose(fp);
+  } else if ((fp = mg_fopen(config_file, "w")) != NULL) {
     fprintf(fp,
             "# Mongoose web server configuration file.\n"
             "# Lines starting with '#' and empty lines are ignored.\n"
@@ -294,7 +294,7 @@ static void edit_config_file(void) {
       value = mg_get_option(ctx, names[i]);
       fprintf(fp, "# %s %s\n", names[i + 1], *value ? value : "<value>");
     }
-    fclose(fp);
+    mg_fclose(fp);
   }
 
   snprintf(cmd, sizeof(cmd), "notepad.exe %s", config_file);

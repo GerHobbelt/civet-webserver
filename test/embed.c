@@ -46,6 +46,7 @@ static void test_get_var(struct mg_connection *conn,
   int var_len;
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
 
   buf_len = 0;
   var = buf = NULL;
@@ -82,6 +83,7 @@ static void test_get_header(struct mg_connection *conn,
   int i;
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
   printf("HTTP headers: %d\n", ri->num_headers);
   for (i = 0; i < ri->num_headers; i++) {
     printf("[%s]: [%s]\n", ri->http_headers[i].name, ri->http_headers[i].value);
@@ -98,6 +100,7 @@ static void test_get_request_info(struct mg_connection *conn,
   int i;
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
 
   mg_printf(conn, "Method: [%s]\n", ri->request_method);
   mg_printf(conn, "URI: [%s]\n", ri->uri);
@@ -111,7 +114,16 @@ static void test_get_request_info(struct mg_connection *conn,
 
   mg_printf(conn, "Query string: [%s]\n",
             ri->query_string ? ri->query_string: "");
-  mg_printf(conn, "Remote IP: [%lu]\n", ri->remote_ip);
+  if (ri->remote_ip.is_ip6)
+    mg_printf(conn, "Remote IP: [%x:%x:%x:%x:%x:%x:%x:%x]\n",
+            ri->remote_ip.ip_addr.v6[0], ri->remote_ip.ip_addr.v6[1],
+            ri->remote_ip.ip_addr.v6[2], ri->remote_ip.ip_addr.v6[3],
+            ri->remote_ip.ip_addr.v6[4], ri->remote_ip.ip_addr.v6[5],
+            ri->remote_ip.ip_addr.v6[6], ri->remote_ip.ip_addr.v6[7]);
+  else
+    mg_printf(conn, "Remote IP: [%u.%u.%u.%u]\n",
+            ri->remote_ip.ip_addr.v4[0], ri->remote_ip.ip_addr.v4[1],
+            ri->remote_ip.ip_addr.v4[2], ri->remote_ip.ip_addr.v4[3]);
   mg_printf(conn, "Remote port: [%d]\n", ri->remote_port);
   mg_printf(conn, "Remote user: [%s]\n",
             ri->remote_user ? ri->remote_user : "");
@@ -120,7 +132,8 @@ static void test_get_request_info(struct mg_connection *conn,
 static void test_error(struct mg_connection *conn,
                        const struct mg_request_info *ri) {
   mg_printf(conn, "HTTP/1.1 %d XX\r\n"
-            "Conntection: close\r\n\r\n", ri->status_code);
+            "Connection: close\r\n\r\n", ri->status_code);
+  mg_mark_end_of_header_transmission(conn);
   mg_printf(conn, "Error: [%d]", ri->status_code);
 }
 
@@ -131,6 +144,8 @@ static void test_post(struct mg_connection *conn,
   int len;
 
   mg_printf(conn, "%s", standard_reply);
+  mg_mark_end_of_header_transmission(conn);
+
   if (strcmp(ri->request_method, "POST") == 0 &&
       (cl = mg_get_header(conn, "Content-Length")) != NULL) {
     len = atoi(cl);
@@ -176,6 +191,13 @@ int main(void) {
   const char *options[] = {"listening_ports", LISTENING_PORT, NULL};
 
   ctx = mg_start(callback, NULL, options);
+#if !defined(WIN32)
   pause();
+#else
+  while (!mg_get_stop_flag(ctx)) {
+    mg_sleep(10);
+  }
+  mg_stop(ctx);
+#endif
   return 0;
 }

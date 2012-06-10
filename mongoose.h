@@ -43,7 +43,7 @@ struct mg_ip_address {
 
 // This structure contains information about the HTTP request.
 struct mg_request_info {
-  void *user_data;       // User-defined pointer passed to mg_start()
+  void *user_data;                 // User-defined pointer passed to mg_start()
   const char *request_method;      // "GET", "POST", etc
   char *uri;                       // URL-decoded URI
   const char *http_version;        // E.g. "1.0", "1.1"
@@ -52,6 +52,8 @@ struct mg_request_info {
   const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
   struct mg_ip_address remote_ip;  // Client's IP address
   int remote_port;                 // Client's port
+  struct mg_ip_address local_ip;   // This machine's IP address which receives/services the request
+  int local_port;                  // Server's port
   int status_code;                 // HTTP reply status code, e.g. 200
   int is_ssl;                      // 1 if SSL-ed, 0 if not
   int num_headers;                 // Number of headers
@@ -187,19 +189,38 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // print data that is bigger than that, otherwise it will be truncated.
 int mg_printf(struct mg_connection *, const char *fmt, ...)
 #ifdef __GNUC__
-__attribute__((format(printf, 2, 3)))
+    __attribute__((format(printf, 2, 3)))
 #endif
 ;
 
+// Send data to the browser using vprintf() semantics.
+//
+// See mg_printf() for the applicable conditions, caveats and return values.
+int mg_vprintf(struct mg_connection *, const char *fmt, va_list ap);
+
 
 // Send contents of the entire file together with HTTP headers.
-//
-// Return 0 on success, negative number of I/O failed, positive non-zero when file does not exist (404)
-int mg_send_file(struct mg_connection *conn, const char *path);
+void mg_send_file(struct mg_connection *conn, const char *path);
 
 
 // Read data from the remote end, return number of bytes read.
 int mg_read(struct mg_connection *, void *buf, size_t len);
+
+
+/*
+Send HTTP error response headers, if we still can. Log the error anyway.
+
+'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
+
+'fmt' + args is the content sent along as error report (request response).
+*/
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
+#ifdef __GNUC__
+    __attribute__((format(printf, 4, 5)))
+#endif
+;
+void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
+
 
 
 // Get the value of particular HTTP header.
@@ -306,6 +327,12 @@ struct mgstat {
 
 // return 0 when file/directory exists; fills the mgstat struct with last-modified timestamp and file size.
 int mg_stat(const char *path, struct mgstat *stp);
+
+// Like fopen() but supports UTF-8 filenames and accepts the path "-" to mean STDERR (which is handy for logging and such)
+FILE *mg_fopen(const char *path, const char *mode);
+
+// Like fclose() but the other of the matching pair with mg_fopen()
+int mg_fclose(FILE *fp);
 
 
 /*

@@ -56,7 +56,7 @@
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0500 // 0x0600 // To make it link in VS200x (with IPv6 support from Vista onwards)
+#define _WIN32_WINNT 0x0600 // To make it link in VS200x (with IPv6 support from Win2K onwards, with improved support from Vista onwards)
 #endif
 // load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
 #include <ws2tcpip.h>
