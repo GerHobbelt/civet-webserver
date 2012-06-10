@@ -23,7 +23,6 @@
 
 #ifdef _WIN32
 #include "win32/resource.h"
-#include <winsvc.h>
 #endif // _WIN32
 
 
@@ -283,7 +282,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
                        "Connection: close\r\n\r\n", (unsigned int)len);
       mg_mark_end_of_header_transmission(conn);
 
-      if (len != mg_write(conn, data, len))
+      if ((int)len != mg_write(conn, data, len))
       {
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
       }

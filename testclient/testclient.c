@@ -756,7 +756,11 @@ int main(int argc, char * argv[]) {
   GetProcessAffinityMask(GetCurrentProcess(), &availableCPUs, &totalCPUs);
   printf("CPUs (bit masks): process=%x, system=%x\r\n", availableCPUs, totalCPUs);
 
+#if _WIN32_WINNT >= 0x403
   InitializeCriticalSectionAndSpinCount(&cs, 100);
+#else
+  InitializeCriticalSection(&cs);
+#endif
 
   /* set up the data buffer for fast I/O */
   source_data_size = 1024 * 1024;

@@ -289,7 +289,7 @@ static void test_header_processing()
 
     strcpy(buf, input);
 
-    rv = get_request_len(buf, strlen(buf));
+    rv = get_request_len(buf, (int)strlen(buf));
     ASSERT(rv > 0 && rv < (int)strlen(buf));
     ASSERT(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
     buf[rv] = 0;
@@ -400,7 +400,11 @@ int main(void) {
     WSADATA data;
     WSAStartup(MAKEWORD(2,2), &data);
     InitializeCriticalSection(&global_log_file_lock);
+#if _WIN32_WINNT >= 0x403
     InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
+#else
+    InitializeCriticalSection(&DisconnectExPtrCS);
+#endif
   }
 #endif // _WIN32
 

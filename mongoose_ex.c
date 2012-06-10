@@ -58,7 +58,7 @@ int mg_shutdown(struct mg_connection *conn, int how)
 int mg_setsockopt(struct mg_connection *conn, int level, int optname, const void *optval, size_t optlen)
 {
     if (conn && conn->client.sock != INVALID_SOCKET)
-        return setsockopt(conn->client.sock, level, optname, optval, optlen);
+        return setsockopt(conn->client.sock, level, optname, optval, (int)optlen);
     return -1;
 }
 
@@ -224,7 +224,7 @@ int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
         if (conn->consumed_content < (int64_t) buffered_len) {
             buffered_len -= (int) conn->consumed_content;
             if (max_bufsize < (size_t) buffered_len) {
-                buffered_len = max_bufsize;
+                buffered_len = (int)max_bufsize;
             }
             nread = mg_read(conn, buf, buffered_len);
             buf = (char *) buf + buffered_len;

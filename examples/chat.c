@@ -7,9 +7,6 @@
 
 #include "mongoose_ex.h"    // mg_send_http_error()
 
-#ifdef _WIN32
-#include <winsvc.h>
-#endif
 
 #define MAX_USER_LEN  20
 #define MAX_MESSAGE_LEN  100
