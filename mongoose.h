@@ -68,7 +68,7 @@ struct mg_request_info {
     char *name;                    // HTTP header name
     char *value;                   // HTTP header value
   } http_headers[64];              // Maximum 64 headers
-  char* response_headers; 		   // Headers to be sent with HTTP response. Provided by user.
+  char* response_headers;          // Headers to be sent with HTTP response. Provided by user.
 };
 
 // Various events on which user-defined function is called by Mongoose.
@@ -146,7 +146,7 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 typedef int (*mg_password_callback_t)(struct mg_connection *conn,
                                 const char *username,
                                 char password[],
-								size_t password_bufsize);
+                                size_t password_bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // each time it receives a part of the request body from the network.
@@ -169,7 +169,7 @@ typedef int (*mg_password_callback_t)(struct mg_connection *conn,
 //   and error response will be sent to the remote peer.
 typedef int (*mg_receive_callback_t)(struct mg_connection *conn,
                                 const char *buf,
-								size_t bufsize);
+                                size_t bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // each time it sends part of the content body while processing the GET request.
@@ -199,7 +199,7 @@ typedef int (*mg_receive_callback_t)(struct mg_connection *conn,
 //   If zero or negative, sending will be stopped and the connection will be closed.
 typedef int (*mg_send_callback_t)(struct mg_connection *conn,
                                 char    *buf,
-								size_t  bufsize,
+                                size_t  bufsize,
                                 size_t  *content_length,
                                 char*   *mime);
 
@@ -250,7 +250,7 @@ typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct 
 typedef struct mg_user_class_t {
   void *                      user_data;          // Arbitrary user-defined data
 
-  mg_callback_t               user_callback;  // User-defined event handling callback function
+  mg_callback_t               user_callback;      // User-defined event handling callback function
 
   mg_option_decode_callback_t user_option_decode; // User-defined option decode/processing callback function
   mg_option_fill_callback_t   user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
@@ -482,19 +482,6 @@ const char *mg_version(void);
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
-
-// Enables user to store application context that is specific for connection.
-// This is in contradiction to the user_data provided to the mg_start function.
-// This context is stored into struct mg_request_info structure
-// and can be retrieved by user from within callbacks using
-// request_info->user_data field.
-void mg_conn_set_user_data(struct mg_connection *conn, void* user_data);
-
-// Provides status code to be set into response.
-// If not provided, the default value will be used.
-// Note if mongoose generates HTTP reject due to some error,
-// it will use error specific code, while ignoring this status code.
-void mg_conn_set_status_code(struct mg_connection *conn, int status_code);
 
 // Sets headers to be sent into outgoing response.
 // This function can be called multiple times. Each invocation adds provided headers.
