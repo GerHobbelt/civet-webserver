@@ -1119,13 +1119,13 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 
   if (n < 0) {
     mg_cry(conn, "vsnprintf error / overflow");
-  // MSVC produces -1 on printf("%s", str) for very long 'str'!
+    // MSVC produces -1 on printf("%s", str) for very long 'str'!
     n = (int) buflen - 1;
     buf[n] = '\0';
     n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     mg_cry(conn, "truncating vsnprintf buffer: [%.*s]",
-        n > 200 ? 200 : n, buf);
+           n > 200 ? 200 : n, buf);
     n = (int) buflen - 1;
   }
   buf[n] = '\0';
