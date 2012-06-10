@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_ex.h"
+#include "mongoose_ex.h"    // mg_send_http_error()
 
 #ifdef _WIN32
 #include "win32/resource.h"
@@ -34,10 +34,10 @@
 #define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
-static volatile int exit_flag;
-static char server_name[40];        // Set by init_server_name()
-static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
-static struct mg_context *ctx;      // Set by start_mongoose()
+static volatile int exit_flag = 0;
+static char server_name[40];          // Set by init_server_name()
+static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
+static struct mg_context *ctx = NULL; // Set by start_mongoose()
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -113,9 +113,11 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 
 static void verify_document_root(const char *root) {
   struct mgstat st;
+  char buf[PATH_MAX];
 
+  getcwd(buf, sizeof(buf));
   if (mg_stat(root, &st) != 0 || !st.is_directory) {
-    die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
+    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(errno), buf);
   }
 }
 
@@ -244,10 +246,10 @@ struct t_user_arg {
    struct t_stat * uris[0x10000];
 };
 
-unsigned short crc16(const void * data, unsigned long bitCount) {
+unsigned short crc16(const void * data, size_t bitCount) {
   unsigned short r = 0xFFFFu;
-    unsigned long i;
-  for (i=0;i<bitCount;i++) {
+  size_t i;
+  for (i = 0; i < bitCount; i++) {
     unsigned short b = ((unsigned char*)data)[i>>3];
     b >>= i & 0x7ul;
     r = ((r & 1u) != (b & 1u)) ? ((r>>1) ^ 0xA001u) : (r>>1);
@@ -406,7 +408,7 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
   /* cleanup */
   sd_bufrelease(ib);
   sd_bufrelease(ob);
-   
+
   return ret;
 }
 
@@ -497,13 +499,11 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     return 0;
   }
 #endif
-
-#if 0
-  if (event == MG_EXIT_CLIENT_CONN && !request_info->request_method && !request_info->uri)
+  if (event == MG_EVENT_LOG)
   {
-    printf("Boom?\n");
+    DEBUG_TRACE(("[%s] %s", request_info->log_severity, request_info->log_message));
+    return 0;
   }
-#endif
 
   if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
     struct mgstat st;
@@ -628,7 +628,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 #endif
       long int gotSize = 0;
       int bufferFill = 0;
-      char * data = (char*) ((dataSize>0) ? malloc(bufferSize) : 0);
+      char * data = (char*) ((dataSize > 0) ? malloc(bufferSize) : 0);
       if (data) {
         mg_set_non_blocking_mode(conn, 1);
         {
@@ -756,11 +756,11 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       request_info->status_code = 200;
       (void) mg_printf(conn,
-                      "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: image/x-icon\r\n"
-                      "Cache-Control: no-cache\r\n"
-                      "Content-Length: %u\r\n"
-                      "Connection: close\r\n\r\n", (unsigned int)len);
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: image/x-icon\r\n"
+                       "Cache-Control: no-cache\r\n"
+                       "Content-Length: %u\r\n"
+                       "Connection: close\r\n\r\n", (unsigned int)len);
       mg_mark_end_of_header_transmission(conn);
 
       if (len != mg_write(conn, data, len))

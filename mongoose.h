@@ -63,7 +63,6 @@ struct mg_request_info {
   char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
   int is_ssl;                      // 1 if SSL-ed, 0 if not
   int num_headers;                 // Number of headers
-  int content_len;
   struct mg_header {
     char *name;                    // HTTP header name
     char *value;                   // HTTP header value
@@ -98,6 +97,8 @@ enum mg_event {
                             // connection's lifetime.
   MG_ENTER_MASTER,          // Mongoose started the master thread
   MG_EXIT_MASTER,           // The master thread is about to close
+  MG_IDLE_MASTER,           // The master thread has been idle for 200ms, i.e.
+                            // there's not been any HTTP requests very recently.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
   // fix: numbers were added to fix the abi in case mongoose core and callback
@@ -106,6 +107,8 @@ enum mg_event {
                             // threads. This one is the counterpart of MG_INIT0, so
                             // to speak.
 };
+
+typedef void * (__cdecl *mg_thread_func_t)(void *);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // on every MG_* event.

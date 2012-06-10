@@ -20,9 +20,9 @@
 
 
 #include "mongoose_ex.h"    // mg_send_http_error()
-#include "win32/resource.h"
 
 #ifdef _WIN32
+#include "win32/resource.h"
 #include <winsvc.h>
 #endif // _WIN32
 
@@ -31,10 +31,10 @@
 #define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
-static volatile int exit_flag;
-static char server_name[40];        // Set by init_server_name()
-static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
-static struct mg_context *ctx;      // Set by start_mongoose()
+static volatile int exit_flag = 0;
+static char server_name[40];          // Set by init_server_name()
+static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
+static struct mg_context *ctx = NULL; // Set by start_mongoose()
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -276,11 +276,11 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
       request_info->status_code = 200;
       (void) mg_printf(conn,
-          "HTTP/1.1 200 OK\r\n"
-          "Content-Type: image/x-icon\r\n"
-          "Cache-Control: no-cache\r\n"
-          "Content-Length: %u\r\n"
-          "Connection: close\r\n\r\n", (unsigned int)len);
+                       "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: image/x-icon\r\n"
+                       "Cache-Control: no-cache\r\n"
+                       "Content-Length: %u\r\n"
+                       "Connection: close\r\n\r\n", (unsigned int)len);
       mg_mark_end_of_header_transmission(conn);
 
       if (len != mg_write(conn, data, len))
@@ -301,20 +301,20 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 {
   switch(signal_type)
   {
-    // Handle the CTRL-C signal.
-    case CTRL_C_EVENT:
-    // CTRL-CLOSE: confirm that the user wants to exit.
-    case CTRL_CLOSE_EVENT:
-    case CTRL_BREAK_EVENT:
-      exit_flag = 1000 + signal_type;
-      //mg_signal_stop(ctx);
-      return TRUE;
+  // Handle the CTRL-C signal.
+  case CTRL_C_EVENT:
+  // CTRL-CLOSE: confirm that the user wants to exit.
+  case CTRL_CLOSE_EVENT:
+  case CTRL_BREAK_EVENT:
+    exit_flag = 1000 + signal_type;
+    //mg_signal_stop(ctx);
+    return TRUE;
 
-    // Pass other signals to the next handler.
-    case CTRL_LOGOFF_EVENT:
-    case CTRL_SHUTDOWN_EVENT:
-    default:
-      return FALSE;
+  // Pass other signals to the next handler.
+  case CTRL_LOGOFF_EVENT:
+  case CTRL_SHUTDOWN_EVENT:
+  default:
+    return FALSE;
   }
 }
 
@@ -414,7 +414,7 @@ static void WINAPI ServiceMain(void) {
 
 static NOTIFYICONDATAA TrayIcon;
 
-static void edit_config_file(const struct mg_context *ctx) {
+static void edit_config_file(struct mg_context *ctx) {
   const char **names, *value;
   FILE *fp;
   int i;

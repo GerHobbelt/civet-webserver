@@ -1,16 +1,11 @@
-/*
- * This file is part of the Mongoose project, http://code.google.com/p/mongoose
- * It implements an online chat server. For more details,
- * see the documentation on the project web site.
- * To test the application,
- *  1. type "make" in the directory where this file lives
- *  2. point your browser to http://127.0.0.1:8081
- *
- * NOTE(lsm): this file follows Google style, not BSD style as the rest of
- * Mongoose code.
- */
+// This file is part of the Mongoose project, http://code.google.com/p/mongoose
+// It implements an online chat server. For more details,
+// see the documentation on the project web site.
+// To test the application,
+// 1. type "make" in the directory where this file lives
+// 2. point your browser to http://127.0.0.1:8081
 
-#include "mongoose.h"
+#include "mongoose_ex.h"    // mg_send_http_error()
 
 #ifdef _WIN32
 #include <winsvc.h>
@@ -225,7 +220,7 @@ static int handle_jsonp(struct mg_connection *conn,
   if (cb[0] != '\0') {
     mg_printf(conn, "%s(", cb);
   }
- 
+
   return cb[0] == '\0' ? 0 : 1;
 }
 
@@ -428,12 +423,10 @@ static void redirect_to_ssl(struct mg_connection *conn) {
   if (host != NULL && (p = strchr(host, ':')) != NULL) {
     mg_printf(conn, "HTTP/1.1 302 Found\r\n"
               "Location: https://%.*s:8082/%s:8082\r\n\r\n",
-              p - host, host, ri->uri);
+              (int)(p - host), host, ri->uri);
     mg_mark_end_of_header_transmission(conn);
   } else {
-    mg_printf(conn, "HTTP/1.1 500 Error\r\n\r\n");
-    mg_mark_end_of_header_transmission(conn);
-    mg_printf(conn, "Host: header is not set");
+    mg_send_http_error(conn, 500, NULL, "Host: header is not set");
   }
 }
 

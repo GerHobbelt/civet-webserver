@@ -61,6 +61,7 @@
 #endif
 // load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
 #include <ws2tcpip.h>
+#include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
 
@@ -106,11 +107,20 @@
 #else // _WIN32_WCE
 #define NO_CGI // WinCE has no pipes
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 typedef long off_t;
 #define BUFSIZ  4096
 
 #define errno   ((int)GetLastError())
 #define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 #endif // _WIN32_WCE
 
 #define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
@@ -137,7 +147,7 @@ typedef long off_t;
 #endif // _MSC_VER
 #endif // _MSC_VER
 
-#define ERRNO   (GetLastError() ? (int)GetLastError() : errno)
+#define ERRNO   mgW32_get_errno()
 #if !(defined(_MSC_VER) && (_MSC_VER >= 1600) && defined(_WINSOCK2API_)) // Microsoft: socklen_t exists in ws2tcpip.h in Windows SDK 7.0A+
 #define NO_SOCKLEN_T
 #endif
@@ -190,6 +200,8 @@ typedef long off_t;
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+int mgW32_get_errno(void);
 
 void mgW32_flockfile(FILE *x);
 void mgW32_funlockfile(FILE *x);
