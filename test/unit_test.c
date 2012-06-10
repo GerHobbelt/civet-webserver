@@ -6,45 +6,6 @@
 } while (0)
 #define ASSERT(expr) do { if (!(expr)) FATAL(#expr, __LINE__); } while (0)
 
-static void test_should_keep_alive(void) {
-  struct mg_connection conn;
-  struct mg_context ctx;
-  char req1[] = "GET / HTTP/1.1\r\n\r\n";
-  char req2[] = "GET / HTTP/1.0\r\n\r\n";
-  char req3[] = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
-  char req4[] = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n";
-
-  memset(&conn, 0, sizeof(conn));
-  conn.ctx = &ctx;
-  parse_http_request(req1, &conn.request_info);
-
-  ctx.config[ENABLE_KEEP_ALIVE] = "no";
-  ASSERT(should_keep_alive(&conn) == 0);
-
-  ctx.config[ENABLE_KEEP_ALIVE] = "yes";
-  ASSERT(should_keep_alive(&conn) == 1);
-
-  conn.must_close = 1;
-  ASSERT(should_keep_alive(&conn) == 0);
-
-  conn.must_close = 0;
-  parse_http_request(req2, &conn.request_info);
-  ASSERT(should_keep_alive(&conn) == 0);
-
-  parse_http_request(req3, &conn.request_info);
-  ASSERT(should_keep_alive(&conn) == 0);
-
-  parse_http_request(req4, &conn.request_info);
-  ASSERT(should_keep_alive(&conn) == 1);
-
-  conn.request_info.status_code = 401;
-  //ASSERT(should_keep_alive(&conn) == 0);
-
-  conn.request_info.status_code = 200;
-  conn.must_close = 1;
-  ASSERT(should_keep_alive(&conn) == 0);
-}
-
 static void test_parse_http_request() {
   struct mg_request_info ri;
   char req1[] = "GET / HTTP/1.1\r\n\r\n";

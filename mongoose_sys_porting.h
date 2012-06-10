@@ -107,11 +107,20 @@
 #else // _WIN32_WCE
 #define NO_CGI // WinCE has no pipes
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 typedef long off_t;
 #define BUFSIZ  4096
 
 #define errno   ((int)GetLastError())
 #define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 #endif // _WIN32_WCE
 
 #define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \

@@ -1706,7 +1706,7 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
 }
 
 #if defined(_WIN32_WCE)
-static time_t time(time_t *ptime) {
+time_t time(time_t *ptime) {
   time_t t;
   SYSTEMTIME st;
   FILETIME ft;
@@ -1722,7 +1722,7 @@ static time_t time(time_t *ptime) {
   return t;
 }
 
-static struct tm *localtime(const time_t *ptime, struct tm *ptm) {
+struct tm *localtime(const time_t *ptime, struct tm *ptm) {
   int64_t t = ((int64_t) *ptime) * RATE_DIFF + EPOCH_DIFF;
   FILETIME ft, lft;
   SYSTEMTIME st;
@@ -1749,12 +1749,12 @@ static struct tm *localtime(const time_t *ptime, struct tm *ptm) {
   return ptm;
 }
 
-static struct tm *gmtime(const time_t *ptime, struct tm *ptm) {
+struct tm *gmtime(const time_t *ptime, struct tm *ptm) {
   // FIXME(lsm): fix this.
   return localtime(ptime, ptm);
 }
 
-static size_t strftime(char *dst, size_t dst_size, const char *fmt,
+size_t strftime(char *dst, size_t dst_size, const char *fmt,
                        const struct tm *tm) {
   (void) snprintf(dst, dst_size, "implement strftime() for WinCE");
   return 0;
@@ -2266,7 +2266,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     // Adjust number of bytes to read.
     int64_t to_read = conn->content_len - conn->consumed_content;
     if (to_read < (int64_t) len) {
-      len = (int) to_read;
+      len = (size_t) to_read;
     }
 
     // How many bytes of data we have buffered in the request buffer?
@@ -2290,10 +2290,10 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
       n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) len);
-	  if (n < 0) {
-		// always propagate the error
-		return n;
-	  } else if (n == 0) {
+      if (n < 0) {
+        // always propagate the error
+        return n;
+      } else if (n == 0) {
         break;
       }
       buf = (char *) buf + n;
@@ -3761,7 +3761,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   } else {
     if (expect != NULL) {
       if (mg_printf(conn, "HTTP/1.1 100 Continue\r\n\r\n") <= 0)
-		goto failure;
+        goto failure;
       mg_mark_end_of_header_transmission(conn);
     }
 
@@ -3775,7 +3775,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         buffered_len = (int) conn->content_len;
       }
       if (push(fp, sock, ssl, buffered, (int64_t) buffered_len) != buffered_len)
-		goto failure;
+        goto failure;
       conn->consumed_content += buffered_len;
     }
 
@@ -3798,7 +3798,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     // Each error code path in this function must send an error
     if (!success) {
 failure:
-	  send_http_error(conn, 577, NULL, "");
+      send_http_error(conn, 577, NULL, "");
     }
   }
 
@@ -4332,7 +4332,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       {
         if (rlen >= taglen && mg_write(conn, b, rlen - taglen + 1) != rlen - taglen + 1)
         {
-          mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen - taglen + 1, path);
+          send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen - taglen + 1, path);
           return -1;
         }
         memmove(buf, b + rlen - taglen + 1, taglen - 1);
@@ -4342,7 +4342,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       // flush part before start tag:
       if (s > b && mg_write(conn, b, s - b) != s - b)
       {
-        mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)(s - b), path);
+        send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)(s - b), path);
         return -1;
       }
       rlen -= s - b;
@@ -4356,7 +4356,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
         if (s == buf || feof(fp))
         {
           /* in this case we already have max data loaded: overlong SSI tag! */
-          mg_send_http_error(conn, 580, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
+          send_http_error(conn, 580, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
           return -1;
         }
         memmove(buf, s, rlen - (s - b));
@@ -4369,7 +4369,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       if (!memcmp(s, "include", 7)) {
         if (e - s - 7 > PATH_MAX + 64)
         {
-          mg_send_http_error(conn, 580, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
+          send_http_error(conn, 580, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
           return -1;
         }
         else
@@ -4396,7 +4396,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
   {
     if (mg_write(conn, buf, rlen) != rlen)
     {
-      mg_send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen, path);
+      send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen, path);
       return -1;
     }
   }
@@ -4654,8 +4654,8 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
 #endif
 }
 
-// Valid listening port specification is: [ip_address:]port[s|p]
-// Examples: 80, 443s, 127.0.0.1:3128p, 1.2.3.4:8080sp
+// Valid listening port specification is: [ip_address:]port[s]
+// Examples: 80, 443s, 127.0.0.1:3128, 1.2.3.4:8080s
 static int parse_port_string(const struct vec *vec, struct socket *so) {
   struct usa *usa = &so->lsa;
   int port, len;

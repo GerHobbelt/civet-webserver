@@ -116,8 +116,6 @@ int mg_get_lasterror(void);
 
 
 
-typedef void * (*mg_thread_func_t)(void *);
-
 int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param);
 
 // Signal master that we're done and exiting
