@@ -61,6 +61,7 @@
 #endif
 // load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
 #include <ws2tcpip.h>
+#include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
 

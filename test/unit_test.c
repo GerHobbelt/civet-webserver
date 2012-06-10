@@ -62,7 +62,7 @@ static void test_parse_http_request() {
   ASSERT(ri.num_headers == 1);
   ASSERT(strcmp(ri.http_headers[0].name, "Bah\r\n") == 0);
 
-  // TODO(lsm): add more tests. 
+  // TODO(lsm): add more tests.
 }
 
 static void test_should_keep_alive(void) {
@@ -159,7 +159,7 @@ static void test_IPaddr_parsing() {
     struct usa sa;
     struct vec v;
     struct socket s;
-    
+
     memset(&sa, 0, sizeof(sa));
     ASSERT(!parse_ipvX_addr_string("example.com", 80, &sa));
     ASSERT(parse_ipvX_addr_string("10.11.12.13", 80, &sa));
@@ -394,7 +394,7 @@ static void test_client_connect() {
     struct mg_connection c = {0};
     struct mg_connection *g;
     int rv;
-    
+
     c.ctx = &ctx;
 
     g = mg_connect(&c, "example.com", 80, 0);
@@ -438,7 +438,8 @@ int main(void) {
   {
     WSADATA data;
     WSAStartup(MAKEWORD(2,2), &data);
-    InitializeCriticalSection(&traceCS);
+    InitializeCriticalSection(&global_log_file_lock);
+    InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
   }
 #endif // _WIN32
 

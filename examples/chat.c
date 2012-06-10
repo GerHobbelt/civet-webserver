@@ -5,7 +5,7 @@
 // 1. type "make" in the directory where this file lives
 // 2. point your browser to http://127.0.0.1:8081
 
-#include "mongoose.h"
+#include "mongoose_ex.h"    // mg_send_http_error()
 
 #ifdef _WIN32
 #include <winsvc.h>
@@ -220,7 +220,7 @@ static int handle_jsonp(struct mg_connection *conn,
   if (cb[0] != '\0') {
     mg_printf(conn, "%s(", cb);
   }
- 
+
   return cb[0] == '\0' ? 0 : 1;
 }
 

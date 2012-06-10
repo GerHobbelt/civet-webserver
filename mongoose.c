@@ -18,203 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#if defined(_WIN32)
-#define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
-#else
-#define _XOPEN_SOURCE 600     // For flockfile() on Linux
-#define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
-#define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
-#define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
-#endif
-
-#if defined(__SYMBIAN32__)
-#define NO_SSL // SSL is not supported
-#define NO_CGI // CGI is not supported
-#define PATH_MAX FILENAME_MAX
-#endif // __SYMBIAN32__
-
-#ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <signal.h>
-#include <fcntl.h>
-#endif // !_WIN32_WCE
-
-#include <time.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <string.h>
-#include <ctype.h>
-#include <limits.h>
-#include <stddef.h>
-#include <stdio.h>
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
-#define _WIN32_WINNT 0x0400 // To make it link in VS2005
-#include <windows.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-
-#ifndef _WIN32_WCE
-#include <process.h>
-#include <direct.h>
-#include <io.h>
-#else // _WIN32_WCE
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define NO_CGI // WinCE has no pipes
-
-typedef long off_t;
-#define BUFSIZ  4096
-
-#define errno   GetLastError()
-#define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
-#endif // _WIN32_WCE
-
-#define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
-      ((uint64_t)((uint32_t)(hi))) << 32))
-#define RATE_DIFF 10000000 // 100 nsecs
-#define EPOCH_DIFF MAKEUQUAD(0xd53e8000, 0x019db1de)
-#define SYS2UNIX_TIME(lo, hi) \
-  (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
-
-// Visual Studio 6 does not know __func__ or __FUNCTION__
-// The rest of MS compilers use __FUNCTION__, not C99 __func__
-// Also use _strtoui64 on modern M$ compilers
-#if defined(_MSC_VER) && _MSC_VER < 1300
-#define STRX(x) #x
-#define STR(x) STRX(x)
-#define __func__ "line " STR(__LINE__)
-#define strtoull(x, y, z) strtoul(x, y, z)
-#define strtoll(x, y, z) strtol(x, y, z)
-#else
-#define __func__  __FUNCTION__
-#define strtoull(x, y, z) _strtoui64(x, y, z)
-#define strtoll(x, y, z) _strtoi64(x, y, z)
-#endif // _MSC_VER
-
-#define ERRNO   GetLastError()
-#define NO_SOCKLEN_T
-#define SSL_LIB   "ssleay32.dll"
-#define CRYPTO_LIB  "libeay32.dll"
-#define DIRSEP '\\'
-#define IS_DIRSEP_CHAR(c) ((c) == '/' || (c) == '\\')
-#define O_NONBLOCK  0
-#if !defined(EWOULDBLOCK)
-#define EWOULDBLOCK  WSAEWOULDBLOCK
-#endif // !EWOULDBLOCK
-#define _POSIX_
-#define INT64_FMT  "I64d"
-
-#define WINCDECL __cdecl
-#define SHUT_WR 1
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#define mg_sleep(x) Sleep(x)
-
-#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
-#define popen(x, y) _popen(x, y)
-#define pclose(x) _pclose(x)
-#define close(x) _close(x)
-#define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
-#define RTLD_LAZY  0
-#define fseeko(x, y, z) fseek((x), (y), (z))
-#define fdopen(x, y) _fdopen((x), (y))
-#define write(x, y, z) _write((x), (y), (unsigned) z)
-#define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile(x) EnterCriticalSection(&global_log_file_lock)
-#define funlockfile(x) LeaveCriticalSection(&global_log_file_lock)
-
-#if !defined(fileno)
-#define fileno(x) _fileno(x)
-#endif // !fileno MINGW #defines fileno
-
-typedef HANDLE pthread_mutex_t;
-typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
-typedef DWORD pthread_t;
-#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
-
-struct timespec {
-  long tv_nsec;
-  long tv_sec;
-};
-
-static int pthread_mutex_lock(pthread_mutex_t *);
-static int pthread_mutex_unlock(pthread_mutex_t *);
-static FILE *mg_fopen(const char *path, const char *mode);
-
-#if defined(HAVE_STDINT)
-#include <stdint.h>
-#else
-typedef unsigned int  uint32_t;
-typedef unsigned short  uint16_t;
-typedef unsigned __int64 uint64_t;
-typedef __int64   int64_t;
-#define INT64_MAX  9223372036854775807
-#endif // HAVE_STDINT
-
-// POSIX dirent interface
-struct dirent {
-  char d_name[PATH_MAX];
-};
-
-typedef struct DIR {
-  HANDLE   handle;
-  WIN32_FIND_DATAW info;
-  struct dirent  result;
-} DIR;
-
-#else    // UNIX  specific
-#include <sys/wait.h>
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <netdb.h>
-
-#include <pwd.h>
-#include <unistd.h>
-#include <dirent.h>
-#if !defined(NO_SSL_DL) && !defined(NO_SSL)
-#include <dlfcn.h>
-#endif
-#include <pthread.h>
-#if defined(__MACH__)
-#define SSL_LIB   "libssl.dylib"
-#define CRYPTO_LIB  "libcrypto.dylib"
-#else
-#if !defined(SSL_LIB)
-#define SSL_LIB   "libssl.so"
-#endif
-#if !defined(CRYPTO_LIB)
-#define CRYPTO_LIB  "libcrypto.so"
-#endif
-#endif
-#define DIRSEP   '/'
-#define IS_DIRSEP_CHAR(c) ((c) == '/')
-#ifndef O_BINARY
-#define O_BINARY  0
-#endif // O_BINARY
-#define closesocket(a) close(a)
-#define mg_fopen(x, y) fopen(x, y)
-#define mg_mkdir(x, y) mkdir(x, y)
-#define mg_remove(x) remove(x)
-#define mg_rename(x, y) rename(x, y)
-#define mg_sleep(x) usleep((x) * 1000)
-#define ERRNO errno
-#define INVALID_SOCKET (-1)
-#define INT64_FMT PRId64
-typedef int SOCKET;
-#define WINCDECL
-
-#endif // End of Windows and UNIX specific includes
 
 #include "mongoose.h"
 
@@ -458,9 +261,6 @@ struct socket {
   struct usa lsa;       // Local socket address
   struct usa rsa;       // Remote socket address
   int is_ssl;           // Is socket SSL-ed
-#if defined(MG_PROXY_SUPPORT)
-  int is_proxy;
-#endif
 };
 
 
@@ -526,9 +326,6 @@ struct mg_context {
 
 struct mg_connection {
   int must_close;             // 1 if connection must be closed
-#if defined(MG_PROXY_SUPPORT)
-  struct mg_connection *peer; // Remote target in proxy mode
-#endif
   struct mg_request_info request_info;
   struct mg_context *ctx;
   SSL *ssl;                   // SSL descriptor
@@ -4897,10 +4694,6 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
   }
 
   so->is_ssl = (vec->ptr[len] == 's');
-#if defined(MG_PROXY_SUPPORT)
-  if (so->is_ssl) len++;
-  so->is_proxy = (vec->ptr[len] == 'p');
-#endif
 
   return 1;
 }
@@ -5566,78 +5359,6 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
           (size_t) conn->data_len);
 }
 
-#if defined(MG_PROXY_SUPPORT)
-static int parse_url(const char *url, char *host, int *port) {
-  int len;
-
-  if (sscanf(url, "%*[htps]://%1024[^:]:%d%n", host, port, &len) == 2 ||
-    sscanf(url, "%1024[^:]:%d%n", host, port, &len) == 2) {
-  } else if (sscanf(url, "%*[htps]://%1024[^/]%n", host, &len) == 1) {
-    *port = 80;
-  } else {
-    sscanf(url, "%1024[^/]%n", host, &len);
-    *port = 80;
-  }
-  DEBUG_TRACE(("Host:%s, port:%d", host, *port));
-
-  return len;
-}
-
-static void handle_proxy_request(struct mg_connection *conn) {
-  struct mg_request_info *ri = &conn->request_info;
-  char host[1025], buf[DATA_COPY_BUFSIZ];
-  int port = 0, is_ssl, len, i, n;
-
-  DEBUG_TRACE(("URL: %s", ri->uri));
-  if (ri->uri == NULL ||
-      ri->uri[0] == '/' ||
-      (len = parse_url(ri->uri, host, &port)) == 0) {
-    return;
-  }
-
-  if (conn->peer == NULL) {
-    is_ssl = !strcmp(ri->request_method, "CONNECT");
-    if ((conn->peer = mg_connect(conn, host, port, is_ssl)) == NULL) {
-      return;
-    }
-    conn->peer->client.is_ssl = is_ssl;
-  }
-
-  // Forward client's request to the target
-  mg_printf(conn->peer, "%s %s HTTP/%s\r\n", ri->request_method, ri->uri + len,
-            ri->http_version);
-
-  // And also all headers. TODO(lsm): anonymize!
-  for (i = 0; i < ri->num_headers; i++) {
-    mg_printf(conn->peer, "%s: %s\r\n", ri->http_headers[i].name,
-              ri->http_headers[i].value);
-  }
-  // End of headers, final newline
-  mg_write(conn->peer, "\r\n", 2);
-  mg_mark_end_of_header_transmission(conn->peer);
-
-  // Read and forward body data if any
-  if (!strcmp(ri->request_method, "POST")) {
-    forward_body_data(conn, NULL, conn->peer->client.sock, conn->peer->ssl);
-  }
-
-  // Read data from the target and forward it to the client
-  while ((n = pull(NULL, conn->peer->client.sock, conn->peer->ssl,
-                   buf, sizeof(buf))) > 0) {
-    if (mg_write(conn, buf, (size_t)n) != n) {
-      break;
-    }
-  }
-
-  if (!conn->peer->client.is_ssl) {
-    close_connection(conn->peer);
-    free(conn->peer);
-    conn->peer = NULL;
-  }
-}
-
-#endif /* proxy support */
-
 static int is_valid_uri(const char *uri) {
     // Conform to http://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5.1.2
     // URI can be an asterisk (*) or should start with slash.
@@ -5665,12 +5386,7 @@ static void process_new_connection(struct mg_connection *conn) {
     // Nul-terminate the request cause parse_http_request() is C-string based
     conn->buf[conn->request_len - 1] = '\0';
     if (!parse_http_request(conn->buf, ri)
-        || (
-#if defined(MG_PROXY_SUPPORT)
-            !conn->client.is_proxy &&
-#endif
-            !is_valid_uri(ri->uri))
-       ) {
+        || !is_valid_uri(ri->uri)) {
       // Do not put garbage in the access log, just send it back to the client
       send_http_error(conn, 400, NULL,
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
@@ -5687,17 +5403,8 @@ static void process_new_connection(struct mg_connection *conn) {
       // and clear the cached logfile path so it is recalculated on the next log operation:
       conn->error_logfile_path[0] = 0;
       conn->access_logfile_path[0] = 0;
-#if defined(MG_PROXY_SUPPORT)
-      if (conn->client.is_proxy)
-      {
-        handle_proxy_request(conn);
-      }
-      else
-#endif
-      {
-        handle_request(conn);
-        call_user(conn, MG_REQUEST_COMPLETE);
-      }
+      handle_request(conn);
+      call_user(conn, MG_REQUEST_COMPLETE);
       log_access(conn);
       discard_current_request_from_buffer(conn);
     }
@@ -5705,16 +5412,7 @@ static void process_new_connection(struct mg_connection *conn) {
       free((void *) ri->remote_user);
       ri->remote_user = NULL;
     }
-    // conn->peer is not NULL only for SSL-ed proxy connections
-  } while (conn->ctx->stop_flag == 0 &&
-#if defined(MG_PROXY_SUPPORT)
-           (conn->peer ||
-#endif
-            should_keep_alive(conn)
-#if defined(MG_PROXY_SUPPORT)
-           )
-#endif
-           );
+  } while (conn->ctx->stop_flag == 0 && should_keep_alive(conn));
 }
 
 // Worker threads take accepted socket from the queue
@@ -5850,9 +5548,6 @@ static void accept_new_connection(const struct socket *listener,
       // Put accepted socket structure into the queue
       DEBUG_TRACE(("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
-#if defined(MG_PROXY_SUPPORT)
-      accepted.is_proxy = listener->is_proxy;
-#endif
       produce_socket(ctx, &accepted);
     } else {
       sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa);
@@ -5998,7 +5693,7 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-  DeleteCriticalSection(&traceCS);
+  DeleteCriticalSection(&global_log_file_lock);
   DeleteCriticalSection(&DisconnectExPtrCS);
   (void) WSACleanup();
 #endif // _WIN32
@@ -6013,7 +5708,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
-  InitializeCriticalSection(&traceCS);
+  InitializeCriticalSection(&global_log_file_lock);
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #endif // _WIN32
 
