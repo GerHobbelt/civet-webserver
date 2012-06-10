@@ -5598,6 +5598,7 @@ static void master_thread(struct mg_context *ctx) {
   call_user_over_ctx(ctx, 0, MG_ENTER_MASTER);
 
   while (ctx->stop_flag == 0) {
+    int n;
     FD_ZERO(&read_set);
     max_fd = -1;
 
@@ -5609,7 +5610,8 @@ static void master_thread(struct mg_context *ctx) {
     tv.tv_sec = 0;
     tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
 
-    if (select(max_fd + 1, &read_set, NULL, NULL, &tv) < 0) {
+    n = select(max_fd + 1, &read_set, NULL, NULL, &tv);
+    if (n < 0) {
       // On windows, if read_set and write_set are empty,
       // select() returns "Invalid parameter" error
       // (at least on my Windows XP Pro). So in this case, we sleep here.
@@ -5617,6 +5619,9 @@ static void master_thread(struct mg_context *ctx) {
       // [i_a]: always sleep a bit on error, unless the error is due to a stop signal
       if (ctx->stop_flag == 0)
         mg_sleep(10);
+    } else if (n == 0) {
+      // timeout
+      call_user_over_ctx(ctx, 0, MG_IDLE_MASTER);
     } else {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {

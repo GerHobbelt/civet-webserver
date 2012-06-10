@@ -96,6 +96,8 @@ enum mg_event {
                             // connection's lifetime.
   MG_ENTER_MASTER,          // Mongoose started the master thread
   MG_EXIT_MASTER,           // The master thread is about to close
+  MG_IDLE_MASTER,           // The master thread has been idle for 200ms, i.e.
+                            // there's not been any HTTP requests very recently.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
   // fix: numbers were added to fix the abi in case mongoose core and callback
