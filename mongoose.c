@@ -4026,7 +4026,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2], fd_stderr[2];
-  const char *status;
+  const char *status, *connection_status;
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
@@ -4124,12 +4124,12 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   } else {
     conn->request_info.status_code = 200;
   }
-
-  if (get_header(&ri, "Connection") != NULL &&
-      !mg_strcasecmp(get_header(&ri, "Connection"), "keep-alive")) {
-    conn->must_close = 1;
+  if ((connection_status = get_header(&ri, "Connection")) != NULL) {
+    // fix: keep-alive (storing connection_status is a performance bonus)
+    if (mg_strcasecmp(connection_status, "keep-alive")) {
+      conn->must_close = 1;
+    }
   }
-
   (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, !is_empty(status) ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
 
   // Send headers
