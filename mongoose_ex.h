@@ -1,4 +1,4 @@
-// Copyright (c) 2004-2010 Sergey Lyubka
+// Copyright (c) 2004-2012 Sergey Lyubka
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,10 +22,6 @@
 #define MONGOOSE_EX_HEADER_INCLUDED
 
 #include "mongoose.h"
-
-#include <stdio.h>
-#include <errno.h>
-
 
 #ifdef __cplusplus
 extern "C" {
