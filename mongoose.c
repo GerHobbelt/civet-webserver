@@ -3514,7 +3514,7 @@ static void handle_directory_request(struct mg_connection *conn,
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
   conn->must_close = 1;
-  mg_printf(conn, "%s",
+  mg_printf(conn,
             "HTTP/1.1 200 OK\r\n"
             "Connection: %s\r\n"
             "Content-Type: text/html; charset=utf-8\r\n\r\n",
