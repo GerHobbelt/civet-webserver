@@ -3,7 +3,7 @@
 
 
 char * HOST = "127.0.0.1";
-unsigned short PORT = 8081;
+unsigned short PORT = 8080;
 static const char * RESOURCE[] = {
   "/ajax/echo.cgi",
   "/imagetest/00.png",
