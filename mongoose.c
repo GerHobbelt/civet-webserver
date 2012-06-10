@@ -5352,7 +5352,7 @@ static void close_connection(struct mg_connection *conn) {
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
   char *buffered;
-  int buffered_len, body_len;
+  int buffered_len, body_len, n;
 
   buffered = conn->buf + conn->request_len;
   buffered_len = conn->data_len - conn->request_len;
@@ -5370,6 +5370,23 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   conn->data_len -= conn->request_len + body_len;
   memmove(conn->buf, conn->buf + conn->request_len + body_len,
           (size_t) conn->data_len);
+
+  // make sure we fetch all content (and discard it), if we
+  // haven't done so already (f.e.: event callback handler might've
+  // ignored part or whole of the received content) otherwise
+  // we've got a b0rked keep-alive HTTP stream:
+  conn->consumed_content += body_len;
+
+  // as mg_read() will return 0 as soon as the entire content of the
+  // current request has been read, we can simply check for that:
+  do {
+    char buf[BUFSIZ];
+    n = mg_read(conn, buf, sizeof(buf));
+  } while (n > 0 && mg_get_stop_flag(conn->ctx) == 0);
+  // when an error occurred, we must close the connection
+  if (n < 0) {
+    conn->must_close = 1;
+  }
 }
 
 static int is_valid_uri(const char *uri) {
