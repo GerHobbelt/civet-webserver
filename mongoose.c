@@ -29,6 +29,19 @@
 #define MAX_CGI_ENVIR_VARS 64
 
 
+// The maximum amount of data we're willing to dump in a single mg_cry() log call.
+// In embedded environments with limited RAM, you may want to override this
+// value as this value determines the malloc() size used inside mg_vasprintf().
+#ifndef MG_MAX_LOG_LINE_SIZE
+#define MG_MAX_LOG_LINE_SIZE    1024 * 1024
+#endif
+
+// The number of msecs to wait inside select() when there's nothing to do.
+#ifndef MG_SELECT_TIMEOUT_MSECS
+#define MG_SELECT_TIMEOUT_MSECS 200
+#endif
+
+
 #if defined(_WIN32)
 
 static CRITICAL_SECTION global_log_file_lock;
@@ -330,14 +343,14 @@ struct mg_connection {
   struct mg_context *ctx;
   SSL *ssl;                   // SSL descriptor
   struct socket client;       // Connected client
-  time_t birth_time;          // Time connection was accepted
+  time_t birth_time;          // Time when connection was accepted
   int64_t num_bytes_sent;     // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
-  int64_t content_len;        // Content-Length header value
+  int64_t content_len;        // received Content-Length header value
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
   int buf_size;               // Buffer size
-  int request_len;            // Size of the request + headers in a buffer
-  int data_len;               // Total size of data in a buffer
+  int request_len;            // Size of the request + headers in buffer buf[]
+  int data_len;               // Total size of data in buffer buf[]
 
   char error_logfile_path[PATH_MAX+1]; // cached value: path to the error logfile designated to this connection/CTX
   char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
@@ -979,7 +992,7 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
   {
     char *buf = NULL;
     // the absolute max we're going to support is a dump of 1MByte of text!
-    int n = mg_vasprintf(conn, &buf, 1024 * 1024, fmt, args);
+    int n = mg_vasprintf(conn, &buf, MG_MAX_LOG_LINE_SIZE, fmt, args);
 
     if (buf) {
       // make sure the log'line' is NEWLINE terminated (or not) when clipped, depending on the format string input
@@ -5249,7 +5262,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
     int sv;
 
     tv.tv_sec = 0;
-    tv.tv_usec = 100 * 1000;
+    tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
 
     FD_ZERO(&fds);
     FD_SET(sock, &fds);
@@ -5594,7 +5607,7 @@ static void master_thread(struct mg_context *ctx) {
     }
 
     tv.tv_sec = 0;
-    tv.tv_usec = 200 * 1000;
+    tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
 
     if (select(max_fd + 1, &read_set, NULL, NULL, &tv) < 0) {
       // On windows, if read_set and write_set are empty,
