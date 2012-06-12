@@ -530,19 +530,17 @@ static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
-#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+#if defined(USE_IPV6) && defined(HAVE_INET_NTOP)
   // Only Windoze Vista (and newer) have inet_ntop()
   inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
             (void *) &usa->u.sin.sin_addr :
             (void *) &usa->u.sin6.sin6_addr), buf, len);
-#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP)
-  // We use WSAAddressToString since it is supported on Windows XP and later
-  {
-    DWORD l = (DWORD)len;
-    if (WSAAddressToStringA((LPSOCKADDR)&usa->u.sa, usa->len, NULL, buf, &l)) {
-      buf[0] = '\0';
-    }
-  }
+#elif defined(HAVE_GETNAMEINFO)
+  // Win32: do not use WSAAddressToString() as that one formats the output as [address]:port while we only want to print <address> here
+  if (getnameinfo(&usa->u.sa, usa->len, buf, len, NULL, 0, NI_NUMERICHOST))
+    buf[0] = '\0';
+#elif defined(HAVE_INET_NTOP)
+  inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
 #elif defined(_WIN32)
   // WARNING: ntoa() is very probably not thread-safe on your platform!
   //          (we'll abuse the (DisconnectExPtrCS) critical section to cover this up as well...)
@@ -550,7 +548,7 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
   LeaveCriticalSection(&DisconnectExPtrCS);
 #else
-  inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
+#error check your platform for inet_ntop/etc.
 #endif
   buf[len - 1] = 0;
   return buf;
@@ -1130,13 +1128,13 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 
   if (n < 0) {
     mg_cry(conn, "vsnprintf error / overflow");
-  // MSVC produces -1 on printf("%s", str) for very long 'str'!
+    // MSVC produces -1 on printf("%s", str) for very long 'str'!
     n = (int) buflen - 1;
     buf[n] = '\0';
     n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     mg_cry(conn, "truncating vsnprintf buffer: [%.*s]",
-        n > 200 ? 200 : n, buf);
+           n > 200 ? 200 : n, buf);
     n = (int) buflen - 1;
   }
   buf[n] = '\0';
@@ -2622,88 +2620,6 @@ static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
 #else // NO_SSL
 #define sslize(conn, f)     0
 #endif // NO_SSL
-
-static struct mg_connection *mg_connect(struct mg_connection *conn,
-                                 const char *host, int port, int use_ssl) {
-  struct mg_connection *newconn = NULL;
-  int sock;
-  struct addrinfo *result = NULL;
-  struct addrinfo *ptr;
-  struct addrinfo hints = {0};
-
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = IPPROTO_TCP;
-
-  if (conn->ctx->ssl_ctx == NULL && use_ssl) {
-    mg_cry(conn, "%s: SSL is not initialized", __func__);
-  } else if (getaddrinfo(host, NULL, &hints, &result)) {
-    mg_cry(conn, "%s: getaddrinfo(%s): %s", __func__, host, mg_strerror(ERRNO));
-  } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-    mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
-  } else if ((newconn = (struct mg_connection *)
-      calloc(1, sizeof(*newconn))) == NULL) {
-    mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
-    closesocket(sock);
-  } else {
-    newconn->birth_time = time(NULL);
-    newconn->ctx = conn->ctx;
-    newconn->client.sock = sock;
-    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-      if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
-        continue;
-      switch (ptr->ai_family) {
-      default:
-        continue;
-
-      case AF_INET:
-        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
-        newconn->client.rsa.u.sin = * (struct sockaddr_in *)ptr->ai_addr;
-        newconn->client.rsa.u.sin.sin_family = AF_INET;
-        newconn->client.rsa.u.sin.sin_port = htons((uint16_t) port);
-        break;
-
-#if defined(USE_IPV6)
-      case AF_INET6:
-        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin6);
-        newconn->client.rsa.u.sin6 = * (struct sockaddr_in6 *)ptr->ai_addr;
-        newconn->client.rsa.u.sin6.sin6_family = AF_INET6;
-        newconn->client.rsa.u.sin6.sin6_port = htons((uint16_t) port);
-        break;
-#endif
-      }
-      break;
-    }
-    if (!ptr) {
-      mg_cry(conn, "%s: getaddrinfo(%s): no TCP/IP v4/6 support found", __func__, host);
-      closesocket(sock);
-    }
-    else if (connect(sock, &newconn->client.rsa.u.sa, newconn->client.rsa.len) != 0) {
-      mg_cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
-             mg_strerror(ERRNO));
-      closesocket(sock);
-    } else {
-      newconn->client.lsa.len = newconn->client.rsa.len;
-      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
-      {
-        mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-        newconn->client.lsa.len = 0;
-      }
-      if (use_ssl && !sslize(newconn, SSL_connect)) {
-        mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
-        closesocket(sock);
-      }
-      else {
-        if (result) freeaddrinfo(result);
-        return newconn;
-      }
-    }
-  }
-
-  if (result) freeaddrinfo(result);
-  if (newconn) free(newconn);
-  return NULL;
-}
 
 // Check whether full request is buffered. Return:
 //   -1  if request is malformed
@@ -4427,7 +4343,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
-  FILE *in, *out, *err;
+  FILE *in = NULL, *out = NULL, *err = NULL;
   pid_t pid;
 
   prepare_cgi_environment(conn, prog, &blk);
@@ -5101,7 +5017,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
 }
 
 static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
-#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+#if defined(USE_IPV6) && defined(HAVE_INET_NTOP)
   // Only Windoze Vista (and newer) have inet_pton()
   struct in_addr a = {0};
   struct in6_addr a6 = {0};
@@ -5122,32 +5038,38 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
   } else {
     return 0;
   }
-#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP)
-  // We use WSAStringToAddress since it is supported on Windows XP and later
-  struct in_addr a = {0};
-  INT l;
+#elif defined(HAVE_GETNAMEINFO)
+  struct addrinfo hints = {0};
+  struct addrinfo *rset = NULL;
 #if defined(USE_IPV6)
-  struct in6_addr a6 = {0};
-
-  l = sizeof(a6);
-  if (!WSAStringToAddressA(addr_buf, AF_INET6, NULL, (LPSOCKADDR)&a6, &l)) {
-    assert(l == sizeof(a6));
-    usa->len = sizeof(usa->u.sin6);
-    usa->u.sin6.sin6_family = AF_INET6;
-    usa->u.sin6.sin6_port = htons((uint16_t) port);
-    usa->u.sin6.sin6_addr = a6;
-    return 1;
-  }
+  hints.ai_family = AF_UNSPEC;
+#else
+  hints.ai_family = AF_INET;
 #endif
-  l = sizeof(a);
-  if (!WSAStringToAddressA(addr_buf, AF_INET, NULL, (LPSOCKADDR)&a, &l)) {
-    assert(l == sizeof(a));
-    usa->len = sizeof(usa->u.sin);
-    usa->u.sin.sin_family = AF_INET;
-    usa->u.sin.sin_port = htons((uint16_t) port);
-    usa->u.sin.sin_addr = a;
-    return 1;
+  hints.ai_socktype = SOCK_STREAM; // TCP
+  hints.ai_flags = AI_NUMERICHOST;
+  if (!getaddrinfo(addr_buf, NULL, &hints, &rset) && rset) {
+    memcpy(&usa->u.sa, rset->ai_addr, rset->ai_addrlen);
+#if defined(USE_IPV6)
+    if (rset->ai_family == PF_INET6) {
+      usa->len = sizeof(usa->u.sin6);
+      assert(rset->ai_addrlen == sizeof(usa->u.sin6));
+      assert(usa->u.sin6.sin6_family == AF_INET6);
+      usa->u.sin6.sin6_port = htons((uint16_t) port);
+      freeaddrinfo(rset);
+      return 1;
+    } else
+#endif
+    if (rset->ai_family == PF_INET) {
+      usa->len = sizeof(usa->u.sin);
+      assert(rset->ai_addrlen == sizeof(usa->u.sin));
+      assert(usa->u.sin.sin_family == AF_INET);
+      usa->u.sin.sin_port = htons((uint16_t) port);
+      freeaddrinfo(rset);
+      return 1;
+    }
   }
+  if (rset) freeaddrinfo(rset);
   return 0;
 #else
   int a, b, c, d, len;
@@ -5518,7 +5440,7 @@ static int set_uid_option(struct mg_context *ctx) {
 #endif // !_WIN32
 
 #if !defined(NO_SSL)
-static pthread_mutex_t *ssl_mutexes;
+static pthread_mutex_t *ssl_mutexes = NULL;
 
 // Return OpenSSL error message
 static const char *ssl_error(void) {
@@ -6237,6 +6159,7 @@ static void free_context(struct mg_context *ctx) {
 #ifndef NO_SSL
   if (ssl_mutexes != NULL) {
     free(ssl_mutexes);
+    ssl_mutexes = NULL; // issue 361 fix
   }
 #endif // !NO_SSL
 

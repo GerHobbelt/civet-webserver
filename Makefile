@@ -114,8 +114,8 @@ windows:
 # Build for Windows under MinGW
 #MINGWDBG= -DDEBUG -O0 -ggdb
 MINGWDBG= -DNDEBUG -Os
-MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT
-#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT
+MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(COPT)
+#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(COPT)
 mingw:
 	windres win32\res.rc win32\res.o
 	$(CC) $(MINGWOPT) mongoose_ex.c -lws2_32 \
