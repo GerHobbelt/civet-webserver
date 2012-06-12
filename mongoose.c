@@ -5872,6 +5872,7 @@ const char *mg_get_response_code_text(int response_code)
   {
   case 100:   return "Continue"; // RFC2616 Section 10.1.1:
   case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2:
+  case 102:   return "Processing"; // WebDAV RFC2518
   case 200:   return "OK"; // RFC2616 Section 10.2.1:
   case 201:   return "Created"; // RFC2616 Section 10.2.2:
   case 202:   return "Accepted"; // RFC2616 Section 10.2.3:
@@ -5879,6 +5880,9 @@ const char *mg_get_response_code_text(int response_code)
   case 204:   return "No Content"; // RFC2616 Section 10.2.5:
   case 205:   return "Reset Content"; // RFC2616 Section 10.2.6:
   case 206:   return "Partial Content"; // RFC2616 Section 10.2.7:
+  case 207:   return "Multi-Status"; // WebDAV RFC4918
+  case 208:   return "Already Reported"; // WebDAV RFC5842
+  case 226:   return "IM Used"; // RFC3229
   case 300:   return "Multiple Choices"; // RFC2616 Section 10.3.1:
   case 301:   return "Moved Permanently"; // RFC2616 Section 10.3.2:
   case 302:   return "Found"; // RFC2616 Section 10.3.3:
@@ -5886,6 +5890,7 @@ const char *mg_get_response_code_text(int response_code)
   case 304:   return "Not Modified"; // RFC2616 Section 10.3.5:
   case 305:   return "Use Proxy"; // RFC2616 Section 10.3.6:
   case 307:   return "Temporary Redirect"; // RFC2616 Section 10.3.8:
+  case 308:   return "Permanent Redirect";
   case 400:   return "Bad Request"; // RFC2616 Section 10.4.1:
   case 401:   return "Unauthorized"; // RFC2616 Section 10.4.2:
   case 402:   return "Payment Required"; // RFC2616 Section 10.4.3:
@@ -5904,29 +5909,32 @@ const char *mg_get_response_code_text(int response_code)
   case 415:   return "Unsupported Media Type"; // RFC2616 Section 10.4.16:
   case 416:   return "Requested range not satisfiable"; // RFC2616 Section 10.4.17:
   case 417:   return "Expectation Failed"; // RFC2616 Section 10.4.18:
+  case 420:   return "Emhance Your Calm"; // Twitter rate limiting
+  case 422:   return "Unprocessable Entity"; // WebDAV RFC4918
+  case 423:   return "Locked"; // WebDAV RFC4918
+  case 424:   return "Failed Dependency"; // WebDAV RFC4918
+  case 425:   return "Unordered Collection"; // WebDAV RFC4918
+  case 426:   return "Upgrade Required"; // RFC2817
+  case 428:   return "Precondition Required"; // RFC6585
+  case 429:   return "Too Many Requests"; // RFC6585
+  case 431:   return "Request Headers Field Too Large"; // RFC6585
   case 500:   return "Internal Server Error"; // RFC2616 Section 10.5.1:
   case 501:   return "Not Implemented"; // RFC2616 Section 10.5.2:
   case 502:   return "Bad Gateway"; // RFC2616 Section 10.5.3:
   case 503:   return "Service Unavailable"; // RFC2616 Section 10.5.4:
   case 504:   return "Gateway Time-out"; // RFC2616 Section 10.5.5:
   case 505:   return "HTTP Version not supported"; // RFC2616 Section 10.5.6:
+  case 506:   return "Variant Also Negotiates"; // RFC2295
+  case 507:   return "Insufficient Storage"; // WebDAV RFC4918
+  case 508:   return "Loop Detected"; // WebDAV RFC5842
+  case 510:   return "Not Extended"; // RFC2774
+  case 511:   return "Network Authentication Required"; // RFC6585
 /*
-  case 102:   return "Processing";  // http://www.askapache.com/htaccess/apache-status-code-headers-errordocument.html#m0-askapache3
-  case 207:   return "Multi-Status";
   case 418:   return "I'm a teapot";
   case 419:   return "unused";
-  case 420:   return "unused";
   case 421:   return "unused";
-  case 422:   return "Unproccessable entity";
-  case 423:   return "Locked";
-  case 424:   return "Failed Dependency";
-  case 425:   return "Node code";
-  case 426:   return "Upgrade Required";
-  case 506:   return "Variant Also Negotiates";
-  case 507:   return "Insufficient Storage";
   case 508:   return "unused";
   case 509:   return "unused";
-  case 510:   return "Not Extended";
 */
   case 577:   return "Mongoose Internal Server Error";
   case 578:   return "Mongoose Internal Server Error: file I/O";
