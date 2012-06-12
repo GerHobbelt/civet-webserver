@@ -421,15 +421,17 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
-#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+#if defined(USE_IPV6) && defined(HAVE_INET_NTOP)
   // Only Windoze Vista (and newer) have inet_ntop()
   inet_ntop(usa->u.sa.sa_family, (usa->u.sa.sa_family == AF_INET ?
             (void *) &usa->u.sin.sin_addr :
             (void *) &usa->u.sin6.sin6_addr), buf, len);
-#elif defined(_WIN32) && defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN2K)
-  // do not use WSAAddressToString() as that one formats the output as [address]:port while we only want to print <address> here
+#elif defined(HAVE_GETNAMEINFO)
+  // Win32: do not use WSAAddressToString() as that one formats the output as [address]:port while we only want to print <address> here
   if (getnameinfo(&usa->u.sa, usa->len, buf, len, NULL, 0, NI_NUMERICHOST))
     buf[0] = '\0';
+#elif defined(HAVE_INET_NTOP)
+  inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
 #elif defined(_WIN32)
   // WARNING: ntoa() is very probably not thread-safe on your platform!
   //          (we'll abuse the (DisconnectExPtrCS) critical section to cover this up as well...)
@@ -437,7 +439,7 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
   LeaveCriticalSection(&DisconnectExPtrCS);
 #else
-  inet_ntop(usa->u.sa.sa_family, (void *) &usa->u.sin.sin_addr, buf, len);
+#error check your platform for inet_ntop/etc.
 #endif
   buf[len - 1] = 0;
   return buf;
@@ -3401,7 +3403,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
-  FILE *in, *out;
+  FILE *in = NULL, *out = NULL;
   pid_t pid;
 
   prepare_cgi_environment(conn, prog, &blk);
@@ -3923,7 +3925,7 @@ static void close_all_listening_sockets(struct mg_context *ctx) {
 }
 
 static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
-#if defined(USE_IPV6) && (!defined(_WIN32) || (NTDDI_VERSION >= NTDDI_VISTA))
+#if defined(USE_IPV6) && defined(HAVE_INET_NTOP)
   // Only Windoze Vista (and newer) have inet_pton()
   struct in_addr a = {0};
   struct in6_addr a6 = {0};
@@ -3944,8 +3946,7 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
   } else {
     return 0;
   }
-#elif !defined(_WIN32) || (defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
-  // We use WSAStringToAddress since it is supported on Windows XP and later
+#elif defined(HAVE_GETNAMEINFO)
   struct addrinfo hints = {0};
   struct addrinfo *rset = NULL;
 #if defined(USE_IPV6)

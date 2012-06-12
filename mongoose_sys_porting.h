@@ -197,6 +197,16 @@ typedef long off_t;
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
 
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+  // Only Windoze Vista (and newer) have inet_ntop(); MingW doesn't seem to provide it though
+  #if !defined(__MINGW32__)
+    #define HAVE_INET_NTOP
+  #endif
+#endif
+#if defined(_WIN32_WINNT) && defined(_WIN32_WINNT_WINXP) && (_WIN32_WINNT >= _WIN32_WINNT_WIN2K)
+  #define HAVE_GETNAMEINFO
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -328,6 +338,12 @@ int mg_mkdir(const char *path, int mode);
 #define INT64_FMT PRId64
 typedef int SOCKET;
 #define WINCDECL
+
+// for now assume all UNIXes have inet_ntop / inet_pton when they have IPv6, otherwise they always have getnameinfo()
+#if defined(USE_IPV6)
+  #define HAVE_INET_NTOP
+#endif
+#define HAVE_GETNAMEINFO
 
 #endif // End of Windows and UNIX specific includes
 
