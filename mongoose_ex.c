@@ -223,6 +223,13 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
     newconn->birth_time = time(NULL);
     newconn->ctx = conn->ctx;
     newconn->client.sock = sock;
+	// by default, a client-side connection is assumed to be an arbitrary client,
+	// not necessarily a HTTP client:
+	newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+	//newconn->consumed_content = 0;
+	newconn->content_len = INT64_MAX; // = -1; would mean we'd have to fetch and decode the (HTTP) headers first
+	//newconn->request_len = newconn->data_len = 0;
+	//newconn->must_close = 0;
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
       if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
         continue;
