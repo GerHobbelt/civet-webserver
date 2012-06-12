@@ -5004,7 +5004,7 @@ static int set_uid_option(struct mg_context *ctx) {
 #endif // !_WIN32
 
 #if !defined(NO_SSL)
-static pthread_mutex_t *ssl_mutexes;
+static pthread_mutex_t *ssl_mutexes = NULL;
 
 // Return OpenSSL error message
 static const char *ssl_error(void) {
@@ -5715,6 +5715,7 @@ static void free_context(struct mg_context *ctx) {
 #ifndef NO_SSL
   if (ssl_mutexes != NULL) {
     free(ssl_mutexes);
+    ssl_mutexes = NULL; // issue 361 fix
   }
 #endif // !NO_SSL
 
