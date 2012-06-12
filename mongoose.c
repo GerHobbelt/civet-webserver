@@ -1507,8 +1507,6 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
     if (!mg_have_headers_been_sent(conn)) {
-      const char *allowed_methods = NULL;
-
       mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
 
       /* issue #229: Only include the content-length if there is a response body.
@@ -1521,12 +1519,11 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       }
 
       if (status == 405) {
-        allowed_methods = conn->ctx->config[ALLOWED_METHODS];
-      }
-      if (!is_empty(allowed_methods)) {
-        mg_printf(conn, "Allow: %s\r\n", allowed_methods);
-      }
-
+        const char *allowed_methods = get_conn_option(conn, ALLOWED_METHODS);
+        if (!is_empty(allowed_methods)) {
+          mg_printf(conn, "Allow: %s\r\n", allowed_methods);
+        }
+	  }
       if (conn->request_info.response_headers) {
         mg_printf(conn, "%s", conn->request_info.response_headers);
       }
@@ -3176,7 +3173,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
 static int authorize_by_callback(struct mg_connection *conn) {
     struct ah ah;
     char password[64], ha1[33], buf[BUFSIZ];
-    char* realm;
+    const char* realm;
     int  rv;
 
     if (conn->ctx->user_functions.password_callback == NULL) {
@@ -3188,14 +3185,14 @@ static int authorize_by_callback(struct mg_connection *conn) {
     }
 
     rv = conn->ctx->user_functions.password_callback(
-            conn, &conn->request_info, ah.user, password, ARRAY_SIZE(password));
+            conn, ah.user, password, ARRAY_SIZE(password));
     if (rv == 2) {
         return 1;
     } else if (rv == 0) {
         return 0;
     }
 
-    realm = conn->ctx->config[AUTHENTICATION_DOMAIN];
+    realm = get_conn_option(conn, AUTHENTICATION_DOMAIN);
 
     mg_md5(ha1, ah.user, ":", realm, ":", password, NULL);
 
@@ -3207,13 +3204,13 @@ static int authorize_by_callback(struct mg_connection *conn) {
 
 // Return 1 if request method is allowed, 0 otherwise.
 int check_allowed(struct mg_connection *conn) {
-    const char* request_method = conn->request_info.request_method;
+  const char* request_method = conn->request_info.request_method;
 
-    if (conn->ctx->config[ALLOWED_METHODS] != NULL  &&
-        strstr(conn->ctx->config[ALLOWED_METHODS], request_method)==0) {
-            return 0;
-    }
-    return 1;
+  if (get_conn_option(conn, ALLOWED_METHODS) != NULL  &&
+    strstr(get_conn_option(conn, ALLOWED_METHODS), request_method)==0) {
+      return 0;
+  }
+  return 1;
 }
 
 // Return 1 if request is authorized, 0 otherwise.
@@ -3227,18 +3224,18 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   fp = NULL;
   authorized = 1;
 
-  if (strcmp(conn->ctx->config[AUTHENTICATION_DOMAIN],"") == 0)
+  if (is_empty(get_conn_option(conn, AUTHENTICATION_DOMAIN)))
   {
-      return 1; /*authorized*/
+    return 1; /*authorized*/
   }
 
-  if (conn->ctx->config[AUTHENTICATE_ALL_REQUESTS] != NULL)
+  if (get_conn_option(conn, AUTHENTICATE_ALL_REQUESTS) != NULL)
   {
-      authorized = 0;  /* Force authorization */
+    authorized = 0;  /* Force authorization */
   }
 
   if (conn->ctx->user_functions.password_callback != NULL) {
-      return authorize_by_callback(conn);
+    return authorize_by_callback(conn);
   }
 
 
@@ -3246,7 +3243,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   while ((list = next_option(list, &uri_vec, &filename_vec)) != NULL) {
     if (!memcmp(conn->request_info.uri, uri_vec.ptr, uri_vec.len)) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
-          (int)filename_vec.len, filename_vec.ptr);
+                        (int)filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
         mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(errno));
       }
@@ -3287,7 +3284,7 @@ static int is_authorized_for_put(struct mg_connection *conn) {
   int ret = 0;
   const char *pwd_filepath = get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE);
 
-  if (strcmp(conn->ctx->config[AUTHENTICATION_DOMAIN], "") == 0)
+  if (is_empty(get_conn_option(conn, AUTHENTICATION_DOMAIN)))
   {
       return 1;
   }
@@ -3592,8 +3589,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 
     if (conn->ctx->user_functions.send_callback != NULL)
     {
-      num_read = conn->ctx->user_functions.send_callback(conn,
-              &conn->request_info, BUFSIZ, buf, NULL, NULL);
+      num_read = conn->ctx->user_functions.send_callback(conn, BUFSIZ, buf, NULL, NULL);
       if (num_read <= 0)
       {
         send_http_error(conn, 578, NULL, "%s: failed to read data", __func__); // signal internal error in access log file at least
@@ -3709,10 +3705,9 @@ static void handle_get_request(struct mg_connection *conn) {
   const char *msg = "OK";
   time_t curtime = time(NULL);
   size_t cl;
-  char*  mime;
+  char* mime;
 
-  conn->ctx->user_functions.send_callback(conn, &conn->request_info,
-                                   0, NULL, &cl, &mime);
+  conn->ctx->user_functions.send_callback(conn, NULL, &cl, &mime);
   if (cl < 1)
   {
       send_http_error(conn, 500, "Internal Error",  "");
@@ -3767,7 +3762,7 @@ int mg_send_reject(struct mg_connection *conn, int status_code,
   header = va_arg(ap, char*);
   while (header != NULL) {
     len_header = strlen(header);
-    if ((p-buff) + len_header + 3 > BUFSIZ)  {// 3 for "\r\n\0"
+    if ((p-buff) + len_header + 3 > BUFSIZ)  { // 3 for "\r\n\0"
         return 0;
     }
     memcpy(p, header, len_header);
@@ -4247,9 +4242,9 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "DOCUMENT_ROOT=%s", get_conn_option(conn, DOCUMENT_ROOT));
 
   // Prepare the environment block
-  addenv(blk, "%s", "GATEWAY_INTERFACE=CGI/1.1");
-  addenv(blk, "%s", "SERVER_PROTOCOL=HTTP/1.1");
-  addenv(blk, "%s", "REDIRECT_STATUS=200"); // For PHP
+  addenv(blk, "GATEWAY_INTERFACE=CGI/1.1");
+  addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
+  addenv(blk, "REDIRECT_STATUS=200"); // For PHP
 
   addenv(blk, "SERVER_PORT=%d", get_socket_port(&conn->client.lsa));
 
@@ -4306,7 +4301,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
   if (conn->request_info.remote_user != NULL) {
     addenv(blk, "REMOTE_USER=%s", conn->request_info.remote_user);
-    addenv(blk, "%s", "AUTH_TYPE=Digest");
+    addenv(blk, "AUTH_TYPE=Digest");
   }
 
   // Add all headers as HTTP_* variables
@@ -4823,8 +4818,8 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 
 static void send_options(struct mg_connection *conn) {
 
-  const char *allowed = (conn->ctx->config[ALLOWED_METHODS] != NULL ?
-                  		 conn->ctx->config[ALLOWED_METHODS] :
+  const char *allowed = (get_conn_option(conn, ALLOWED_METHODS) != NULL ?
+                  		 get_conn_option(conn, ALLOWED_METHODS) :
                   		 "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
 
   conn->request_info.status_code = 200;
@@ -4945,12 +4940,12 @@ static void handle_request(struct mg_connection *conn) {
         !strcmp(ri->request_method, "DELETE")) &&
       (is_empty(get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE)) ||
        !is_authorized_for_put(conn)) &&
-      conn->ctx->config[AUTHENTICATE_ALL_REQUESTS] == NULL) {
+      get_conn_option(conn, AUTHENTICATE_ALL_REQUESTS) == NULL) {
     send_authorization_request(conn);
   } else if (!strcmp(ri->request_method, "PUT")) {
     put_file(conn, path);
   } else if (!strcmp(ri->request_method, "DELETE")) {
-    if (conn->ctx->user_functions.receive_callback != NULL  ||  mg_remove(path) == 0) {
+    if (conn->ctx->user_functions.receive_callback != NULL || mg_remove(path) == 0) {
       send_http_ok(conn, 200);
     } else {
       send_http_error(conn, 500, NULL, "remove(%s): %s", path,
@@ -5310,7 +5305,7 @@ static void log_header(const struct mg_connection *conn, const char *header,
   const char *header_value;
 
   if ((header_value = mg_get_header(conn, header)) == NULL) {
-    (void) fprintf(fp, "%s", " -");
+    (void) fprintf(fp, " -");
   } else {
     (void) fprintf(fp, " \"%s\"", header_value);
   }
@@ -5612,7 +5607,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->log_dstfile = NULL;
   ri->log_timestamp = 0;
 
-  ri->content_len = 0;
   if (ri->response_headers != NULL) {
       free(ri->response_headers);
       ri->response_headers = NULL;
