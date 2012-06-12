@@ -97,6 +97,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
 
 // Contrary to mg_read() this one is able to fetch an arbitrary number of bytes from the given connection.
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize);
+// mg_push() would be indetical to mg_write() ...
 
 void mg_close_connection(struct mg_connection *conn);
 

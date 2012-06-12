@@ -197,6 +197,88 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
     return 0;
 }
 
+static struct mg_connection *mg_connect(struct mg_connection *conn,
+                                 const char *host, int port, int use_ssl) {
+  struct mg_connection *newconn = NULL;
+  int sock;
+  struct addrinfo *result = NULL;
+  struct addrinfo *ptr;
+  struct addrinfo hints = {0};
+
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+
+  if (conn->ctx->ssl_ctx == NULL && use_ssl) {
+    mg_cry(conn, "%s: SSL is not initialized", __func__);
+  } else if (getaddrinfo(host, NULL, &hints, &result)) {
+    mg_cry(conn, "%s: getaddrinfo(%s): %s", __func__, host, mg_strerror(ERRNO));
+  } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+    mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
+  } else if ((newconn = (struct mg_connection *)
+      calloc(1, sizeof(*newconn))) == NULL) {
+    mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
+    closesocket(sock);
+  } else {
+    newconn->birth_time = time(NULL);
+    newconn->ctx = conn->ctx;
+    newconn->client.sock = sock;
+    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+      if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
+        continue;
+      switch (ptr->ai_family) {
+      default:
+        continue;
+
+      case AF_INET:
+        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
+        newconn->client.rsa.u.sin = * (struct sockaddr_in *)ptr->ai_addr;
+        newconn->client.rsa.u.sin.sin_family = AF_INET;
+        newconn->client.rsa.u.sin.sin_port = htons((uint16_t) port);
+        break;
+
+#if defined(USE_IPV6)
+      case AF_INET6:
+        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin6);
+        newconn->client.rsa.u.sin6 = * (struct sockaddr_in6 *)ptr->ai_addr;
+        newconn->client.rsa.u.sin6.sin6_family = AF_INET6;
+        newconn->client.rsa.u.sin6.sin6_port = htons((uint16_t) port);
+        break;
+#endif
+      }
+      break;
+    }
+    if (!ptr) {
+      mg_cry(conn, "%s: getaddrinfo(%s): no TCP/IP v4/6 support found", __func__, host);
+      closesocket(sock);
+    }
+    else if (connect(sock, &newconn->client.rsa.u.sa, newconn->client.rsa.len) != 0) {
+      mg_cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
+             mg_strerror(ERRNO));
+      closesocket(sock);
+    } else {
+      newconn->client.lsa.len = newconn->client.rsa.len;
+      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
+      {
+        mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+        newconn->client.lsa.len = 0;
+      }
+      if (use_ssl && !sslize(newconn, SSL_connect)) {
+        mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
+        closesocket(sock);
+      }
+      else {
+        if (result) freeaddrinfo(result);
+        return newconn;
+      }
+    }
+  }
+
+  if (result) freeaddrinfo(result);
+  if (newconn) free(newconn);
+  return NULL;
+}
+
 struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl)
 {
     struct mg_connection *conn = fc(ctx);
@@ -216,28 +298,19 @@ int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
     nread = 0;
     if (conn->consumed_content < conn->content_len)
     {
-        // How many bytes of data we have buffered in the request buffer?
-        buffered_len = conn->data_len - conn->request_len;
-        assert(buffered_len >= 0);
-
-        // Return buffered data back if we haven't done that yet.
-        if (conn->consumed_content < (int64_t) buffered_len) {
-            buffered_len -= (int) conn->consumed_content;
-            if (max_bufsize < (size_t) buffered_len) {
-                buffered_len = (int)max_bufsize;
-            }
-            nread = mg_read(conn, buf, buffered_len);
-            buf = (char *) buf + buffered_len;
-            max_bufsize -= buffered_len;
-        }
+        // This is a connection with decoded headers (or something similar)
+		// --> use mg_read() to read up to the content 'boundary':
+        nread = mg_read(conn, buf, max_bufsize);
     }
-
-    // We have returned all buffered data. Read new data from the remote socket.
-    if (max_bufsize > 0) {
-        int n = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
-        if (n > 0) {
-            conn->consumed_content += n;
-            nread += n;
+	else
+	{
+		// We're using a connection that either isn't HTTP or with
+		// decoded content_length headers of any sort, or we're
+		// outside the 'content' area and we want to pull data from
+		// the socket anyway, say the headers themselves:
+        nread = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
+        if (nread > 0 && conn->content_len > 0) {
+            conn->consumed_content += nread;
         }
     }
     return nread;
