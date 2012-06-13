@@ -2948,9 +2948,9 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 
     // Read from file, exit the loop on error
     num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-    if (num_read == 0)
+    if (num_read == 0 && ferror(fp))
     {
-      send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
+      send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
       return -2;
     }
 
