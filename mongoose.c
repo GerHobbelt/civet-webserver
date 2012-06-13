@@ -3870,7 +3870,6 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
   int request_len, n = 0;
 
-  memset(buf + *nread, 0, bufsiz - *nread);
   do {
     request_len = get_request_len(buf, *nread);
     if (request_len == 0 &&
@@ -4459,7 +4458,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (!is_legal_response_code(conn->request_info.status_code)) {
       send_http_error(conn, 500, NULL,
             "CGI program sent malformed HTTP Status header: [%s]",
-            status);
+            get_header(&ri, "Status"));
       goto done;
     }
   } else if (get_header(&ri, "Location") != NULL) {
@@ -5892,10 +5891,8 @@ static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
-  int round = 0;
 
   do {
-    round++;
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
                                      conn->buf, conn->buf_size,
