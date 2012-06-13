@@ -1992,14 +1992,14 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p;
   const char *interp;
-  char cmdline[PATH_MAX], buf[PATH_MAX];
+  const char *ws_in_path;
+  char cmdline[2 * PATH_MAX], buf[PATH_MAX];
   FILE *fp;
   STARTUPINFOA si = { sizeof(si) };
   PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
 
-  // TODO(lsm): redirect CGI errors to the error log file
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
 
@@ -2022,7 +2022,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
         // First line does not start with "#!". Do not set interpreter.
         buf[2] = '\0';
       } else {
-        // Trim whitespaces in interpreter name
+        // Trim whitespace in interpreter name
         for (p = &buf[strlen(buf) - 1]; p > buf && isspace(*p); p--) {
           *p = '\0';
         }
@@ -2031,9 +2031,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     }
     interp = buf + 2;
   }
+  // check if binary path has spaces in it and set up the proper delimiters when it has:
+  ws_in_path = strchr(interp, ' ');
+  ws_in_path = (ws_in_path ? "\"" : "");
 
-  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
-                     interp, interp[0] == '\0' ? "" : " ", dir, DIRSEP, prog);
+  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%s%s%c%s",
+                     ws_in_path, interp, ws_in_path, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
 
   DEBUG_TRACE(("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
@@ -3295,7 +3298,7 @@ static void print_dir_entry(struct de *de) {
   char size[64], mod[64], href[PATH_MAX];
 
   if (de->st.is_directory) {
-    (void) mg_snprintf(de->conn, size, sizeof(size), "%s", "[DIRECTORY]");
+    (void) mg_snprintf(de->conn, size, sizeof(size), "[DIRECTORY]");
   } else {
      // We use (signed) cast below because MSVC 6 compiler cannot
      // convert unsigned __int64 to double. Sigh.
@@ -3462,7 +3465,7 @@ static void handle_directory_request(struct mg_connection *conn,
   }
   free(data.entries);
 
-  mg_printf(conn, "%s", "</table></body></html>");
+  mg_printf(conn, "</table></body></html>");
   conn->request_info.status_code = 200;
 }
 
@@ -3850,9 +3853,9 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "DOCUMENT_ROOT=%s", get_conn_option(conn, DOCUMENT_ROOT));
 
   // Prepare the environment block
-  addenv(blk, "%s", "GATEWAY_INTERFACE=CGI/1.1");
-  addenv(blk, "%s", "SERVER_PROTOCOL=HTTP/1.1");
-  addenv(blk, "%s", "REDIRECT_STATUS=200"); // For PHP
+  addenv(blk, "GATEWAY_INTERFACE=CGI/1.1");
+  addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
+  addenv(blk, "REDIRECT_STATUS=200"); // For PHP
 
   addenv(blk, "SERVER_PORT=%d", get_socket_port(&conn->client.lsa));
 
@@ -3909,7 +3912,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
   if (conn->request_info.remote_user != NULL) {
     addenv(blk, "REMOTE_USER=%s", conn->request_info.remote_user);
-    addenv(blk, "%s", "AUTH_TYPE=Digest");
+    addenv(blk, "AUTH_TYPE=Digest");
   }
 
   // Add all headers as HTTP_* variables
@@ -4074,7 +4077,7 @@ done:
     (void) close(fd_stdout[1]);
   }
   if (fd_stderr[1] != -1) {
-      (void) close(fd_stderr[1]);
+    (void) close(fd_stderr[1]);
   }
 
   if (in != NULL) {
@@ -4090,6 +4093,42 @@ done:
   }
 
   if (err != NULL) {
+    // copy stderr to error log:
+    int offset = 0;
+    for (;;) {
+      char *line = buf;
+      int n = pull(err, INVALID_SOCKET, NULL, buf + offset, sizeof(buf) - offset - 1);
+      if (n < 0) {
+        break;
+      }
+      buf[offset + n] = 0;
+      if (n == 0) {
+        // log possible last remaining line and then we're done:
+        if (buf[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, buf);
+        break; // EOF
+      }
+      offset = 0;
+      // log the stderr produce one line at a time
+      do {
+        char *eol = line + strcspn(line, "\r\n");
+        if (!eol[0])  // break out when we didn't hit a CR/LF/CRLF
+          break;
+        offset = (int)((eol - buf) + strspn(eol, "\r\n"));
+        *eol = 0;
+        // tweak: do not log empty stderr lines
+        if (line[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, line);
+        line = buf + offset;
+      } while (n > offset);
+      if (n > offset) {
+        memmove(buf, buf + offset, n + 1 - offset);
+        offset = n - offset;
+      } else {
+        buf[0] = 0;
+        offset = 0;
+      }
+    }
     (void) fclose(err);
   } else if (fd_stderr[0] != -1) {
     (void) close(fd_stderr[0]);
@@ -4875,7 +4914,7 @@ static void log_header(const struct mg_connection *conn, const char *header,
   const char *header_value;
 
   if ((header_value = mg_get_header(conn, header)) == NULL) {
-    (void) fprintf(fp, "%s", " -");
+    (void) fprintf(fp, " -");
   } else {
     (void) fprintf(fp, " \"%s\"", header_value);
   }

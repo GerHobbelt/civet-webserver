@@ -8,7 +8,7 @@
 
 resp = "{";
 
-method = os.getenv("REQUEST_METHOD")
+method = os.getenv("REQUEST_METHOD");
 uri = os.getenv("REQUEST_URI");
 query = os.getenv("QUERY_STRING");
 datalen = os.getenv("CONTENT_LENGTH");
