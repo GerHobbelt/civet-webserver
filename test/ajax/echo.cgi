@@ -51,7 +51,7 @@ if (doLogging) then
   if (method == "POST") then
     myFile = io.open("data" .. query:sub(4) .. ".txt", "wb");
     myFile:write(resp)
-    myFile:write("\r\n\r\n")  
+    myFile:write("\r\n\r\n")
     if datalen then
       datalen = tonumber(datalen)
       myFile:write("<<< " .. datalen .. " bytes of data >>>\r\n")
@@ -62,7 +62,7 @@ if (doLogging) then
       myFile:write("\r\n<<< end >>>\r\n")
     else
       myFile:write("<<< no data >>>\r\n")
-    end  
+    end
     myFile:close()
   end
 end
