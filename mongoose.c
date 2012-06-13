@@ -3177,7 +3177,7 @@ static int is_not_modified(const struct mg_connection *conn,
 }
 
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
-                             SOCKET sock, SSL *ssl) {
+                             SOCKET sock, SSL *ssl, int send_error_on_fail) {
   const char *expect, *buffered;
   char buf[BUFSIZ];
   int to_read, nread, buffered_len, success = 0;
@@ -3185,7 +3185,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   expect = mg_get_header(conn, "Expect");
   assert(fp != NULL);
 
-  if (conn->content_len == -1) {
+  if (conn->content_len == -1 &&
+      (!strcmp(conn->request_info.request_method, "POST") ||
+       !strcmp(conn->request_info.request_method, "PUT"))) {
     send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
@@ -3222,14 +3224,17 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       conn->consumed_content += nread;
     }
 
-    if (conn->consumed_content == conn->content_len) {
+    if (conn->consumed_content == conn->content_len ||
+        (conn->consumed_content == 0 && conn->content_len == -1)) {
       success = 1;
     }
 
     // Each error code path in this function must send an error
     if (!success) {
 failure:
-      send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "file I/O error: %s" : ""), mg_strerror(ERRNO));
+      if (send_error_on_fail) {
+        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : ""), __func__, mg_strerror(ERRNO));
+      }
     }
   }
 
@@ -3454,10 +3459,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // Windows does not like when closed descriptor is closed again.
   fd_stdin[0] = fd_stdout[1] = -1;
 
-  // Send POST data to the CGI process if needed
-  if (!strcmp(conn->request_info.request_method, "POST") &&
-      !forward_body_data(conn, in, INVALID_SOCKET, NULL)) {
-    goto done;
+  // Send PUT/POST/... data to the CGI process if needed.
+  // Log but otherwise IGNORE any failure to send the content, as
+  // the CGI script/exe may have already decided to produce a
+  // response based on the HTTP headers alone, which is legal
+  // behaviour.
+  if (!forward_body_data(conn, in, INVALID_SOCKET, NULL, 0)) {
+    mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
   // Now read CGI reply into a buffer. We need to set correct
@@ -3605,7 +3613,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
       // TODO(lsm): handle seek error
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
-    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL)) {
+    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL, 1)) {
       (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
           conn->request_info.status_code);
       mg_mark_end_of_header_transmission(conn);
