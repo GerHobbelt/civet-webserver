@@ -295,7 +295,7 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 
 int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
 {
-    int buffered_len, nread;
+    int nread;
 
     assert((conn->content_len == -1 && conn->consumed_content == 0) ||
         (conn->content_len == 0 && conn->consumed_content > 0) ||

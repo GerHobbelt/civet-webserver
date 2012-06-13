@@ -1723,10 +1723,10 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
     *p-- = '\0';
   }
 
-   // Protect from CGI code disclosure.
-   // This is very nasty hole. Windows happily opens files with
-   // some garbage in the end of file name. So fopen("a.cgi    ", "r")
-   // actually opens "a.cgi", and does not return an error!
+  // Protect from CGI code disclosure.
+  // This is very nasty hole. Windows happily opens files with
+  // some garbage in the end of file name. So fopen("a.cgi    ", "r")
+  // actually opens "a.cgi", and does not return an error!
   if (*p == 0x20 ||               // No space at the end
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
       *p == 0x2b ||               // No '+'
