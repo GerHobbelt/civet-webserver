@@ -2030,18 +2030,18 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   {
     wchar_t woldbuf[PATH_MAX];
     wchar_t wnewbuf[PATH_MAX];
-	int pos;
+    int pos;
 
     to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
     pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
-	assert(pos < ARRAY_SIZE(wnewbuf));
-	wnewbuf[pos] = 0;
+    assert(pos < ARRAY_SIZE(wnewbuf));
+    wnewbuf[pos] = 0;
     WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL);
-	pos = (int)strlen(buf);
-	while (pos-- > 0) {
-	  if (buf[pos] == '\\')
-		buf[pos] = '/';
-	}
+    pos = (int)strlen(buf);
+    while (pos-- > 0) {
+      if (buf[pos] == '\\')
+        buf[pos] = '/';
+    }
   }
 #endif
 
