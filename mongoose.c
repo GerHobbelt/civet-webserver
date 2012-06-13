@@ -3106,7 +3106,6 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
   int request_len, n = 0;
 
-  memset(buf + *nread, 0, bufsiz - *nread);
   do {
     request_len = get_request_len(buf, *nread);
     if (request_len == 0 &&
