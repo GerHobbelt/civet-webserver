@@ -4088,6 +4088,11 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     mg_printf(conn, "%s: %s\r\n",
               ri.http_headers[i].name, ri.http_headers[i].value);
   }
+  // and always send the Connection: header:
+  if (get_header(&ri, "Connection") == NULL) {
+    mg_printf(conn, "Connection: %s\r\n",
+              suggest_connection_header(conn));
+  }
   (void) mg_write(conn, "\r\n", 2);
   mg_mark_end_of_header_transmission(conn);
 
