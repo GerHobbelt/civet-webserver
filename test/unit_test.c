@@ -259,7 +259,7 @@ static void test_header_processing()
     ASSERT(values[0]);
 
 #if 0
-	rv = mg_get_headers(values, 64, &c, "Set-Cookie");
+    rv = mg_get_headers(values, 64, &c, "Set-Cookie");
     ASSERT(rv == 2);
     ASSERT(values[0]);
     ASSERT(values[1]);

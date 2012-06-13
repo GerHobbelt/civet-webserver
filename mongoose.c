@@ -3959,21 +3959,21 @@ static int parse_ipvX_addr_string(char *addr_buf, int port, struct usa *usa) {
   if (!getaddrinfo(addr_buf, NULL, &hints, &rset) && rset) {
     memcpy(&usa->u.sa, rset->ai_addr, rset->ai_addrlen);
 #if defined(USE_IPV6)
-	if (rset->ai_family == PF_INET6) {
+    if (rset->ai_family == PF_INET6) {
       usa->len = sizeof(usa->u.sin6);
-	  assert(rset->ai_addrlen == sizeof(usa->u.sin6));
+      assert(rset->ai_addrlen == sizeof(usa->u.sin6));
       assert(usa->u.sin6.sin6_family == AF_INET6);
       usa->u.sin6.sin6_port = htons((uint16_t) port);
-	  freeaddrinfo(rset);
+      freeaddrinfo(rset);
       return 1;
     } else
 #endif
-	if (rset->ai_family == PF_INET) {
-	  usa->len = sizeof(usa->u.sin);
-	  assert(rset->ai_addrlen == sizeof(usa->u.sin));
-	  assert(usa->u.sin.sin_family == AF_INET);
+    if (rset->ai_family == PF_INET) {
+      usa->len = sizeof(usa->u.sin);
+      assert(rset->ai_addrlen == sizeof(usa->u.sin));
+      assert(usa->u.sin.sin_family == AF_INET);
       usa->u.sin.sin_port = htons((uint16_t) port);
-	  freeaddrinfo(rset);
+      freeaddrinfo(rset);
       return 1;
     }
   }
