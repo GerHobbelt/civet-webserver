@@ -3607,7 +3607,7 @@ done:
       if (n == 0) {
         // log possible last remaining line and then we're done:
         if (buf[0])
-          mg_cry(conn, "CGI [%s] stderr says: %s", p, buf);
+          cry(conn, "CGI [%s] stderr says: %s", p, buf);
         break; // EOF
       }
       offset = 0;
@@ -3620,7 +3620,7 @@ done:
         *eol = 0;
         // tweak: do not log empty stderr lines
         if (line[0])
-          mg_cry(conn, "CGI [%s] stderr says: %s", p, line);
+          cry(conn, "CGI [%s] stderr says: %s", p, line);
         line = buf + offset;
       } while (n > offset);
       if (n > offset) {
