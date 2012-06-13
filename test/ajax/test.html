@@ -67,12 +67,12 @@
 
           --pendingCount;
 
-          document.getElementById('res'+id).innerHTML = textStatus;
-          console.log('id: ' + id + ' (' + pendingCount + '/' + totalCount + '), status: ' + textStatus);
+          document.getElementById('res' + id).innerHTML = textStatus;
+          if (typeof(console) !== 'undefined' && typeof(console.log) !== 'undefined') console.log('id: ' + id + ' (' + pendingCount + '/' + totalCount + '), status: ' + textStatus);
 
           if (pendingCount == 0) {
             document.getElementById('resTotal').innerHTML = 'done';
-            console.log('complete, error count: ' + errorCount);
+            if (typeof (console) !== 'undefined' && typeof (console.log) !== 'undefined') console.log('complete, error count: ' + errorCount);
           }
         }
       });

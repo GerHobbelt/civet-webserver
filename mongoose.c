@@ -1753,10 +1753,10 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
     *p-- = '\0';
   }
 
-   // Protect from CGI code disclosure.
-   // This is very nasty hole. Windows happily opens files with
-   // some garbage in the end of file name. So fopen("a.cgi    ", "r")
-   // actually opens "a.cgi", and does not return an error!
+  // Protect from CGI code disclosure.
+  // This is very nasty hole. Windows happily opens files with
+  // some garbage in the end of file name. So fopen("a.cgi    ", "r")
+  // actually opens "a.cgi", and does not return an error!
   if (*p == 0x20 ||               // No space at the end
       (*p == 0x2e && p > buf) ||  // No '.' but allow '.' as full path
       *p == 0x2b ||               // No '+'
@@ -2022,14 +2022,14 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p;
   const char *interp;
-  char cmdline[PATH_MAX], buf[PATH_MAX];
+  const char *ws_in_path;
+  char cmdline[2 * PATH_MAX], buf[PATH_MAX];
   FILE *fp;
   STARTUPINFOA si = { sizeof(si) };
   PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
 
-  // TODO(lsm): redirect CGI errors to the error log file
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
 
@@ -2052,7 +2052,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
         // First line does not start with "#!". Do not set interpreter.
         buf[2] = '\0';
       } else {
-        // Trim whitespaces in interpreter name
+        // Trim whitespace in interpreter name
         for (p = &buf[strlen(buf) - 1]; p > buf && isspace(*p); p--) {
           *p = '\0';
         }
@@ -2061,9 +2061,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     }
     interp = buf + 2;
   }
+  // check if binary path has spaces in it and set up the proper delimiters when it has:
+  ws_in_path = strchr(interp, ' ');
+  ws_in_path = (ws_in_path ? "\"" : "");
 
-  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
-                     interp, interp[0] == '\0' ? "" : " ", dir, DIRSEP, prog);
+  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%s%s%c%s",
+                     ws_in_path, interp, ws_in_path, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
 
   DEBUG_TRACE(("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
@@ -2575,6 +2578,29 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
       break;
     }
   }
+
+  // Win32: CGI can fail when being fed an interpreter plus relative path to the script;
+  // keep in mind that other scenarios, e.g. user event handlers, may fail similarly
+  // when receiving releative filesystem paths, so we solve the issue once and for all,
+  // right here:
+#if defined(_WIN32)
+  {
+    wchar_t woldbuf[PATH_MAX];
+    wchar_t wnewbuf[PATH_MAX];
+    int pos;
+
+    to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
+    pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
+    assert(pos < ARRAY_SIZE(wnewbuf));
+    wnewbuf[pos] = 0;
+    WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL);
+    pos = (int)strlen(buf);
+    while (pos-- > 0) {
+      if (buf[pos] == '\\')
+        buf[pos] = '/';
+    }
+  }
+#endif
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);
@@ -3392,7 +3418,7 @@ static void print_dir_entry(struct de *de) {
   char size[64], mod[64], href[PATH_MAX];
 
   if (de->st.is_directory) {
-    (void) mg_snprintf(de->conn, size, sizeof(size), "%s", "[DIRECTORY]");
+    (void) mg_snprintf(de->conn, size, sizeof(size), "[DIRECTORY]");
   } else {
      // We use (signed) cast below because MSVC 6 compiler cannot
      // convert unsigned __int64 to double. Sigh.
@@ -3561,7 +3587,7 @@ static void handle_directory_request(struct mg_connection *conn,
   }
   free(data.entries);
 
-  mg_printf(conn, "%s", "</table></body></html>");
+  mg_printf(conn, "</table></body></html>");
   conn->request_info.status_code = 200;
 }
 
@@ -3599,10 +3625,10 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
     else
     {
       // Read from file, exit the loop on error
-    num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-    if (num_read == 0)
+      num_read = (int)fread(buf, 1, (size_t)to_read, fp);
+      if (num_read == 0 && ferror(fp))
       {
-        send_http_error(conn, 578, NULL, "%s: failed to read from file", __func__); // signal internal error in access log file at least
+        send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
         return -2;
       }
     }
@@ -3844,6 +3870,7 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
   int request_len, n = 0;
 
+  memset(buf + *nread, 0, bufsiz - *nread);
   do {
     request_len = get_request_len(buf, *nread);
     if (request_len == 0 &&
@@ -4093,7 +4120,7 @@ static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
 }
 
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
-                             SOCKET sock, SSL *ssl) {
+                             SOCKET sock, SSL *ssl, int send_error_on_fail) {
   const char *expect, *buffered;
   char buf[DATA_COPY_BUFSIZ];
   int to_read, nread, buffered_len, success = 0;
@@ -4119,7 +4146,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       return 1;
   }
 
-  if (conn->content_len == -1) {
+  if (conn->content_len == -1 &&
+      (!strcmp(conn->request_info.request_method, "POST") ||
+       !strcmp(conn->request_info.request_method, "PUT"))) {
     send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
@@ -4156,14 +4185,17 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       conn->consumed_content += nread;
     }
 
-    if (conn->consumed_content == conn->content_len) {
+    if (conn->consumed_content == conn->content_len ||
+        (conn->consumed_content == 0 && conn->content_len == -1)) {
       success = 1;
     }
 
     // Each error code path in this function must send an error
     if (!success) {
 failure:
-      send_http_error(conn, 577, NULL, "");
+      if (send_error_on_fail) {
+        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : ""), __func__, mg_strerror(ERRNO));
+      }
     }
   }
 
@@ -4390,10 +4422,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // Windows does not like when closed descriptor is closed again.
   fd_stdin[0] = fd_stdout[1] = fd_stderr[1] = -1;
 
-  // Send POST data to the CGI process if needed
-  if (!strcmp(conn->request_info.request_method, "POST") &&
-      !forward_body_data(conn, in, INVALID_SOCKET, NULL)) {
-    goto done;
+  // Send PUT/POST/... data to the CGI process if needed.
+  // Log but otherwise IGNORE any failure to send the content, as
+  // the CGI script/exe may have already decided to produce a
+  // response based on the HTTP headers alone, which is legal
+  // behaviour.
+  if (!forward_body_data(conn, in, INVALID_SOCKET, NULL, 0)) {
+    mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
   // Now read CGI reply into a buffer. We need to set correct
@@ -4445,6 +4480,11 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     mg_printf(conn, "%s: %s\r\n",
               ri.http_headers[i].name, ri.http_headers[i].value);
   }
+  // and always send the Connection: header:
+  if (get_header(&ri, "Connection") == NULL) {
+    mg_printf(conn, "Connection: %s\r\n",
+              suggest_connection_header(conn));
+  }
   (void) mg_write(conn, "\r\n", 2);
   mg_mark_end_of_header_transmission(conn);
 
@@ -4466,7 +4506,7 @@ done:
     (void) close(fd_stdout[1]);
   }
   if (fd_stderr[1] != -1) {
-      (void) close(fd_stderr[1]);
+    (void) close(fd_stderr[1]);
   }
 
   if (in != NULL) {
@@ -4482,6 +4522,42 @@ done:
   }
 
   if (err != NULL) {
+    // copy stderr to error log:
+    int offset = 0;
+    for (;;) {
+      char *line = buf;
+      int n = pull(err, INVALID_SOCKET, NULL, buf + offset, sizeof(buf) - offset - 1);
+      if (n < 0) {
+        break;
+      }
+      buf[offset + n] = 0;
+      if (n == 0) {
+        // log possible last remaining line and then we're done:
+        if (buf[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, buf);
+        break; // EOF
+      }
+      offset = 0;
+      // log the stderr produce one line at a time
+      do {
+        char *eol = line + strcspn(line, "\r\n");
+        if (!eol[0])  // break out when we didn't hit a CR/LF/CRLF
+          break;
+        offset = (int)((eol - buf) + strspn(eol, "\r\n"));
+        *eol = 0;
+        // tweak: do not log empty stderr lines
+        if (line[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, line);
+        line = buf + offset;
+      } while (n > offset);
+      if (n > offset) {
+        memmove(buf, buf + offset, n + 1 - offset);
+        offset = n - offset;
+      } else {
+        buf[0] = 0;
+        offset = 0;
+      }
+    }
     (void) fclose(err);
   } else if (fd_stderr[0] != -1) {
     (void) close(fd_stderr[0]);
@@ -4558,7 +4634,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
       // TODO(lsm): handle seek error
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
-    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL)) {
+    if (forward_body_data(conn, fp, INVALID_SOCKET, NULL, 1)) {
       (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n%s\r\n",
           conn->request_info.status_code,
           SAFE_STR(conn->request_info.response_headers));
@@ -5218,6 +5294,9 @@ static int set_ports_option(struct mg_context *ctx) {
 #endif // !_WIN32
   int success = 1;
   int on;
+#if defined(USE_IPV6) && defined(IPV6_V6ONLY) && (!defined(_WIN32) || (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
+  int ipv6_only_on = 1;
+#endif
   SOCKET sock;
   struct vec vec;
   struct socket so = {0}, *listener;
@@ -5266,6 +5345,17 @@ static int set_ports_option(struct mg_context *ctx) {
             // Thanks to Igor Klopov who suggested the patch.
             setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const void *) &on,
                        sizeof(on)) != 0 ||
+#if defined(USE_IPV6) && defined(IPV6_V6ONLY) && (!defined(_WIN32) || (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
+            // Linux et al will b0rk on the second round when binding the IPv4
+            // socket to the same port as the IPv6 one, if this option isn't
+            // specified. (Because we use two sockets, one for each protocol.)
+            //
+            // Apparently, Win32/WinSock assumes this by default, as it didn't
+            // b0rk without the option?
+            (so.lsa.u.sin6.sin6_family == AF_INET6 &&
+             setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const void *) &ipv6_only_on,
+                       sizeof(ipv6_only_on)) != 0) ||
+#endif
             bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
             listen(sock, SOMAXCONN) != 0) {
           mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
@@ -5617,7 +5707,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
-  conn->must_close = 0;
+  //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
@@ -5773,32 +5863,13 @@ static void close_connection(struct mg_connection *conn) {
 }
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
-  char *buffered;
-  int buffered_len, body_len, n;
-
-  buffered = conn->buf + conn->request_len;
-  buffered_len = conn->data_len - conn->request_len;
-  assert(buffered_len >= 0);
-
-  if (conn->content_len <= 0) {
-    // Protect from negative Content-Length, too
-    body_len = 0;
-  } else if (conn->content_len < (int64_t) buffered_len) {
-    body_len = (int) conn->content_len;
-  } else {
-    body_len = buffered_len;
-  }
-
-  conn->data_len -= conn->request_len + body_len;
-  memmove(conn->buf, conn->buf + conn->request_len + body_len,
-          (size_t) conn->data_len);
+  int n;
 
   // make sure we fetch all content (and discard it), if we
   // haven't done so already (f.e.: event callback handler might've
   // ignored part or whole of the received content) otherwise
   // we've got a b0rked keep-alive HTTP stream:
-  conn->consumed_content += body_len;
-
+  //
   // as mg_read() will return 0 as soon as the entire content of the
   // current request has been read, we can simply check for that:
   do {
@@ -5821,8 +5892,10 @@ static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
+  int round = 0;
 
   do {
+    round++;
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
                                      conn->buf, conn->buf_size,
@@ -5832,6 +5905,8 @@ static void process_new_connection(struct mg_connection *conn) {
       send_http_error(conn, 413, NULL, "");
       return;
     } if (conn->request_len <= 0) {
+      // don't mind we cannot send the 500 response code, as long as we log the issue at least...
+      send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
     }
 
@@ -5840,11 +5915,13 @@ static void process_new_connection(struct mg_connection *conn) {
     if (!parse_http_request(conn->buf, ri)
         || !is_valid_uri(ri->uri)) {
       // Do not put garbage in the access log, just send it back to the client
+      conn->must_close = 1;
       send_http_error(conn, 400, NULL,
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
     } else if (strcmp(ri->http_version, "1.0") &&
                strcmp(ri->http_version, "1.1")) {
       // Request seems valid, but HTTP version is strange
+      conn->must_close = 1;
       send_http_error(conn, 505, NULL, "");
       log_access(conn);
     } else {
@@ -5936,11 +6013,12 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!conn->client.is_ssl ||
         (conn->client.is_ssl && sslize(conn, SSL_accept))) {
-      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary data
+      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_INIT_CLIENT_CONN);
       process_new_connection(conn);
     }
 
+    reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
   }
@@ -6197,7 +6275,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
   InitializeCriticalSection(&global_log_file_lock);
-#if _WIN32_WINNT >= 0x403
+#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
   InitializeCriticalSection(&DisconnectExPtrCS);

@@ -108,7 +108,7 @@ enum mg_event {
                             // to speak.
 };
 
-typedef void * (__cdecl *mg_thread_func_t)(void *);
+typedef void * (WINCDECL *mg_thread_func_t)(void *);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // on every MG_* event.
