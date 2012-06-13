@@ -3464,7 +3464,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // response based on the HTTP headers alone, which is legal
   // behaviour.
   if (!forward_body_data(conn, in, INVALID_SOCKET, NULL, 0)) {
-    mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
+    cry(conn, "Warning: failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
   // Now read CGI reply into a buffer. We need to set correct
