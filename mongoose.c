@@ -3675,7 +3675,6 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
   int request_len, n = 0;
 
-  memset(buf + *nread, 0, bufsiz - *nread);
   do {
     request_len = get_request_len(buf, *nread);
     if (request_len == 0 &&
@@ -5456,10 +5455,8 @@ static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
-  int round = 0;
 
   do {
-    round++;
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
                                      conn->buf, conn->buf_size,
