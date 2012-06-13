@@ -2557,18 +2557,18 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   {
     wchar_t woldbuf[PATH_MAX];
     wchar_t wnewbuf[PATH_MAX];
-	int pos;
+    int pos;
 
     to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
     pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
-	assert(pos < ARRAY_SIZE(wnewbuf));
-	wnewbuf[pos] = 0;
+    assert(pos < ARRAY_SIZE(wnewbuf));
+    wnewbuf[pos] = 0;
     WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL);
-	pos = (int)strlen(buf);
-	while (pos-- > 0) {
-	  if (buf[pos] == '\\')
-		buf[pos] = '/';
-	}
+    pos = (int)strlen(buf);
+    while (pos-- > 0) {
+      if (buf[pos] == '\\')
+        buf[pos] = '/';
+    }
   }
 #endif
 
@@ -4851,6 +4851,9 @@ static int set_ports_option(struct mg_context *ctx) {
 #endif // !_WIN32
   int success = 1;
   int on;
+#if defined(USE_IPV6) && defined(IPV6_V6ONLY) && (!defined(_WIN32) || (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
+  int ipv6_only_on = 1;
+#endif
   SOCKET sock;
   struct vec vec;
   struct socket so = {0}, *listener;
@@ -4899,6 +4902,17 @@ static int set_ports_option(struct mg_context *ctx) {
             // Thanks to Igor Klopov who suggested the patch.
             setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (const void *) &on,
                        sizeof(on)) != 0 ||
+#if defined(USE_IPV6) && defined(IPV6_V6ONLY) && (!defined(_WIN32) || (_WIN32_WINNT >= _WIN32_WINNT_WINXP))
+            // Linux et al will b0rk on the second round when binding the IPv4
+            // socket to the same port as the IPv6 one, if this option isn't
+            // specified. (Because we use two sockets, one for each protocol.)
+            //
+            // Apparently, Win32/WinSock assumes this by default, as it didn't
+            // b0rk without the option?
+            (so.lsa.u.sin6.sin6_family == AF_INET6 &&
+             setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const void *) &ipv6_only_on,
+                       sizeof(ipv6_only_on)) != 0) ||
+#endif
             bind(sock, &so.lsa.u.sa, so.lsa.len) != 0 ||
             listen(sock, SOMAXCONN) != 0) {
           mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
@@ -5452,7 +5466,7 @@ static void process_new_connection(struct mg_connection *conn) {
   int round = 0;
 
   do {
-	round++;
+    round++;
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
                                      conn->buf, conn->buf_size,
@@ -5462,7 +5476,7 @@ static void process_new_connection(struct mg_connection *conn) {
       send_http_error(conn, 413, NULL, "");
       return;
     } if (conn->request_len <= 0) {
-	  // don't mind we cannot send the 500 response code, as long as we log the issue at least...
+      // don't mind we cannot send the 500 response code, as long as we log the issue at least...
       send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
     }
@@ -5831,7 +5845,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
   InitializeCriticalSection(&global_log_file_lock);
-#if _WIN32_WINNT >= 0x403
+#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
   InitializeCriticalSection(&DisconnectExPtrCS);

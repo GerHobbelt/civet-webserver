@@ -756,7 +756,7 @@ int main(int argc, char * argv[]) {
   GetProcessAffinityMask(GetCurrentProcess(), &availableCPUs, &totalCPUs);
   printf("CPUs (bit masks): process=%x, system=%x\r\n", availableCPUs, totalCPUs);
 
-#if _WIN32_WINNT >= 0x403
+#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
   InitializeCriticalSectionAndSpinCount(&cs, 100);
 #else
   InitializeCriticalSection(&cs);

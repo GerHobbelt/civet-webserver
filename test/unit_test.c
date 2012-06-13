@@ -400,7 +400,7 @@ int main(void) {
     WSADATA data;
     WSAStartup(MAKEWORD(2,2), &data);
     InitializeCriticalSection(&global_log_file_lock);
-#if _WIN32_WINNT >= 0x403
+#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
     InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
     InitializeCriticalSection(&DisconnectExPtrCS);

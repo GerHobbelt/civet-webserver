@@ -71,6 +71,9 @@
 #ifndef _WIN32_WINNT_NT4
 #define _WIN32_WINNT_NT4                    0x0400
 #endif
+#ifndef _WIN32_WINNT_NT4_SP3
+#define _WIN32_WINNT_NT4_SP3                0x0403
+#endif
 #ifndef _WIN32_WINNT_WIN2K
 #define _WIN32_WINNT_WIN2K                  0x0500
 #endif
@@ -180,6 +183,10 @@ typedef long off_t;
 #define SHUT_WR   SD_SEND
 #define SHUT_RD   SD_RECEIVE
 #define SHUT_RDWR SD_BOTH
+#endif
+
+#if !defined(IPV6_V6ONLY) && (_WIN32_WINNT >= 0x0501)
+#define IPV6_V6ONLY           27 // Treat wildcard bind as AF_INET6-only.
 #endif
 
 #define snprintf _snprintf
