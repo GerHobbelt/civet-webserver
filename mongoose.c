@@ -3675,6 +3675,7 @@ static int read_request(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int bufsiz,
                         int *nread) {
   int request_len, n = 0;
 
+  memset(buf + *nread, 0, bufsiz - *nread);
   do {
     request_len = get_request_len(buf, *nread);
     if (request_len == 0 &&
@@ -3797,7 +3798,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     // Each error code path in this function must send an error
     if (!success) {
 failure:
-      send_http_error(conn, 577, NULL, "");
+      send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "file I/O error: %s" : ""), mg_strerror(ERRNO));
     }
   }
 
@@ -5243,7 +5244,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->consumed_content = 0;
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
-  conn->must_close = 0;
+  //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
@@ -5418,6 +5419,7 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   conn->data_len -= conn->request_len + body_len;
   memmove(conn->buf, conn->buf + conn->request_len + body_len,
           (size_t) conn->data_len);
+  conn->request_len = 0;
 
   // make sure we fetch all content (and discard it), if we
   // haven't done so already (f.e.: event callback handler might've
@@ -5447,8 +5449,10 @@ static void process_new_connection(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   //int keep_alive_enabled;  -- checked in the should_keep_alive() call anyway
   const char *cl;
+  int round = 0;
 
   do {
+	round++;
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn->client.sock, conn->ssl,
                                      conn->buf, conn->buf_size,
@@ -5458,6 +5462,8 @@ static void process_new_connection(struct mg_connection *conn) {
       send_http_error(conn, 413, NULL, "");
       return;
     } if (conn->request_len <= 0) {
+	  // don't mind we cannot send the 500 response code, as long as we log the issue at least...
+      send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
     }
 
@@ -5466,11 +5472,13 @@ static void process_new_connection(struct mg_connection *conn) {
     if (!parse_http_request(conn->buf, ri)
         || !is_valid_uri(ri->uri)) {
       // Do not put garbage in the access log, just send it back to the client
+      conn->must_close = 1;
       send_http_error(conn, 400, NULL,
           "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
     } else if (strcmp(ri->http_version, "1.0") &&
                strcmp(ri->http_version, "1.1")) {
       // Request seems valid, but HTTP version is strange
+      conn->must_close = 1;
       send_http_error(conn, 505, NULL, "");
       log_access(conn);
     } else {
@@ -5561,11 +5569,12 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!conn->client.is_ssl ||
         (conn->client.is_ssl && sslize(conn, SSL_accept))) {
-      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary data
+      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_INIT_CLIENT_CONN);
       process_new_connection(conn);
     }
 
+    reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
   }
