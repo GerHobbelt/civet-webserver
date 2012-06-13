@@ -4066,7 +4066,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (!is_legal_response_code(conn->request_info.status_code)) {
       send_http_error(conn, 500, NULL,
             "CGI program sent malformed HTTP Status header: [%s]",
-            status);
+            get_header(&ri, "Status"));
       goto done;
     }
   } else if (get_header(&ri, "Location") != NULL) {
