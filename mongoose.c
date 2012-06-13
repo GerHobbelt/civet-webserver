@@ -1502,16 +1502,18 @@ static int kill(pid_t pid, int sig_num) {
 
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
-                           int fd_stdout, const char *dir) {
+                           int fd_stdout, int fd_stderr, const char *dir) {
   HANDLE me;
-  char *p, *interp, cmdline[PATH_MAX], buf[PATH_MAX];
+  char *p;
+  const char *interp;
+  const char *ws_in_path;
+  char cmdline[2 * PATH_MAX], buf[PATH_MAX];
   FILE *fp;
   STARTUPINFOA si = { sizeof(si) };
   PROCESS_INFORMATION pi = { 0 };
 
   envp = NULL; // Unused
 
-  // TODO(lsm): redirect CGI errors to the error log file
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
 
@@ -1520,6 +1522,8 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       &si.hStdInput, 0, TRUE, DUPLICATE_SAME_ACCESS);
   (void) DuplicateHandle(me, (HANDLE) _get_osfhandle(fd_stdout), me,
       &si.hStdOutput, 0, TRUE, DUPLICATE_SAME_ACCESS);
+  (void) DuplicateHandle(me, (HANDLE) _get_osfhandle(fd_stderr), me,
+      &si.hStdError, 0, TRUE, DUPLICATE_SAME_ACCESS);
 
   // If CGI file is a script, try to read the interpreter line
   interp = conn->ctx->config[CGI_INTERPRETER];
@@ -1541,9 +1545,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     }
     interp = buf + 2;
   }
+  // check if binary path has spaces in it and set up the proper delimiters when it has:
+  ws_in_path = strchr(interp, ' ');
+  ws_in_path = (ws_in_path ? "\"" : "");
 
-  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
-                     interp, interp[0] == '\0' ? "" : " ", dir, DIRSEP, prog);
+  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%s%s%c%s",
+                     ws_in_path, interp, ws_in_path, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
 
   DEBUG_TRACE(("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
@@ -1554,8 +1561,10 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   } else {
     (void) close(fd_stdin);
     (void) close(fd_stdout);
+    (void) close(fd_stderr);
   }
 
+  (void) CloseHandle(si.hStdError);
   (void) CloseHandle(si.hStdOutput);
   (void) CloseHandle(si.hStdInput);
   (void) CloseHandle(pi.hThread);
@@ -1626,7 +1635,7 @@ static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
 #ifndef NO_CGI
 static pid_t spawn_process(struct mg_connection *conn, const char *prog,
                            char *envblk, char *envp[], int fd_stdin,
-                           int fd_stdout, const char *dir) {
+                           int fd_stdout, int fd_stderr, const char *dir) {
   pid_t pid;
   const char *interp;
 
@@ -1643,10 +1652,12 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       cry(conn, "%s: dup2(%d, 0): %s", __func__, fd_stdin, mg_strerror(ERRNO));
     } else if (dup2(fd_stdout, 1) == -1) {
       cry(conn, "%s: dup2(%d, 1): %s", __func__, fd_stdout, mg_strerror(ERRNO));
+    } else if (dup2(fd_stderr, 2) == -1) {
+        cry(conn, "%s: dup2(%d, 2): %s", __func__, fd_stderr, mg_strerror(ERRNO));
     } else {
-      (void) dup2(fd_stdout, 2);
       (void) close(fd_stdin);
       (void) close(fd_stdout);
+      (void) close(fd_stderr);
 
       // Execute CGI program. No need to lock: new process
       interp = conn->ctx->config[CGI_INTERPRETER];
@@ -1664,6 +1675,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     // Parent. Close stdio descriptors
     (void) close(fd_stdin);
     (void) close(fd_stdout);
+    (void) close(fd_stderr);
   }
 
   return pid;
@@ -2753,7 +2765,7 @@ static void print_dir_entry(struct de *de) {
   char size[64], mod[64], href[PATH_MAX];
 
   if (de->st.is_directory) {
-    (void) mg_snprintf(de->conn, size, sizeof(size), "%s", "[DIRECTORY]");
+    (void) mg_snprintf(de->conn, size, sizeof(size), "[DIRECTORY]");
   } else {
      // We use (signed) cast below because MSVC 6 compiler cannot
      // convert unsigned __int64 to double. Sigh.
@@ -2920,7 +2932,7 @@ static void handle_directory_request(struct mg_connection *conn,
   }
   free(data.entries);
 
-  mg_printf(conn, "%s", "</table></body></html>");
+  mg_printf(conn, "</table></body></html>");
   conn->request_info.status_code = 200;
 }
 
@@ -3403,12 +3415,12 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 }
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
-  int headers_len, data_len, i, fd_stdin[2], fd_stdout[2];
+  int headers_len, data_len, i, fd_stdin[2], fd_stdout[2], fd_stderr[2];
   const char *status, *connection_status;
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
-  FILE *in = NULL, *out = NULL;
+  FILE *in = NULL, *out = NULL, *err = NULL;
   pid_t pid;
 
   prepare_cgi_environment(conn, prog, &blk);
@@ -3430,20 +3442,21 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
 
   pid = (pid_t) -1;
-  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = -1;
+  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = fd_stderr[0] = fd_stderr[1] = -1;
   in = out = NULL;
 
-  if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0) {
+  if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0 || pipe(fd_stderr) != 0) {
     send_http_error(conn, 500, NULL,
         "Cannot create CGI pipe: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
-          fd_stdin[0], fd_stdout[1], dir)) == (pid_t) -1) {
+          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
     send_http_error(conn, 500, NULL,
         "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
     goto done;
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
-      (out = fdopen(fd_stdout[0], "rb")) == NULL) {
+      (out = fdopen(fd_stdout[0], "rb")) == NULL ||
+      (err = fdopen(fd_stderr[0], "rb")) == NULL) {
     send_http_error(conn, 500, NULL,
         "fopen: %s", mg_strerror(ERRNO));
     goto done;
@@ -3451,12 +3464,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   setbuf(in, NULL);
   setbuf(out, NULL);
+  setbuf(err, NULL);
 
   // spawn_process() must close those!
   // If we don't mark them as closed, close() attempt before
   // return from this function throws an exception on Windows.
   // Windows does not like when closed descriptor is closed again.
-  fd_stdin[0] = fd_stdout[1] = -1;
+  fd_stdin[0] = fd_stdout[1] = fd_stderr[1] = -1;
 
   // Send PUT/POST/... data to the CGI process if needed.
   // Log but otherwise IGNORE any failure to send the content, as
@@ -3541,6 +3555,9 @@ done:
   if (fd_stdout[1] != -1) {
     (void) close(fd_stdout[1]);
   }
+  if (fd_stderr[1] != -1) {
+    (void) close(fd_stderr[1]);
+  }
 
   if (in != NULL) {
     (void) fclose(in);
@@ -3552,6 +3569,48 @@ done:
     (void) fclose(out);
   } else if (fd_stdout[0] != -1) {
     (void) close(fd_stdout[0]);
+  }
+
+  if (err != NULL) {
+    // copy stderr to error log:
+    int offset = 0;
+    for (;;) {
+      char *line = buf;
+      int n = pull(err, INVALID_SOCKET, NULL, buf + offset, sizeof(buf) - offset - 1);
+      if (n < 0) {
+        break;
+      }
+      buf[offset + n] = 0;
+      if (n == 0) {
+        // log possible last remaining line and then we're done:
+        if (buf[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, buf);
+        break; // EOF
+      }
+      offset = 0;
+      // log the stderr produce one line at a time
+      do {
+        char *eol = line + strcspn(line, "\r\n");
+        if (!eol[0])  // break out when we didn't hit a CR/LF/CRLF
+          break;
+        offset = (int)((eol - buf) + strspn(eol, "\r\n"));
+        *eol = 0;
+        // tweak: do not log empty stderr lines
+        if (line[0])
+          mg_cry(conn, "CGI [%s] stderr says: %s", p, line);
+        line = buf + offset;
+      } while (n > offset);
+      if (n > offset) {
+        memmove(buf, buf + offset, n + 1 - offset);
+        offset = n - offset;
+      } else {
+        buf[0] = 0;
+        offset = 0;
+      }
+    }
+    (void) fclose(err);
+  } else if (fd_stderr[0] != -1) {
+    (void) close(fd_stderr[0]);
   }
 }
 #endif // !NO_CGI
