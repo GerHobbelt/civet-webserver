@@ -2022,6 +2022,29 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
+  // Win32: CGI can fail when being fed an interpreter plus relative path to the script;
+  // keep in mind that other scenarios, e.g. user event handlers, may fail similarly
+  // when receiving releative filesystem paths, so we solve the issue once and for all,
+  // right here:
+#if defined(_WIN32)
+  {
+    wchar_t woldbuf[PATH_MAX];
+    wchar_t wnewbuf[PATH_MAX];
+	int pos;
+
+    to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
+    pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
+	assert(pos < ARRAY_SIZE(wnewbuf));
+	wnewbuf[pos] = 0;
+    WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL);
+	pos = (int)strlen(buf);
+	while (pos-- > 0) {
+	  if (buf[pos] == '\\')
+		buf[pos] = '/';
+	}
+  }
+#endif
+
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = conn->ctx->config[CGI_EXTENSIONS];
     int cgi_exts_len = (int)strlen(cgi_exts);
