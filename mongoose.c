@@ -75,13 +75,11 @@ typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, 
 static LPFN_DISCONNECTEX DisconnectExPtr = 0;
 static CRITICAL_SECTION DisconnectExPtrCS;
 
-static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
+static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved) {
   return 0;
 }
 
-static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
-{
+static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock) {
   /*
     Note  The function pointer for the DisconnectEx function must be obtained
           at run time by making a call to the WSAIoctl function with the
@@ -97,8 +95,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
 
   EnterCriticalSection(&DisconnectExPtrCS);
 
-  if (!DisconnectExPtr && sock)
-  {
+  if (!DisconnectExPtr && sock) {
     GUID dcex = WSAID_DISCONNECTEX;
     LPFN_DISCONNECTEX DisconnectExPtr = 0;
     DWORD len = 0;
@@ -107,8 +104,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
     rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
                   &DisconnectExPtr, sizeof(DisconnectExPtr),
                   &len, 0, 0);
-    if (rv)
-    {
+    if (rv) {
       DisconnectExPtr = dummy_disconnectEx;
     }
   }
@@ -122,8 +118,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
   return ret;
 }
 
-static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
+static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved) {
   LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
 
   return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
@@ -131,8 +126,7 @@ static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags
 
 #else // _WIN32
 
-static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
-{
+static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved) {
   return 0;
 }
 
@@ -443,8 +437,7 @@ static const char *call_user_conn_option_get(struct mg_connection *conn, const c
   }
 }
 
-static int is_empty(const char *str)
-{
+static int is_empty(const char *str) {
   return !str || !*str;
 }
 
@@ -625,21 +618,17 @@ NOTE: has the mg_ prefix to prevent collisions with system's strerror();
       it is generally used in constructs like mg_strerror(ERRNO) where
       ERRNO is a mongoose-internal #define.
 */
-const char *mg_strerror(int errcode)
-{
+const char *mg_strerror(int errcode) {
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
   const char *s = strerror(errcode);
-  if (is_empty(s) || GetLastError() == (DWORD)errcode)
-  {
+  if (is_empty(s) || GetLastError() == (DWORD)errcode) {
     static __declspec(thread) char msg[256];
 
-    if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, errcode, 0, msg, ARRAY_SIZE(msg), NULL))
-    {
+    if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                            errcode, 0, msg, ARRAY_SIZE(msg), NULL)) {
       snprintf(msg, ARRAY_SIZE(msg), "Unidentified error code %d", errcode);
-    }
-    else
-    {
+    } else {
       // strip trailing whitespace off the message.
       char *p = msg + strlen(msg) - 1;
       while (p >= msg && isspace((unsigned char)*p))
@@ -682,19 +671,16 @@ static struct mg_connection *fc(struct mg_context *ctx) {
 //         %[Q] with the request URI query section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters query hash))
 //
 //         any other % parameter is processed by strftime.
-const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp)
-{
+const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp) {
   char fnbuf[PATH_MAX+1];
   char *d;
   const char *s;
   struct tm *tp;
 
-  if (!dst || dst_maxsize < 1)
-  {
+  if (!dst || dst_maxsize < 1) {
     return NULL;
   }
-  if (is_empty(logfile_template) || dst_maxsize <= 1)
-  {
+  if (is_empty(logfile_template) || dst_maxsize <= 1) {
     dst[0] = 0;
     return NULL;
   }
@@ -702,18 +688,15 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
   d = fnbuf;
   d[PATH_MAX] = 0;  // sentinel for odd moments with strncpy et al
   s = logfile_template;
-  while (d - fnbuf < PATH_MAX)
-  {
-    switch (*s)
-    {
+  while (d - fnbuf < PATH_MAX) {
+    switch (*s) {
     case 0:
       if (d > fnbuf && d[-1] == '.')
         d--;
       break;
 
     case '%':
-      if (s[1] == '[' && s[2] && s[3] == ']')
-      {
+      if (s[1] == '[' && s[2] && s[3] == ']') {
         size_t len = PATH_MAX - (d - fnbuf); // assert(len > 0);
         const char *u = NULL;
         // enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
@@ -722,15 +705,12 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         char *old_d = d;
 
         *d = 0;
-        switch (s[2])
-        {
+        switch (s[2]) {
         case 'P':
-          if (conn)
-          {
+          if (conn) {
             unsigned short int port = get_socket_port(&conn->client.rsa);
 
-            if (port != 0)
-            {
+            if (port != 0) {
               (void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
               d += strlen(d);
             }
@@ -738,12 +718,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           goto replacement_done;
 
         case 'C':
-          if (conn)
-          {
+          if (conn) {
             sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
 
-            if (addr_buf[0])
-            {
+            if (addr_buf[0]) {
               u = addr_buf;
               goto copy_partial2dst;
             }
@@ -751,12 +729,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           goto replacement_done;
 
         case 'p':
-          if (conn)
-          {
+          if (conn) {
             unsigned short int port = get_socket_port(&conn->client.lsa);
 
-            if (port != 0)
-            {
+            if (port != 0) {
               (void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
               d += strlen(d);
             }
@@ -764,12 +740,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           goto replacement_done;
 
         case 's':
-          if (conn)
-          {
+          if (conn) {
             sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.lsa);
 
-            if (addr_buf[0])
-            {
+            if (addr_buf[0]) {
               u = addr_buf;
               goto copy_partial2dst;
             }
@@ -779,16 +753,13 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         case 'U':
         case 'Q':
           // filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
-          if (conn && conn->request_info.uri)
-          {
+          if (conn && conn->request_info.uri) {
             const char *q;
 
             u = conn->request_info.uri;
             q = strchr(u, '?');
-            if (s[2] == 'Q')
-            {
-              if (!q)
-              {
+            if (s[2] == 'Q') {
+              if (!q) {
                 // empty query section: replace as empty string.
                 q = "";
               }
@@ -798,8 +769,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             // limit the length to process:
             strncpy(addr_buf, u, sizeof(addr_buf));
             addr_buf[sizeof(addr_buf) - 1] = 0;
-            if (q && q - u < sizeof(addr_buf))
-            {
+            if (q && q - u < sizeof(addr_buf)) {
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to 64 characters:
@@ -811,13 +781,10 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           goto replacement_done;
 
 copy_partial2dst:
-          if (len > 0 && u)
-          {
+          if (len > 0 && u) {
             // anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
-            for ( ; d - fnbuf < PATH_MAX - 1; u++)
-            {
-              switch (*u)
-              {
+            for ( ; d - fnbuf < PATH_MAX - 1; u++) {
+              switch (*u) {
               case 0:
                 break;
 
@@ -833,16 +800,14 @@ copy_partial2dst:
                 // nor do we allow a dot at the start or end of the produced part (which would
                 // possibly generate hidden files/dirs and file create issues on some
                 // OS/storage formats):
-                if (d > fnbuf && !strchr(":\\/.", d[-1]))
-                {
+                if (d > fnbuf && !strchr(":\\/.", d[-1])) {
                   *d++ = '.';
                 }
                 continue;
 
               default:
                 // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
-                if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u))
-                {
+                if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u)) {
                   *d++ = *u;
                   continue;
                 }
@@ -867,8 +832,7 @@ replacement_done:
 
         default:
           // illegal format code: keep as is, but add another % to make a literal code:
-          if (len >= 2)
-          {
+          if (len >= 2) {
             *d++ = '%';
             *d++ = '%';
           }
@@ -887,21 +851,16 @@ replacement_done:
   *d = 0;
 
   tp = localtime(&timestamp);
-  if (0 == strftime(dst, dst_maxsize, fnbuf, tp))
-  {
+  if (0 == strftime(dst, dst_maxsize, fnbuf, tp)) {
     // error transforming the template to a filename: fall back to the literal thing, but ditch all '%' in the path now:
     d = dst;
     s = fnbuf;
     dst_maxsize--; // reserve space for the sentinel NUL
-    while (d - dst < (int)dst_maxsize && *s)
-    {
-      if (*s == '%')
-      {
+    while (d - dst < (int)dst_maxsize && *s) {
+      if (*s == '%') {
         *d++ = '_';
         s++;
-      }
-      else
-      {
+      } else {
         *d++ = *s++;
       }
     }
@@ -910,33 +869,28 @@ replacement_done:
   return dst;
 }
 
-const char *mg_get_default_error_logfile_path(struct mg_connection *conn)
-{
+const char *mg_get_default_error_logfile_path(struct mg_connection *conn) {
   // Once determined, we stick with the given logfile for the current connection.
   //
   // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
-  if (!conn->error_logfile_path[0])
-  {
+  if (!conn->error_logfile_path[0]) {
     return mg_get_logfile_path(conn->error_logfile_path, ARRAY_SIZE(conn->error_logfile_path), get_conn_option(conn, ERROR_LOG_FILE), conn, conn->birth_time);
   }
   return conn->error_logfile_path;
 }
 
-const char *mg_get_default_access_logfile_path(struct mg_connection *conn)
-{
+const char *mg_get_default_access_logfile_path(struct mg_connection *conn) {
   // Once determined, we stick with the given logfile for the current connection.
   //
   // We clear the cached filepath when the connection goes on to process another request (request URL *MAY* be a parameter in the logfile path template).
-  if (!conn->access_logfile_path[0])
-  {
+  if (!conn->access_logfile_path[0]) {
     return mg_get_logfile_path(conn->access_logfile_path, ARRAY_SIZE(conn->access_logfile_path), get_conn_option(conn, ACCESS_LOG_FILE), conn, conn->birth_time);
   }
   return conn->access_logfile_path;
 }
 
 // write arbitrary formatted string to the specified logfile
-int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg)
-{
+int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *msg) {
   int rv = 0;
 
   if (!conn) conn = fc(NULL);
@@ -949,8 +903,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
   // Do not lock when getting the callback value, here and below.
   // I suppose this is fine, since function cannot disappear in the
   // same way string option can.
-  if (call_user(conn, MG_EVENT_LOG) == NULL)
-  {
+  if (call_user(conn, MG_EVENT_LOG) == NULL) {
     FILE *fp;
 
     severity = conn->request_info.log_severity;
@@ -959,33 +912,28 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
     msg = conn->request_info.log_message;
 
     fp = mg_fopen((logfile ? logfile : "-"), "a+");
-    if (fp != NULL)
-    {
+    if (fp != NULL) {
       flockfile(fp);
 
-      if (timestamp != 0)
-      {
+      if (timestamp != 0) {
         char tbuf[40];
 
         rv += (int)fwrite(tbuf, sizeof(tbuf[0]), strftime(tbuf, ARRAY_SIZE(tbuf), "[%Y%m%dT%H%M%S] ", gmtime(&timestamp)), fp);
       }
       rv += fprintf(fp, "[%s] ", severity);
-      if (conn != NULL)
-      {
+      if (conn != NULL) {
         char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
         sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
-        if (addr_buf[0])
-        {
+        if (addr_buf[0]) {
           rv += fprintf(fp, "[client %s] ", addr_buf);
         }
       }
 
-      if (conn != NULL && conn->request_info.request_method != NULL && conn->request_info.uri != NULL)
-      {
+      if (conn != NULL && conn->request_info.request_method != NULL && conn->request_info.uri != NULL) {
         rv += fprintf(fp, "%s %s: ",
-                    conn->request_info.request_method,
-                    conn->request_info.uri);
+                      conn->request_info.request_method,
+                      conn->request_info.uri);
       }
 
       rv += fprintf(fp, "%s\n", msg ? msg : "???");
@@ -1003,8 +951,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 }
 
 // Print log message to the opened error log stream.
-void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
-{
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...) {
   va_list ap;
 
   va_start(ap, fmt);
@@ -1013,20 +960,14 @@ void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timest
 }
 
 // Print log message to the opened error log stream.
-void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args)
-{
+void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, va_list args) {
   // handle the special case where there's nothing to do in terms of formatting in order to accept arbitrary input lengths then without the malloc/speed penalty:
-  if (!strchr(fmt, '%'))
-  {
+  if (!strchr(fmt, '%')) {
     mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
-  }
-  else if (!strcmp(fmt, "%s"))
-  {
+  } else if (!strcmp(fmt, "%s")) {
     fmt = va_arg(args, const char *);
     mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
-  }
-  else
-  {
+  } else {
     char *buf = NULL;
     // the absolute max we're going to support is a dump of 1MByte of text!
     int n = mg_vasprintf(conn, &buf, MG_MAX_LOG_LINE_SIZE, fmt, args);
@@ -1045,16 +986,14 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 }
 
 // Print formatted error message to the opened error log stream.
-void mg_cry_raw(struct mg_connection *conn, const char *msg)
-{
+void mg_cry_raw(struct mg_connection *conn, const char *msg) {
   time_t timestamp = time(NULL);
 
   (void)mg_write2log_raw(conn, NULL, timestamp, NULL, msg);
 }
 
 // Print error message to the opened error log stream.
-void mg_cry(struct mg_connection *conn, const char *fmt, ...)
-{
+void mg_cry(struct mg_connection *conn, const char *fmt, ...) {
   va_list ap;
 
   va_start(ap, fmt);
@@ -1171,8 +1110,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
-                       const char *fmt, ...)
-{
+                const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -1184,20 +1122,16 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 
-int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, size_t buflen, const char *fmt, va_list ap)
-{
+int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, size_t buflen, const char *fmt, va_list ap) {
   int n;
 
   if (buflen == 0)
     return 0;
 
   // shortcut for speed:
-  if (!strchr(fmt, '%'))
-  {
+  if (!strchr(fmt, '%')) {
     return (int)mg_strlcpy(buf, fmt, buflen);
-  }
-  else if (!strcmp(fmt, "%s"))
-  {
+  } else if (!strcmp(fmt, "%s")) {
     fmt = va_arg(ap, const char *);
     if (!fmt) fmt = "???";
     return (int)mg_strlcpy(buf, fmt, buflen);
@@ -1218,8 +1152,7 @@ int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, si
 }
 
 int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
-  const char *fmt, ...)
-{
+                  const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -1231,8 +1164,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref, size_t max_buflen,
-  const char *fmt, va_list ap)
-{
+                 const char *fmt, va_list ap) {
   va_list aq;
   int n;
   int size = BUFSIZ;
@@ -1274,8 +1206,7 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
     //n = size - 1;
     //buf[n] = '\0';
     n = (int)strlen(buf);
-  }
-  else {
+  } else {
     buf[n] = '\0';
   }
   *buf_ref = buf;
@@ -1283,8 +1214,7 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
 }
 
 int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
-  const char *fmt, ...)
-{
+                const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -1528,261 +1458,238 @@ static const char *suggest_connection_header(struct mg_connection *conn) {
 }
 
 // Return negative value on error; otherwise number of bytes saved by compacting.
-static int compact_tx_headers(struct mg_connection *conn)
-{
-    char *scratch;
-    int i, n;
-    int space;
-    struct mg_header hdrs[ARRAY_SIZE(conn->request_info.response_headers)];
+static int compact_tx_headers(struct mg_connection *conn) {
+  char *scratch;
+  int i, n;
+  int space;
+  struct mg_header hdrs[ARRAY_SIZE(conn->request_info.response_headers)];
 
-    if (!conn->buf_size) // mg_connect() creates connections without header buffer space
-        return -1;
+  if (!conn->buf_size) // mg_connect() creates connections without header buffer space
+    return -1;
 
-    if (!conn->tx_can_compact)
-        return 0;
+  if (!conn->tx_can_compact)
+    return 0;
 
-    scratch = conn->buf + 2 * conn->buf_size;
-    space = conn->buf_size;
+  scratch = conn->buf + 2 * conn->buf_size;
+  space = conn->buf_size;
 
-    memcpy(hdrs, conn->request_info.response_headers, sizeof(hdrs));
+  memcpy(hdrs, conn->request_info.response_headers, sizeof(hdrs));
 
-    n = conn->request_info.num_response_headers;
-    for (i = 0; i < n; i++)
-    {
-        int l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].name, space);
-        // calc new name+value pointers for when we're done with the compact cycle:
-        hdrs[i].name = scratch - conn->buf_size;
-        l += 2;
-        scratch += l;
-        space -= l;
-        l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].value, space);
-        hdrs[i].value = scratch - conn->buf_size;
-        l += 2;
-        scratch += l;
-        space -= l;
-    }
-    conn->tx_can_compact = 0;
-    n = scratch - conn->buf - 2 * conn->buf_size;
-    i = conn->tx_headers_len - n;
-    conn->tx_headers_len = n;
+  n = conn->request_info.num_response_headers;
+  for (i = 0; i < n; i++) {
+    int l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].name, space);
+    // calc new name+value pointers for when we're done with the compact cycle:
+    hdrs[i].name = scratch - conn->buf_size;
+    l += 2;
+    scratch += l;
+    space -= l;
+    l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].value, space);
+    hdrs[i].value = scratch - conn->buf_size;
+    l += 2;
+    scratch += l;
+    space -= l;
+  }
+  conn->tx_can_compact = 0;
+  n = scratch - conn->buf - 2 * conn->buf_size;
+  i = conn->tx_headers_len - n;
+  conn->tx_headers_len = n;
 
-    memcpy(conn->request_info.response_headers, hdrs, sizeof(hdrs));
-    memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, conn->buf_size);
+  memcpy(conn->request_info.response_headers, hdrs, sizeof(hdrs));
+  memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, conn->buf_size);
 
-    return i;
+  return i;
 }
 
-int mg_remove_response_header(struct mg_connection *conn, const char *tag)
-{
-    int i = -1;
-    int found = 0;
+int mg_remove_response_header(struct mg_connection *conn, const char *tag) {
+  int i = -1;
+  int found = 0;
 
-    if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
-        return -1;
+  if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+    return -1;
 
-    // check whether tag is already listed in the set:
-    for (i = conn->request_info.num_response_headers; i-- > 0; )
-    {
-        const char *key = conn->request_info.response_headers[i].name;
+  // check whether tag is already listed in the set:
+  for (i = conn->request_info.num_response_headers; i-- > 0; ) {
+    const char *key = conn->request_info.response_headers[i].name;
 
-        if (!mg_strcasecmp(tag, key)) {
-            // ditch the key + value:
-            found++;
-            conn->request_info.response_headers[i].name = NULL;
-        }
+    if (!mg_strcasecmp(tag, key)) {
+      // ditch the key + value:
+      found++;
+      conn->request_info.response_headers[i].name = NULL;
     }
-    // keep the order of the keys intact: compact the header set once we've removed all 'tag' occurrences
-    if (found)
-    {
-        int n = conn->request_info.num_response_headers;
-        for (i = 0; i < n; i++)
-        {
-            if (!conn->request_info.response_headers[i].name)
-            {
-                int j;
+  }
+  // keep the order of the keys intact: compact the header set once we've removed all 'tag' occurrences
+  if (found) {
+    int n = conn->request_info.num_response_headers;
+    for (i = 0; i < n; i++) {
+      if (!conn->request_info.response_headers[i].name) {
+        int j;
 
-                for (j = i + 1; j < n; j++)
-                {
-                    if (conn->request_info.response_headers[j].name)
-                    {
-                        conn->request_info.response_headers[i++] = conn->request_info.response_headers[j];
-                    }
-                }
-                break;
-            }
+        for (j = i + 1; j < n; j++) {
+          if (conn->request_info.response_headers[j].name) {
+            conn->request_info.response_headers[i++] = conn->request_info.response_headers[j];
+          }
         }
-        conn->request_info.num_response_headers = i;
-        conn->tx_can_compact = 1;
+        break;
+      }
     }
-    return found;
+    conn->request_info.num_response_headers = i;
+    conn->tx_can_compact = 1;
+  }
+  return found;
 }
 
 int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, ...) {
-    int i = -1;
-    int n, space;
-    char *dst;
-    char *bufbase;
-    va_list ap;
+  int i = -1;
+  int n, space;
+  char *dst;
+  char *bufbase;
+  va_list ap;
 
-    if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+  if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+    return -1;
+  if (!value_fmt)
+    value_fmt = "";
+
+  bufbase = conn->buf + conn->buf_size;
+  dst = bufbase + conn->tx_headers_len;
+  space = conn->buf_size - conn->tx_headers_len;
+
+  if (!force_add) {
+    // check whether tag is already listed in the set:
+    for (i = conn->request_info.num_response_headers; i-- > 0; ) {
+      const char *key = conn->request_info.response_headers[i].name;
+
+      if (!mg_strcasecmp(tag, key)) {
+        // re-use the tag, ditch the value:
+        conn->tx_can_compact = 1;
+        break;
+      }
+    }
+  }
+  if (i < 0) { // this tag wasn't found: add it
+    i = conn->request_info.num_headers;
+    if (i >= ARRAY_SIZE(conn->request_info.response_headers)) {
+      mg_cry(conn, "%s: too many headers", __func__);
+      return -1;
+    }
+    for(;;) {
+      n = (int)mg_strlcpy(dst, tag, space);
+      if (n + 6 < space) // NUL+[?] + empty value + NUL+[?]+[?]+[?]
+        break;
+      // we need to compact and retry, and when it still fails then, we're toast.
+      if (compact_tx_headers(conn) <= 0) {
+        mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
         return -1;
-    if (!value_fmt)
-        value_fmt = "";
-
-    bufbase = conn->buf + conn->buf_size;
-    dst = bufbase + conn->tx_headers_len;
-    space = conn->buf_size - conn->tx_headers_len;
-
-    if (!force_add)
-    {
-        // check whether tag is already listed in the set:
-        for (i = conn->request_info.num_response_headers; i-- > 0; )
-        {
-            const char *key = conn->request_info.response_headers[i].name;
-
-            if (!mg_strcasecmp(tag, key)) {
-                // re-use the tag, ditch the value:
-                conn->tx_can_compact = 1;
-                break;
-            }
-        }
-    }
-    if (i < 0) // this tag wasn't found: add it
-    {
-        i = conn->request_info.num_headers;
-        if (i >= ARRAY_SIZE(conn->request_info.response_headers))
-        {
-            mg_cry(conn, "%s: too many headers", __func__);
-            return -1;
-        }
-        for(;;)
-        {
-            n = (int)mg_strlcpy(dst, tag, space);
-            if (n + 6 < space) // NUL+[?] + empty value + NUL+[?]+[?]+[?]
-                break;
-            // we need to compact and retry, and when it still fails then, we're toast.
-            if (compact_tx_headers(conn) <= 0)
-            {
-                mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
-                return -1;
-            }
-            dst = bufbase + conn->tx_headers_len;
-            space = conn->buf_size - conn->tx_headers_len;
-        }
-        n += 2; // include NUL+[?] sentinel in count
-        conn->tx_headers_len += n;
-        dst += n;
-        space -= n;
-    }
-
-    // now store the value:
-    for(;;)
-    {
-        va_start(ap, value_fmt);
-        n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
-        va_end(ap);
-        // n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
-        if (n + 4 < space && n > 0) // + NUL+[?]+[?]+[?]
-            break;
-        // only accept n==0 when the value_fmt is empty and there's nothing to compact or (heuristic!) when there's 'sufficient space' to write:
-        if (n == 0 && 4 < space && (!conn->tx_can_compact || is_empty(value_fmt) || space >= MG_MAX(BUFSIZ, conn->buf_size / 4)))
-            break;
-        // we need to compact and retry, and when it still fails then, we're toast.
-        if (compact_tx_headers(conn) <= 0)
-        {
-            mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
-            return -1;
-        }
-        dst = bufbase + conn->tx_headers_len;
-        space = conn->buf_size - conn->tx_headers_len;
+      }
+      dst = bufbase + conn->tx_headers_len;
+      space = conn->buf_size - conn->tx_headers_len;
     }
     n += 2; // include NUL+[?] sentinel in count
     conn->tx_headers_len += n;
     dst += n;
     space -= n;
+  }
 
-    // now we know we still have two extra bytes free space; this is used in mg_write_http_response_head()
-    return 0;
+  // now store the value:
+  for(;;) {
+    va_start(ap, value_fmt);
+    n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
+    va_end(ap);
+    // n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
+    if (n + 4 < space && n > 0) // + NUL+[?]+[?]+[?]
+      break;
+    // only accept n==0 when the value_fmt is empty and there's nothing to compact or (heuristic!) when there's 'sufficient space' to write:
+    if (n == 0 && 4 < space && (!conn->tx_can_compact || is_empty(value_fmt) || space >= MG_MAX(BUFSIZ, conn->buf_size / 4)))
+      break;
+    // we need to compact and retry, and when it still fails then, we're toast.
+    if (compact_tx_headers(conn) <= 0) {
+      mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
+      return -1;
+    }
+    dst = bufbase + conn->tx_headers_len;
+    space = conn->buf_size - conn->tx_headers_len;
+  }
+  n += 2; // include NUL+[?] sentinel in count
+  conn->tx_headers_len += n;
+  dst += n;
+  space -= n;
+
+  // now we know we still have two extra bytes free space; this is used in mg_write_http_response_head()
+  return 0;
 }
 
-int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text)
-{
-    int i, n, rv;
-    char *buf;
+int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
+  int i, n, rv;
+  char *buf;
 
-    if (mg_have_headers_been_sent(conn))
-        return 0;
+  if (mg_have_headers_been_sent(conn))
+    return 0;
+
+  /*
+  This code expects all headers to be stored in memory 'in order'.
+
+  This assumption holds when headers have been only been added, never
+  removed or replaced, OR when compact_tx_headers() has run
+  after the last replace/remove operation.
+  */
+  if (compact_tx_headers(conn) < 0)
+    return -1;
+
+  if (status_code <= 0)
+    status_code = conn->request_info.status_code;
+  if (is_empty(status_text))
+    status_text = mg_get_response_code_text(conn->request_info.status_code);
+
+  /*
+  Once we are sure of the header order assumption, this becomes an
+  'in place' operation, where NUL sentinels are temporarily replaced
+  with ": " and "\r\n" respectively.
+
+  Since the assumption above is now assured, we know that the very
+  first header starts at the beginning of the buffer!
+  */
+  buf = conn->buf + conn->buf_size;
+
+  n = conn->request_info.num_response_headers;
+  if (n) {
+    conn->request_info.response_headers[0].value[-2] = ':';
+    conn->request_info.response_headers[0].value[-1] = ' ';
+    for (i = 1; i < n; i++) {
+      struct mg_header *h = conn->request_info.response_headers + i;
+
+      h->name[-2] = '\r';
+      h->name[-1] = '\n';
+      h->value[-2] = ':';
+      h->value[-1] = ' ';
+    }
+    buf[conn->tx_headers_len - 2] = '\r';
+    buf[conn->tx_headers_len - 1] = '\n';
+    assert(conn->tx_headers_len + 2 <= conn->buf_size);
+    buf[conn->tx_headers_len] = '\r';
+    buf[conn->tx_headers_len + 1] = '\n';
+
+    rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
+    rv += mg_write(conn, buf, conn->tx_headers_len + 2);
 
     /*
-    This code expects all headers to be stored in memory 'in order'.
-
-    This assumption holds when headers have been only been added, never
-    removed or replaced, OR when compact_tx_headers() has run
-    after the last replace/remove operation.
+    Error or success, always restore the header set to its original
+    glory.
     */
-    if (compact_tx_headers(conn) < 0)
-        return -1;
+    conn->request_info.response_headers[0].value[-2] = 0;
+    for (i = 1; i < n; i++) {
+      struct mg_header *h = conn->request_info.response_headers + i;
 
-    if (status_code <= 0)
-        status_code = conn->request_info.status_code;
-    if (is_empty(status_text))
-        status_text = mg_get_response_code_text(conn->request_info.status_code);
-
-    /*
-    Once we are sure of the header order assumption, this becomes an
-    'in place' operation, where NUL sentinels are temporarily replaced
-    with ": " and "\r\n" respectively.
-
-    Since the assumption above is now assured, we know that the very
-    first header starts at the beginning of the buffer!
-    */
-    buf = conn->buf + conn->buf_size;
-
-    n = conn->request_info.num_response_headers;
-    if (n)
-    {
-        conn->request_info.response_headers[0].value[-2] = ':';
-        conn->request_info.response_headers[0].value[-1] = ' ';
-        for (i = 1; i < n; i++)
-        {
-            struct mg_header *h = conn->request_info.response_headers + i;
-
-            h->name[-2] = '\r';
-            h->name[-1] = '\n';
-            h->value[-2] = ':';
-            h->value[-1] = ' ';
-        }
-        buf[conn->tx_headers_len - 2] = '\r';
-        buf[conn->tx_headers_len - 1] = '\n';
-        assert(conn->tx_headers_len + 2 <= conn->buf_size);
-        buf[conn->tx_headers_len] = '\r';
-        buf[conn->tx_headers_len + 1] = '\n';
-
-        rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
-        rv += mg_write(conn, buf, conn->tx_headers_len + 2);
-
-        /*
-        Error or success, always restore the header set to its original
-        glory.
-        */
-        conn->request_info.response_headers[0].value[-2] = 0;
-        for (i = 1; i < n; i++)
-        {
-            struct mg_header *h = conn->request_info.response_headers + i;
-
-            h->name[-2] = 0;
-            h->value[-2] = 0;
-        }
-        buf[conn->tx_headers_len - 2] = 0;
+      h->name[-2] = 0;
+      h->value[-2] = 0;
     }
-    else
-    {
-        rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n", status_code, status_text);
-    }
+    buf[conn->tx_headers_len - 2] = 0;
+  } else {
+    rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n", status_code, status_text);
+  }
 
-    mg_mark_end_of_header_transmission(conn);
+  mg_mark_end_of_header_transmission(conn);
 
-    return rv;
+  return rv;
 }
 
 /*
@@ -1793,8 +1700,7 @@ Send HTTP error response headers, if we still can. Log the error anyway.
 'fmt' + args is the content sent along as error report (request response).
 */
 static void vsend_http_error(struct mg_connection *conn, int status,
-                            const char *reason, const char *fmt, va_list ap)
-{
+                             const char *reason, const char *fmt, va_list ap) {
   char buf[BUFSIZ];
   int len;
   int custom_len;
@@ -1903,8 +1809,7 @@ static void send_http_error(struct mg_connection *conn, int status,
   ;
 
 static void send_http_error(struct mg_connection *conn, int status,
-  const char *reason, const char *fmt, ...)
-{
+                            const char *reason, const char *fmt, ...) {
   va_list ap;
 
   va_start(ap, fmt);
@@ -1933,24 +1838,19 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return ReleaseMutex(*mutex) == 0 ? -1 : 0;
 }
 
-int pthread_spin_init(pthread_spinlock_t *lock, UNUSED_PARAMETER(int unused))
-{
+int pthread_spin_init(pthread_spinlock_t *lock, UNUSED_PARAMETER(int unused)) {
   return pthread_mutex_init(lock, 0);
 }
-int pthread_spin_destroy(pthread_spinlock_t *lock)
-{
+int pthread_spin_destroy(pthread_spinlock_t *lock) {
   return pthread_mutex_destroy(lock);
 }
-int pthread_spin_lock(pthread_spinlock_t *lock)
-{
+int pthread_spin_lock(pthread_spinlock_t *lock) {
   return pthread_mutex_lock(lock);
 }
-//int pthread_spin_trylock(pthread_spinlock_t *lock)
-//{
+//int pthread_spin_trylock(pthread_spinlock_t *lock) {
 // ...
 //}
-int pthread_spin_unlock(pthread_spinlock_t *lock)
-{
+int pthread_spin_unlock(pthread_spinlock_t *lock) {
   return pthread_mutex_unlock(lock);
 }
 
@@ -2025,8 +1925,7 @@ int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
   if (rwlock->rw) {
     ReleaseSRWLockExclusive(&rwlock->lock);
-  }
-  else {
+  } else {
     ReleaseSRWLockShared(&rwlock->lock);
   }
   return 0;
@@ -2199,26 +2098,22 @@ FILE *mg_fopen(const char *path, const char *mode) {
   MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
 
   // recursively create the included path when the file is to be created / appended to:
-  if (wmode[wcscspn(wmode, L"aw")])
-  {
+  if (wmode[wcscspn(wmode, L"aw")]) {
     size_t i;
 
     // skip UNC path starters like '\\?\'
     i = wcsspn(wbuf, L"\\:?");
     // and skip drive specs like 'C:'
-    if (i == 0 && wbuf[i] && wbuf[i+1] == L':')
-    {
+    if (i == 0 && wbuf[i] && wbuf[i+1] == L':') {
       i = 2;
       i += wcsspn(wbuf + i, L"\\");
     }
     i += wcscspn(wbuf + i, L"\\");
-    while (wbuf[i])
-    {
+    while (wbuf[i]) {
       int rv;
 
       // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
-      if (wbuf[i - 1] == L'.')
-      {
+      if (wbuf[i - 1] == L'.') {
         wbuf[i++] = L'\\';
         i += wcscspn(wbuf + i, L"\\");
         continue;
@@ -2441,27 +2336,23 @@ FILE *mg_fopen(const char *path, const char *mode) {
   }
 
   // recursively create the included path when the file is to be created / appended to:
-  if (mode[strcspn(mode, "aw")])
-  {
+  if (mode[strcspn(mode, "aw")]) {
     size_t i;
     char *wbuf = strdup(path);
 
     // skip UNC path starters like '\\?\'
     i = strspn(wbuf, "/:?");
     // and skip drive specs like 'C:'
-    if (i == 0 && wbuf[i] && wbuf[i+1] == ':')
-    {
+    if (i == 0 && wbuf[i] && wbuf[i+1] == ':') {
       i = 2;
       i += strspn(wbuf + i, "/");
     }
     i += strcspn(wbuf + i, "/");
-    while (wbuf[i])
-    {
+    while (wbuf[i]) {
       int rv;
 
       // skip ./ and ../ sections; CAVEAT: due to code simplification, we also skip entries like 'XYZ./' (note the dot at the end) which are flaky path specs anyway
-      if (wbuf[i - 1] == '.')
-      {
+      if (wbuf[i - 1] == '.') {
         wbuf[i++] = '/';
         i += strcspn(wbuf + i, "/");
         continue;
@@ -2608,8 +2499,7 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
 
 #endif // _WIN32
 
-int mg_fclose(FILE *fp)
-{
+int mg_fclose(FILE *fp) {
   if (fp != NULL && fp != stderr && fp != stdout && fp != stdin) {
     return fclose(fp);
   }
@@ -2750,27 +2640,21 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   return rv;
 }
 
-int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
-{
+int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
   char *buf = NULL;
   int len;
   int rv;
 
   // handle the special case where there's nothing to do in terms of formatting --> print without the malloc/speed penalty:
-  if (!strchr(fmt, '%'))
-  {
+  if (!strchr(fmt, '%')) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
-  }
-  else if (!strcmp(fmt, "%s"))
-  {
+  } else if (!strcmp(fmt, "%s")) {
     fmt = va_arg(ap, const char *);
     if (!fmt) fmt = "???";
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
-  }
-  else
-  {
+  } else {
     len = mg_vasprintf(conn, &buf, 0, fmt, ap);
 
     if (buf) {
@@ -2783,8 +2667,7 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
   }
 }
 
-int mg_printf(struct mg_connection *conn, const char *fmt, ...)
-{
+int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
   int len;
   va_list ap;
 
@@ -3888,16 +3771,14 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 
     // Read from file, exit the loop on error
     num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-    if (num_read == 0 && ferror(fp))
-    {
+    if (num_read == 0 && ferror(fp)) {
       send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
       return -2;
     }
 
     // Send read bytes to the client, exit the loop on error
     num_written = mg_write(conn, buf, (size_t)num_read);
-    if (num_written != num_read)
-    {
+    if (num_written != num_read) {
       send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
       return -1;
     }
@@ -4509,23 +4390,23 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     mg_add_response_header(conn, 0, ri.http_headers[i].name, "%s", ri.http_headers[i].value);
   }
 
-  // See if there's any data in the 'err' channel and when there is, 
+  // See if there's any data in the 'err' channel and when there is,
   // discard any Content-Length header as it'll be invalid anyway.
   content_type = get_header(&ri, "Content-Type");
   is_text_out = 0;
   if (content_type)
-	is_text_out = !mg_strncasecmp(content_type, "text/plain", 10) + 
-				2 * !mg_strncasecmp(content_type, "text/html", 9);
+    is_text_out = !mg_strncasecmp(content_type, "text/plain", 10) +
+                2 * !mg_strncasecmp(content_type, "text/html", 9);
 
   // ri.headers[] are invalid from this point onward!
   i = 0;
   if (is_text_out) {
-	assert(headers_len > 0);
+    assert(headers_len > 0);
     i = pull(err, INVALID_SOCKET, NULL, buf, headers_len);
     if (i > 0) {
-	  mg_remove_response_header(conn, "Content-Length");
-	  conn->must_close = 1;
-	}
+      mg_remove_response_header(conn, "Content-Length");
+      conn->must_close = 1;
+    }
   }
   // and always send the Connection: header:
   if (get_header(&ri, "Connection") == NULL) {
@@ -4534,31 +4415,31 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   mg_write_http_response_head(conn, 0, status);
 
   if (is_text_out && i > 0) {
-	if (is_text_out == 2) {
-	  mg_printf(conn,
-		        "<!DOCTYPE html>\n"
-				"<meta charset=utf-8>\n"
-				"<title>Mongoose Doing the B0rk B0rk B0rk</title>\n"
-				"<body>\n"
-				"<h1>CGI Errors!</h1>\n"
-				"<pre>");
-	} else {
-	  mg_printf(conn,
-		        "CGI Errors!\n"
-				"===========\n\n");
-	}
-	// Send prefetched chunk to client
-	(void) mg_write(conn, buf, i);
-	// Read the rest of CGI stderr output and send to the client
+    if (is_text_out == 2) {
+      mg_printf(conn,
+                "<!DOCTYPE html>\n"
+                "<meta charset=utf-8>\n"
+                "<title>Mongoose Doing the B0rk B0rk B0rk</title>\n"
+                "<body>\n"
+                "<h1>CGI Errors!</h1>\n"
+                "<pre>");
+    } else {
+      mg_printf(conn,
+                "CGI Errors!\n"
+                "===========\n\n");
+    }
+    // Send prefetched chunk to client
+    (void) mg_write(conn, buf, i);
+    // Read the rest of CGI stderr output and send to the client
     (void)send_file_data(conn, out, INT64_MAX);
-	if (is_text_out == 2) {
-	  mg_printf(conn,
-		        "</pre>\n"
-				"<hr/>\n");
-	} else {
-	  mg_printf(conn,
-		        "\n-----------------------------------------------------------\n\n");
-	}
+    if (is_text_out == 2) {
+      mg_printf(conn,
+                "</pre>\n"
+                "<hr/>\n");
+    } else {
+      mg_printf(conn,
+                "\n-----------------------------------------------------------\n\n");
+    }
   }
 
   // Send chunk of data that may have been read after the headers
@@ -4830,8 +4711,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
   m = next_option(get_conn_option(conn, SSI_MARKER), &ssi_start, NULL);
   ssi_end = ssi_start;
   next_option(m, &ssi_end, NULL);
-  if (!ssi_end.len || !ssi_start.len)
-  {
+  if (!ssi_end.len || !ssi_start.len) {
     ssi_start.ptr = "<!--#";
     ssi_start.len = 5;
     ssi_end.ptr = ">";
@@ -4842,31 +4722,25 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
   roff = 0;
   taglen = (int)ssi_start.len;
 
-  for(;;)
-  {
+  for(;;) {
     const char *b = buf;
     rlen = (int)fread(buf + roff, 1, sizeof(buf) - roff, fp);
     if (rlen <= 0)
       break;
     rlen += roff;
-    for(;;)
-    {
+    for(;;) {
       const char *e;
       const char *s;
-      if (rlen < taglen)
-      {
-        if (b > buf)
-        {
+      if (rlen < taglen) {
+        if (b > buf) {
           memmove(buf, b, rlen);
         }
         roff = rlen;
         break;
       }
       s = mg_memfind(b, rlen, ssi_start.ptr, taglen);
-      if (!s)
-      {
-        if (rlen >= taglen && mg_write(conn, b, rlen - taglen + 1) != rlen - taglen + 1)
-        {
+      if (!s) {
+        if (rlen >= taglen && mg_write(conn, b, rlen - taglen + 1) != rlen - taglen + 1) {
           send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen - taglen + 1, path);
           return -1;
         }
@@ -4875,8 +4749,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
         break;
       }
       // flush part before start tag:
-      if (s > b && mg_write(conn, b, s - b) != s - b)
-      {
+      if (s > b && mg_write(conn, b, s - b) != s - b) {
         send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)(s - b), path);
         return -1;
       }
@@ -4884,12 +4757,10 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       b = s;
       s += taglen + 1;
       e = mg_memfind(s, rlen - (s - b), ssi_end.ptr, ssi_end.len);
-      if (!e)
-      {
+      if (!e) {
         // shift to start; load more data and retry, if possible:
         s -= taglen + 1;
-        if (s == buf || feof(fp))
-        {
+        if (s == buf || feof(fp)) {
           /* in this case we already have max data loaded: overlong SSI tag! */
           send_http_error(conn, 580, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
           return -1;
@@ -4902,13 +4773,10 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       // skip whitespace:
       s += strspn(s, " \t\r\n");
       if (!memcmp(s, "include", 7)) {
-        if (e - s - 7 > PATH_MAX + 64)
-        {
+        if (e - s - 7 > PATH_MAX + 64) {
           send_http_error(conn, 580, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
           return -1;
-        }
-        else
-        {
+        } else {
           do_ssi_include(conn, path, s + 7, include_level);
         }
 #if !defined(NO_POPEN)
@@ -4966,10 +4834,8 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
   }
   // Send the rest of buffered data
   rlen += roff;
-  if (rlen > 0)
-  {
-    if (mg_write(conn, buf, rlen) != rlen)
-    {
+  if (rlen > 0) {
+    if (mg_write(conn, buf, rlen) != rlen) {
       send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, rlen, path);
       return -1;
     }
@@ -5923,21 +5789,18 @@ static void close_socket_gracefully(struct mg_connection *conn) {
     FD_ZERO(&fds);
     FD_SET(sock, &fds);
     sv = select(sock + 1, &fds, 0, 0, &tv);
-    switch (sv)
-    {
+    switch (sv) {
     case 1:
       // only fetch RX data when there actually is some:
       n = pull(NULL, sock, NULL, buf, sizeof(buf));
       DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
-      if (n < 0)
-      {
+      if (n < 0) {
         w = 0;
         linger_timeout = 0;
         break;
       }
       // fall through: connection closed from the other side. Don't count this against our linger time.
-      if (n == 0)
-      {
+      if (n == 0) {
         tv.tv_sec = tv.tv_usec = 0;
     case 0:
         // timeout expired or remote close signaled:
@@ -5950,8 +5813,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       // as we can detect how much TX data is pending, we can use that to terminate faster:
       {
         int wr_pending = 0;
-        if (ioctl(sock, SIOCOUTQ, &wr_pending))
-        {
+        if (ioctl(sock, SIOCOUTQ, &wr_pending)) {
           w = wr_pending;
         }
       }
@@ -6046,7 +5908,8 @@ static void process_new_connection(struct mg_connection *conn) {
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, NULL, "");
       return;
-    } if (conn->request_len <= 0) {
+    }
+    if (conn->request_len <= 0) {
       // don't mind we cannot send the 500 response code, as long as we log the issue at least...
       send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
@@ -6227,8 +6090,7 @@ static int accept_new_connection(const struct socket *listener,
       (void) closesocket(accepted.sock);
     }
     return 0;
-  }
-  else {
+  } else {
     const char *errmsg = mg_strerror(ERRNO);
     sockaddr_to_string(src_addr, sizeof(src_addr), &listener->lsa);
     mg_cry(fc(ctx), "%s: accept() failed for listener %s : %s", __func__, src_addr, errmsg);
@@ -6537,10 +6399,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 }
 
 
-const char *mg_get_response_code_text(int response_code)
-{
-  switch (response_code)
-  {
+const char *mg_get_response_code_text(int response_code) {
+  switch (response_code) {
   case 100:   return "Continue"; // RFC2616 Section 10.1.1:
   case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2:
   case 102:   return "Processing"; // WebDAV RFC2518
@@ -6616,30 +6476,25 @@ const char *mg_get_response_code_text(int response_code)
   }
 }
 
-struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx)
-{
+struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx) {
     return ctx ? &ctx->user_functions : NULL;
 }
 
-struct mg_context *mg_get_context(struct mg_connection *conn)
-{
+struct mg_context *mg_get_context(struct mg_connection *conn) {
     return conn ? conn->ctx : NULL;
 }
 
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
-{
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn) {
   return conn ? &conn->request_info : NULL;
 }
 
 
 
-int mg_get_stop_flag(struct mg_context *ctx)
-{
+int mg_get_stop_flag(struct mg_context *ctx) {
     return ctx && ctx->stop_flag;
 }
 
-void mg_signal_stop(struct mg_context *ctx)
-{
+void mg_signal_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 }
 
