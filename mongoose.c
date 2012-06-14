@@ -363,7 +363,7 @@ struct mg_context {
 
 struct mg_connection {
   int must_close;             // 1 if connection must be closed
-  int requesting_errpage;     // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
+  int nested_err_or_pagereq_count;     // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;
   SSL *ssl;                   // SSL descriptor
@@ -1591,7 +1591,13 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_write(conn, conn->request_info.status_custom_description, len);
         }
 	  }
-    }
+    } else if (mg_is_producing_nested_page(conn)) {
+	  // mark nested error anyhow
+	  conn->nested_err_or_pagereq_count++;
+	}
+  } else if (mg_is_producing_nested_page(conn)) {
+	// mark nested error anyhow
+	conn->nested_err_or_pagereq_count++;
   }
   // kill lingering reference to local storage:
   conn->request_info.status_custom_description = NULL;
@@ -4829,7 +4835,7 @@ static void handle_request(struct mg_connection *conn) {
 }
 
 int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len) {
-  if (!uri || !uri_len)
+  if (!uri || !uri_len || mg_have_headers_been_sent(conn))
 	return -1;
   {
     size_t l = mg_strnlen(uri, uri_len);
@@ -4837,8 +4843,8 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 	  return -1;
 	uri_len = l;
   }
-  conn->requesting_errpage++;
-  if (conn->requesting_errpage == 1) {
+  conn->nested_err_or_pagereq_count++;
+  if (conn->nested_err_or_pagereq_count == 1) {
     // store the original ri:
     struct mg_request_info ri = conn->request_info;
     char expanded_uri[PATH_MAX];
@@ -4846,7 +4852,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 	int i;
 
 	// fail when error happens in this section...
-	conn->requesting_errpage++;
+	conn->nested_err_or_pagereq_count++;
 	if (sizeof(expanded_uri) < uri_len + 1)
 	  goto fail_dramatically;
 
@@ -4861,7 +4867,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     } else {
 	  mg_strlcpy(expanded_uri, uri, uri_len + 1);
     }
-	conn->requesting_errpage--;
+	conn->nested_err_or_pagereq_count--;
 	// end of section...
 
     conn->request_info.uri = expanded_uri;
@@ -4880,17 +4886,20 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 	  }
 	}
 
-    handle_request(conn);  // may increment requesting_errpage when failing internally!
+    handle_request(conn);  // may increment nested_err_or_pagereq_count when failing internally!
 
-	// reset original values:
+	// reset original values, but keep the latest HTTP response code:
+	// that one will have been 'upgraded' with the latest (graver) errors
+	// and those should be logged / fed back to the client whenever possible.
 fail_dramatically:
+	ri.status_code = conn->request_info.status_code;
 	conn->request_info = ri;
   }
-  return (conn->requesting_errpage == 1);
+  return (conn->nested_err_or_pagereq_count == 1);
 }
 
 int mg_is_producing_nested_page(struct mg_connection *conn) {
-  return (conn && conn->requesting_errpage > 0);
+  return conn ? conn->nested_err_or_pagereq_count : 0;
 }
 
 static void close_all_listening_sockets(struct mg_context *ctx) {
@@ -5519,7 +5528,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
   //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
-  conn->requesting_errpage = 0;
+  conn->nested_err_or_pagereq_count = 0;
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {

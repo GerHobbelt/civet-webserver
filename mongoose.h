@@ -101,7 +101,7 @@ enum mg_event {
                             // there's not been any HTTP requests very recently.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
-  // fix: numbers were added to fix the abi in case mongoose core and callback
+  // fix: numbers were added to fix the ABI in case mongoose core and callback
 
   MG_EXIT0                  // Mongoose terminates and has already terminated its
                             // threads. This one is the counterpart of MG_INIT0, so
@@ -258,7 +258,7 @@ const char **mg_get_valid_option_names(void);
 //
 // See for example main.c for one possible use: there this call is used to
 // make sure that command line options, config file entries and hardcoded
-// defaults don't inadvertedly produce duplicate option entries in the
+// defaults don't inadvertently produce duplicate option entries in the
 // options[] list.
 const char *mg_get_option_long_name(const char *name);
 
@@ -285,7 +285,7 @@ int mg_modify_passwords_file(const char *passwords_file_name,
 // Send data to the client.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
-// Mark the end of the tranmission of HTTP headers.
+// Mark the end of the transmission of HTTP headers.
 //
 // Use this before proceeding and writing content data if you want your
 // access log to show the correct (actual) number.
@@ -296,7 +296,7 @@ void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 // To be more specific, this function will return -1 when all HTTP headers
 // have been written (and anything sent now is considered part of the content),
 // while a return value of +1 indicates that the HTTP response has been
-// written but that you MAY decide to write some more headers to
+// (partially) written but that you MAY decide to write some more headers to
 // augment the HTTP header set being transmitted.
 int mg_have_headers_been_sent(const struct mg_connection *conn);
 
@@ -395,6 +395,12 @@ int mg_set_response_code(struct mg_connection *conn, int status);
 // code (HTTP response code), so you may feed us URIs
 // like '/error_page.php?status=$E'.
 //
+// This function will only produce the indicated uri page
+// when nothing has been sent to the connection yet - otherwise
+// we would be writing a HTTP response, headers and content into
+// a stream which is in an unknown state sending other material
+// already.
+//
 // Return zero on success, non-zero on failure.
 int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len);
 
@@ -408,7 +414,7 @@ const char *mg_version(void);
 
 // MD5 hash given strings.
 // Buffer 'buf' must be 33 bytes long. Varargs is a NULL terminated list of
-// asciiz strings. When function returns, buf will contain human-readable
+// ASCIIz strings. When function returns, buf will contain human-readable
 // MD5 hash. Example:
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
