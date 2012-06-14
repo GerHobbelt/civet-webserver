@@ -3085,6 +3085,7 @@ static const struct {
   {".shtml",    6, "text/html",                      9},
   {".css",      4, "text/css",                       8},
   {".js",       3, "application/x-javascript",      24},
+  {".txt",      4, "text/plain",                    10},
   {".ico",      4, "image/x-icon",                  12},
   {".gif",      4, "image/gif",                      9},
   {".jpg",      4, "image/jpeg",                    10},
@@ -4388,12 +4389,13 @@ static int prepare_cgi_environment(struct mg_connection *conn,
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2], fd_stderr[2];
-  const char *status, *connection_status;
+  const char *status, *connection_status, *content_type;
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
   FILE *in, *out, *err;
   pid_t pid;
+  int is_text_out;
 
   pid = (pid_t) -1;
   fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = fd_stderr[0] = fd_stderr[1] = -1;
@@ -4506,15 +4508,61 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   for (i = 0; i < ri.num_headers; i++) {
     mg_add_response_header(conn, 0, ri.http_headers[i].name, "%s", ri.http_headers[i].value);
   }
+
+  // See if there's any data in the 'err' channel and when there is, 
+  // discard any Content-Length header as it'll be invalid anyway.
+  content_type = get_header(&ri, "Content-Type");
+  is_text_out = 0;
+  if (content_type)
+	is_text_out = !mg_strncasecmp(content_type, "text/plain", 10) + 
+				2 * !mg_strncasecmp(content_type, "text/html", 9);
+
+  // ri.headers[] are invalid from this point onward!
+  i = 0;
+  if (is_text_out) {
+	assert(headers_len > 0);
+    i = pull(err, INVALID_SOCKET, NULL, buf, headers_len);
+    if (i > 0) {
+	  mg_remove_response_header(conn, "Content-Length");
+	  conn->must_close = 1;
+	}
+  }
   // and always send the Connection: header:
   if (get_header(&ri, "Connection") == NULL) {
     mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   }
   mg_write_http_response_head(conn, 0, status);
 
-  // Send chunk of data that may be read after the headers
-  (void) mg_write(conn, buf + headers_len,
-                      (size_t)(data_len - headers_len));
+  if (is_text_out && i > 0) {
+	if (is_text_out == 2) {
+	  mg_printf(conn,
+		        "<!DOCTYPE html>\n"
+				"<meta charset=utf-8>\n"
+				"<title>Mongoose Doing the B0rk B0rk B0rk</title>\n"
+				"<body>\n"
+				"<h1>CGI Errors!</h1>\n"
+				"<pre>");
+	} else {
+	  mg_printf(conn,
+		        "CGI Errors!\n"
+				"===========\n\n");
+	}
+	// Send prefetched chunk to client
+	(void) mg_write(conn, buf, i);
+	// Read the rest of CGI stderr output and send to the client
+    (void)send_file_data(conn, out, INT64_MAX);
+	if (is_text_out == 2) {
+	  mg_printf(conn,
+		        "</pre>\n"
+				"<hr/>\n");
+	} else {
+	  mg_printf(conn,
+		        "\n-----------------------------------------------------------\n\n");
+	}
+  }
+
+  // Send chunk of data that may have been read after the headers
+  (void) mg_write(conn, buf + headers_len, data_len - headers_len);
 
   // Read the rest of CGI output and send to the client
   (void)send_file_data(conn, out, INT64_MAX);
