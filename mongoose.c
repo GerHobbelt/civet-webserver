@@ -3945,9 +3945,9 @@ static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
   return added;
 }
 
-static void prepare_cgi_environment(struct mg_connection *conn,
-                                    const char *prog,
-                                    struct cgi_env_block *blk) {
+static int prepare_cgi_environment(struct mg_connection *conn,
+                                   const char *prog,
+                                   struct cgi_env_block *blk) {
   const char *s, *slash;
   struct vec var_vec = {0};
   char *p, src_addr[SOCKADDR_NTOA_BUFSIZE];
@@ -3966,7 +3966,6 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
   if (conn->request_info.parent) {
 	addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
-	// write REDIRECT_ERROR_NOTES last as it may overflow the envp buffer.
 	// REDIRECT_URL ~ REQUEST_URI
 	addenv(blk, "REDIRECT_URL=%s", conn->request_info.parent->uri);
 	// REDIRECT_METHOD ~ REQUEST_METHOD
@@ -3974,6 +3973,24 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 	// REDIRECT_QUERY_STRING ~ QUERY_STRING
 	if (!is_empty(conn->request_info.parent->query_string))
 	  addenv(blk, "REDIRECT_QUERY_STRING=%s", conn->request_info.parent->query_string);
+
+    p = conn->request_info.status_custom_description;
+    if (conn->request_info.parent && !is_empty(conn->request_info.parent->status_custom_description) && is_empty(p)) {
+	  p = conn->request_info.parent->status_custom_description;
+    }
+    if (!is_empty(p)) {
+	  p = addenv(blk, "REDIRECT_ERROR_NOTES=%s", p);
+	  if (!p) {
+	    return -1;
+	  } else {
+  	    while (*p) {
+	      // tweak: replace all \n and \r in there by \t to make sure it's a single line value
+          p += strcspn(p, "\r\n");
+	      if (*p)
+	        *p++ = '\t';
+	    }
+	  }
+    }
   }
 
   addenv(blk, "SERVER_PORT=%d", get_socket_port(&conn->client.lsa));
@@ -3993,7 +4010,6 @@ static void prepare_cgi_environment(struct mg_connection *conn,
 
   addenv(blk, "SCRIPT_FILENAME=%s", prog);
   addenv(blk, "PATH_TRANSLATED=%s", prog);
-  addenv(blk, "HTTPS=%s", conn->ssl == NULL ? "off" : "on");
 
   if ((s = mg_get_header(conn, "Content-Type")) != NULL)
     addenv(blk, "CONTENT_TYPE=%s", s);
@@ -4039,6 +4055,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
     p = addenv(blk, "HTTP_%s=%s",
         conn->request_info.http_headers[i].name,
         conn->request_info.http_headers[i].value);
+	if (!p)
+	  return -1;
 
     // Convert variable name into uppercase, and change - to _
     for (; *p != '=' && *p != '\0'; p++) {
@@ -4054,25 +4072,17 @@ static void prepare_cgi_environment(struct mg_connection *conn,
     addenv(blk, "%.*s", (int)var_vec.len, var_vec.ptr);
   }
 
-  p = conn->request_info.status_custom_description;
-  if (conn->request_info.parent && !is_empty(conn->request_info.parent->status_custom_description) && is_empty(p)) {
-	p = conn->request_info.parent->status_custom_description;
-  }
-  if (!is_empty(p)) {
-	p = addenv(blk, "REDIRECT_ERROR_NOTES=%s", p);
-	while (p && *p) {
-	  // tweak: replace all \n and \r in there by \t to make sure it's a single line value
-	  p += strcspn(p, "\r\n");
-	  if (*p)
-	    *p++ = '\t';
-	}
-  }
+  // check for buffer overflow by looking at the return code of the last variable addition:
+  if (!addenv(blk, "HTTPS=%s", conn->ssl == NULL ? "off" : "on"))
+	return -1;
+
   blk->vars[blk->nvars++] = NULL;
   blk->buf[blk->len++] = '\0';
 
   assert(blk->nvars < (int) ARRAY_SIZE(blk->vars));
   assert(blk->len > 0);
   assert(blk->len < (int) sizeof(blk->buf));
+  return 0;
 }
 
 static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
@@ -4081,10 +4091,18 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
   struct mg_request_info ri = {0};
   struct cgi_env_block blk;
-  FILE *in = NULL, *out = NULL, *err = NULL;
+  FILE *in, *out, *err;
   pid_t pid;
 
-  prepare_cgi_environment(conn, prog, &blk);
+  pid = (pid_t) -1;
+  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = fd_stderr[0] = fd_stderr[1] = -1;
+  in = out = err = NULL;
+
+  if (prepare_cgi_environment(conn, prog, &blk)) {
+	send_http_error(conn, 500, NULL,
+		            "Cannot create CGI environment variable collection, quite probably due to buffer overflow due to a very long request");
+	goto done;
+  }
 
   // CGI must be executed in its own directory. 'dir' must point to the
   // directory containing executable program, 'p' must point to the
@@ -4101,10 +4119,6 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     dir[0] = '.', dir[1] = '\0';
     p = (char *) prog;
   }
-
-  pid = (pid_t) -1;
-  fd_stdin[0] = fd_stdin[1] = fd_stdout[0] = fd_stdout[1] = fd_stderr[0] = fd_stderr[1] = -1;
-  in = out = NULL;
 
   if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0 || pipe(fd_stderr) != 0) {
     send_http_error(conn, 500, NULL,
@@ -4579,7 +4593,11 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
 		  *((char *)ve) = '=';
 		  // init 'blk' once, when we need it:
 		  if (!blk.conn) {
-	        prepare_cgi_environment(conn, path, &blk);
+	        if (prepare_cgi_environment(conn, path, &blk)) {
+			  send_http_error(conn, 580, NULL, "%s: failed to set up env.var set", __func__);
+			  blk.conn = NULL;
+			  return -1;
+		    }
 		  }
 		  assert(blk.nvars > 0);
 		  assert(blk.vars[blk.nvars - 1] == NULL);
