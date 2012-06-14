@@ -378,7 +378,7 @@ struct mg_connection {
   int data_len;               // Total size of received data in buffer buf[]
 
   int tx_headers_len;         // Size of the response headers in buffer buf[]
-  int tx_can_compact;		  // signal whether a 'compact' operation would have any effect at all
+  int tx_can_compact;         // signal whether a 'compact' operation would have any effect at all
 
   char error_logfile_path[PATH_MAX+1]; // cached value: path to the error logfile designated to this connection/CTX
   char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
@@ -951,8 +951,14 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
   // same way string option can.
   if (call_user(conn, MG_EVENT_LOG) == NULL)
   {
-    FILE *fp = mg_fopen((logfile ? logfile : "-"), "a+");
+    FILE *fp;
 
+    severity = conn->request_info.log_severity;
+    logfile = conn->request_info.log_dstfile;
+    timestamp = conn->request_info.log_timestamp;
+    msg = conn->request_info.log_message;
+
+    fp = mg_fopen((logfile ? logfile : "-"), "a+");
     if (fp != NULL)
     {
       flockfile(fp);
@@ -982,7 +988,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
                     conn->request_info.uri);
       }
 
-      rv += fprintf(fp, "%s\n", msg);
+      rv += fprintf(fp, "%s\n", msg ? msg : "???");
       fflush(fp);
       funlockfile(fp);
       mg_fclose(fp);
@@ -1012,6 +1018,11 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
   // handle the special case where there's nothing to do in terms of formatting in order to accept arbitrary input lengths then without the malloc/speed penalty:
   if (!strchr(fmt, '%'))
   {
+    mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
+  }
+  else if (!strcmp(fmt, "%s"))
+  {
+    fmt = va_arg(args, const char *);
     mg_write2log_raw(conn, logfile, timestamp, severity, fmt);
   }
   else
@@ -1076,7 +1087,7 @@ size_t mg_strlcpy(register char *dst, register const char *src, size_t n) {
 size_t mg_strnlen(const char *src, size_t maxlen) {
   const char *p = (const char *)memchr(src, 0, maxlen);
   if (p)
-	return p - src;
+    return p - src;
   return maxlen;
 }
 
@@ -1133,7 +1144,13 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
   // shortcut for speed:
   if (!strchr(fmt, '%'))
   {
-	  return (int)mg_strlcpy(buf, fmt, buflen);
+    return (int)mg_strlcpy(buf, fmt, buflen);
+  }
+  else if (!strcmp(fmt, "%s"))
+  {
+    fmt = va_arg(ap, const char *);
+    if (!fmt) fmt = "???";
+    return (int)mg_strlcpy(buf, fmt, buflen);
   }
   buf[0] = 0;
   n = vsnprintf(buf, buflen, fmt, ap);
@@ -1177,7 +1194,13 @@ int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, si
   // shortcut for speed:
   if (!strchr(fmt, '%'))
   {
-	  return (int)mg_strlcpy(buf, fmt, buflen);
+    return (int)mg_strlcpy(buf, fmt, buflen);
+  }
+  else if (!strcmp(fmt, "%s"))
+  {
+    fmt = va_arg(ap, const char *);
+    if (!fmt) fmt = "???";
+    return (int)mg_strlcpy(buf, fmt, buflen);
   }
   buf[0] = 0;
   n = vsnprintf(buf, buflen, fmt, ap);
@@ -1443,38 +1466,38 @@ int mg_set_response_code(struct mg_connection *conn, int status) {
   if (!is_legal_response_code(old_status)) {
     conn->request_info.status_code = status;
   } else {
-	int old_series = old_status / 100;
-	int series = status / 100;
-	assert(old_series >= 1);
-	assert(series >= 1);
+    int old_series = old_status / 100;
+    int series = status / 100;
+    assert(old_series >= 1);
+    assert(series >= 1);
     switch (series) {
-	case 2: // 2xx
-	  // only overrides lower 2xx codes:
-	  if (old_series == 2 && old_status < status)
-	    conn->request_info.status_code = status;
-	  else if (old_series == 3 || old_series == 1)
-		conn->request_info.status_code = status;
-	  break;
+    case 2: // 2xx
+      // only overrides lower 2xx codes:
+      if (old_series == 2 && old_status < status)
+        conn->request_info.status_code = status;
+      else if (old_series == 3 || old_series == 1)
+        conn->request_info.status_code = status;
+      break;
 
-	case 1: // 1xx
-	  if (old_series == 2)
-		conn->request_info.status_code = status;
-	  break;
+    case 1: // 1xx
+      if (old_series == 2)
+        conn->request_info.status_code = status;
+      break;
 
-	case 3: // 3xx
-	case 4: // 4xx
-	  if (old_series < series)
-		conn->request_info.status_code = status;
-	  break;
+    case 3: // 3xx
+    case 4: // 4xx
+      if (old_series < series)
+        conn->request_info.status_code = status;
+      break;
 
-	default: // WebSocket series
+    default: // WebSocket series
     case 5:  // 5xx
-	  if (old_series != 5)
-	    conn->request_info.status_code = status;
-	  else if (old_status == 500) // more specific 5xx errors win over generic 500
-		conn->request_info.status_code = status;
-	  break;
-	}
+      if (old_series != 5)
+        conn->request_info.status_code = status;
+      else if (old_status == 500) // more specific 5xx errors win over generic 500
+        conn->request_info.status_code = status;
+      break;
+    }
   }
   return conn->request_info.status_code;
 }
@@ -1507,139 +1530,250 @@ static const char *suggest_connection_header(struct mg_connection *conn) {
 // Return negative value on error; otherwise number of bytes saved by compacting.
 static int compact_tx_headers(struct mg_connection *conn)
 {
-	return 0;
+    char *scratch;
+    int i, n;
+    int space;
+    struct mg_header hdrs[ARRAY_SIZE(conn->request_info.response_headers)];
+
+    if (!conn->buf_size) // mg_connect() creates connections without header buffer space
+        return -1;
+
+    if (!conn->tx_can_compact)
+        return 0;
+
+    scratch = conn->buf + 2 * conn->buf_size;
+    space = conn->buf_size;
+
+    memcpy(hdrs, conn->request_info.response_headers, sizeof(hdrs));
+
+    n = conn->request_info.num_response_headers;
+    for (i = 0; i < n; i++)
+    {
+        int l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].name, space);
+        // calc new name+value pointers for when we're done with the compact cycle:
+        hdrs[i].name = scratch - conn->buf_size;
+        l += 2;
+        scratch += l;
+        space -= l;
+        l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].value, space);
+        hdrs[i].value = scratch - conn->buf_size;
+        l += 2;
+        scratch += l;
+        space -= l;
+    }
+    conn->tx_can_compact = 0;
+    n = scratch - conn->buf - 2 * conn->buf_size;
+    i = conn->tx_headers_len - n;
+    conn->tx_headers_len = n;
+
+    memcpy(conn->request_info.response_headers, hdrs, sizeof(hdrs));
+    memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, conn->buf_size);
+
+    return i;
 }
 
 int mg_remove_response_header(struct mg_connection *conn, const char *tag)
 {
-	int i = -1;
-	int found = 0;
+    int i = -1;
+    int found = 0;
 
-	if (is_empty(tag))
-		return -1;
+    if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+        return -1;
 
-	// check whether tag is already listed in the set:
-	for (i = conn->request_info.num_response_headers; i-- > 0; )
-	{
-		const char *key = conn->request_info.response_headers[i].name;
+    // check whether tag is already listed in the set:
+    for (i = conn->request_info.num_response_headers; i-- > 0; )
+    {
+        const char *key = conn->request_info.response_headers[i].name;
 
-		if (!mg_strcasecmp(tag, key)) {
-			// ditch the key + value:
-			found++;
-			conn->request_info.response_headers[i].name = NULL;
-		}
-	}
-	// keep the order of the keys intact: compact the header set once we've removed all 'tag' occurrences
-	if (found)
-	{
-		int n = conn->request_info.num_response_headers;
-		for (i = 0; i < n; i++)
-		{
-			if (!conn->request_info.response_headers[i].name)
-			{
-				int j;
+        if (!mg_strcasecmp(tag, key)) {
+            // ditch the key + value:
+            found++;
+            conn->request_info.response_headers[i].name = NULL;
+        }
+    }
+    // keep the order of the keys intact: compact the header set once we've removed all 'tag' occurrences
+    if (found)
+    {
+        int n = conn->request_info.num_response_headers;
+        for (i = 0; i < n; i++)
+        {
+            if (!conn->request_info.response_headers[i].name)
+            {
+                int j;
 
-				for (j = i + 1; j < n; j++)
-				{
-					if (conn->request_info.response_headers[j].name)
-					{
-						conn->request_info.response_headers[i++] = conn->request_info.response_headers[j];
-					}
-				}
-				break;
-			}
-		}
-		conn->request_info.num_response_headers = i;
-		conn->tx_can_compact = 1;
-	}
-	return found;
+                for (j = i + 1; j < n; j++)
+                {
+                    if (conn->request_info.response_headers[j].name)
+                    {
+                        conn->request_info.response_headers[i++] = conn->request_info.response_headers[j];
+                    }
+                }
+                break;
+            }
+        }
+        conn->request_info.num_response_headers = i;
+        conn->tx_can_compact = 1;
+    }
+    return found;
 }
 
 int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, ...) {
-	int i = -1;
-	int n, space;
-	char *dst;
-	char *bufbase;
-	va_list ap;
+    int i = -1;
+    int n, space;
+    char *dst;
+    char *bufbase;
+    va_list ap;
 
-	if (is_empty(tag))
-		return -1;
-	if (!value_fmt)
-		value_fmt = "";
+    if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+        return -1;
+    if (!value_fmt)
+        value_fmt = "";
 
-	bufbase = conn->buf + conn->buf_size;
-	dst = bufbase + conn->tx_headers_len;
-	space = conn->buf_size - conn->tx_headers_len;
+    bufbase = conn->buf + conn->buf_size;
+    dst = bufbase + conn->tx_headers_len;
+    space = conn->buf_size - conn->tx_headers_len;
 
-	if (!force_add)
-	{
-		// check whether tag is already listed in the set:
-		for (i = conn->request_info.num_response_headers; i-- > 0; )
-		{
-			const char *key = conn->request_info.response_headers[i].name;
+    if (!force_add)
+    {
+        // check whether tag is already listed in the set:
+        for (i = conn->request_info.num_response_headers; i-- > 0; )
+        {
+            const char *key = conn->request_info.response_headers[i].name;
 
-			if (!mg_strcasecmp(tag, key)) {
-				// re-use the tag, ditch the value:
-				conn->tx_can_compact = 1;
-				break; 
-			}
-		}
-	}
-	if (i < 0) // this tag wasn't found: add it
-	{
-		i = conn->request_info.num_headers;
-		if (i >= ARRAY_SIZE(conn->request_info.response_headers)) 
-		{
-			mg_cry(conn, "%s: too many headers", __func__);
-			return -1;
-		}
-		for(;;)
-		{
-			n = (int)mg_strlcpy(dst, tag, space);
-			if (n + 1 < space)
-				break;
-			// we need to compact and retry, and when it still fails then, we're toast.
-			if (compact_tx_headers(conn) <= 0)
-			{
-				mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
-				return -1;
-			}
-			dst = bufbase + conn->tx_headers_len;
-			space = conn->buf_size - conn->tx_headers_len;
-		}
-		n++; // include NUL sentinel in count
-		conn->tx_headers_len += n;
-		dst += n;
-		space -= n;
-	}
+            if (!mg_strcasecmp(tag, key)) {
+                // re-use the tag, ditch the value:
+                conn->tx_can_compact = 1;
+                break;
+            }
+        }
+    }
+    if (i < 0) // this tag wasn't found: add it
+    {
+        i = conn->request_info.num_headers;
+        if (i >= ARRAY_SIZE(conn->request_info.response_headers))
+        {
+            mg_cry(conn, "%s: too many headers", __func__);
+            return -1;
+        }
+        for(;;)
+        {
+            n = (int)mg_strlcpy(dst, tag, space);
+            if (n + 6 < space) // NUL+[?] + empty value + NUL+[?]+[?]+[?]
+                break;
+            // we need to compact and retry, and when it still fails then, we're toast.
+            if (compact_tx_headers(conn) <= 0)
+            {
+                mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
+                return -1;
+            }
+            dst = bufbase + conn->tx_headers_len;
+            space = conn->buf_size - conn->tx_headers_len;
+        }
+        n += 2; // include NUL+[?] sentinel in count
+        conn->tx_headers_len += n;
+        dst += n;
+        space -= n;
+    }
 
-	// now store the value:
-	for(;;)
-	{
-		va_start(ap, value_fmt);
-		n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
-		va_end(ap);
-		// n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
-		if (n + 1 < space && n > 0)
-			break;
-		// only accept n==0 when the value_fmt is empty and there's nothing to compact or (heuristic!) when there's 'sufficient space' to write:
-		if (n == 0 && (!conn->tx_can_compact || is_empty(value_fmt) || space >= MG_MAX(BUFSIZ, conn->buf_size / 4)))
-			break;
-		// we need to compact and retry, and when it still fails then, we're toast.
-		if (compact_tx_headers(conn) <= 0)
-		{
-			mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
-			return -1;
-		}
-		dst = bufbase + conn->tx_headers_len;
-		space = conn->buf_size - conn->tx_headers_len;
-	}
-	n++; // include NUL sentinel in count
-	conn->tx_headers_len += n;
-	dst += n;
-	space -= n;
+    // now store the value:
+    for(;;)
+    {
+        va_start(ap, value_fmt);
+        n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
+        va_end(ap);
+        // n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
+        if (n + 4 < space && n > 0) // + NUL+[?]+[?]+[?]
+            break;
+        // only accept n==0 when the value_fmt is empty and there's nothing to compact or (heuristic!) when there's 'sufficient space' to write:
+        if (n == 0 && 4 < space && (!conn->tx_can_compact || is_empty(value_fmt) || space >= MG_MAX(BUFSIZ, conn->buf_size / 4)))
+            break;
+        // we need to compact and retry, and when it still fails then, we're toast.
+        if (compact_tx_headers(conn) <= 0)
+        {
+            mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
+            return -1;
+        }
+        dst = bufbase + conn->tx_headers_len;
+        space = conn->buf_size - conn->tx_headers_len;
+    }
+    n += 2; // include NUL+[?] sentinel in count
+    conn->tx_headers_len += n;
+    dst += n;
+    space -= n;
 
-	return 0;
+    // now we know we still have two extra bytes free space; this is used in mg_write_headers()
+    return 0;
+}
+
+int mg_write_headers(struct mg_connection *conn)
+{
+    int i, n, rv;
+    char *buf;
+
+    /*
+    This code expects all headers to be stored in memory 'in order'.
+
+    This assumption holds when headers have been only been added, never
+    removed or replaced, OR when compact_tx_headers() has run
+    after the last replace/remove operation.
+    */
+    if (compact_tx_headers(conn) < 0)
+        return -1;
+
+    /*
+    Once we are sure of the header order assumption, this becomes an
+    'in place' operation, where NUL sentinels are temporarily replaced
+    with ": " and "\r\n" respectively.
+
+    Since the assumption above is now assured, we know that the very
+    first header starts at the beginning of the buffer!
+    */
+    buf = conn->buf + conn->buf_size;
+
+    n = conn->request_info.num_response_headers;
+    if (n)
+    {
+        conn->request_info.response_headers[0].value[-2] = ':';
+        conn->request_info.response_headers[0].value[-1] = ' ';
+        for (i = 1; i < n; i++)
+        {
+            struct mg_header *h = conn->request_info.response_headers + i;
+
+            h->name[-2] = '\r';
+            h->name[-1] = '\n';
+            h->value[-2] = ':';
+            h->value[-1] = ' ';
+        }
+        buf[conn->tx_headers_len - 2] = '\r';
+        buf[conn->tx_headers_len - 1] = '\n';
+        assert(conn->tx_headers_len + 2 <= conn->buf_size);
+        buf[conn->tx_headers_len] = '\r';
+        buf[conn->tx_headers_len + 1] = '\n';
+
+        rv = mg_write(conn, buf, conn->tx_headers_len + 2);
+
+        /*
+        Error or success, always restore the header set to its original
+        glory.
+        */
+        conn->request_info.response_headers[0].value[-2] = 0;
+        for (i = 1; i < n; i++)
+        {
+            struct mg_header *h = conn->request_info.response_headers + i;
+
+            h->name[-2] = 0;
+            h->value[-2] = 0;
+        }
+        buf[conn->tx_headers_len - 2] = 0;
+    }
+    else
+    {
+        rv = mg_write(conn, "\r\n", 2);
+    }
+
+    mg_mark_end_of_header_transmission(conn);
+
+    return rv;
 }
 
 /*
@@ -1676,7 +1810,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
-	status = conn->request_info.status_code;
+    status = conn->request_info.status_code;
     if (conn->request_info.status_custom_description)
       len = (int)strlen(conn->request_info.status_custom_description);
     else
@@ -1685,13 +1819,13 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     if (p)
       *p = 0;
 
-	mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
-		    __func__, conn->request_info.status_custom_description,
-			conn->request_info.http_version,
-			conn->request_info.request_method, conn->request_info.uri,
-			(conn->request_info.query_string ? "?" : ""),
-			(conn->request_info.query_string ? conn->request_info.query_string : ""),
-			(p ? p + 1 : ""));
+    mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
+            __func__, conn->request_info.status_custom_description,
+            conn->request_info.http_version,
+            conn->request_info.request_method, conn->request_info.uri,
+            (conn->request_info.query_string ? "?" : ""),
+            (conn->request_info.query_string ? conn->request_info.query_string : ""),
+            (p ? p + 1 : ""));
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
@@ -1702,25 +1836,25 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     }
     DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
-	// do NOT produce the nested error (allow parent to send its own error page/info to client):
+    // do NOT produce the nested error (allow parent to send its own error page/info to client):
     if (!mg_have_headers_been_sent(conn) && !mg_is_producing_nested_page(conn)) {
-	  const char *errflist = get_conn_option(conn, ERROR_FILE);
-	  struct vec filename_vec;
-	  struct vec status_vec;
+      const char *errflist = get_conn_option(conn, ERROR_FILE);
+      struct vec filename_vec;
+      struct vec status_vec;
 
-	  // Traverse error files list. If an entry matches the given status_code, break the loop.
-	  // '0' is treated as a wildcard match.
-	  while ((errflist = next_option(errflist, &status_vec, &filename_vec)) != NULL) {
-		int v = atoi(status_vec.ptr);
+      // Traverse error files list. If an entry matches the given status_code, break the loop.
+      // '0' is treated as a wildcard match.
+      while ((errflist = next_option(errflist, &status_vec, &filename_vec)) != NULL) {
+        int v = atoi(status_vec.ptr);
 
-		if (v == 0 || v == status)
+        if (v == 0 || v == status)
           break;
-	  }
-	  // output basic HTTP response when either no error content is allowed (len == 0)
-	  // or when the error page production failed and hasn't yet written the headers itself.
-	  if (len == 0 ||
-		  (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
-		   !mg_have_headers_been_sent(conn))) {
+      }
+      // output basic HTTP response when either no error content is allowed (len == 0)
+      // or when the error page production failed and hasn't yet written the headers itself.
+      if (len == 0 ||
+          (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
+           !mg_have_headers_been_sent(conn))) {
         mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
 
         /* issue #229: Only include the content-length if there is a response body.
@@ -1728,24 +1862,22 @@ static void vsend_http_error(struct mg_connection *conn, int status,
          some browsers when a static file request returns a 304
          "not modified" error. */
         if (len > 0) {
-          mg_printf(conn, "Content-Length: %d\r\n"
-                    "Content-Type: text/plain\r\n", len);
+          mg_add_response_header(conn, 0, "Content-Length", "%d", len);
+          mg_add_response_header(conn, 0, "Content-Type", "text/plain");
         }
-        mg_printf(conn, "Connection: %s\r\n\r\n",
-                  suggest_connection_header(conn));
-
-        mg_mark_end_of_header_transmission(conn);
+        mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
+        mg_write_headers(conn);
         if (len > 0) {
           mg_write(conn, conn->request_info.status_custom_description, len);
         }
-	  }
+      }
     } else if (mg_is_producing_nested_page(conn)) {
-	  // mark nested error anyhow
-	  conn->nested_err_or_pagereq_count++;
-	}
+      // mark nested error anyhow
+      conn->nested_err_or_pagereq_count++;
+    }
   } else if (mg_is_producing_nested_page(conn)) {
-	// mark nested error anyhow
-	conn->nested_err_or_pagereq_count++;
+    // mark nested error anyhow
+    conn->nested_err_or_pagereq_count++;
   }
   // kill lingering reference to local storage:
   conn->request_info.status_custom_description = NULL;
@@ -2619,6 +2751,13 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   }
+  else if (!strcmp(fmt, "%s"))
+  {
+    fmt = va_arg(ap, const char *);
+    if (!fmt) fmt = "???";
+    rv = mg_write(conn, fmt, strlen(fmt));
+    return (rv < 0 ? 0 : rv);
+  }
   else
   {
     len = mg_vasprintf(conn, &buf, 0, fmt, ap);
@@ -3424,18 +3563,18 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
 
 static void send_authorization_request(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
-	return;
+    return;
   conn->request_info.status_code = 401;
-  (void) mg_printf(conn,
-      "HTTP/1.1 401 Unauthorized\r\n"
-      "Connection: %s\r\n"
-      "Content-Length: 0\r\n"
-      "WWW-Authenticate: Digest qop=\"auth\", "
-      "realm=\"%s\", nonce=\"%lu\"\r\n\r\n",
-      suggest_connection_header(conn),
-      get_conn_option(conn, AUTHENTICATION_DOMAIN),
-      (unsigned long) time(NULL));
-  mg_mark_end_of_header_transmission(conn);
+  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n",
+      conn->request_info.status_code,
+      mg_get_response_code_text(conn->request_info.status_code));
+  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  mg_add_response_header(conn, 0, "Content-Length", "0");
+  mg_add_response_header(conn, 0, "WWW-Authenticate", "Digest qop=\"auth\", "
+                         "realm=\"%s\", nonce=\"%lu\"",
+                         get_conn_option(conn, AUTHENTICATION_DOMAIN),
+                         (unsigned long) time(NULL));
+  (void) mg_write_headers(conn);
 }
 
 static int is_authorized_for_put(struct mg_connection *conn) {
@@ -3672,7 +3811,7 @@ static void handle_directory_request(struct mg_connection *conn,
   struct dir_scan_data data = { NULL, 0, 128 };
 
   if (mg_is_producing_nested_page(conn))
-	return;
+    return;
   if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
     send_http_error(conn, 500, "Cannot open directory",
                     "Error: opendir(%s): %s", dir, strerror(ERRNO));
@@ -3684,12 +3823,10 @@ static void handle_directory_request(struct mg_connection *conn,
 
   conn->must_close = 1;
   conn->request_info.status_code = 200;
-  mg_printf(conn,
-            "HTTP/1.1 200 OK\r\n"
-            "Connection: %s\r\n"
-            "Content-Type: text/html; charset=utf-8\r\n\r\n",
-            suggest_connection_header(conn));
-  mg_mark_end_of_header_transmission(conn);
+  mg_printf(conn, "HTTP/1.1 200 OK\r\n");
+  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
+  mg_write_headers(conn);
   mg_printf(conn,
       "<html><head><title>Index of %s</title>"
       "<style>th {text-align: left;}</style></head>"
@@ -3774,7 +3911,7 @@ static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
 // return negative number on error; 0 on success
 static int handle_file_request(struct mg_connection *conn, const char *path,
                                 struct mgstat *stp) {
-  char date[64], lm[64], etag[64], range[64];
+  char date[64], lm[64];
   const char *hdr;
   time_t curtime = time(NULL);
   int64_t cl, r1, r2;
@@ -3785,7 +3922,6 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   get_mime_type(conn->ctx, path, &mime_vec);
   cl = stp->size;
   mg_set_response_code(conn, 200);
-  range[0] = '\0';
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
     send_http_error(conn, 500, NULL,
@@ -3801,10 +3937,9 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
     conn->request_info.status_code = 206;
     (void) fseeko(fp, (off_t) r1, SEEK_SET);
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
-    (void) mg_snprintf(conn, range, sizeof(range),
-        "Content-Range: bytes "
+    mg_add_response_header(conn, 0, "Content-Range", "bytes "
         "%" INT64_FMT "-%"
-        INT64_FMT "/%" INT64_FMT "\r\n",
+        INT64_FMT "/%" INT64_FMT,
         r1, r1 + cl - 1, stp->size);
   }
 
@@ -3812,24 +3947,19 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   // http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
   gmt_time_string(date, sizeof(date), &curtime);
   gmt_time_string(lm, sizeof(lm), &stp->mtime);
-  (void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx",
-      (unsigned long) stp->mtime, (unsigned long) stp->size);
 
   n = mg_printf(conn,
-      "HTTP/1.1 %d %s\r\n"
-      "Date: %s\r\n"
-      "Last-Modified: %s\r\n"
-      "Etag: \"%s\"\r\n"
-      "Content-Type: %.*s\r\n"
-      "Content-Length: %" INT64_FMT "\r\n"
-      "Connection: %s\r\n"
-      "Accept-Ranges: bytes\r\n"
-      "%s\r\n",
-      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code),
-	  date, lm, etag,
-	  (int) mime_vec.len, mime_vec.ptr,
-	  cl, suggest_connection_header(conn), range);
-  mg_mark_end_of_header_transmission(conn);
+      "HTTP/1.1 %d %s\r\n",
+      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code));
+  mg_add_response_header(conn, 0, "Date", "%s", date);
+  mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
+  mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
+                         (unsigned long) stp->mtime, (unsigned long) stp->size);
+  mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
+  mg_add_response_header(conn, 0, "Content-Length", "%" INT64_FMT, cl);
+  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
+  mg_write_headers(conn);
   n--; // 0 --> -1
 
   if (n > 0 &&
@@ -4093,7 +4223,7 @@ static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
     block->len += n + 1;
   } else {
     mg_cry(block->conn, "%s: CGI env buffer overflow for fmt '%s'", __func__, fmt);
-	added = NULL;
+    added = NULL;
   }
 
   return added;
@@ -4119,31 +4249,36 @@ static int prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "GATEWAY_INTERFACE=CGI/1.1");
   addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
   if (conn->request_info.parent) {
-	addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
-	// REDIRECT_URL ~ REQUEST_URI
-	addenv(blk, "REDIRECT_URL=%s", conn->request_info.parent->uri);
-	// REDIRECT_METHOD ~ REQUEST_METHOD
-	addenv(blk, "REDIRECT_METHOD=%s", conn->request_info.parent->request_method);
-	// REDIRECT_QUERY_STRING ~ QUERY_STRING
-	if (!is_empty(conn->request_info.parent->query_string))
-	  addenv(blk, "REDIRECT_QUERY_STRING=%s", conn->request_info.parent->query_string);
+    const char *str = conn->request_info.parent->uri;
+    size_t slen = strlen(str);
+    addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
+    // REDIRECT_URL ~ REQUEST_URI
+    addenv(blk, "REDIRECT_URL=%.*s%s", (int)(slen > PATH_MAX ? PATH_MAX : slen), str, (slen > PATH_MAX ? "(...etc...)" : ""));
+    // REDIRECT_METHOD ~ REQUEST_METHOD
+    addenv(blk, "REDIRECT_METHOD=%s", conn->request_info.parent->request_method);
+    // REDIRECT_QUERY_STRING ~ QUERY_STRING
+    if (!is_empty(conn->request_info.parent->query_string)) {
+      str = conn->request_info.parent->query_string;
+      slen = strlen(str);
+      addenv(blk, "REDIRECT_QUERY_STRING=%.*s%s", (int)(slen > BUFSIZ ? BUFSIZ : slen), str, (slen > BUFSIZ ? "&etc=..." : ""));
+    }
 
     p = conn->request_info.status_custom_description;
     if (conn->request_info.parent && !is_empty(conn->request_info.parent->status_custom_description) && is_empty(p)) {
-	  p = conn->request_info.parent->status_custom_description;
+      p = conn->request_info.parent->status_custom_description;
     }
     if (!is_empty(p)) {
-	  p = addenv(blk, "REDIRECT_ERROR_NOTES=%s", p);
-	  if (!p) {
-	    return -1;
-	  } else {
-  	    while (*p) {
-	      // tweak: replace all \n and \r in there by \t to make sure it's a single line value
+      p = addenv(blk, "REDIRECT_ERROR_NOTES=%s", p);
+      if (!p) {
+        return -1;
+      } else {
+        while (*p) {
+          // tweak: replace all \n and \r in there by \t to make sure it's a single line value
           p += strcspn(p, "\r\n");
-	      if (*p)
-	        *p++ = '\t';
-	    }
-	  }
+          if (*p)
+            *p++ = '\t';
+        }
+      }
     }
   }
 
@@ -4209,8 +4344,8 @@ static int prepare_cgi_environment(struct mg_connection *conn,
     p = addenv(blk, "HTTP_%s=%s",
         conn->request_info.http_headers[i].name,
         conn->request_info.http_headers[i].value);
-	if (!p)
-	  return -1;
+    if (!p)
+      return -1;
 
     // Convert variable name into uppercase, and change - to _
     for (; *p != '=' && *p != '\0'; p++) {
@@ -4228,7 +4363,7 @@ static int prepare_cgi_environment(struct mg_connection *conn,
 
   // check for buffer overflow by looking at the return code of the last variable addition:
   if (!addenv(blk, "HTTPS=%s", conn->ssl == NULL ? "off" : "on"))
-	return -1;
+    return -1;
 
   blk->vars[blk->nvars++] = NULL;
   blk->buf[blk->len++] = '\0';
@@ -4253,9 +4388,9 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   in = out = err = NULL;
 
   if (prepare_cgi_environment(conn, prog, &blk)) {
-	send_http_error(conn, 500, NULL,
-		            "Cannot create CGI environment variable collection, quite probably due to buffer overflow due to a very long request");
-	goto done;
+    send_http_error(conn, 500, NULL,
+                    "Cannot create CGI environment variable collection, quite probably due to buffer overflow due to a very long request");
+    goto done;
   }
 
   // CGI must be executed in its own directory. 'dir' must point to the
@@ -4330,7 +4465,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // Make up and send the status line
   if ((status = get_header(&ri, "Status")) != NULL) {
     char * chknum = NULL;
-	int response_code = (int)strtol(status, &chknum, 10);
+    int response_code = (int)strtol(status, &chknum, 10);
     if (chknum != NULL)
       status = chknum + strspn(chknum, " ");
     else
@@ -4341,8 +4476,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
             get_header(&ri, "Status"));
       goto done;
     }
-	if (response_code != mg_set_response_code(conn, response_code))
-	  status = NULL;
+    if (response_code != mg_set_response_code(conn, response_code))
+      status = NULL;
   } else if (get_header(&ri, "Location") != NULL) {
     mg_set_response_code(conn, 302);
   } else {
@@ -4358,16 +4493,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
-    mg_printf(conn, "%s: %s\r\n",
-              ri.http_headers[i].name, ri.http_headers[i].value);
+    mg_add_response_header(conn, 0, ri.http_headers[i].name, "%s", ri.http_headers[i].value);
   }
   // and always send the Connection: header:
   if (get_header(&ri, "Connection") == NULL) {
-    mg_printf(conn, "Connection: %s\r\n",
-              suggest_connection_header(conn));
+    mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   }
-  (void) mg_write(conn, "\r\n", 2);
-  mg_mark_end_of_header_transmission(conn);
+  mg_write_headers(conn);
 
   // Send chunk of data that may be read after the headers
   (void) mg_write(conn, buf + headers_len,
@@ -4493,8 +4625,8 @@ static void put_file(struct mg_connection *conn, const char *path) {
 
   if ((rc = put_dir(path)) == 0) {
     mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
-		      conn->request_info.status_code,
-			  mg_get_response_code_text(conn->request_info.status_code));
+              conn->request_info.status_code,
+              mg_get_response_code_text(conn->request_info.status_code));
     mg_mark_end_of_header_transmission(conn);
   } else if (rc == -1) {
     send_http_error(conn, 500, NULL,
@@ -4514,7 +4646,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
     if (forward_body_data(conn, fp, INVALID_SOCKET, NULL, 1)) {
       (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
                        conn->request_info.status_code,
-		               mg_get_response_code_text(conn->request_info.status_code));
+                       mg_get_response_code_text(conn->request_info.status_code));
       mg_mark_end_of_header_transmission(conn);
     }
     (void) mg_fclose(fp);
@@ -4732,43 +4864,43 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
           return -1;
 #endif // !NO_POPEN
 #if !defined(NO_CGI)
-	  } else if (!memcmp(s, "echo", 4)) {
-		// http://www.ssi-developer.net/ssi/ssi-echo.shtml
-		s = mg_memfind(s, e - s, "var=", 4);
-		if (!s)
-		  mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, buf);
-		else {
-		  const char *ve;
-		  int idx;
-		  s += 4;
-		  s += strspn(s, "\" ");
-		  ve = s + strcspn(s, " \"");
-		  if (ve > e) ve = e;
-		  *((char *)ve) = '=';
-		  // init 'blk' once, when we need it:
-		  if (!blk.conn) {
-	        if (prepare_cgi_environment(conn, path, &blk)) {
-			  send_http_error(conn, 580, NULL, "%s: failed to set up env.var set", __func__);
-			  blk.conn = NULL;
-			  return -1;
-		    }
-		  }
-		  assert(blk.nvars > 0);
-		  assert(blk.vars[blk.nvars - 1] == NULL);
-		  for (idx = blk.nvars - 1; idx-- > 0; ) {
-			const char *kv = blk.vars[idx];
-			if (!strncmp(s, kv, ve + 1 - s)) {
-			  size_t kvlen;
-			  kv += ve + 1 - s;
-			  kvlen = strlen(kv);
-			  if (mg_write(conn, kv, kvlen) != kvlen) {
-				send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)kvlen, path);
-				return -1;
-			  }
-			  break;
-			}
-		  }
-		}
+      } else if (!memcmp(s, "echo", 4)) {
+        // http://www.ssi-developer.net/ssi/ssi-echo.shtml
+        s = mg_memfind(s, e - s, "var=", 4);
+        if (!s)
+          mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, buf);
+        else {
+          const char *ve;
+          int idx;
+          s += 4;
+          s += strspn(s, "\" ");
+          ve = s + strcspn(s, " \"");
+          if (ve > e) ve = e;
+          *((char *)ve) = '=';
+          // init 'blk' once, when we need it:
+          if (!blk.conn) {
+            if (prepare_cgi_environment(conn, path, &blk)) {
+              send_http_error(conn, 580, NULL, "%s: failed to set up env.var set", __func__);
+              blk.conn = NULL;
+              return -1;
+            }
+          }
+          assert(blk.nvars > 0);
+          assert(blk.vars[blk.nvars - 1] == NULL);
+          for (idx = blk.nvars - 1; idx-- > 0; ) {
+            const char *kv = blk.vars[idx];
+            if (!strncmp(s, kv, ve + 1 - s)) {
+              size_t kvlen;
+              kv += ve + 1 - s;
+              kvlen = strlen(kv);
+              if (mg_write(conn, kv, kvlen) != kvlen) {
+                send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)kvlen, path);
+                return -1;
+              }
+              break;
+            }
+          }
+        }
 #endif
       } else {
         // shouldn't we log the error and abort? Nope, in this case we decide to go on. Unsupported SSI features are ignored.
@@ -4802,14 +4934,14 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   } else {
     conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-	mg_set_response_code(conn, 200);
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n"
-              "Content-Type: text/html\r\n"
-			  "Connection: %s\r\n\r\n",
-			  conn->request_info.status_code,
-			  mg_get_response_code_text(conn->request_info.status_code),
-              suggest_connection_header(conn));
-    mg_mark_end_of_header_transmission(conn);
+    mg_set_response_code(conn, 200);
+    mg_printf(conn, "HTTP/1.1 %d %s\r\n",
+              conn->request_info.status_code,
+              mg_get_response_code_text(conn->request_info.status_code));
+    mg_add_response_header(conn, 0, "Content-Type", "text/html");
+    mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+
+    mg_write_headers(conn);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
   }
@@ -4817,15 +4949,16 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 
 static void send_options(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
-	return;
+    return;
   mg_set_response_code(conn, 200);
   (void) mg_printf(conn,
-      "HTTP/1.1 %d %s\r\n"
-      "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS\r\n"
-      "DAV: 1\r\n\r\n",
-	  conn->request_info.status_code,
-	  mg_get_response_code_text(conn->request_info.status_code));
-  mg_mark_end_of_header_transmission(conn);
+      "HTTP/1.1 %d %s\r\n",
+      conn->request_info.status_code,
+      mg_get_response_code_text(conn->request_info.status_code));
+  mg_add_response_header(conn, 0, "Allow", "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
+  mg_add_response_header(conn, 0, "DAV", "1");
+
+  mg_write_headers(conn);
 }
 
 // Writes PROPFIND properties for a collection element
@@ -4867,12 +5000,13 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
     return;
   conn->must_close = 1;
   mg_set_response_code(conn, 207);
-  mg_printf(conn, "HTTP/1.1 %d %s\r\n"
-            "Connection: close\r\n"
-            "Content-Type: text/xml; charset=utf-8\r\n\r\n",
-			conn->request_info.status_code,
-			mg_get_response_code_text(conn->request_info.status_code));
-  mg_mark_end_of_header_transmission(conn);
+  mg_printf(conn, "HTTP/1.1 %d %s\r\n",
+            conn->request_info.status_code,
+            mg_get_response_code_text(conn->request_info.status_code));
+  mg_add_response_header(conn, 0, "Connection", "close");
+  mg_add_response_header(conn, 0, "Content-Type", "text/xml; charset=utf-8");
+
+  mg_write_headers(conn);
 
   mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
@@ -4939,12 +5073,12 @@ static void handle_request(struct mg_connection *conn) {
   } else if (stat_result != 0) {
     send_http_error(conn, 404, NULL, "File not found: URI=%s, PATH=%s", ri->uri, path);
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
-	if (301 == mg_set_response_code(conn, 301)) {
+    if (301 == mg_set_response_code(conn, 301)) {
       (void) mg_printf(conn,
-          "HTTP/1.1 301 Moved Permanently\r\n"
-          "Location: %s/\r\n\r\n", ri->uri);
-      mg_mark_end_of_header_transmission(conn);
-	}
+          "HTTP/1.1 301 Moved Permanently\r\n");
+      mg_add_response_header(conn, 0, "Location", "%s/", ri->uri);
+      mg_write_headers(conn);
+    }
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -4972,7 +5106,7 @@ static void handle_request(struct mg_connection *conn) {
                           path) > 0) {
     handle_ssi_file_request(conn, path);
   } else if (is_not_modified(conn, &st) &&
-	         304 == mg_set_response_code(conn, 304)) {
+             304 == mg_set_response_code(conn, 304)) {
     send_http_error(conn, 304, NULL, "");
   } else {
     handle_file_request(conn, path, &st);
@@ -4984,12 +5118,12 @@ static void handle_request(struct mg_connection *conn) {
 
 int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len) {
   if (!uri || !uri_len || mg_have_headers_been_sent(conn))
-	return -1;
+    return -1;
   {
     size_t l = mg_strnlen(uri, uri_len);
-	if (!l)
-	  return -1;
-	uri_len = l;
+    if (!l)
+      return -1;
+    uri_len = l;
   }
   conn->nested_err_or_pagereq_count++;
   if (conn->nested_err_or_pagereq_count == 1) {
@@ -4997,51 +5131,51 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     struct mg_request_info ri = conn->request_info;
     char expanded_uri[PATH_MAX];
     const char *s;
-	int i;
+    int i;
 
-	// fail when error happens in this section...
-	conn->nested_err_or_pagereq_count++;
-	if (sizeof(expanded_uri) < uri_len + 1)
-	  goto fail_dramatically;
+    // fail when error happens in this section...
+    conn->nested_err_or_pagereq_count++;
+    if (sizeof(expanded_uri) < uri_len + 1)
+      goto fail_dramatically;
 
     s = mg_memfind(uri, uri_len, "$E", 2);
     if (s) {
       int n = mg_snq0printf(conn, expanded_uri, sizeof(expanded_uri), "%.*s%d%.*s",
-		  				    (int)(s - uri), uri,
-			 			    ri.status_code,
-						    (int)(uri_len - (s + 2 - uri)), s + 2);
-	  if (n + 1 >= sizeof(expanded_uri))
-  	    goto fail_dramatically;
+                            (int)(s - uri), uri,
+                            ri.status_code,
+                            (int)(uri_len - (s + 2 - uri)), s + 2);
+      if (n + 1 >= sizeof(expanded_uri))
+        goto fail_dramatically;
     } else {
-	  mg_strlcpy(expanded_uri, uri, uri_len + 1);
+      mg_strlcpy(expanded_uri, uri, uri_len + 1);
     }
-	conn->nested_err_or_pagereq_count--;
-	// end of section...
+    conn->nested_err_or_pagereq_count--;
+    // end of section...
 
     conn->request_info.uri = expanded_uri;
     conn->request_info.request_method = "GET";
     conn->request_info.parent = &ri;
-	// nuke any Content-Length or Transfer-Encoding header, to prevent the 'nested' handler
-	// from incorrectly trying to (re)fetching the request content again.
-	// Also nuke Modified-Since header.
-	for (i = conn->request_info.num_headers; i-- > 0; )	{
-	  const char *key = conn->request_info.http_headers[i].name;
-	  if (!mg_strcasecmp(key, "Content-Length") ||
-		  !mg_strcasecmp(key, "Transfer-Encoding") ||
-		  !mg_strcasecmp(key, "If-Modified-Since") ||
-		  !mg_strcasecmp(key, "Expect")) {
-		conn->request_info.http_headers[i].name = "X-Clobbered";
-	  }
-	}
+    // nuke any Content-Length or Transfer-Encoding header, to prevent the 'nested' handler
+    // from incorrectly trying to (re)fetching the request content again.
+    // Also nuke Modified-Since header.
+    for (i = conn->request_info.num_headers; i-- > 0; ) {
+      const char *key = conn->request_info.http_headers[i].name;
+      if (!mg_strcasecmp(key, "Content-Length") ||
+          !mg_strcasecmp(key, "Transfer-Encoding") ||
+          !mg_strcasecmp(key, "If-Modified-Since") ||
+          !mg_strcasecmp(key, "Expect")) {
+        conn->request_info.http_headers[i].name = "X-Clobbered";
+      }
+    }
 
     handle_request(conn);  // may increment nested_err_or_pagereq_count when failing internally!
 
-	// reset original values, but keep the latest HTTP response code:
-	// that one will have been 'upgraded' with the latest (graver) errors
-	// and those should be logged / fed back to the client whenever possible.
+    // reset original values, but keep the latest HTTP response code:
+    // that one will have been 'upgraded' with the latest (graver) errors
+    // and those should be logged / fed back to the client whenever possible.
 fail_dramatically:
-	ri.status_code = conn->request_info.status_code;
-	conn->request_info = ri;
+    ri.status_code = conn->request_info.status_code;
+    conn->request_info = ri;
   }
   return (conn->nested_err_or_pagereq_count == 1);
 }
@@ -5945,7 +6079,7 @@ static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn;
   int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
-  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 2);
+  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     return;
@@ -6277,21 +6411,21 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     assert(i < (int)ARRAY_SIZE(ctx->config));
     assert(i >= 0);
     ctx->config[i] = mg_strdup(value);
-	// at least on Windows, replace single quotes around CGI binary path
-	// by double quotes or your CGI won't ever run.
-	// And you can't easily put double quotes around it from the command line,
-	// so kludge it is.
-	if (i == CGI_INTERPRETER && value[0] == '\'') {
-	  char *qp = ctx->config[i];
-	  *qp++ = '"';
-	  qp = strchr(qp, '\'');
-	  if (!qp) {
-		mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
-		free_context(ctx);
-		return NULL;
-	  }
-	  *qp = '"';
-	}
+    // at least on Windows, replace single quotes around CGI binary path
+    // by double quotes or your CGI won't ever run.
+    // And you can't easily put double quotes around it from the command line,
+    // so kludge it is.
+    if (i == CGI_INTERPRETER && value[0] == '\'') {
+      char *qp = ctx->config[i];
+      *qp++ = '"';
+      qp = strchr(qp, '\'');
+      if (!qp) {
+        mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
+        free_context(ctx);
+        return NULL;
+      }
+      *qp = '"';
+    }
     DEBUG_TRACE(("[%s] -> [%s]", name, ctx->config[i]));
   }
 

@@ -285,7 +285,21 @@ int mg_modify_passwords_file(const char *passwords_file_name,
                              const char *password);
 
 // Send data to the client.
+//
+// Return the number of bytes written; 0 when the connection has been closed.
+// Return -1 on error.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
+
+// Write the set of response headers which have been collected using
+// the mg_add_response_header() and mg_remove_response_header() APIs.
+//
+// Note that this call implies the entire header section of the response
+// will now have been sent, i.e. mg_mark_end_of_header_transmission() is
+// called implicitly.
+//
+// Returns the number of bytes written to the socket.
+// Returns -1 on error.
+int mg_write_headers(struct mg_connection *conn);
 
 // Mark the end of the transmission of HTTP headers.
 //
