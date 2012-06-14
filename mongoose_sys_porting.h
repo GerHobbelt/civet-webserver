@@ -193,7 +193,7 @@ typedef long off_t;
 #define vsnprintf _vsnprintf
 #define mg_sleep(x) Sleep(x)
 
-#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
+#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY | _O_NOINHERIT)
 #define popen(x, y) _popen(x, y)
 #define pclose(x) _pclose(x)
 #define close(x) _close(x)

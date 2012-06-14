@@ -2399,11 +2399,10 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     mg_cry(conn, "%s: CreateProcess(%s): %d (%s)",
         __func__, cmdline, ERRNO, mg_strerror(ERRNO));
     pi.hProcess = (pid_t) -1;
-  } else {
-    (void) close(fd_stdin);
-    (void) close(fd_stdout);
-    (void) close(fd_stderr);
   }
+  (void) close(fd_stdin);
+  (void) close(fd_stdout);
+  (void) close(fd_stderr);
 
   (void) CloseHandle(si.hStdError);
   (void) CloseHandle(si.hStdOutput);
@@ -4413,11 +4412,6 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     send_http_error(conn, 500, NULL,
         "Cannot create CGI pipe: %s", mg_strerror(ERRNO));
     goto done;
-  } else if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
-          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
-    send_http_error(conn, 500, NULL,
-        "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
-    goto done;
   } else if ((in = fdopen(fd_stdin[1], "wb")) == NULL ||
       (out = fdopen(fd_stdout[0], "rb")) == NULL ||
       (err = fdopen(fd_stderr[0], "rb")) == NULL) {
@@ -4425,10 +4419,15 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
         "fopen: %s", mg_strerror(ERRNO));
     goto done;
   }
-
   setbuf(in, NULL);
   setbuf(out, NULL);
   setbuf(err, NULL);
+  if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
+          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
+    send_http_error(conn, 500, NULL,
+        "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
+    goto done;
+  }
 
   // spawn_process() must close those!
   // If we don't mark them as closed, close() attempt before
