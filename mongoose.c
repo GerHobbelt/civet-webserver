@@ -2065,7 +2065,6 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   HANDLE me;
   char *p;
   const char *interp;
-  const char *ws_in_path;
   char cmdline[2 * PATH_MAX], buf[PATH_MAX];
   FILE *fp;
   STARTUPINFOA si = { sizeof(si) };
@@ -2104,12 +2103,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     }
     interp = buf + 2;
   }
-  // check if binary path has spaces in it and set up the proper delimiters when it has:
-  ws_in_path = strchr(interp, ' ');
-  ws_in_path = (ws_in_path ? "\"" : "");
 
-  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%s%s%c%s",
-                     ws_in_path, interp, ws_in_path, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
+  (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
+                     interp, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
 
   DEBUG_TRACE(("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
@@ -6106,7 +6102,22 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     assert(i < (int)ARRAY_SIZE(ctx->config));
     assert(i >= 0);
     ctx->config[i] = mg_strdup(value);
-    DEBUG_TRACE(("[%s] -> [%s]", name, value));
+	// at least on Windows, replace single quotes around CGI binary path
+	// by double quotes or your CGI won't ever run.
+	// And you can't easily put double quotes around it from the command line,
+	// so kludge it is.
+	if (i == CGI_INTERPRETER && value[0] == '\'') {
+	  char *qp = ctx->config[i];
+	  *qp++ = '"';
+	  qp = strchr(qp, '\'');
+	  if (!qp) {
+		mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
+		free_context(ctx);
+		return NULL;
+	  }
+	  *qp = '"';
+	}
+    DEBUG_TRACE(("[%s] -> [%s]", name, ctx->config[i]));
   }
 
   // Set default value if needed
