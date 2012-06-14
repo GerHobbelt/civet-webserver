@@ -1701,14 +1701,17 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     dst += n;
     space -= n;
 
-    // now we know we still have two extra bytes free space; this is used in mg_write_headers()
+    // now we know we still have two extra bytes free space; this is used in mg_write_http_response_head()
     return 0;
 }
 
-int mg_write_headers(struct mg_connection *conn)
+int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text)
 {
     int i, n, rv;
     char *buf;
+
+    if (mg_have_headers_been_sent(conn))
+        return 0;
 
     /*
     This code expects all headers to be stored in memory 'in order'.
@@ -1719,6 +1722,11 @@ int mg_write_headers(struct mg_connection *conn)
     */
     if (compact_tx_headers(conn) < 0)
         return -1;
+
+    if (status_code <= 0)
+        status_code = conn->request_info.status_code;
+    if (is_empty(status_text))
+        status_text = mg_get_response_code_text(conn->request_info.status_code);
 
     /*
     Once we are sure of the header order assumption, this becomes an
@@ -1750,7 +1758,8 @@ int mg_write_headers(struct mg_connection *conn)
         buf[conn->tx_headers_len] = '\r';
         buf[conn->tx_headers_len + 1] = '\n';
 
-        rv = mg_write(conn, buf, conn->tx_headers_len + 2);
+        rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
+        rv += mg_write(conn, buf, conn->tx_headers_len + 2);
 
         /*
         Error or success, always restore the header set to its original
@@ -1768,7 +1777,7 @@ int mg_write_headers(struct mg_connection *conn)
     }
     else
     {
-        rv = mg_write(conn, "\r\n", 2);
+        rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n", status_code, status_text);
     }
 
     mg_mark_end_of_header_transmission(conn);
@@ -1810,6 +1819,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
+    // also override the 'reason' text when the status code
+    // didn't make it or was altered in the callback:
+    if (status != conn->request_info.status_code)
+      reason = mg_get_response_code_text(conn->request_info.status_code);
     status = conn->request_info.status_code;
     if (conn->request_info.status_custom_description)
       len = (int)strlen(conn->request_info.status_custom_description);
@@ -1855,8 +1868,6 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       if (len == 0 ||
           (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
            !mg_have_headers_been_sent(conn))) {
-        mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
-
         /* issue #229: Only include the content-length if there is a response body.
          Otherwise an incorrect Content-Type generates a warning in
          some browsers when a static file request returns a 304
@@ -1866,7 +1877,8 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_add_response_header(conn, 0, "Content-Type", "text/plain");
         }
         mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
-        mg_write_headers(conn);
+        mg_write_http_response_head(conn, status, reason);
+
         if (len > 0) {
           mg_write(conn, conn->request_info.status_custom_description, len);
         }
@@ -3564,16 +3576,13 @@ static void send_authorization_request(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
     return;
   conn->request_info.status_code = 401;
-  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n",
-      conn->request_info.status_code,
-      mg_get_response_code_text(conn->request_info.status_code));
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Content-Length", "0");
   mg_add_response_header(conn, 0, "WWW-Authenticate", "Digest qop=\"auth\", "
                          "realm=\"%s\", nonce=\"%lu\"",
                          get_conn_option(conn, AUTHENTICATION_DOMAIN),
                          (unsigned long) time(NULL));
-  (void) mg_write_headers(conn);
+  (void) mg_write_http_response_head(conn, 0, 0);
 }
 
 static int is_authorized_for_put(struct mg_connection *conn) {
@@ -3822,10 +3831,9 @@ static void handle_directory_request(struct mg_connection *conn,
 
   conn->must_close = 1;
   conn->request_info.status_code = 200;
-  mg_printf(conn, "HTTP/1.1 200 OK\r\n");
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
-  mg_write_headers(conn);
+  mg_write_http_response_head(conn, 0, 0);
   mg_printf(conn,
       "<html><head><title>Index of %s</title>"
       "<style>th {text-align: left;}</style></head>"
@@ -3947,9 +3955,6 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   gmt_time_string(date, sizeof(date), &curtime);
   gmt_time_string(lm, sizeof(lm), &stp->mtime);
 
-  n = mg_printf(conn,
-      "HTTP/1.1 %d %s\r\n",
-      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code));
   mg_add_response_header(conn, 0, "Date", "%s", date);
   mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
   mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
@@ -3958,7 +3963,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   mg_add_response_header(conn, 0, "Content-Length", "%" INT64_FMT, cl);
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
-  mg_write_headers(conn);
+  n = mg_write_http_response_head(conn, 0, 0);
   n--; // 0 --> -1
 
   if (n > 0 &&
@@ -4118,10 +4123,18 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
   } else {
-    if (expect != NULL) {
+    if (expect != NULL && !mg_have_headers_been_sent(conn)) {
       if (mg_printf(conn, "HTTP/1.1 100 Continue\r\n\r\n") <= 0)
         goto failure;
-      mg_mark_end_of_header_transmission(conn);
+      // per RFC2616, section 8.2.3: An origin server that sends a
+      // 100 (Continue) response MUST ultimately send a final
+      // status code, once the request body is received and processed,
+      // unless it terminates the transport connection prematurely.
+      //
+      // Hence, we must ensure that mg_have_headers_been_sent()
+      // will produce 0 after this. Hence we tweak the counters:
+      conn->num_bytes_sent = -1;
+      assert(mg_have_headers_been_sent(conn) == 0);
     }
 
     buffered = conn->buf + conn->request_len;
@@ -4488,7 +4501,6 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
       conn->must_close = 1;
     }
   }
-  (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n", conn->request_info.status_code, !is_empty(status) ? status : mg_get_response_code_text(conn->request_info.status_code)); // <bel>: fix  296
 
   // Send headers
   for (i = 0; i < ri.num_headers; i++) {
@@ -4498,7 +4510,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   if (get_header(&ri, "Connection") == NULL) {
     mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   }
-  mg_write_headers(conn);
+  mg_write_http_response_head(conn, 0, status);
 
   // Send chunk of data that may be read after the headers
   (void) mg_write(conn, buf + headers_len,
@@ -4623,10 +4635,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
   mg_set_response_code(conn, mg_stat(path, &st) == 0 ? 200 : 201);
 
   if ((rc = put_dir(path)) == 0) {
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
-              conn->request_info.status_code,
-              mg_get_response_code_text(conn->request_info.status_code));
-    mg_mark_end_of_header_transmission(conn);
+    mg_write_http_response_head(conn, 0, 0);
   } else if (rc == -1) {
     send_http_error(conn, 500, NULL,
         "put_dir(%s): %s", path, mg_strerror(ERRNO));
@@ -4643,10 +4652,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
     if (forward_body_data(conn, fp, INVALID_SOCKET, NULL, 1)) {
-      (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
-                       conn->request_info.status_code,
-                       mg_get_response_code_text(conn->request_info.status_code));
-      mg_mark_end_of_header_transmission(conn);
+      mg_write_http_response_head(conn, 0, 0);
     }
     (void) mg_fclose(fp);
   }
@@ -4934,13 +4940,10 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     conn->must_close = 1;
     set_close_on_exec(fileno(fp));
     mg_set_response_code(conn, 200);
-    mg_printf(conn, "HTTP/1.1 %d %s\r\n",
-              conn->request_info.status_code,
-              mg_get_response_code_text(conn->request_info.status_code));
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
     mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
 
-    mg_write_headers(conn);
+    mg_write_http_response_head(conn, 0, 0);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
   }
@@ -4950,14 +4953,10 @@ static void send_options(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
     return;
   mg_set_response_code(conn, 200);
-  (void) mg_printf(conn,
-      "HTTP/1.1 %d %s\r\n",
-      conn->request_info.status_code,
-      mg_get_response_code_text(conn->request_info.status_code));
   mg_add_response_header(conn, 0, "Allow", "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
   mg_add_response_header(conn, 0, "DAV", "1");
 
-  mg_write_headers(conn);
+  mg_write_http_response_head(conn, 0, 0);
 }
 
 // Writes PROPFIND properties for a collection element
@@ -4999,13 +4998,10 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
     return;
   conn->must_close = 1;
   mg_set_response_code(conn, 207);
-  mg_printf(conn, "HTTP/1.1 %d %s\r\n",
-            conn->request_info.status_code,
-            mg_get_response_code_text(conn->request_info.status_code));
   mg_add_response_header(conn, 0, "Connection", "close");
   mg_add_response_header(conn, 0, "Content-Type", "text/xml; charset=utf-8");
 
-  mg_write_headers(conn);
+  mg_write_http_response_head(conn, 0, 0);
 
   mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
@@ -5073,10 +5069,8 @@ static void handle_request(struct mg_connection *conn) {
     send_http_error(conn, 404, NULL, "File not found: URI=%s, PATH=%s", ri->uri, path);
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
     if (301 == mg_set_response_code(conn, 301)) {
-      (void) mg_printf(conn,
-          "HTTP/1.1 301 Moved Permanently\r\n");
       mg_add_response_header(conn, 0, "Location", "%s/", ri->uri);
-      mg_write_headers(conn);
+      mg_write_http_response_head(conn, 0, 0);
     }
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);

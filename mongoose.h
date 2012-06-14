@@ -290,16 +290,26 @@ int mg_modify_passwords_file(const char *passwords_file_name,
 // Return -1 on error.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
-// Write the set of response headers which have been collected using
-// the mg_add_response_header() and mg_remove_response_header() APIs.
+// Write the HTTP response code and the set of response headers which
+// have been collected using the mg_add_response_header() and
+// mg_remove_response_header() APIs.
 //
 // Note that this call implies the entire header section of the response
 // will now have been sent, i.e. mg_mark_end_of_header_transmission() is
 // called implicitly.
 //
-// Returns the number of bytes written to the socket.
+// When 'status_code' <= 0, then the default (stored in the
+// connection::request_info) will be used.
+//
+// When 'status_text' is NULL or an empty string, then the default
+// will be used (which is the string produced by mg_get_response_code_text()
+// for the (default or explicit) status_code.
+//
+// Returns the number of bytes written to the socket. 0 when the
+// connection was closed already or when the HTTP response header has
+// already been sent before.
 // Returns -1 on error.
-int mg_write_headers(struct mg_connection *conn);
+int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text);
 
 // Mark the end of the transmission of HTTP headers.
 //
