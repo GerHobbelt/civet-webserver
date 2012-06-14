@@ -373,9 +373,12 @@ struct mg_connection {
   int64_t content_len;        // received Content-Length header value
   int64_t consumed_content;   // How many bytes of content is already read
   char *buf;                  // Buffer for received data
-  int buf_size;               // Buffer size
+  int buf_size;               // Buffer size for received data / same buffer size is also used for transmitting data (response headers)
   int request_len;            // Size of the request + headers in buffer buf[]
-  int data_len;               // Total size of data in buffer buf[]
+  int data_len;               // Total size of received data in buffer buf[]
+
+  int tx_headers_len;         // Size of the response headers in buffer buf[]
+  int tx_can_compact;		  // signal whether a 'compact' operation would have any effect at all
 
   char error_logfile_path[PATH_MAX+1]; // cached value: path to the error logfile designated to this connection/CTX
   char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
@@ -1127,14 +1130,18 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
   if (buflen == 0)
     return 0;
 
+  // shortcut for speed:
+  if (!strchr(fmt, '%'))
+  {
+	  return (int)mg_strlcpy(buf, fmt, buflen);
+  }
+  buf[0] = 0;
   n = vsnprintf(buf, buflen, fmt, ap);
   buf[buflen - 1] = 0;
 
   if (n < 0) {
     mg_cry(conn, "vsnprintf error / overflow");
     // MSVC produces -1 on printf("%s", str) for very long 'str'!
-    n = (int) buflen - 1;
-    buf[n] = '\0';
     n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     mg_cry(conn, "truncating vsnprintf buffer: [%.*s]",
@@ -1167,14 +1174,17 @@ int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, si
   if (buflen == 0)
     return 0;
 
+  // shortcut for speed:
+  if (!strchr(fmt, '%'))
+  {
+	  return (int)mg_strlcpy(buf, fmt, buflen);
+  }
   buf[0] = 0;
   n = vsnprintf(buf, buflen, fmt, ap);
   buf[buflen - 1] = 0;
 
   if (n < 0) {
     // MSVC produces -1 on printf("%s", str) for very long 'str'!
-    n = (int) buflen - 1;
-    buf[n] = '\0';
     n = (int)strlen(buf);
   } else if (n >= (int) buflen) {
     n = (int) buflen - 1;
@@ -1492,6 +1502,144 @@ static int should_keep_alive(struct mg_connection *conn) {
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
   return should_keep_alive(conn) ? "keep-alive" : "close";
+}
+
+// Return negative value on error; otherwise number of bytes saved by compacting.
+static int compact_tx_headers(struct mg_connection *conn)
+{
+	return 0;
+}
+
+int mg_remove_response_header(struct mg_connection *conn, const char *tag)
+{
+	int i = -1;
+	int found = 0;
+
+	if (is_empty(tag))
+		return -1;
+
+	// check whether tag is already listed in the set:
+	for (i = conn->request_info.num_response_headers; i-- > 0; )
+	{
+		const char *key = conn->request_info.response_headers[i].name;
+
+		if (!mg_strcasecmp(tag, key)) {
+			// ditch the key + value:
+			found++;
+			conn->request_info.response_headers[i].name = NULL;
+		}
+	}
+	// keep the order of the keys intact: compact the header set once we've removed all 'tag' occurrences
+	if (found)
+	{
+		int n = conn->request_info.num_response_headers;
+		for (i = 0; i < n; i++)
+		{
+			if (!conn->request_info.response_headers[i].name)
+			{
+				int j;
+
+				for (j = i + 1; j < n; j++)
+				{
+					if (conn->request_info.response_headers[j].name)
+					{
+						conn->request_info.response_headers[i++] = conn->request_info.response_headers[j];
+					}
+				}
+				break;
+			}
+		}
+		conn->request_info.num_response_headers = i;
+		conn->tx_can_compact = 1;
+	}
+	return found;
+}
+
+int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, ...) {
+	int i = -1;
+	int n, space;
+	char *dst;
+	char *bufbase;
+	va_list ap;
+
+	if (is_empty(tag))
+		return -1;
+	if (!value_fmt)
+		value_fmt = "";
+
+	bufbase = conn->buf + conn->buf_size;
+	dst = bufbase + conn->tx_headers_len;
+	space = conn->buf_size - conn->tx_headers_len;
+
+	if (!force_add)
+	{
+		// check whether tag is already listed in the set:
+		for (i = conn->request_info.num_response_headers; i-- > 0; )
+		{
+			const char *key = conn->request_info.response_headers[i].name;
+
+			if (!mg_strcasecmp(tag, key)) {
+				// re-use the tag, ditch the value:
+				conn->tx_can_compact = 1;
+				break; 
+			}
+		}
+	}
+	if (i < 0) // this tag wasn't found: add it
+	{
+		i = conn->request_info.num_headers;
+		if (i >= ARRAY_SIZE(conn->request_info.response_headers)) 
+		{
+			mg_cry(conn, "%s: too many headers", __func__);
+			return -1;
+		}
+		for(;;)
+		{
+			n = (int)mg_strlcpy(dst, tag, space);
+			if (n + 1 < space)
+				break;
+			// we need to compact and retry, and when it still fails then, we're toast.
+			if (compact_tx_headers(conn) <= 0)
+			{
+				mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
+				return -1;
+			}
+			dst = bufbase + conn->tx_headers_len;
+			space = conn->buf_size - conn->tx_headers_len;
+		}
+		n++; // include NUL sentinel in count
+		conn->tx_headers_len += n;
+		dst += n;
+		space -= n;
+	}
+
+	// now store the value:
+	for(;;)
+	{
+		va_start(ap, value_fmt);
+		n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
+		va_end(ap);
+		// n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
+		if (n + 1 < space && n > 0)
+			break;
+		// only accept n==0 when the value_fmt is empty and there's nothing to compact or (heuristic!) when there's 'sufficient space' to write:
+		if (n == 0 && (!conn->tx_can_compact || is_empty(value_fmt) || space >= MG_MAX(BUFSIZ, conn->buf_size / 4)))
+			break;
+		// we need to compact and retry, and when it still fails then, we're toast.
+		if (compact_tx_headers(conn) <= 0)
+		{
+			mg_cry(conn, "%s: header buffer overflow for key %s", __func__, tag);
+			return -1;
+		}
+		dst = bufbase + conn->tx_headers_len;
+		space = conn->buf_size - conn->tx_headers_len;
+	}
+	n++; // include NUL sentinel in count
+	conn->tx_headers_len += n;
+	dst += n;
+	space -= n;
+
+	return 0;
 }
 
 /*
@@ -3937,7 +4085,7 @@ static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
   va_end(ap);
 
   // Make sure we do not overflow buffer and the envp array
-  if (n > 0 && n + 1 < space &&
+  if (n > 0 && n + 1 < (int)space &&
       block->nvars < (int) ARRAY_SIZE(block->vars) - 2) {
     // Append a pointer to the added string into the envp array
     block->vars[block->nvars++] = added;
@@ -4614,7 +4762,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
 			  kv += ve + 1 - s;
 			  kvlen = strlen(kv);
 			  if (mg_write(conn, kv, kvlen) != kvlen) {
-				send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, kvlen, path);
+				send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)kvlen, path);
 				return -1;
 			  }
 			  break;
@@ -5797,7 +5945,7 @@ static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn;
   int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
-  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size);
+  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 2);
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     return;

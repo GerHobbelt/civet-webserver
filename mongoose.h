@@ -67,7 +67,9 @@ struct mg_request_info {
   struct mg_header {
     char *name;                    // HTTP header name
     char *value;                   // HTTP header value
-  } http_headers[64];              // Maximum 64 headers
+  } http_headers[64];              // Maximum 64 request headers
+  int num_response_headers;        // Number of response headers
+  struct mg_header response_headers[64];  // Headers to be sent with HTTP response. Provided by user.
 };
 
 // Various events on which user-defined function is called by Mongoose.
@@ -384,13 +386,39 @@ int mg_get_cookie(const struct mg_connection *,
 // Returns the HTTP response code.
 int mg_set_response_code(struct mg_connection *conn, int status);
 
+// Adds/Overrides header to be sent in outgoing HTTP response.
+//
+// The default behaviour (force_add == 0) is to 'upsert', i.e. either insert the tag+value when
+// it has not been added before, or replace the existing value for the given tag.
+// When replacing, it will always replace the first occurrence of the tag in the existing
+// set.
+// When force_add != 0, then the tag+value will always be added to the header set. This is handy for
+// cookie tags, for example.
+//
+// The value_fmt parameter is equivalent to a printf(fmt, ...) 'fmt' argument: the value stored
+// with the tag is constructed from this format string and any optional extra parameters a la sprintf().
+//
+// Return zero on success, non-zero otherwise.
+int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, ...)
+#ifdef __GNUC__
+    __attribute__((format(printf, 4, 5)))
+#endif
+;
+
+// Remove the specified response header, if available.
+//
+// When multiple entries of the tag are found, all aare removed from the set.
+//
+// Return number of occurrences removed (zero or more) on success, negative value on error.
+int mg_remove_response_header(struct mg_connection *conn, const char *tag);
+
 // Handle custom error pages, i.e. nested page requests.
 // request_info struct will contain info about the original
 // request; the uri argument points at the subrequest itself.
 //
 // Error page requests are _always_ treated as GET requests.
 //
-// One substitution parameter is supported in the 'uri' 
+// One substitution parameter is supported in the 'uri'
 // argument: '$E' will be replaced by the numeric status
 // code (HTTP response code), so you may feed us URIs
 // like '/error_page.php?status=$E'.
@@ -420,7 +448,6 @@ const char *mg_version(void);
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
 
-
 // Return the HTTP response code string for the given response code
 const char *mg_get_response_code_text(int response_code);
 
@@ -442,7 +469,7 @@ int mg_strncasecmp(const char *s1, const char *s2, size_t len);
 // same as strncasecmp() but without any string length limit
 int mg_strcasecmp(const char *s1, const char *s2);
 
-// find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which 
+// find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which
 // aren't available on most platforms.
 const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize);
 
