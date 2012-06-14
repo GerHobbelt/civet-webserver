@@ -302,7 +302,7 @@ struct socket {
 
 typedef enum {
   CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
-  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ACCESS_LOG_FILE,
+  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ERROR_FILE, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
   ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
@@ -320,6 +320,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "R", "authentication_domain",         "mydomain.com",
   "S", "ssi_pattern",                   "**.shtml$|**.shtm$",
   "",  "ssi_marker",                    NULL,
+  "Z", "error_file",                    "404=/error/404.shtml,0=/error/error.shtml",
   "a", "access_log_file",               NULL,
   "c", "ssl_chain_file",                NULL,
   "d", "enable_directory_listing",      "yes",
@@ -362,6 +363,7 @@ struct mg_context {
 
 struct mg_connection {
   int must_close;             // 1 if connection must be closed
+  int requesting_errpage;     // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;
   SSL *ssl;                   // SSL descriptor
@@ -1059,11 +1061,20 @@ const char *mg_version(void) {
   return MONGOOSE_VERSION;
 }
 
-static void mg_strlcpy(register char *dst, register const char *src, size_t n) {
+size_t mg_strlcpy(register char *dst, register const char *src, size_t n) {
+  char *b = dst;
   for (; *src != '\0' && n > 1; n--) {
     *dst++ = *src++;
   }
   *dst = '\0';
+  return dst - b;
+}
+
+size_t mg_strnlen(const char *src, size_t maxlen) {
+  const char *p = (const char *)memchr(src, 0, maxlen);
+  if (p)
+	return p - src;
+  return maxlen;
 }
 
 static int lowercase(const char *s) {
@@ -1320,7 +1331,7 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
 }
 
 // A helper function for traversing comma separated list of values.
-// It returns a list pointer shifted to the next value, of NULL if the end
+// It returns a list pointer shifted to the next value, or NULL if the end
 // of the list found.
 // Value is stored in val vector. If value has form "x=y", then eq_val
 // vector is initialized to point to the "y" part, and val vector length
@@ -1412,6 +1423,52 @@ static int is_legal_response_code(int status) {
     return (status >= 100 && status < 600) || (status >= 1000 && status < 5000);
 }
 
+int mg_set_response_code(struct mg_connection *conn, int status) {
+  // 5xx error codes win over everything else (1xx/2xx/3xx/4xx/>=1000)
+  // errors (4xx/5xx) win over signals and 'good' codes (1xx/2xx/3xx)
+  // signals (3xx) win over 'good' codes (1xx/2xx) but then 2xx codes also win over 3xx and 1xx codes!
+  // 1xx signals win over 'good' codes (2xx) but then 2xx codes also win over 3xx and 1xx codes!
+  // WebSocket codes (>=1000) win over everything but internal failures (5xx)
+  int old_status = conn->request_info.status_code;
+  if (!is_legal_response_code(old_status)) {
+    conn->request_info.status_code = status;
+  } else {
+	int old_series = old_status / 100;
+	int series = status / 100;
+	assert(old_series >= 1);
+	assert(series >= 1);
+    switch (series) {
+	case 2: // 2xx
+	  // only overrides lower 2xx codes:
+	  if (old_series == 2 && old_status < status)
+	    conn->request_info.status_code = status;
+	  else if (old_series == 3 || old_series == 1)
+		conn->request_info.status_code = status;
+	  break;
+
+	case 1: // 1xx
+	  if (old_series == 2)
+		conn->request_info.status_code = status;
+	  break;
+
+	case 3: // 3xx
+	case 4: // 4xx
+	  if (old_series < series)
+		conn->request_info.status_code = status;
+	  break;
+
+	default: // WebSocket series
+    case 5:  // 5xx
+	  if (old_series != 5)
+	    conn->request_info.status_code = status;
+	  else if (old_status == 500) // more specific 5xx errors win over generic 500
+		conn->request_info.status_code = status;
+	  break;
+	}
+  }
+  return conn->request_info.status_code;
+}
+
 // HTTP 1.1 assumes keep alive if "Connection:" header is not set
 // This function must tolerate situations when connection info is not
 // set up, for example if request parsing failed.
@@ -1458,21 +1515,20 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   buf[0] = '\0';
   custom_len = 0;
   len = mg_snprintf(conn, buf, sizeof(buf) - 2, "Error %d: %s", status, reason);
-  if (!is_empty(fmt))
-  {
+  if (!is_empty(fmt)) {
     custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
-    if (custom_len > 0)
-    {
+    if (custom_len > 0) {
       buf[len++] ='\t';
       len += custom_len;
     }
   }
 
-  conn->request_info.status_code = status;
+  mg_set_response_code(conn, status);
   conn->request_info.status_custom_description = buf;
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
+	status = conn->request_info.status_code;
     if (conn->request_info.status_custom_description)
       len = (int)strlen(conn->request_info.status_custom_description);
     else
@@ -1481,43 +1537,60 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     if (p)
       *p = 0;
 
+	mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
+		    __func__, conn->request_info.status_custom_description,
+			conn->request_info.http_version,
+			conn->request_info.request_method, conn->request_info.uri,
+			(conn->request_info.query_string ? "?" : ""),
+			(conn->request_info.query_string ? conn->request_info.query_string : ""),
+			(p ? p + 1 : ""));
+
     // Errors 1xx, 204 and 304 MUST NOT send a body
     if (status > 199 && status != 204 && status != 304) {
-      mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
-          __func__, conn->request_info.status_custom_description,
-          conn->request_info.http_version,
-          conn->request_info.request_method, conn->request_info.uri,
-          (conn->request_info.query_string ? "?" : ""),
-          (conn->request_info.query_string ? conn->request_info.query_string : ""),
-          (p ? p + 1 : ""));
       if (p)
         *p = '\n';
-    }
-    else
-    {
+    } else {
       len = 0;
     }
     DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
 
-    if (!mg_have_headers_been_sent(conn)) {
-      mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
+	// do NOT produce the nested error (allow parent to send its own error page/info to client):
+    if (!mg_have_headers_been_sent(conn) && !mg_is_producing_nested_page(conn)) {
+	  const char *errflist = get_conn_option(conn, ERROR_FILE);
+	  struct vec filename_vec;
+	  struct vec status_vec;
 
-      /* issue #229: Only include the content-length if there is a response body.
-       Otherwise an incorrect Content-Type generates a warning in
-       some browsers when a static file request returns a 304
-       "not modified" error. */
-      if (len > 0) {
-        mg_printf(conn, "Content-Length: %d\r\n"
-                  "Content-Type: text/plain\r\n", len);
-      }
-      mg_printf(conn, "Connection: %s\r\n\r\n",
-                suggest_connection_header(conn));
+	  // Traverse error files list. If an entry matches the given status_code, break the loop.
+	  // '0' is treated as a wildcard match.
+	  while ((errflist = next_option(errflist, &status_vec, &filename_vec)) != NULL) {
+		int v = atoi(status_vec.ptr);
 
-      mg_mark_end_of_header_transmission(conn);
-      if (len > 0)
-      {
-        mg_write(conn, conn->request_info.status_custom_description, len);
-      }
+		if (v == 0 || v == status)
+          break;
+	  }
+	  // output basic HTTP response when either no error content is allowed (len == 0)
+	  // or when the error page production failed and hasn't yet written the headers itself.
+	  if (len == 0 ||
+		  (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
+		   !mg_have_headers_been_sent(conn))) {
+        mg_printf(conn, "HTTP/1.1 %d %s\r\n", status, reason);
+
+        /* issue #229: Only include the content-length if there is a response body.
+         Otherwise an incorrect Content-Type generates a warning in
+         some browsers when a static file request returns a 304
+         "not modified" error. */
+        if (len > 0) {
+          mg_printf(conn, "Content-Length: %d\r\n"
+                    "Content-Type: text/plain\r\n", len);
+        }
+        mg_printf(conn, "Connection: %s\r\n\r\n",
+                  suggest_connection_header(conn));
+
+        mg_mark_end_of_header_transmission(conn);
+        if (len > 0) {
+          mg_write(conn, conn->request_info.status_custom_description, len);
+        }
+	  }
     }
   }
   // kill lingering reference to local storage:
@@ -2551,7 +2624,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   // Win32: CGI can fail when being fed an interpreter plus relative path to the script;
   // keep in mind that other scenarios, e.g. user event handlers, may fail similarly
-  // when receiving releative filesystem paths, so we solve the issue once and for all,
+  // when receiving relative filesystem paths, so we solve the issue once and for all,
   // right here:
 #if defined(_WIN32)
   {
@@ -3200,6 +3273,8 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
 }
 
 static void send_authorization_request(struct mg_connection *conn) {
+  if (mg_is_producing_nested_page(conn))
+	return;
   conn->request_info.status_code = 401;
   (void) mg_printf(conn,
       "HTTP/1.1 401 Unauthorized\r\n"
@@ -3446,6 +3521,8 @@ static void handle_directory_request(struct mg_connection *conn,
   int i, sort_direction;
   struct dir_scan_data data = { NULL, 0, 128 };
 
+  if (mg_is_producing_nested_page(conn))
+	return;
   if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
     send_http_error(conn, 500, "Cannot open directory",
                     "Error: opendir(%s): %s", dir, strerror(ERRNO));
@@ -3456,6 +3533,7 @@ static void handle_directory_request(struct mg_connection *conn,
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
   conn->must_close = 1;
+  conn->request_info.status_code = 200;
   mg_printf(conn,
             "HTTP/1.1 200 OK\r\n"
             "Connection: %s\r\n"
@@ -3489,7 +3567,6 @@ static void handle_directory_request(struct mg_connection *conn,
   free(data.entries);
 
   mg_printf(conn, "</table></body></html>");
-  conn->request_info.status_code = 200;
 }
 
 // Send len bytes from the opened file to the client.
@@ -3557,7 +3634,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
 
   get_mime_type(conn->ctx, path, &mime_vec);
   cl = stp->size;
-  conn->request_info.status_code = 200;
+  mg_set_response_code(conn, 200);
   range[0] = '\0';
 
   if ((fp = mg_fopen(path, "rb")) == NULL) {
@@ -3598,8 +3675,10 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
       "Connection: %s\r\n"
       "Accept-Ranges: bytes\r\n"
       "%s\r\n",
-      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code), date, lm, etag, (int) mime_vec.len,
-      mime_vec.ptr, cl, suggest_connection_header(conn), range);
+      conn->request_info.status_code, mg_get_response_code_text(conn->request_info.status_code),
+	  date, lm, etag,
+	  (int) mime_vec.len, mime_vec.ptr,
+	  cl, suggest_connection_header(conn), range);
   mg_mark_end_of_header_transmission(conn);
   n--; // 0 --> -1
 
@@ -3828,6 +3907,8 @@ struct cgi_env_block {
 
 // Append VARIABLE=VALUE\0 string to the buffer, and add a respective
 // pointer into the vars array.
+//
+// Return NULL on error, otherwise return pointer to saved variable=value string.
 static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
@@ -3836,29 +3917,33 @@ static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 
 static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 {
-  int n, space;
+  int n;
+  size_t space;
   char *added;
   va_list ap;
 
   // Calculate how much space is left in the buffer
   space = sizeof(block->buf) - block->len - 2;
-  assert(space >= 0);
+  assert((int)space >= 0);
 
   // Make a pointer to the free space int the buffer
   added = block->buf + block->len;
 
   // Copy VARIABLE=VALUE\0 string into the free space
   va_start(ap, fmt);
-  n = mg_vsnprintf(block->conn, added, (size_t) space, fmt, ap);
+  n = mg_vsnprintf(block->conn, added, space, fmt, ap);
   va_end(ap);
 
   // Make sure we do not overflow buffer and the envp array
-  if (n > 0 && n < space &&
+  if (n > 0 && n + 1 < space &&
       block->nvars < (int) ARRAY_SIZE(block->vars) - 2) {
     // Append a pointer to the added string into the envp array
-    block->vars[block->nvars++] = block->buf + block->len;
+    block->vars[block->nvars++] = added;
     // Bump up used length counter. Include \0 terminator
     block->len += n + 1;
+  } else {
+    mg_cry(block->conn, "%s: CGI env buffer overflow for fmt '%s'", __func__, fmt);
+	added = NULL;
   }
 
   return added;
@@ -3883,7 +3968,17 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   // Prepare the environment block
   addenv(blk, "GATEWAY_INTERFACE=CGI/1.1");
   addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
-  addenv(blk, "REDIRECT_STATUS=200"); // For PHP
+  if (conn->request_info.parent) {
+	addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
+	// write REDIRECT_ERROR_NOTES last as it may overflow the envp buffer.
+	// REDIRECT_URL ~ REQUEST_URI
+	addenv(blk, "REDIRECT_URL=%s", conn->request_info.parent->uri);
+	// REDIRECT_METHOD ~ REQUEST_METHOD
+	addenv(blk, "REDIRECT_METHOD=%s", conn->request_info.parent->request_method);
+	// REDIRECT_QUERY_STRING ~ QUERY_STRING
+	if (!is_empty(conn->request_info.parent->query_string))
+	  addenv(blk, "REDIRECT_QUERY_STRING=%s", conn->request_info.parent->query_string);
+  }
 
   addenv(blk, "SERVER_PORT=%d", get_socket_port(&conn->client.lsa));
 
@@ -3907,7 +4002,7 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   if ((s = mg_get_header(conn, "Content-Type")) != NULL)
     addenv(blk, "CONTENT_TYPE=%s", s);
 
-  if (conn->request_info.query_string != NULL)
+  if (is_empty(conn->request_info.query_string))
     addenv(blk, "QUERY_STRING=%s", conn->request_info.query_string);
 
   if ((s = mg_get_header(conn, "Content-Length")) != NULL)
@@ -3963,6 +4058,19 @@ static void prepare_cgi_environment(struct mg_connection *conn,
     addenv(blk, "%.*s", (int)var_vec.len, var_vec.ptr);
   }
 
+  p = conn->request_info.status_custom_description;
+  if (conn->request_info.parent && !is_empty(conn->request_info.parent->status_custom_description) && is_empty(p)) {
+	p = conn->request_info.parent->status_custom_description;
+  }
+  if (!is_empty(p)) {
+	p = addenv(blk, "REDIRECT_ERROR_NOTES=%s", p);
+	while (p && *p) {
+	  // tweak: replace all \n and \r in there by \t to make sure it's a single line value
+	  p += strcspn(p, "\r\n");
+	  if (*p)
+	    *p++ = '\t';
+	}
+  }
   blk->vars[blk->nvars++] = NULL;
   blk->buf[blk->len++] = '\0';
 
@@ -4058,21 +4166,23 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // Make up and send the status line
   if ((status = get_header(&ri, "Status")) != NULL) {
     char * chknum = NULL;
-    conn->request_info.status_code = strtol(status, &chknum, 10);
+	int response_code = (int)strtol(status, &chknum, 10);
     if (chknum != NULL)
       status = chknum + strspn(chknum, " ");
     else
       status = NULL;
-    if (!is_legal_response_code(conn->request_info.status_code)) {
+    if (!is_legal_response_code(response_code)) {
       send_http_error(conn, 500, NULL,
             "CGI program sent malformed HTTP Status header: [%s]",
             get_header(&ri, "Status"));
       goto done;
     }
+	if (response_code != mg_set_response_code(conn, response_code))
+	  status = NULL;
   } else if (get_header(&ri, "Location") != NULL) {
-    conn->request_info.status_code = 302;
+    mg_set_response_code(conn, 302);
   } else {
-    conn->request_info.status_code = 200;
+    mg_set_response_code(conn, 200);
   }
   if ((connection_status = get_header(&ri, "Connection")) != NULL) {
     // fix: keep-alive (storing connection_status is a performance bonus)
@@ -4213,10 +4323,14 @@ static void put_file(struct mg_connection *conn, const char *path) {
   FILE *fp;
   int rc;
 
-  conn->request_info.status_code = (mg_stat(path, &st) == 0 ? 200 : 201);
+  if (mg_is_producing_nested_page(conn))
+    return;
+  mg_set_response_code(conn, mg_stat(path, &st) == 0 ? 200 : 201);
 
   if ((rc = put_dir(path)) == 0) {
-    mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n", conn->request_info.status_code);
+    mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
+		      conn->request_info.status_code,
+			  mg_get_response_code_text(conn->request_info.status_code));
     mg_mark_end_of_header_transmission(conn);
   } else if (rc == -1) {
     send_http_error(conn, 500, NULL,
@@ -4234,8 +4348,9 @@ static void put_file(struct mg_connection *conn, const char *path) {
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
     if (forward_body_data(conn, fp, INVALID_SOCKET, NULL, 1)) {
-      (void) mg_printf(conn, "HTTP/1.1 %d OK\r\n\r\n",
-          conn->request_info.status_code);
+      (void) mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n",
+                       conn->request_info.status_code,
+		               mg_get_response_code_text(conn->request_info.status_code));
       mg_mark_end_of_header_transmission(conn);
     }
     (void) mg_fclose(fp);
@@ -4324,7 +4439,7 @@ static int do_ssi_exec(struct mg_connection *conn, const char *tag) {
 
 #endif // !NO_POPEN
 
-static const char *memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
+const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
 {
     if (haysize < needlesize)
         return NULL;
@@ -4351,6 +4466,12 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
   int rlen, roff, taglen;
   struct vec ssi_start = {0}, ssi_end = {0};
   const char *m;
+#if !defined(NO_CGI)
+  struct cgi_env_block blk;
+
+  // only init 'blk' when we need it
+  blk.conn = NULL;
+#endif
 
   if (include_level > 10) {
     mg_cry(conn, "SSI #include level is too deep (%s)", path);
@@ -4392,7 +4513,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
         roff = rlen;
         break;
       }
-      s = memfind(b, rlen, ssi_start.ptr, taglen);
+      s = mg_memfind(b, rlen, ssi_start.ptr, taglen);
       if (!s)
       {
         if (rlen >= taglen && mg_write(conn, b, rlen - taglen + 1) != rlen - taglen + 1)
@@ -4413,7 +4534,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       rlen -= s - b;
       b = s;
       s += taglen + 1;
-      e = memfind(s, rlen - (s - b), ssi_end.ptr, ssi_end.len);
+      e = mg_memfind(s, rlen - (s - b), ssi_end.ptr, ssi_end.len);
       if (!e)
       {
         // shift to start; load more data and retry, if possible:
@@ -4446,6 +4567,41 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
         if (do_ssi_exec(conn, s + 4))
           return -1;
 #endif // !NO_POPEN
+#if !defined(NO_CGI)
+	  } else if (!memcmp(s, "echo", 4)) {
+		// http://www.ssi-developer.net/ssi/ssi-echo.shtml
+		s = mg_memfind(s, e - s, "var=", 4);
+		if (!s)
+		  mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, buf);
+		else {
+		  const char *ve;
+		  int idx;
+		  s += 4;
+		  s += strspn(s, "\" ");
+		  ve = s + strcspn(s, " \"");
+		  if (ve > e) ve = e;
+		  *((char *)ve) = '=';
+		  // init 'blk' once, when we need it:
+		  if (!blk.conn) {
+	        prepare_cgi_environment(conn, path, &blk);
+		  }
+		  assert(blk.nvars > 0);
+		  assert(blk.vars[blk.nvars - 1] == NULL);
+		  for (idx = blk.nvars - 1; idx-- > 0; ) {
+			const char *kv = blk.vars[idx];
+			if (!strncmp(s, kv, ve + 1 - s)) {
+			  size_t kvlen;
+			  kv += ve + 1 - s;
+			  kvlen = strlen(kv);
+			  if (mg_write(conn, kv, kvlen) != kvlen) {
+				send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, kvlen, path);
+				return -1;
+			  }
+			  break;
+			}
+		  }
+		}
+#endif
       } else {
         // shouldn't we log the error and abort? Nope, in this case we decide to go on. Unsupported SSI features are ignored.
         mg_cry(conn, "%s: unknown SSI command: \"%s\"", path, buf);
@@ -4478,9 +4634,12 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   } else {
     conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-    conn->request_info.status_code = 200;
-    mg_printf(conn, "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/html\r\nConnection: %s\r\n\r\n",
+	mg_set_response_code(conn, 200);
+    mg_printf(conn, "HTTP/1.1 %d %s\r\n"
+              "Content-Type: text/html\r\n"
+			  "Connection: %s\r\n\r\n",
+			  conn->request_info.status_code,
+			  mg_get_response_code_text(conn->request_info.status_code),
               suggest_connection_header(conn));
     mg_mark_end_of_header_transmission(conn);
     send_ssi_file(conn, path, fp, 0);
@@ -4489,12 +4648,15 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 }
 
 static void send_options(struct mg_connection *conn) {
-  conn->request_info.status_code = 200;
-
+  if (mg_is_producing_nested_page(conn))
+	return;
+  mg_set_response_code(conn, 200);
   (void) mg_printf(conn,
-      "HTTP/1.1 200 OK\r\n"
+      "HTTP/1.1 %d %s\r\n"
       "Allow: GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS\r\n"
-      "DAV: 1\r\n\r\n");
+      "DAV: 1\r\n\r\n",
+	  conn->request_info.status_code,
+	  mg_get_response_code_text(conn->request_info.status_code));
   mg_mark_end_of_header_transmission(conn);
 }
 
@@ -4533,11 +4695,15 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
                             struct mgstat* st) {
   const char *depth = mg_get_header(conn, "Depth");
 
+  if (mg_is_producing_nested_page(conn))
+    return;
   conn->must_close = 1;
-  conn->request_info.status_code = 207;
-  mg_printf(conn, "HTTP/1.1 207 Multi-Status\r\n"
+  mg_set_response_code(conn, 207);
+  mg_printf(conn, "HTTP/1.1 %d %s\r\n"
             "Connection: close\r\n"
-            "Content-Type: text/xml; charset=utf-8\r\n\r\n");
+            "Content-Type: text/xml; charset=utf-8\r\n\r\n",
+			conn->request_info.status_code,
+			mg_get_response_code_text(conn->request_info.status_code));
   mg_mark_end_of_header_transmission(conn);
 
   mg_printf(conn,
@@ -4603,12 +4769,14 @@ static void handle_request(struct mg_connection *conn) {
                       mg_strerror(ERRNO));
     }
   } else if (stat_result != 0) {
-    send_http_error(conn, 404, NULL, "File not found");
+    send_http_error(conn, 404, NULL, "File not found: URI=%s, PATH=%s", ri->uri, path);
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
-    (void) mg_printf(conn,
-        "HTTP/1.1 301 Moved Permanently\r\n"
-        "Location: %s/\r\n\r\n", ri->uri);
-    mg_mark_end_of_header_transmission(conn);
+	if (301 == mg_set_response_code(conn, 301)) {
+      (void) mg_printf(conn,
+          "HTTP/1.1 301 Moved Permanently\r\n"
+          "Location: %s/\r\n\r\n", ri->uri);
+      mg_mark_end_of_header_transmission(conn);
+	}
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -4635,7 +4803,8 @@ static void handle_request(struct mg_connection *conn) {
                           -1,
                           path) > 0) {
     handle_ssi_file_request(conn, path);
-  } else if (is_not_modified(conn, &st)) {
+  } else if (is_not_modified(conn, &st) &&
+	         304 == mg_set_response_code(conn, 304)) {
     send_http_error(conn, 304, NULL, "");
   } else {
     handle_file_request(conn, path, &st);
@@ -4643,6 +4812,71 @@ static void handle_request(struct mg_connection *conn) {
   // and reset stack storage reference(s):
   ri->phys_path = NULL;
   ri->path_info = NULL; // see convert_uri_to_file_name()
+}
+
+int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len) {
+  if (!uri || !uri_len)
+	return -1;
+  {
+    size_t l = mg_strnlen(uri, uri_len);
+	if (!l)
+	  return -1;
+	uri_len = l;
+  }
+  conn->requesting_errpage++;
+  if (conn->requesting_errpage == 1) {
+    // store the original ri:
+    struct mg_request_info ri = conn->request_info;
+    char expanded_uri[PATH_MAX];
+    const char *s;
+	int i;
+
+	// fail when error happens in this section...
+	conn->requesting_errpage++;
+	if (sizeof(expanded_uri) < uri_len + 1)
+	  goto fail_dramatically;
+
+    s = mg_memfind(uri, uri_len, "$E", 2);
+    if (s) {
+      int n = mg_snq0printf(conn, expanded_uri, sizeof(expanded_uri), "%.*s%d%.*s",
+		  				    (int)(s - uri), uri,
+			 			    ri.status_code,
+						    (int)(uri_len - (s + 2 - uri)), s + 2);
+	  if (n + 1 >= sizeof(expanded_uri))
+  	    goto fail_dramatically;
+    } else {
+	  mg_strlcpy(expanded_uri, uri, uri_len + 1);
+    }
+	conn->requesting_errpage--;
+	// end of section...
+
+    conn->request_info.uri = expanded_uri;
+    conn->request_info.request_method = "GET";
+    conn->request_info.parent = &ri;
+	// nuke any Content-Length or Transfer-Encoding header, to prevent the 'nested' handler
+	// from incorrectly trying to (re)fetching the request content again.
+	// Also nuke Modified-Since header.
+	for (i = conn->request_info.num_headers; i-- > 0; )	{
+	  const char *key = conn->request_info.http_headers[i].name;
+	  if (!mg_strcasecmp(key, "Content-Length") ||
+		  !mg_strcasecmp(key, "Transfer-Encoding") ||
+		  !mg_strcasecmp(key, "If-Modified-Since") ||
+		  !mg_strcasecmp(key, "Expect")) {
+		conn->request_info.http_headers[i].name = "X-Clobbered";
+	  }
+	}
+
+    handle_request(conn);  // may increment requesting_errpage when failing internally!
+
+	// reset original values:
+fail_dramatically:
+	conn->request_info = ri;
+  }
+  return (conn->requesting_errpage == 1);
+}
+
+int mg_is_producing_nested_page(struct mg_connection *conn) {
+  return (conn && conn->requesting_errpage > 0);
 }
 
 static void close_all_listening_sockets(struct mg_context *ctx) {
@@ -5271,6 +5505,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->content_len = -1;
   conn->request_len = conn->data_len = 0;
   //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
+  conn->requesting_errpage = 0;
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
@@ -5984,7 +6219,7 @@ const char *mg_get_response_code_text(int response_code)
   case 415:   return "Unsupported Media Type"; // RFC2616 Section 10.4.16:
   case 416:   return "Requested range not satisfiable"; // RFC2616 Section 10.4.17:
   case 417:   return "Expectation Failed"; // RFC2616 Section 10.4.18:
-  case 420:   return "Emhance Your Calm"; // Twitter rate limiting
+  case 420:   return "Enhance Your Calm"; // Twitter rate limiting
   case 422:   return "Unprocessable Entity"; // WebDAV RFC4918
   case 423:   return "Locked"; // WebDAV RFC4918
   case 424:   return "Failed Dependency"; // WebDAV RFC4918

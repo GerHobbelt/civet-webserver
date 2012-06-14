@@ -44,6 +44,7 @@ struct mg_ip_address {
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  struct mg_request_info *parent;  // points to the request_info block for the original request when we're currently producing a custom error page; NULL otherwise.
   const char *request_method;      // "GET", "POST", etc
   char *uri;                       // URL-decoded URI
   char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
@@ -376,6 +377,30 @@ int mg_get_var(const char *data, size_t data_len,
 int mg_get_cookie(const struct mg_connection *,
                   const char *cookie_name, char *buf, size_t buf_len);
 
+// Set HTTP response code -- iff no response code for the current request
+// has already been set.
+// Hence use this function to 'set & hold' response codes.
+//
+// Returns the HTTP response code.
+int mg_set_response_code(struct mg_connection *conn, int status);
+
+// Handle custom error pages, i.e. nested page requests.
+// request_info struct will contain info about the original
+// request; the uri argument points at the subrequest itself.
+//
+// Error page requests are _always_ treated as GET requests.
+//
+// One substitution parameter is supported in the 'uri' 
+// argument: '$E' will be replaced by the numeric status
+// code (HTTP response code), so you may feed us URIs
+// like '/error_page.php?status=$E'.
+//
+// Return zero on success, non-zero on failure.
+int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len);
+
+// Return non-zero when we are currently inside the nested page handler
+// (mg_produce_nested_page()), so that we can adjust our behaviour.
+int mg_is_producing_nested_page(struct mg_connection *conn);
 
 // Return Mongoose version.
 const char *mg_version(void);
@@ -396,12 +421,24 @@ const char *mg_get_response_code_text(int response_code);
 
 // --- helper functions ---
 
+// a la strncpy() but doesn't copy past the source's NUL sentinel AND ensures that a NUL sentinel
+// is always written in 'dst'.
+// Returns the length of the 'dst' string.
+size_t mg_strlcpy(register char *dst, register const char *src, size_t dstsize);
+
+// Return the string length, limited by 'maxlen'. Does not scan beyond 'maxlen' characters in 'src'.
+size_t mg_strnlen(const char *src, size_t maxlen);
+
 // Compare two strings to a maximum length of n characters; the comparison is case-insensitive.
 // Return the (s1 - s2) last character difference value, which is zero(0) when both strings are equal.
 int mg_strncasecmp(const char *s1, const char *s2, size_t len);
 
 // same as strncasecmp() but without any string length limit
 int mg_strcasecmp(const char *s1, const char *s2);
+
+// find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which 
+// aren't available on most platforms.
+const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize);
 
 // Allocate space for a copy of the given string on the heap.
 // The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).

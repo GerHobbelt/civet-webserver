@@ -510,6 +510,8 @@
     <None Include="..\..\test\bad.cgi" />
     <None Include="..\..\test\bad2.cgi" />
     <None Include="..\..\test\env.cgi" />
+    <None Include="..\..\test\error\404.shtml" />
+    <None Include="..\..\test\error\error.shtml" />
     <None Include="..\..\test\exploit.pl" />
     <None Include="..\..\test\hello.cgi" />
     <None Include="..\..\test\hello.txt" />

@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Mongoose Doing the B0rk B0rk B0rk</title>
+<body>
+<h1>Error <!--#echo var="REDIRECT_STATUS" --> - Things went belly up.</h1>
+
+<p>All we can say is: <!--#echo var="REDIRECT_ERROR_NOTES" --></p>
+</body>
+</html>
