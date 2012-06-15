@@ -2540,7 +2540,7 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
 }
 
 // Read from IO channel - opened file descriptor, socket, or SSL descriptor.
-// Return number of bytes read.
+// Return number of bytes read, negative value on error
 static int pull(FILE *fp, SOCKET sock, SSL *ssl, char *buf, int len) {
   int nread;
 
@@ -3747,6 +3747,56 @@ static void handle_directory_request(struct mg_connection *conn,
   mg_printf(conn, "</table></body></html>");
 }
 
+// Write the content data to the log file, line by line.
+//
+// Use the 'msg_fmt' printf() format string to format the log line,
+// where 'arg0' will be placed in the first %s and the data line in
+// the second %s.
+//
+// Return number of bytes read on success, negative number on error.
+static int64_t send_data_to_log(struct mg_connection *conn, FILE *fp, int64_t len, const char *msg_fmt, const char *arg0) {
+  char buf[DATA_COPY_BUFSIZ];
+  int64_t rlen = 0;
+  int offset = 0;
+
+  while (len > 0) {
+    // Calculate how much to read from the file in the buffer
+    char *line = buf;
+    int n = pull(fp, INVALID_SOCKET, NULL, buf + offset, sizeof(buf) - offset - 1);
+    if (n < 0) {
+      break;
+    }
+	rlen += n;
+    buf[offset + n] = 0;
+    if (n == 0) {
+      // log possible last remaining line and then we're done:
+      if (buf[0])
+        mg_cry(conn, msg_fmt, arg0, buf);
+      break; // EOF
+    }
+    offset = 0;
+    // log the stderr produce one line at a time
+    do {
+      char *eol = line + strcspn(line, "\r\n");
+      if (!eol[0])  // break out when we didn't hit a CR/LF/CRLF
+        break;
+      offset = (int)((eol - buf) + strspn(eol, "\r\n"));
+      *eol = 0;
+      // tweak: do not log empty stderr lines
+      if (line[0])
+        mg_cry(conn, msg_fmt, arg0, line);
+      line = buf + offset;
+    } while (n > offset);
+    if (n > offset) {
+      memmove(buf, buf + offset, n + 1 - offset);
+      offset = n - offset;
+    } else {
+      buf[0] = 0;
+      offset = 0;
+    }
+  }
+  return rlen;
+}
 // Send len bytes from the opened file to the client.
 //
 // 'len' may be larger than the amount of data actually available
@@ -4301,7 +4351,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
   if (e == p) {
     dir[0] = '.', dir[1] = '\0';
-    p = (char *) prog;
+  } else {
+	prog = p;
   }
 
   if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0 || pipe(fd_stderr) != 0) {
@@ -4318,7 +4369,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   setbuf(in, NULL);
   setbuf(out, NULL);
   setbuf(err, NULL);
-  if ((pid = spawn_process(conn, p, blk.buf, blk.vars,
+  if ((pid = spawn_process(conn, prog, blk.buf, blk.vars,
           fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
     send_http_error(conn, 500, NULL,
         "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
@@ -4406,6 +4457,11 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (i > 0) {
       mg_remove_response_header(conn, "Content-Length");
       conn->must_close = 1;
+    } else if (i < 0) {
+      send_http_error(conn, 500, NULL,
+            "CGI program clobbered stderr: %s",
+            mg_strerror(ERRNO));
+      goto done;
     }
   }
   // and always send the Connection: header:
@@ -4431,7 +4487,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     // Send prefetched chunk to client
     (void) mg_write(conn, buf, i);
     // Read the rest of CGI stderr output and send to the client
-    (void)send_file_data(conn, out, INT64_MAX);
+    (void)send_file_data(conn, err, INT64_MAX);
     if (is_text_out == 2) {
       mg_printf(conn,
                 "</pre>\n"
@@ -4476,41 +4532,7 @@ done:
 
   if (err != NULL) {
     // copy stderr to error log:
-    int offset = 0;
-    for (;;) {
-      char *line = buf;
-      int n = pull(err, INVALID_SOCKET, NULL, buf + offset, sizeof(buf) - offset - 1);
-      if (n < 0) {
-        break;
-      }
-      buf[offset + n] = 0;
-      if (n == 0) {
-        // log possible last remaining line and then we're done:
-        if (buf[0])
-          mg_cry(conn, "CGI [%s] stderr says: %s", p, buf);
-        break; // EOF
-      }
-      offset = 0;
-      // log the stderr produce one line at a time
-      do {
-        char *eol = line + strcspn(line, "\r\n");
-        if (!eol[0])  // break out when we didn't hit a CR/LF/CRLF
-          break;
-        offset = (int)((eol - buf) + strspn(eol, "\r\n"));
-        *eol = 0;
-        // tweak: do not log empty stderr lines
-        if (line[0])
-          mg_cry(conn, "CGI [%s] stderr says: %s", p, line);
-        line = buf + offset;
-      } while (n > offset);
-      if (n > offset) {
-        memmove(buf, buf + offset, n + 1 - offset);
-        offset = n - offset;
-      } else {
-        buf[0] = 0;
-        offset = 0;
-      }
-    }
+	(void) send_data_to_log(conn, err, INT64_MAX, "CGI [%s] stderr says: %s", prog);
     (void) fclose(err);
   } else if (fd_stderr[0] != -1) {
     (void) close(fd_stderr[0]);
