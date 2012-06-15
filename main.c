@@ -105,9 +105,11 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
 
 static void verify_document_root(const char *root) {
   struct mgstat st;
+  char buf[PATH_MAX];
 
+  getcwd(buf, sizeof(buf));
   if (mg_stat(root, &st) != 0 || !st.is_directory) {
-    die("Invalid root directory: [%s]: %s", root, mg_strerror(errno));
+    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(errno), buf);
   }
 }
 
