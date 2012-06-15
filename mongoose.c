@@ -2578,6 +2578,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
 
     // How many bytes of data we have buffered in the request buffer?
+	assert(conn->request_len >= 0);
     buffered = conn->buf + conn->request_len + conn->consumed_content;
     buffered_len = conn->data_len - conn->request_len;
     assert(buffered_len >= 0);
@@ -4054,7 +4055,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
-  } else {
+  } else if (conn->request_len > 0) {
     if (expect != NULL && !mg_have_headers_been_sent(conn)) {
       if (mg_printf(conn, "HTTP/1.1 100 Continue\r\n\r\n") <= 0)
         goto failure;
@@ -4107,6 +4108,8 @@ failure:
         send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : ""), __func__, mg_strerror(ERRNO));
       }
     }
+  } else {
+    send_http_error(conn, 577, NULL, "%s: invoked for a clobbered request", __func__);
   }
 
   return success;
@@ -4194,7 +4197,9 @@ static int prepare_cgi_environment(struct mg_connection *conn,
   addenv(blk, "SERVER_PROTOCOL=HTTP/1.1");
   if (conn->request_info.parent) {
     const char *str = conn->request_info.parent->uri;
-    size_t slen = strlen(str);
+    size_t slen;
+	if (!str) str = "(null)";
+    slen = strlen(str);
     addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
     // REDIRECT_URL ~ REQUEST_URI
     addenv(blk, "REDIRECT_URL=%.*s%s", (int)(slen > PATH_MAX ? PATH_MAX : slen), str, (slen > PATH_MAX ? "(...etc...)" : ""));
@@ -4387,7 +4392,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // the CGI script/exe may have already decided to produce a
   // response based on the HTTP headers alone, which is legal
   // behaviour.
-  if (!forward_body_data(conn, in, INVALID_SOCKET, NULL, 0)) {
+  if (conn->request_len > 0 &&
+	  !forward_body_data(conn, in, INVALID_SOCKET, NULL, 0)) {
     mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
@@ -4677,10 +4683,10 @@ static int do_ssi_exec(struct mg_connection *conn, const char *tag) {
   // sscanf() is safe here, since send_ssi_file() also uses buffer
   // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
   if (sscanf(tag, " \"%[^\"]\"", cmd) != 1) {
-    send_http_error(conn, 580, NULL, "Bad SSI #exec: [%s]", tag);
+    send_http_error(conn, 577, NULL, "Bad SSI #exec: [%s]", tag);
     return -1;
   } else if ((fp = popen(cmd, "r")) == NULL) {
-    send_http_error(conn, 580, NULL, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
+    send_http_error(conn, 577, NULL, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
     return -1;
   } else {
     int rv = (send_file_data(conn, fp, INT64_MAX) < 0);
@@ -4785,7 +4791,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
         s -= taglen + 1;
         if (s == buf || feof(fp)) {
           /* in this case we already have max data loaded: overlong SSI tag! */
-          send_http_error(conn, 580, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
+          send_http_error(conn, 577, NULL, "%s: SSI tag is too large / not terminated correctly (%s)", __func__, path);
           return -1;
         }
         memmove(buf, s, rlen - (s - b));
@@ -4797,7 +4803,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       s += strspn(s, " \t\r\n");
       if (!memcmp(s, "include", 7)) {
         if (e - s - 7 > PATH_MAX + 64) {
-          send_http_error(conn, 580, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
+          send_http_error(conn, 577, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
           return -1;
         } else {
           do_ssi_include(conn, path, s + 7, include_level);
@@ -4824,7 +4830,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
           // init 'blk' once, when we need it:
           if (!blk.conn) {
             if (prepare_cgi_environment(conn, path, &blk)) {
-              send_http_error(conn, 580, NULL, "%s: failed to set up env.var set", __func__);
+              send_http_error(conn, 577, NULL, "%s: failed to set up env.var set", __func__);
               blk.conn = NULL;
               return -1;
             }
@@ -5933,8 +5939,8 @@ static void process_new_connection(struct mg_connection *conn) {
       return;
     }
     if (conn->request_len <= 0) {
-      // don't mind we cannot send the 500 response code, as long as we log the issue at least...
-      send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
+      // don't mind we cannot send the 5xx response code, as long as we log the issue at least...
+      send_http_error(conn, 580, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
     }
 
