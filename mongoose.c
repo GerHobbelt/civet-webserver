@@ -1569,7 +1569,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     }
   }
   if (i < 0) { // this tag wasn't found: add it
-    i = conn->request_info.num_headers;
+    i = conn->request_info.num_response_headers;
     if (i >= ARRAY_SIZE(conn->request_info.response_headers)) {
       mg_cry(conn, "%s: too many headers", __func__);
       return -1;
@@ -1586,6 +1586,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
       dst = bufbase + conn->tx_headers_len;
       space = conn->buf_size - conn->tx_headers_len;
     }
+	conn->request_info.response_headers[i].name = dst;
     n += 2; // include NUL+[?] sentinel in count
     conn->tx_headers_len += n;
     dst += n;
@@ -1611,6 +1612,10 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     dst = bufbase + conn->tx_headers_len;
     space = conn->buf_size - conn->tx_headers_len;
   }
+  conn->request_info.response_headers[i].value = dst;
+  assert(i <= conn->request_info.num_response_headers);
+  if (i == conn->request_info.num_response_headers)
+	conn->request_info.num_response_headers++;
   n += 2; // include NUL+[?] sentinel in count
   conn->tx_headers_len += n;
   dst += n;
@@ -1654,6 +1659,8 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
 
   n = conn->request_info.num_response_headers;
   if (n) {
+	int rv2;
+
     conn->request_info.response_headers[0].value[-2] = ':';
     conn->request_info.response_headers[0].value[-1] = ' ';
     for (i = 1; i < n; i++) {
@@ -1671,7 +1678,11 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     buf[conn->tx_headers_len + 1] = '\n';
 
     rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
-    rv += mg_write(conn, buf, conn->tx_headers_len + 2);
+    rv2 = mg_write(conn, buf, conn->tx_headers_len + 2);
+	if (rv2 < 0)
+	  rv = rv2;
+	else
+	  rv += rv2;
 
     /*
     Error or success, always restore the header set to its original
@@ -2433,6 +2444,9 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   if ((pid = fork()) == -1) {
     // Parent
     send_http_error(conn, 500, NULL, "fork(): %s", mg_strerror(ERRNO));
+    (void) close(fd_stdin);
+    (void) close(fd_stdout);
+    (void) close(fd_stderr);
   } else if (pid == 0) {
     // Child
     if (chdir(dir) != 0) {
@@ -2442,11 +2456,14 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     } else if (dup2(fd_stdout, 1) == -1) {
       mg_cry(conn, "%s: dup2(%d, 1): %s", __func__, fd_stdout, mg_strerror(ERRNO));
     } else if (dup2(fd_stderr, 2) == -1) {
-        mg_cry(conn, "%s: dup2(%d, 2): %s", __func__, fd_stderr, mg_strerror(ERRNO));
+      mg_cry(conn, "%s: dup2(%d, 2): %s", __func__, fd_stderr, mg_strerror(ERRNO));
     } else {
       (void) close(fd_stdin);
       (void) close(fd_stdout);
       (void) close(fd_stderr);
+      fd_stdin = -1;
+      fd_stdout = -1;
+      fd_stderr = -1;
 
       // Execute CGI program. No need to lock: new process
       interp = get_conn_option(conn, CGI_INTERPRETER);
@@ -2458,6 +2475,15 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
         mg_cry(conn, "%s: execle(%s %s): %s", __func__, interp, prog,
                mg_strerror(ERRNO));
       }
+    }
+    if (fd_stdin != -1) {
+      (void) close(fd_stdin);
+    }
+    if (fd_stdout != -1) {
+      (void) close(fd_stdout);
+    }
+    if (fd_stderr != -1) {
+      (void) close(fd_stderr);
     }
     exit(EXIT_FAILURE);
   } else {
@@ -4390,18 +4416,20 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   setbuf(in, NULL);
   setbuf(out, NULL);
   setbuf(err, NULL);
-  if ((pid = spawn_process(conn, prog, blk.buf, blk.vars,
-          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir)) == (pid_t) -1) {
-    send_http_error(conn, 500, NULL,
-        "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
-    goto done;
-  }
+  pid = spawn_process(conn, prog, blk.buf, blk.vars,
+          fd_stdin[0], fd_stdout[1], fd_stderr[1], dir);
 
   // spawn_process() must close those!
   // If we don't mark them as closed, close() attempt before
   // return from this function throws an exception on Windows.
   // Windows does not like when closed descriptor is closed again.
   fd_stdin[0] = fd_stdout[1] = fd_stderr[1] = -1;
+
+  if (pid == (pid_t) -1) {
+    send_http_error(conn, 500, NULL,
+        "Cannot spawn CGI process: %s", mg_strerror(ERRNO));
+    goto done;
+  }
 
   // Send PUT/POST/... data to the CGI process if needed.
   // Log but otherwise IGNORE any failure to send the content, as
@@ -5749,6 +5777,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->http_version = NULL;
   ri->path_info = NULL;
   ri->num_headers = 0;
+  ri->num_response_headers = 0;
   ri->status_code = -1;
   ri->status_custom_description = NULL;
 
@@ -5763,6 +5792,8 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->request_len = conn->data_len = 0;
   //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
   conn->nested_err_or_pagereq_count = 0;
+  conn->tx_can_compact = 0;
+  conn->tx_headers_len = 0;
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
