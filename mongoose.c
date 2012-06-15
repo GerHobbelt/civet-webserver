@@ -1772,6 +1772,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       // output basic HTTP response when either no error content is allowed (len == 0)
       // or when the error page production failed and hasn't yet written the headers itself.
       if (len == 0 ||
+		  conn->request_len <= 0 ||  // no use making the effort of a custom page production when the connection is severely clobbered
           (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
            !mg_have_headers_been_sent(conn))) {
         /* issue #229: Only include the content-length if there is a response body.
