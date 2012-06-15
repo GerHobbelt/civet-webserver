@@ -3481,7 +3481,7 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
           (int)filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
-        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(errno));
+        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(ERRNO));
       }
       break;
     }
@@ -5600,9 +5600,9 @@ static int set_uid_option(struct mg_context *ctx) {
     if ((pw = getpwnam(uid)) == NULL) {
       mg_cry(fc(ctx), "%s: unknown user [%s]", __func__, uid);
     } else if (setgid(pw->pw_gid) == -1) {
-      mg_cry(fc(ctx), "%s: setgid(%s): %s", __func__, uid, mg_strerror(errno));
+      mg_cry(fc(ctx), "%s: setgid(%s): %s", __func__, uid, mg_strerror(ERRNO));
     } else if (setuid(pw->pw_uid) == -1) {
-      mg_cry(fc(ctx), "%s: setuid(%s): %s", __func__, uid, mg_strerror(errno));
+      mg_cry(fc(ctx), "%s: setuid(%s): %s", __func__, uid, mg_strerror(ERRNO));
     } else {
       success = 1;
     }

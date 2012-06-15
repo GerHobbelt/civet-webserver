@@ -628,7 +628,7 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 
 /*
 Like strerror() but with included support for the same functionality for
-Win32 system error codes
+Win32 system error codes.
 */
 const char *mg_strerror(int errcode);
 

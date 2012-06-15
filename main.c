@@ -109,7 +109,7 @@ static void verify_document_root(const char *root) {
 
   getcwd(buf, sizeof(buf));
   if (mg_stat(root, &st) != 0 || !st.is_directory) {
-    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(errno), buf);
+    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(ERRNO), buf);
   }
 }
 
@@ -161,7 +161,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
   // If config file was set in command line and open failed, exit
   if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
-    die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
+    die("Cannot open config file %s: %s", config_file, mg_strerror(ERRNO));
   }
 
   // use the default values for starters (so that all options have a known reasonable value):
