@@ -4723,6 +4723,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
 
   // only init 'blk' when we need it
   blk.conn = NULL;
+  blk.nvars = 0; // shut up compiler
 #endif
 
   if (include_level > 10) {
