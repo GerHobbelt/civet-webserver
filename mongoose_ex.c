@@ -315,7 +315,7 @@ int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
         // decoded content_length headers of any sort, or we're
         // outside the 'content' area and we want to pull data from
         // the socket anyway, say the headers themselves:
-        nread = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
+        nread = pull(NULL, &conn->client, conn->ssl, (char *) buf, (int) max_bufsize);
         if (nread > 0 && conn->content_len > 0) {
             conn->consumed_content += nread;
         }
