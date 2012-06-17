@@ -4887,7 +4887,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
               size_t kvlen;
               kv += ve + 1 - s;
               kvlen = strlen(kv);
-              if (mg_write(conn, kv, kvlen) != kvlen) {
+              if (mg_write(conn, kv, kvlen) != (int)kvlen) {
                 send_http_error(conn, 580, NULL, "%s: not all data (len = %d) sent (%s)", __func__, (int)kvlen, path);
                 return -1;
               }
