@@ -323,7 +323,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "e", "error_log_file",                NULL,
   "g", "global_passwords_file",         NULL,
   "i", "index_files",                   "index.html,index.htm,index.cgi,index.shtml,index.php",
-  "k", "enable_keep_alive",             "no",
+  "k", "enable_keep_alive",             "yes",
   "K", "keep_alive_timeout",            "5",
   "L", "socket_linger_timeout",         "5",
   "l", "access_control_list",           NULL,
@@ -5778,6 +5778,8 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->path_info = NULL;
   ri->num_headers = 0;
   ri->num_response_headers = 0;
+  memset(&ri->http_headers, 0, sizeof(ri->http_headers));
+  memset(&ri->response_headers, 0, sizeof(ri->response_headers));
   ri->status_code = -1;
   ri->status_custom_description = NULL;
 
