@@ -25,6 +25,7 @@
 #include "win32/resource.h"
 #endif // _WIN32
 
+#define USE_BEL2125_TEST_NR_18_EVENT_HANDLER		1
 
 #define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
@@ -222,6 +223,15 @@ static void init_server_name(void) {
 }
 
 
+#if USE_BEL2125_TEST_NR_18_EVENT_HANDLER
+
+// used in conjuction with /test/ajax/test_18.html
+
+#define BUFFER_SIZE 4094
+
+#endif
+
+
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_request_info *request_info = mg_get_request_info(conn);
 
@@ -245,6 +255,78 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   }
 #endif
 
+#if USE_BEL2125_TEST_NR_18_EVENT_HANDLER
+  {
+    int contentLength = 0;
+    int dataRead = 0;
+    char postData[BUFFER_SIZE] = { 0 };
+    const char* contentType = NULL;
+
+    if (event == MG_NEW_REQUEST)
+    {
+        if (strstr(request_info->uri, "/echo") == request_info->uri)
+        {
+			int ie_hack = 0;  // testing an assumption; turns out it doesn't matter whether headers make it into TCP stack before you expect to fetch all input data at once.
+			int ie_hack2 = 0;
+
+            contentLength = atoi(mg_get_header(conn, "Content-Length"));
+            assert(contentLength <= BUFFER_SIZE);
+
+			request_info->status_code = 200;
+
+			if (ie_hack2) mg_connection_must_close(conn);  // the stackoverflow suggested fix: http://stackoverflow.com/questions/3731420/why-does-ie-issue-random-xhr-408-12152-responses-using-jquery-post
+				
+			if (ie_hack)
+			{
+                contentType = mg_get_header(conn, "Content-Type");
+
+				mg_printf(conn,
+                    "HTTP/1.1 200 OK\r\n"
+					"Connection: %s\r\n"
+                    "Content-Type: %s\r\n"
+                    "Content-Length: %d\r\n"
+                    "\r\n",
+					mg_suggest_connection_header(conn),
+                    contentType,
+                    contentLength);
+			}
+
+			dataRead = mg_read(conn, postData, contentLength);
+            if (dataRead > 0)
+            {
+                assert(dataRead == contentLength);
+
+                contentType = mg_get_header(conn, "Content-Type");
+
+				if (!ie_hack)
+				{
+					mg_printf(conn,
+						"HTTP/1.1 200 OK\r\n"
+						"Connection: %s\r\n"
+						"Content-Type: %s\r\n"
+						"Content-Length: %d\r\n"
+						"\r\n",
+						mg_suggest_connection_header(conn),
+						contentType,
+						dataRead);
+				}
+
+                if (mg_write(conn, postData, contentLength) != contentLength)
+	    	    {
+	        		mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)contentLength); // internal error in our custom handler or client closed connection prematurely
+		      	}
+
+                return (void*)1;
+            }
+			else
+			{
+				mg_send_http_error(conn, 500, NULL, "I/O failure during mg_read() from connection: %s", mg_strerror(ERRNO));
+			}
+        }
+    }
+  }
+#endif // USE_BEL2125_TEST_NR_18_EVENT_HANDLER
+  
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;
