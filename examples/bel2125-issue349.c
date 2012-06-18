@@ -272,23 +272,18 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
             contentLength = atoi(mg_get_header(conn, "Content-Length"));
             assert(contentLength <= BUFFER_SIZE);
 
-			request_info->status_code = 200;
+			mg_set_response_code(conn, 200);
 
 			if (ie_hack2) mg_connection_must_close(conn);  // the stackoverflow suggested fix: http://stackoverflow.com/questions/3731420/why-does-ie-issue-random-xhr-408-12152-responses-using-jquery-post
 				
+            contentType = mg_get_header(conn, "Content-Type");
+
 			if (ie_hack)
 			{
-                contentType = mg_get_header(conn, "Content-Type");
-
-				mg_printf(conn,
-                    "HTTP/1.1 200 OK\r\n"
-					"Connection: %s\r\n"
-                    "Content-Type: %s\r\n"
-                    "Content-Length: %d\r\n"
-                    "\r\n",
-					mg_suggest_connection_header(conn),
-                    contentType,
-                    contentLength);
+				mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn));
+                mg_add_response_header(conn, 0, "Content-Type", contentType);
+				mg_add_response_header(conn, 0, "Content-Length", "%d", contentLength);
+				mg_write_http_response_head(conn, 0, 0);  // let the previous mg_set_response_code() decide for us
 			}
 
 			dataRead = mg_read(conn, postData, contentLength);
@@ -296,22 +291,15 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
             {
                 assert(dataRead == contentLength);
 
-                contentType = mg_get_header(conn, "Content-Type");
-
 				if (!ie_hack)
 				{
-					mg_printf(conn,
-						"HTTP/1.1 200 OK\r\n"
-						"Connection: %s\r\n"
-						"Content-Type: %s\r\n"
-						"Content-Length: %d\r\n"
-						"\r\n",
-						mg_suggest_connection_header(conn),
-						contentType,
-						dataRead);
+					mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn));
+					mg_add_response_header(conn, 0, "Content-Type", contentType);
+					mg_add_response_header(conn, 0, "Content-Length", "%d", dataRead);
+					mg_write_http_response_head(conn, 0, 0);  // let the previous mg_set_response_code() decide for us
 				}
 
-                if (mg_write(conn, postData, contentLength) != contentLength)
+                if (mg_write(conn, postData, dataRead) != contentLength)
 	    	    {
 	        		mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)contentLength); // internal error in our custom handler or client closed connection prematurely
 		      	}

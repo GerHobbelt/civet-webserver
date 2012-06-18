@@ -1441,6 +1441,14 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
+  DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d\n",
+			   (int)conn->must_close,
+			   (int)conn->request_info.status_code,
+			   (int)is_legal_response_code(conn->request_info.status_code),
+			   get_conn_option(conn, ENABLE_KEEP_ALIVE),
+			   header, http_version,
+			   mg_get_stop_flag(conn->ctx)));
+
   return (!conn->must_close &&
           conn->request_info.status_code != 401 &&
           // only okay persistence when we see legal response codes;
@@ -1456,6 +1464,7 @@ static int should_keep_alive(struct mg_connection *conn) {
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
+  DEBUG_TRACE(("suggest_connection_header() --> %s\n", should_keep_alive(conn) ? "keep-alive" : "close"));
   return should_keep_alive(conn) ? "keep-alive" : "close";
 }
 
