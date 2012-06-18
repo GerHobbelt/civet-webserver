@@ -513,6 +513,7 @@
     </None>
     <None Include="..\..\test\ajax\echo.cgi" />
     <None Include="..\..\test\ajax\jquery.js" />
+    <None Include="..\..\test\ajax\test-18.html" />
     <None Include="..\..\test\ajax\test.html" />
     <None Include="..\..\test\all_build_flags.pl" />
     <None Include="..\..\test\bad.cgi" />

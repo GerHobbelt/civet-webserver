@@ -507,6 +507,9 @@
     <None Include="..\..\test\error\error.shtml">
       <Filter>test-website\error</Filter>
     </None>
+    <None Include="..\..\test\ajax\test-18.html">
+      <Filter>test-website\ajax</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\win32\res.rc">

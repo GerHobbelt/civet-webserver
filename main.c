@@ -267,15 +267,17 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
         if (strstr(request_info->uri, "/echo") == request_info->uri)
         {
 			int ie_hack = 0;  // testing an assumption; turns out it doesn't matter whether headers make it into TCP stack before you expect to fetch all input data at once.
+			int ie_hack2 = 0;
 
             contentLength = atoi(mg_get_header(conn, "Content-Length"));
             assert(contentLength <= BUFFER_SIZE);
 
 			request_info->status_code = 200;
+
+			if (ie_hack2) mg_connection_must_close(conn);  // the stackoverflow suggested fix: http://stackoverflow.com/questions/3731420/why-does-ie-issue-random-xhr-408-12152-responses-using-jquery-post
+				
 			if (ie_hack)
 			{
-				//mg_connection_must_close(conn);  -- the stackoverflow suggested fix: http://stackoverflow.com/questions/3731420/why-does-ie-issue-random-xhr-408-12152-responses-using-jquery-post
-				
                 contentType = mg_get_header(conn, "Content-Type");
 
 				mg_printf(conn,
