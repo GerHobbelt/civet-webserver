@@ -1762,8 +1762,9 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 
     mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
             __func__, conn->request_info.status_custom_description,
-            conn->request_info.http_version,
-            conn->request_info.request_method, conn->request_info.uri,
+            (conn->request_info.http_version ? conn->request_info.http_version : "(unknown)"),
+            (conn->request_info.request_method ? conn->request_info.request_method : "???"), 
+			(conn->request_info.uri ? conn->request_info.uri : "???"),
             (conn->request_info.query_string ? "?" : ""),
             (conn->request_info.query_string ? conn->request_info.query_string : ""),
             (p ? p + 1 : ""));
@@ -5987,11 +5988,16 @@ static void process_new_connection(struct mg_connection *conn) {
   const char *cl;
 
   do {
+	  if (conn->request_info.seq_no > 0)
+	  {
+		  DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
+	  }
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, &conn->client, conn->ssl,
                                      conn->buf, conn->buf_size,
                                      &conn->data_len);
     assert(conn->data_len >= conn->request_len);
+	conn->request_info.seq_no++;
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, NULL, "");
       return;
@@ -6037,7 +6043,11 @@ static void process_new_connection(struct mg_connection *conn) {
 }
 
 // Worker threads take accepted socket from the queue
+//
+// Return 1 on success, 0 on error.
 static int consume_socket(struct mg_context *ctx, struct socket *sp) {
+  int rv = 0;
+  
   (void) pthread_mutex_lock(&ctx->mutex);
   DEBUG_TRACE(("going idle"));
 
@@ -6047,10 +6057,11 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
   }
 
   // If we're stopping, sq_head may be equal to sq_tail.
-  if (ctx->sq_head > ctx->sq_tail) {
+  if (ctx->sq_head > ctx->sq_tail && ctx->stop_flag == 0) {
     // Copy socket from the queue and increment tail
     *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
     ctx->sq_tail++;
+	rv = 1;
     DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
 
     // Wrap pointers if needed
@@ -6063,7 +6074,7 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
   (void) pthread_cond_signal(&ctx->sq_empty);
   (void) pthread_mutex_unlock(&ctx->mutex);
 
-  return !ctx->stop_flag;
+  return rv;
 }
 
 static void worker_thread(struct mg_context *ctx) {
@@ -6081,11 +6092,11 @@ static void worker_thread(struct mg_context *ctx) {
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
   while (consume_socket(ctx, &conn->client)) {
+	// everything in 'conn' is zeroed at this point in time: set up the buffers, etc.
+    conn->buf_size = buf_size;
+    conn->buf = (char *) (conn + 1);
     conn->birth_time = time(NULL);
     conn->ctx = ctx;
-    // and clear the cached logfile path so it is recalculated on the next log operation:
-    conn->error_logfile_path[0] = 0;
-    conn->access_logfile_path[0] = 0;
 
     // Fill in IP, port info early so even if SSL setup below fails,
     // error handler would have the corresponding info.
@@ -6112,6 +6123,9 @@ static void worker_thread(struct mg_context *ctx) {
     reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
+	// Clear everything in conn to ensure no value makes it into the next connection/session.
+    // (Also clears the cached logfile path so it is recalculated on the next log operation.)
+	memset(conn, 0, sizeof(*conn));
   }
   free(conn);
 
@@ -6126,7 +6140,11 @@ static void worker_thread(struct mg_context *ctx) {
 }
 
 // Master thread adds accepted socket to a queue
-static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
+//
+// Return 1 on success, 0 on error.
+static int produce_socket(struct mg_context *ctx, const struct socket *sp) {
+  int rv = 0;
+  
   (void) pthread_mutex_lock(&ctx->mutex);
 
   // If the queue is full, wait
@@ -6135,15 +6153,18 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
     (void) pthread_cond_wait(&ctx->sq_empty, &ctx->mutex);
   }
 
-  if (ctx->sq_head - ctx->sq_tail < (int) ARRAY_SIZE(ctx->queue)) {
+  if (ctx->sq_head - ctx->sq_tail < (int) ARRAY_SIZE(ctx->queue) && ctx->stop_flag == 0) {
     // Copy socket to the queue and increment head
     ctx->queue[ctx->sq_head % ARRAY_SIZE(ctx->queue)] = *sp;
     ctx->sq_head++;
+	rv = 1;
     DEBUG_TRACE(("queued socket %d", sp->sock));
   }
 
   (void) pthread_cond_signal(&ctx->sq_full);
   (void) pthread_mutex_unlock(&ctx->mutex);
+  
+  return rv;
 }
 
 static int accept_new_connection(const struct socket *listener,
@@ -6170,7 +6191,11 @@ static int accept_new_connection(const struct socket *listener,
       // Put accepted socket structure into the queue
       DEBUG_TRACE(("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
-      produce_socket(ctx, &accepted);
+      if (!produce_socket(ctx, &accepted)) {
+        mg_cry(fc(ctx), "%s: closing accepted connection %s because server is shutting down", 
+			   __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa));
+        (void) closesocket(accepted.sock);
+	  }
     } else {
       sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa);
       mg_cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
@@ -6284,6 +6309,23 @@ static void master_thread(struct mg_context *ctx) {
   while (ctx->num_threads > 0) {
     (void) pthread_cond_wait(&ctx->cond, &ctx->mutex);
   }
+
+  // forcibly close all pending (accepted) sockets remaining in the queue:
+
+  // If we're stopping, sq_head may be equal to sq_tail.
+  while (ctx->sq_head > ctx->sq_tail) {
+    // close socket from the queue and increment tail
+    struct socket client = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
+    ctx->sq_tail++;
+    DEBUG_TRACE(("grabbed socket %d, forcibly closing the bugger", client.sock));
+
+    // Wrap pointers if needed
+    while (ctx->sq_tail > (int) ARRAY_SIZE(ctx->queue)) {
+      ctx->sq_tail -= ARRAY_SIZE(ctx->queue);
+      ctx->sq_head -= ARRAY_SIZE(ctx->queue);
+    }
+  }
+
   (void) pthread_mutex_unlock(&ctx->mutex);
 
   // All threads exited, no sync is needed. Destroy mutex and condvars

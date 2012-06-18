@@ -63,6 +63,7 @@ struct mg_request_info {
   int status_code;                 // HTTP reply status code, e.g. 200
   char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
   int is_ssl;                      // 1 if SSL-ed, 0 if not
+  int seq_no;					   // number of request served for this connection (1..N; can only be >1 for kept-alive connections)
   int num_headers;                 // Number of headers
   struct mg_header {
     char *name;                    // HTTP header name
