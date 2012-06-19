@@ -293,6 +293,36 @@ struct socket {
   unsigned is_ssl: 1;       // Is socket SSL-ed
   unsigned read_error: 1;   // Receive error occurred on this socket (recv())
   unsigned write_error: 1;  // Write error occurred on this socket (send())
+  unsigned has_read_data: 1;    // 1 when active ~ when read data is available. This is used to 'signal' a node when a idle-test select() turns up multiple active nodes at once. (speedup)
+  unsigned was_idle: 1;         // 1 when a socket has been pulled from the 'idle queue' just now: '1' means 'has_read_data' is valid (and can be used instead of select()).
+};
+
+// A 'pushed back' idle (HTTP keep-alive) socket connection: as we
+// round-robin through the set of these while testing for activity,
+// we use a cyclic linked list.
+//
+// This structure is used to persist all per-connection values beyond
+// the single request.
+struct mg_idle_connection {
+  // persisted mg_request_info bits:
+  void *req_user_data;              // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  char *remote_user;                // Authenticated user, or NULL if no auth used
+  struct mg_ip_address remote_ip;   // Client's IP address
+  struct mg_ip_address local_ip;    // This machine's IP address which receives/services the request
+  int remote_port;                  // Client's port
+  int local_port;                   // Server's port
+  int is_ssl;                       // 1 if SSL-ed, 0 if not
+  int seq_no;                       // number of request served for this connection (1..N; can only be >1 for kept-alive connections)
+
+  // persisted mg_connection bits:
+  struct mg_context *ctx;
+  SSL *ssl;                         // SSL descriptor
+  struct socket client;             // Connected client
+  time_t birth_time;                // Time when connection was accepted
+
+  // book-keeping:
+  int next;							// next in chain; cyclic linked list!
+  int prev;							// previous in chain; cyclic linked list!
 };
 
 
@@ -349,6 +379,10 @@ struct mg_context {
   volatile int num_threads;   // Number of threads
   pthread_mutex_t mutex;      // Protects (max|num)_threads
   pthread_cond_t  cond;       // Condvar for tracking workers terminations
+
+  struct mg_idle_connection idle_queue_store[128]; // Cut down on malloc()/free()ing cost by using a static queue for idle_queue.
+  int idle_queue;			  // Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
+  int idle_q_store_free_slot; // index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
 
   struct socket queue[20];    // Accepted sockets
   volatile int sq_head;       // Head of the socket queue
@@ -6003,11 +6037,15 @@ static void process_new_connection(struct mg_connection *conn) {
   const char *cl;
 
   do {
-      if (conn->request_info.seq_no > 0)
-      {
-          DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
-      }
+    if (conn->request_info.seq_no > 0) {
+      DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
+    }
     reset_per_request_attributes(conn);
+    // check if connection is active: it is deemed 'active' when data for a request is available,
+    // even if only partially. When a connection is 'inactive' ~ no read data is pending, then
+    // it is 'pushed back' onto the 'idle queue' and another socket connection will be served.
+    if (conn->data_len == 0) {
+    }
     conn->request_len = read_request(NULL, &conn->client, conn->ssl,
                                      conn->buf, conn->buf_size,
                                      &conn->data_len);
@@ -6059,12 +6097,324 @@ static void process_new_connection(struct mg_connection *conn) {
   } while (conn->ctx->stop_flag == 0 && should_keep_alive(conn));
 }
 
+// extract N idle connections from the queue to test; locking should be done by caller!
+//
+// Return index to start of extracted set (cyclic linked list), -1 ~ empty set.
+static int pull_testset_from_idle_queue(struct mg_context *ctx, int n)
+{
+  struct mg_idle_connection *arr = ctx->idle_queue_store;
+
+  if (ctx->idle_queue >= 0)
+  {
+    int p, idle_test_set;
+
+    p = idle_test_set = ctx->idle_queue;
+    do
+    {
+      assert(arr[p].client.was_idle);
+      if (arr[p].client.has_read_data)
+      {
+        // we don't need to test as we already know this node has data for us ~ is 'active',
+        // so we only return this one:
+        arr[arr[p].prev].next = arr[p].next;
+        arr[arr[p].next].prev = arr[p].prev;
+        if (ctx->idle_queue == p)
+		{
+		  if (arr[p].prev == p)
+			ctx->idle_queue = -1;
+		  else
+			ctx->idle_queue = arr[p].next;
+        }
+        arr[p].next = p;
+        arr[p].prev = p;
+        return p;
+      }
+      p = arr[p].next;
+    } while (--n > 0 && p != idle_test_set);
+    // decouple set from idle queue:
+	if (p == idle_test_set)
+	{
+	  // grabbed entire set, so that's easy:
+	  ctx->idle_queue = -1;
+	  return idle_test_set;
+	}
+    arr[arr[idle_test_set].prev].next = arr[p].next;
+    arr[arr[p].next].prev = arr[idle_test_set].prev;
+
+    arr[idle_test_set].prev = p;
+    arr[p].next = idle_test_set;
+
+	return idle_test_set;
+  }
+  return -1;
+}
+
+// re-insert a series of idle connections into the idle queue: place these
+// at the back when they are not marked as 'active', place the nodes which are
+// marked as 'active' at the front of the queue so thy can be picked off 
+// as fast as possible.
+// This procedure makes the idle queue testing behave like a Round Robin process.
+static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test_set)
+{
+  // nasty: as we need to re-order the nodes, we do it quick&dirty by placing 
+  // them in proper in order in this local array (of same size as the idle_queue_store)
+  // and then rebuild the linked lists in CTX in one feel swoop.
+  int node_set[ARRAY_SIZE(ctx->idle_queue_store) + 4 /* front/end sentinels */];
+  int a, z, p, i;
+  struct mg_idle_connection *arr = ctx->idle_queue_store;
+
+  a = 1;
+  z = ARRAY_SIZE(node_set) - 1;
+  node_set[0] = node_set[ARRAY_SIZE(node_set) - 1] = -1;
+  assert(idle_test_set >= 0);
+  p = idle_test_set;
+  do
+  {
+	if (arr[p].client.has_read_data)
+	  node_set[--z] = p;
+	else
+	  node_set[a++] = p;
+	p = arr[p].next;
+  } while (p != idle_test_set);
+  node_set[a] = node_set[z - 1] = -1;
+
+  // rebuild both partial sets:
+  for (i = 1; i < a; i++)
+  {
+	int x = node_set[i];
+	int nx = node_set[i + 1];
+	int px = node_set[i - 1];
+
+	arr[x].next = nx;
+	arr[x].prev = px;
+  }
+  for (i = z; i < ARRAY_SIZE(node_set) - 1; i++)
+  {
+	int x = node_set[i];
+	int nx = node_set[i + 1];
+	int px = node_set[i - 1];
+
+	arr[x].next = nx;
+	arr[x].prev = px;
+  }
+
+  // 'active' set at the front:
+  if (z < ARRAY_SIZE(node_set) - 1)
+  {
+	int x = node_set[z];
+	int lx = node_set[ARRAY_SIZE(node_set) - 2];
+
+    if (ctx->idle_queue < 0)
+    {
+	  // this one's easy!
+	  ctx->idle_queue = x;
+	  arr[x].prev = lx;
+	  arr[lx].next = x;
+	}
+    else
+    {
+	  int q = ctx->idle_queue;
+
+	  arr[x].prev = arr[q].prev;
+	  arr[lx].next = q;
+	  arr[q].prev = lx;
+	  arr[arr[q].prev].next = x;
+	}
+  }
+  // still idle set at the back:
+  if (a > 1)
+  {
+	int x = node_set[1];
+	int lx = node_set[a - 1];
+
+    if (ctx->idle_queue < 0)
+    {
+	  // this one's easy!
+	  ctx->idle_queue = x;
+	  arr[x].prev = lx;
+	  arr[lx].next = x;
+	}
+    else
+    {
+	  int q = arr[ctx->idle_queue].prev;
+
+	  arr[x].prev = q;
+	  assert(arr[q].next == ctx->idle_queue);
+	  arr[lx].next = ctx->idle_queue;
+	  arr[q].next = x;
+	  arr[ctx->idle_queue].prev = lx;
+	}
+  }
+}
+
+// Remove the given element from the idle queue / storage and init the 'conn' connection with its data.
+// Locking should be done by the caller!
+//
+// This routine doesn't care whether you remove the node from an 'extracted' test list or the 
+// queue at large: both scenarios are served:
+// this function returns a reference to the next node in the list, so the caller can track the list.
+static int pop_node_from_idle_queue(struct mg_context *ctx, int node, struct mg_connection *conn)
+{
+  struct mg_idle_connection *arr = ctx->idle_queue_store + node;
+  int r;
+
+  assert(node >= 0);
+  assert(node < ARRAY_SIZE(ctx->idle_queue_store));
+  conn->request_info.req_user_data = arr->req_user_data;
+  conn->request_info.remote_user = arr->remote_user;
+  conn->request_info.remote_ip = arr->remote_ip;
+  conn->request_info.local_ip = arr->local_ip;
+  conn->request_info.remote_port = arr->remote_port;
+  conn->request_info.local_port = arr->local_port;
+  conn->request_info.is_ssl = arr->is_ssl;
+  conn->request_info.seq_no = arr->seq_no;
+
+  conn->ctx = arr->ctx;
+  conn->ssl = arr->ssl;
+  conn->client = arr->client;
+  conn->birth_time = arr->birth_time;
+
+  // remove node from any cyclic linked list out there:
+  arr = ctx->idle_queue_store;
+  if (arr[node].next == node)
+  {
+	r = -1;
+  }
+  else
+  {
+	r = arr[node].next;
+	arr[r].prev = arr[node].prev;
+	arr[arr[node].prev].next = r;
+  }
+  // mark element as 'free': add it to the 'free list'.
+  arr->next = ctx->idle_q_store_free_slot;
+  ctx->idle_q_store_free_slot = node;
+
+  return r;
+}
+
+// push the given connection onto the idle queue (it will be located at the back: FIFO).
+// Locking should be done by the caller!
+//
+// Return -1 if the queue is full and hence the pushback failed. Return queued node on success.
+static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connection *conn)
+{
+  int i = ctx->idle_q_store_free_slot;
+  struct mg_idle_connection *arr = ctx->idle_queue_store + i;
+
+  if (i < 0)
+	return -1;
+  assert(i < ARRAY_SIZE(ctx->idle_queue_store));
+  ctx->idle_q_store_free_slot = arr->next;
+
+  arr->req_user_data = conn->request_info.req_user_data;
+  arr->remote_user = conn->request_info.remote_user;
+  arr->remote_ip = conn->request_info.remote_ip;
+  arr->local_ip = conn->request_info.local_ip;
+  arr->remote_port = conn->request_info.remote_port;
+  arr->local_port = conn->request_info.local_port;
+  arr->is_ssl = conn->request_info.is_ssl;
+  arr->seq_no = conn->request_info.seq_no;
+
+  arr->ctx = conn->ctx;
+  arr->ssl = conn->ssl;
+  arr->client = conn->client;
+  arr->birth_time = conn->birth_time;
+  arr->client.was_idle = 1;
+
+  // add element at the end of the queue:
+  if (ctx->idle_queue < 0)
+  {
+	ctx->idle_queue = i;
+	arr->prev = arr->next = i;
+  }
+  else
+  {
+    arr = ctx->idle_queue_store;
+    arr[i].prev = arr[ctx->idle_queue].prev;
+	arr[arr[i].prev].next = i;
+    arr[i].next = ctx->idle_queue;
+	arr[ctx->idle_queue].prev = i;
+  }
+  return i;
+}
+
 // Worker threads take accepted socket from the queue
 //
 // Return 1 on success, 0 on error.
-static int consume_socket(struct mg_context *ctx, struct socket *sp) {
+static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
   int rv = 0;
+  int idle_test_set;
   
+  (void) pthread_mutex_lock(&ctx->mutex);
+  // some select() implementations don't like it when you feed them more than 64 connections; keep 2 spare for new connection, etc.:
+  idle_test_set = pull_testset_from_idle_queue(ctx, 64 - 2);
+  (void) pthread_mutex_unlock(&ctx->mutex);
+
+  if (idle_test_set >= 0)
+  {
+	fd_set fdr;
+	int max_fh = 0;
+	int sn;
+    struct timeval tv;
+	struct mg_idle_connection *arr = ctx->idle_queue_store;
+    int p;
+
+    DEBUG_TRACE(("%s: testing pushed-back (idle) keep-alive connections:"));
+    FD_ZERO(&fdr);
+	p = idle_test_set;
+	do
+	{
+	  add_to_set(arr[p].client.sock, &fdr, &max_fh);
+	  p = arr[p].next;
+	} while (p != idle_test_set);
+	// do NOT wait in the select(), just check if anybody has anything for us or not.
+	tv.tv_sec = 0;
+	tv.tv_usec = 0;
+	sn = select(max_fh, &fdr, NULL, NULL, &tv);
+	if (sn > 0)
+	{
+	  sn = -1;
+	  p = idle_test_set;
+	  do
+	  {
+	    if (FD_ISSET(arr[p].client.sock, &fdr))
+		{
+		  if (sn < 0)
+			sn = p;
+		  arr[p].client.has_read_data = 1;
+		}
+	    p = arr[p].next;
+	  } while (p != idle_test_set);
+
+	  // did we find an active node? if yes, then remove it from the queue/set and re-insert the rest:
+	  if (sn >= 0)
+	  {
+		(void) pthread_mutex_lock(&ctx->mutex);
+		p = pop_node_from_idle_queue(ctx, sn, conn);
+		if (sn == idle_test_set)
+		{
+		  idle_test_set = p;
+		}
+		if (idle_test_set >= 0)
+		{
+		  insert_testset_into_idle_queue(ctx, idle_test_set);
+		}
+		(void) pthread_mutex_unlock(&ctx->mutex);
+		
+		return 1;
+	  }
+	  else
+	  {
+		(void) pthread_mutex_lock(&ctx->mutex);
+		assert(idle_test_set >= 0);
+	    insert_testset_into_idle_queue(ctx, idle_test_set);
+		(void) pthread_mutex_unlock(&ctx->mutex);
+	  }
+	}
+  }
+
+  // when we get here, we can be sure there's no-one active in the idle queue: time to fetch a fresh connection!
   (void) pthread_mutex_lock(&ctx->mutex);
   DEBUG_TRACE(("going idle"));
 
@@ -6076,10 +6426,10 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
   // If we're stopping, sq_head may be equal to sq_tail.
   if (ctx->sq_head > ctx->sq_tail && ctx->stop_flag == 0) {
     // Copy socket from the queue and increment tail
-    *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
+    conn->client = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
     ctx->sq_tail++;
     rv = 1;
-    DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
+    DEBUG_TRACE(("grabbed socket %d, going busy", conn->client.sock));
 
     // Wrap pointers if needed
     while (ctx->sq_tail > (int) ARRAY_SIZE(ctx->queue)) {
@@ -6108,7 +6458,7 @@ static void worker_thread(struct mg_context *ctx) {
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
-  while (consume_socket(ctx, &conn->client)) {
+  while (consume_socket(ctx, conn)) {
     // everything in 'conn' is zeroed at this point in time: set up the buffers, etc.
     conn->buf_size = buf_size;
     conn->buf = (char *) (conn + 1);
