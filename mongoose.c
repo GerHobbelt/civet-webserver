@@ -286,11 +286,11 @@ struct vec {
 // Describes listening socket, or socket which was accept()-ed by the master
 // thread and queued for future handling by the worker thread.
 struct socket {
-  struct socket *next;  // Linkage
-  SOCKET sock;          // Listening socket
-  struct usa lsa;       // Local socket address
-  struct usa rsa;       // Remote socket address
-  unsigned is_ssl: 1;		// Is socket SSL-ed
+  struct socket *next;      // Linkage
+  SOCKET sock;              // Listening socket
+  struct usa lsa;           // Local socket address
+  struct usa rsa;           // Remote socket address
+  unsigned is_ssl: 1;       // Is socket SSL-ed
   unsigned read_error: 1;   // Receive error occurred on this socket (recv())
   unsigned write_error: 1;  // Write error occurred on this socket (send())
 };
@@ -1442,12 +1442,12 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *header = mg_get_header(conn, "Connection");
 
   DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d\n",
-			   (int)conn->must_close,
-			   (int)conn->request_info.status_code,
-			   (int)is_legal_response_code(conn->request_info.status_code),
-			   get_conn_option(conn, ENABLE_KEEP_ALIVE),
-			   header, http_version,
-			   mg_get_stop_flag(conn->ctx)));
+               (int)conn->must_close,
+               (int)conn->request_info.status_code,
+               (int)is_legal_response_code(conn->request_info.status_code),
+               get_conn_option(conn, ENABLE_KEEP_ALIVE),
+               header, http_version,
+               mg_get_stop_flag(conn->ctx)));
 
   return (!conn->must_close &&
           conn->request_info.status_code != 401 &&
@@ -1595,7 +1595,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
       dst = bufbase + conn->tx_headers_len;
       space = conn->buf_size - conn->tx_headers_len;
     }
-	conn->request_info.response_headers[i].name = dst;
+    conn->request_info.response_headers[i].name = dst;
     n += 2; // include NUL+[?] sentinel in count
     conn->tx_headers_len += n;
     dst += n;
@@ -1624,7 +1624,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
   conn->request_info.response_headers[i].value = dst;
   assert(i <= conn->request_info.num_response_headers);
   if (i == conn->request_info.num_response_headers)
-	conn->request_info.num_response_headers++;
+    conn->request_info.num_response_headers++;
   n += 2; // include NUL+[?] sentinel in count
   conn->tx_headers_len += n;
   dst += n;
@@ -1668,7 +1668,7 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
 
   n = conn->request_info.num_response_headers;
   if (n) {
-	int rv2;
+    int rv2;
 
     conn->request_info.response_headers[0].value[-2] = ':';
     conn->request_info.response_headers[0].value[-1] = ' ';
@@ -1688,10 +1688,10 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
 
     rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
     rv2 = mg_write(conn, buf, conn->tx_headers_len + 2);
-	if (rv2 < 0)
-	  rv = rv2;
-	else
-	  rv += rv2;
+    if (rv2 < 0)
+      rv = rv2;
+    else
+      rv += rv2;
 
     /*
     Error or success, always restore the header set to its original
@@ -1763,8 +1763,8 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     mg_cry(conn, "%s: %s (HTTP v%s: %s %s%s%s) %s",
             __func__, conn->request_info.status_custom_description,
             (conn->request_info.http_version ? conn->request_info.http_version : "(unknown)"),
-            (conn->request_info.request_method ? conn->request_info.request_method : "???"), 
-			(conn->request_info.uri ? conn->request_info.uri : "???"),
+            (conn->request_info.request_method ? conn->request_info.request_method : "???"),
+            (conn->request_info.uri ? conn->request_info.uri : "???"),
             (conn->request_info.query_string ? "?" : ""),
             (conn->request_info.query_string ? conn->request_info.query_string : ""),
             (p ? p + 1 : ""));
@@ -1795,10 +1795,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       // output basic HTTP response when either no error content is allowed (len == 0)
       // or when the error page production failed and hasn't yet written the headers itself.
       if (len == 0 ||
-		  // no use making the effort of a custom page production when the connection is severely clobbered
-		  conn->request_len <= 0 ||
-		  conn->client.write_error ||
-		  conn->client.read_error ||
+          // no use making the effort of a custom page production when the connection is severely clobbered
+          conn->request_len <= 0 ||
+          conn->client.write_error ||
+          conn->client.read_error ||
           (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
            !mg_have_headers_been_sent(conn))) {
         /* issue #229: Only include the content-length if there is a response body.
@@ -2563,8 +2563,8 @@ static int64_t push(FILE *fp, struct socket *sock, SSL *ssl, const char *buf,
 
     if (ssl != NULL) {
       n = SSL_write(ssl, buf + sent, k);
-	  assert(sock);
-	  sock->write_error = (n < 0);
+      assert(sock);
+      sock->write_error = (n < 0);
     } else if (fp != NULL) {
       n = (int)fwrite(buf + sent, 1, (size_t)k, fp);
       if (ferror(fp))
@@ -2572,10 +2572,10 @@ static int64_t push(FILE *fp, struct socket *sock, SSL *ssl, const char *buf,
     } else if (sock && sock->sock != INVALID_SOCKET) {
       /* Ignore "broken pipe" errors (i.e., clients that disconnect instead of waiting for their answer) */
       n = send(sock->sock, buf + sent, (size_t) k, MSG_NOSIGNAL);
-	  sock->write_error = (n < 0);
+      sock->write_error = (n < 0);
     } else {
-	  n = -1;
-	}
+      n = -1;
+    }
 
     if (n < 0)
       break;
@@ -2593,8 +2593,8 @@ static int pull(FILE *fp, struct socket *sock, SSL *ssl, char *buf, int len) {
 
   if (ssl != NULL) {
     nread = SSL_read(ssl, buf, len);
-	assert(sock);
-	sock->read_error = (nread < 0);
+    assert(sock);
+    sock->read_error = (nread < 0);
   } else if (fp != NULL) {
     // Use read() instead of fread(), because if we're reading from the CGI
     // pipe, fread() may block until IO buffer is filled up. We cannot afford
@@ -2604,9 +2604,9 @@ static int pull(FILE *fp, struct socket *sock, SSL *ssl, char *buf, int len) {
       nread = -1;
   } else if (sock && sock->sock != INVALID_SOCKET) {
     nread = recv(sock->sock, buf, (size_t) len, 0);
-	sock->read_error = (nread < 0);
+    sock->read_error = (nread < 0);
   } else {
-	nread = -1;
+    nread = -1;
   }
 
   return nread;
@@ -2630,7 +2630,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
 
     // How many bytes of data we have buffered in the request buffer?
-	assert(conn->request_len >= 0);
+    assert(conn->request_len >= 0);
     buffered = conn->buf + conn->request_len + conn->consumed_content;
     buffered_len = conn->data_len - conn->request_len;
     assert(buffered_len >= 0);
@@ -3819,7 +3819,7 @@ static int64_t send_data_to_log(struct mg_connection *conn, FILE *fp, int64_t le
     if (n < 0) {
       break;
     }
-	rlen += n;
+    rlen += n;
     buf[offset + n] = 0;
     if (n == 0) {
       // log possible last remaining line and then we're done:
@@ -4250,7 +4250,7 @@ static int prepare_cgi_environment(struct mg_connection *conn,
   if (conn->request_info.parent) {
     const char *str = conn->request_info.parent->uri;
     size_t slen;
-	if (!str) str = "(null)";
+    if (!str) str = "(null)";
     slen = strlen(str);
     addenv(blk, "REDIRECT_STATUS=%d", conn->request_info.status_code); // For PHP
     // REDIRECT_URL ~ REQUEST_URI
@@ -4409,7 +4409,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   if (e == p) {
     dir[0] = '.', dir[1] = '\0';
   } else {
-	prog = p;
+    prog = p;
   }
 
   if (pipe(fd_stdin) != 0 || pipe(fd_stdout) != 0 || pipe(fd_stderr) != 0) {
@@ -4447,7 +4447,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // response based on the HTTP headers alone, which is legal
   // behaviour.
   if (conn->request_len > 0 &&
-	  !forward_body_data(conn, in, NULL, NULL, 0)) {
+      !forward_body_data(conn, in, NULL, NULL, 0)) {
     mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
@@ -4592,7 +4592,7 @@ done:
 
   if (err != NULL) {
     // copy stderr to error log:
-	(void) send_data_to_log(conn, err, INT64_MAX, "CGI [%s] stderr says: %s", prog);
+    (void) send_data_to_log(conn, err, INT64_MAX, "CGI [%s] stderr says: %s", prog);
     (void) fclose(err);
   } else if (fd_stderr[0] != -1) {
     (void) close(fd_stderr[0]);
@@ -5042,18 +5042,18 @@ static void handle_request(struct mg_connection *conn) {
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
 
-	/*
-	Do NOT hack like this but use proper HTTP/1.1 Connection:close responses instead.
+    /*
+    Do NOT hack like this but use proper HTTP/1.1 Connection:close responses instead.
 
-	When a connection is marked as to-be-closed but the browser isn't notified through 
-	the headers about this, then at least IE9 will keep the connection open for up to
-	1 minute ( http://support.microsoft.com/kb/813827 ) thus blocking one mongoose
-	thread, and IE9 will use 3-4 threads for every page action (be it page request
-	+ JS/CSS or multiple POST AJAX requests), so you will run out of server threads
-	pretty darn quickly.
-	*/
-#if 0 
-	conn->must_close = 1; // TODO: currently there is no way to set the close flag in the callback
+    When a connection is marked as to-be-closed but the browser isn't notified through
+    the headers about this, then at least IE9 will keep the connection open for up to
+    1 minute ( http://support.microsoft.com/kb/813827 ) thus blocking one mongoose
+    thread, and IE9 will use 3-4 threads for every page action (be it page request
+    + JS/CSS or multiple POST AJAX requests), so you will run out of server threads
+    pretty darn quickly.
+    */
+#if 0
+    conn->must_close = 1; // TODO: currently there is no way to set the close flag in the callback
 #endif
 
   } else if (!strcmp(ri->request_method, "OPTIONS")) {
@@ -6003,26 +6003,26 @@ static void process_new_connection(struct mg_connection *conn) {
   const char *cl;
 
   do {
-	  if (conn->request_info.seq_no > 0)
-	  {
-		  DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
-	  }
+      if (conn->request_info.seq_no > 0)
+      {
+          DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
+      }
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, &conn->client, conn->ssl,
                                      conn->buf, conn->buf_size,
                                      &conn->data_len);
     assert(conn->data_len >= conn->request_len);
-	conn->request_info.seq_no++;
+    conn->request_info.seq_no++;
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, NULL, "");
       return;
     }
     if (conn->request_len <= 0) {
-	  // In case we didn't receive ANY data, we don't mess with the connection any further 
-	  // by trying to send any error response data, so we tag the connection as done for that:
-	  if (conn->data_len == 0) {
+      // In case we didn't receive ANY data, we don't mess with the connection any further
+      // by trying to send any error response data, so we tag the connection as done for that:
+      if (conn->data_len == 0) {
         mg_mark_end_of_header_transmission(conn);
-	  }
+      }
       // don't mind we cannot send the 5xx response code, as long as we log the issue at least...
       send_http_error(conn, 580, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
@@ -6078,7 +6078,7 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp) {
     // Copy socket from the queue and increment tail
     *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
     ctx->sq_tail++;
-	rv = 1;
+    rv = 1;
     DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
 
     // Wrap pointers if needed
@@ -6109,7 +6109,7 @@ static void worker_thread(struct mg_context *ctx) {
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
   while (consume_socket(ctx, &conn->client)) {
-	// everything in 'conn' is zeroed at this point in time: set up the buffers, etc.
+    // everything in 'conn' is zeroed at this point in time: set up the buffers, etc.
     conn->buf_size = buf_size;
     conn->buf = (char *) (conn + 1);
     conn->birth_time = time(NULL);
@@ -6140,9 +6140,9 @@ static void worker_thread(struct mg_context *ctx) {
     reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
-	// Clear everything in conn to ensure no value makes it into the next connection/session.
+    // Clear everything in conn to ensure no value makes it into the next connection/session.
     // (Also clears the cached logfile path so it is recalculated on the next log operation.)
-	memset(conn, 0, sizeof(*conn));
+    memset(conn, 0, sizeof(*conn));
   }
   free(conn);
 
@@ -6174,7 +6174,7 @@ static int produce_socket(struct mg_context *ctx, const struct socket *sp) {
     // Copy socket to the queue and increment head
     ctx->queue[ctx->sq_head % ARRAY_SIZE(ctx->queue)] = *sp;
     ctx->sq_head++;
-	rv = 1;
+    rv = 1;
     DEBUG_TRACE(("queued socket %d", sp->sock));
   }
 
@@ -6209,10 +6209,10 @@ static int accept_new_connection(const struct socket *listener,
       DEBUG_TRACE(("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
       if (!produce_socket(ctx, &accepted)) {
-        mg_cry(fc(ctx), "%s: closing accepted connection %s because server is shutting down", 
-			   __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa));
+        mg_cry(fc(ctx), "%s: closing accepted connection %s because server is shutting down",
+               __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa));
         (void) closesocket(accepted.sock);
-	  }
+      }
     } else {
       sockaddr_to_string(src_addr, sizeof(src_addr), &accepted.rsa);
       mg_cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
