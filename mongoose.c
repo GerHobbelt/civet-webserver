@@ -5041,6 +5041,21 @@ static void handle_request(struct mg_connection *conn) {
     send_authorization_request(conn);
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
+
+	/*
+	Do NOT hack like this but use proper HTTP/1.1 Connection:close responses instead.
+
+	When a connection is marked as to-be-closed but the browser isn't notified through 
+	the headers about this, then at least IE9 will keep the connection open for up to
+	1 minute ( http://support.microsoft.com/kb/813827 ) thus blocking one mongoose
+	thread, and IE9 will use 3-4 threads for every page action (be it page request
+	+ JS/CSS or multiple POST AJAX requests), so you will run out of server threads
+	pretty darn quickly.
+	*/
+#if 0 
+	conn->must_close = 1; // TODO: currently there is no way to set the close flag in the callback
+#endif
+
   } else if (!strcmp(ri->request_method, "OPTIONS")) {
     send_options(conn);
   } else if (strstr(path, PASSWORDS_FILE_NAME)) {
@@ -6003,6 +6018,11 @@ static void process_new_connection(struct mg_connection *conn) {
       return;
     }
     if (conn->request_len <= 0) {
+	  // In case we didn't receive ANY data, we don't mess with the connection any further 
+	  // by trying to send any error response data, so we tag the connection as done for that:
+	  if (conn->data_len == 0) {
+        mg_mark_end_of_header_transmission(conn);
+	  }
       // don't mind we cannot send the 5xx response code, as long as we log the issue at least...
       send_http_error(conn, 580, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
@@ -6027,9 +6047,6 @@ static void process_new_connection(struct mg_connection *conn) {
       cl = get_header(ri, "Content-Length");
       conn->content_len = (cl == NULL ? -1 : strtoll(cl, NULL, 10));
       conn->birth_time = time(NULL);
-      // and clear the cached logfile path so it is recalculated on the next log operation:
-      conn->error_logfile_path[0] = 0;
-      conn->access_logfile_path[0] = 0;
       handle_request(conn);
       call_user(conn, MG_REQUEST_COMPLETE);
       log_access(conn);
@@ -6514,7 +6531,9 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   }
 
   // Start worker threads
-  for (i = atoi(get_option(ctx, NUM_THREADS)); i > 0; i--) {
+  i = atoi(get_option(ctx, NUM_THREADS));
+  if (i < 1) i = 1;
+  for ( ; i > 0; i--) {
     if (start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
       mg_cry(fc(ctx), "Cannot start worker thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
     } else {
