@@ -47,7 +47,7 @@ static const char *default_options[] = {
   "document_root",         "./test",
   "listening_ports",       "8080",                         // "8081,8082s"
   //"ssl_certificate",     "ssl_cert.pem",
-  "num_threads",           "5",
+  "num_threads",           "1",
   "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
   "access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
   "keep_alive_timeout",    "5",
