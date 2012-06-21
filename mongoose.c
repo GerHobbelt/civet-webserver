@@ -399,7 +399,7 @@ struct mg_connection {
   struct socket client;       // Connected client
   time_t birth_time;          // Time when connection was accepted
   int64_t num_bytes_sent;     // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
-  int64_t content_len;        // received Content-Length header value
+  int64_t content_len;        // received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
   int64_t consumed_content;   // How many bytes of content have already been read
   char *buf;                  // Buffer for received data
   int buf_size;               // Buffer size for received data / same buffer size is also used for transmitting data (response headers)
@@ -2713,6 +2713,9 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
+	  // act like pull() when we're not involved with fetching HTTP request content:
+	  if (nread > 0 && conn->content_len == INT64_MAX)
+		break;
       n = pull(NULL, conn, (char *) buf, (int) len);
       if (n < 0) {
         // always propagate the error
