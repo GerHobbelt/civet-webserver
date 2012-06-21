@@ -4014,6 +4014,7 @@ int mg_send_file(struct mg_connection *conn, const char *path) {
 static void parse_http_headers(char **buf, struct mg_request_info *ri) {
   int i;
 
+  ri->num_headers = 0;
   for (i = 0; i < (int) ARRAY_SIZE(ri->http_headers); i++) {
     ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
     ri->http_headers[i].value = skip(buf, "\r\n");
@@ -4042,6 +4043,7 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
   ri->request_method = skip(&buf, " ");
   ri->uri = skip(&buf, " ");
   ri->http_version = skip(&buf, "\r\n");
+  ri->num_headers = 0;
 
   if (is_valid_http_method(ri->request_method) &&
       strncmp(ri->http_version, "HTTP/", 5) == 0) {
@@ -5413,6 +5415,7 @@ static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mas
  * for WLAN/UMTS
  */
 static int set_timeout(struct socket *sock, int seconds) {
+  int rv = 0;
 #ifdef _WIN32
   DWORD timeout, user_timeout;
   user_timeout = timeout = seconds * 1000; //milliseconds
@@ -5429,13 +5432,13 @@ static int set_timeout(struct socket *sock, int seconds) {
     if (setsockopt(sock->sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&timeout, sizeof(timeout)) < 0 &&
         setsockopt(sock->sock, SOL_SOCKET, SO_SNDTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) {
       DEBUG_TRACE(("setsockopt SO_RCVTIMEO and SO_SNDTIMEO timeout %d set failed on socket: %d", seconds, sock->sock));
-      return -1;
+      rv = -1;
     }
 
 #if defined(TCP_USER_TIMEOUT)
     if (setsockopt(sock->sock, SOL_SOCKET, TCP_USER_TIMEOUT, (const void *)&user_timeout, sizeof(user_timeout)) < 0) {
       DEBUG_TRACE(("setsockopt TCP_USER_TIMEOUT timeout %d set failed on socket: %d", seconds, sock->sock));
-      return -1;
+      rv = -1;
     }
 #endif
   }
@@ -6434,7 +6437,8 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         do
         {
           // while setting up the FD_SET, also check for idle-timed-out sockets and mark 'em:
-          if (arr[p].birth_time + arr[p].client.max_idle_seconds <= now)
+          if (arr[p].client.max_idle_seconds > 0 &&
+			  arr[p].birth_time + arr[p].client.max_idle_seconds <= now)
             arr[p].client.idle_time_expired = 1;
 
           add_to_set(arr[p].client.sock, &fdr, &max_fh);
