@@ -4192,10 +4192,11 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     assert(conn->consumed_content == 0);
 
     if (buffered_len > 0) {
-      if ((int64_t) buffered_len > conn->content_len) {
+      if ((int64_t) buffered_len > conn->content_len && conn->content_len >= 0) {
         buffered_len = (int) conn->content_len;
       }
-      if (push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
+      if (buffered_len &&
+		  push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
         goto failure;
       conn->consumed_content += buffered_len;
     }
@@ -5970,6 +5971,9 @@ static void close_socket_gracefully(struct mg_connection *conn) {
     sv = select(sock + 1, &fds, 0, 0, &tv);
     switch (sv) {
     case 1:
+	  // optimize the number of select() calls in the path: tell pull() we know there's some data waiting already
+	  conn->client.was_idle = 1;
+	  conn->client.has_read_data = 1;
       // only fetch RX data when there actually is some:
       n = pull(NULL, conn, buf, sizeof(buf));
       DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
