@@ -35,8 +35,10 @@ static void test_should_keep_alive(void) {
   char req4[] = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n";
 
   memset(&conn, 0, sizeof(conn));
+  memset(&ctx, 0, sizeof(ctx));
   conn.ctx = &ctx;
   parse_http_request(req1, &conn.request_info);
+  conn.request_info.status_code = 200;
 
   ctx.config[ENABLE_KEEP_ALIVE] = "no";
   ASSERT(should_keep_alive(&conn) == 0);
@@ -59,6 +61,12 @@ static void test_should_keep_alive(void) {
 
   conn.request_info.status_code = 401;
   ASSERT(should_keep_alive(&conn) == 0);
+
+  conn.request_info.status_code = 500;
+  ASSERT(should_keep_alive(&conn) == 0);
+
+  conn.request_info.status_code = 302;
+  ASSERT(should_keep_alive(&conn) == 1);
 
   conn.request_info.status_code = 200;
   conn.must_close = 1;
@@ -387,6 +395,15 @@ static void test_client_connect() {
 
 
 int main(void) {
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+	InitializeCriticalSection(&global_log_file_lock);
+#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
+	InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
+#else
+	InitializeCriticalSection(&DisconnectExPtrCS);
+#endif
+#endif
+
   test_match_prefix();
   test_remove_double_dots();
   test_IPaddr_parsing();
@@ -399,12 +416,6 @@ int main(void) {
   {
     WSADATA data;
     WSAStartup(MAKEWORD(2,2), &data);
-    InitializeCriticalSection(&global_log_file_lock);
-#if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
-    InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
-#else
-    InitializeCriticalSection(&DisconnectExPtrCS);
-#endif
   }
 #endif // _WIN32
 
