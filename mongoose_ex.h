@@ -95,10 +95,6 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
 // create a socket pair over local loopback. Used for inter-thread communications.
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
 
-// Contrary to mg_read() this one is able to fetch an arbitrary number of bytes from the given connection.
-int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize);
-// mg_push() would be indetical to mg_write() ...
-
 void mg_close_connection(struct mg_connection *conn);
 
 
@@ -168,6 +164,11 @@ const char *mg_suggest_connection_header(struct mg_connection *conn);
 
 // signal mongoose that the server should close the connection with the client once the current request has been serviced.
 void mg_connection_must_close(struct mg_connection *conn);
+
+// Instruct connection to keep going when server is stopped (mg_get_stop_flag() != 0): mode = 1.
+// Default for all connections: mode = 0
+void mg_set_connection_abort_mode(struct mg_connection *conn, int mode);
+
 
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)

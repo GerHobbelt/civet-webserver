@@ -681,7 +681,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
           if (max_fd >= 0)
           {
-            // use mg_pull() instead when you're accessing custom protocol sockets
             long int len = dataSize - gotSize;
             unsigned long int readLen = 0;
             if (len > bufferSize - bufferFill)

@@ -372,7 +372,7 @@ static void test_client_connect() {
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
     ASSERT(rv == 18);
     mg_shutdown(g, SHUT_WR);
-    rv = mg_pull(g, buf, sizeof(buf));
+    rv = mg_read(g, buf, sizeof(buf));
     ASSERT(rv > 0);
     close_connection(g);
     free(g);
@@ -386,7 +386,7 @@ static void test_client_connect() {
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
     ASSERT(rv == 18);
     mg_shutdown(g, SHUT_WR);
-    rv = mg_pull(g, buf, sizeof(buf));
+    rv = mg_read(g, buf, sizeof(buf));
     ASSERT(rv > 0);
     mg_close_connection(g);
     //free(g);
