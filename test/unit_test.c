@@ -374,7 +374,7 @@ static void test_client_connect() {
     mg_shutdown(g, SHUT_WR);
     rv = mg_read(g, buf, sizeof(buf));
     ASSERT(rv > 0);
-    close_connection(g);
+    mg_close_connection(g);
     free(g);
 
 
@@ -396,11 +396,12 @@ static void test_client_connect() {
 
 int main(void) {
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-	InitializeCriticalSection(&global_log_file_lock);
+  InitializeCriticalSection(&global_log_file_lock.lock);
+  global_log_file_lock.active = 1;
 #if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
-	InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
+  InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
-	InitializeCriticalSection(&DisconnectExPtrCS);
+  InitializeCriticalSection(&DisconnectExPtrCS);
 #endif
 #endif
 

@@ -52,14 +52,19 @@ int mgW32_get_errno(void) {
   return (e2 ? e2 : e1 ? e1 : e3);
 }
 
-static CRITICAL_SECTION global_log_file_lock;
+static struct {
+  volatile int active;
+  CRITICAL_SECTION lock;
+} global_log_file_lock = {0};
 
 void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
-  EnterCriticalSection(&global_log_file_lock);
+  if (global_log_file_lock.active)
+    EnterCriticalSection(&global_log_file_lock.lock);
 }
 
 void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
-  LeaveCriticalSection(&global_log_file_lock);
+  if (global_log_file_lock.active)
+    LeaveCriticalSection(&global_log_file_lock.lock);
 }
 
 
@@ -379,7 +384,7 @@ struct mg_context {
   volatile int num_threads;   // Number of threads
   pthread_mutex_t mutex;      // Protects (max|num)_threads
   pthread_cond_t  cond;       // Condvar for tracking workers terminations
-  
+
   struct mg_idle_connection queue_store[128]; // Cut down on malloc()/free()ing cost by using a static queue.
   volatile int sq_head;       // Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
   int idle_q_store_free_slot; // index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
@@ -1474,7 +1479,7 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
-  DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d\n",
+  DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
                (int)conn->must_close,
                (int)conn->request_info.status_code,
                (int)is_legal_response_code(conn->request_info.status_code),
@@ -1497,8 +1502,9 @@ static int should_keep_alive(struct mg_connection *conn) {
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
-  DEBUG_TRACE(("suggest_connection_header() --> %s\n", should_keep_alive(conn) ? "keep-alive" : "close"));
-  return should_keep_alive(conn) ? "keep-alive" : "close";
+  int rv = should_keep_alive(conn);
+  DEBUG_TRACE(("suggest_connection_header() --> %s", rv ? "keep-alive" : "close"));
+  return rv ? "keep-alive" : "close";
 }
 
 // Return negative value on error; otherwise number of bytes saved by compacting.
@@ -4524,7 +4530,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   // Do not send anything back to client, until we buffer in all
   // HTTP headers.
   data_len = 0;
-  headers_len = read_request(out, NULL, 
+  headers_len = read_request(out, NULL,
                              buf, sizeof(buf), &data_len);
   if (headers_len <= 0) {
     send_http_error(conn, 500, NULL,
@@ -5906,10 +5912,12 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   int n, w;
   int linger_timeout = atoi(get_conn_option(conn, SOCKET_LINGER_TIMEOUT)) * 1000;
   SOCKET sock;
+  int abort_when_server_stops;
 
   if (!conn || conn->client.sock == INVALID_SOCKET)
       return;
   sock = conn->client.sock;
+  abort_when_server_stops = conn->abort_when_server_stops;
 
   /*
 
@@ -5944,7 +5952,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   // Now we set socket to BLOCKING before we go into the 'graceful close' phase:
   set_non_blocking_mode(sock, 0);
 
-  // make sure the connection can be flushed even while the server shuts down:
+  // make sure the connection can be flushed even while the server shuts down: trick mg_read()/pull()
   conn->abort_when_server_stops = 0;
 
   // Send FIN to the client
@@ -5955,7 +5963,6 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   // behaviour is seen on Windows, when client keeps sending data
   // when server decides to close the connection; then when client
   // does recv() it gets no data back.
-  w = 1;
   do {
     // we still need to fetch it (see WinSock comments elsewhere for what
     // happens if you don't. Doing this on a NON-BLOCKING socket would
@@ -5980,20 +5987,24 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       // only fetch RX data when there actually is some:
       n = pull(NULL, conn, buf, sizeof(buf));
       DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
+      w = 0;
       if (n < 0) {
-        w = 0;
         linger_timeout = 0;
         break;
       }
-      // fall through: connection closed from the other side. Don't count this against our linger time.
-      if (n == 0) {
-        tv.tv_sec = tv.tv_usec = 0;
-    case 0:
-        // timeout expired or remote close signaled:
-        n = 0;
-        linger_timeout -= tv.tv_sec * 1000;
-        linger_timeout -= tv.tv_usec / 1000;
+	  // hasten the close when this connection should abort on server stop:
+	  if (n > 0 && conn->ctx->stop_flag && abort_when_server_stops) {
+        linger_timeout -= MG_SELECT_TIMEOUT_MSECS;
+		break;
       }
+      // connection closed from the other side. Don't count this against our linger time.
+      assert(n == 0);
+	  break;
+
+    case 0:
+      // timeout expired:
+      n = 0;
+      linger_timeout -= MG_SELECT_TIMEOUT_MSECS;
 #if defined(SIOCOUTQ)
       w = 0;
       // as we can detect how much TX data is pending, we can use that to terminate faster:
@@ -6016,7 +6027,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       break;
     }
     //printf("graceful close: %d/%d/%d/%d\n", n, w, linger_timeout, sv);
-  } while ((n > 0 || w > 0) && linger_timeout > 0 && conn->ctx->stop_flag == 0);
+  } while ((n > 0 || w > 0) && linger_timeout > 0);
 
   // Set linger option to avoid socket hanging out after close. This prevent
   // ephemeral port exhaust problem under high QPS.
@@ -6027,7 +6038,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   //       Also note that linger_timeout==0 by now when a failure has been
   //       observed above: in that case we do NOT want to linger any longer
   //       so this will then be a *DIS*graveful close.
-  linger.l_onoff = (linger_timeout > 0 && conn->ctx->stop_flag == 0);
+  linger.l_onoff = (linger_timeout > 0 && (conn->ctx->stop_flag == 0 || !abort_when_server_stops));
   linger.l_linger = (linger_timeout + 999) / 1000; // round up
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
   DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
@@ -6098,7 +6109,7 @@ static int process_new_connection(struct mg_connection *conn) {
 
   do {
     if (conn->request_info.seq_no > 0) {
-      DEBUG_TRACE(("**************************************** round: %d!\n", conn->request_info.seq_no + 1));
+      DEBUG_TRACE(("************************** round: %d! *******************", conn->request_info.seq_no + 1));
     }
     reset_per_request_attributes(conn);
     conn->request_len = read_request(NULL, conn,
@@ -6424,6 +6435,9 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
 static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
   int head;
 
+  if (ctx->stop_flag)
+	return 0;
+
   (void) pthread_mutex_lock(&ctx->mutex);
   // If the queue is empty, wait. We're idle at this point.
   while (ctx->sq_head < 0 && ctx->stop_flag == 0) {
@@ -6515,7 +6529,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
       if (sn >= 0)
       {
         int p;
-         
+
         (void) pthread_mutex_lock(&ctx->mutex);
         p = pop_node_from_idle_queue(ctx, sn, conn);
         if (sn == idle_test_set)
@@ -6527,7 +6541,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
           insert_testset_into_idle_queue(ctx, idle_test_set);
         }
         (void) pthread_mutex_unlock(&ctx->mutex);
-        
+
         DEBUG_TRACE(("grabbed socket %d, going busy", conn->client.sock));
         return 1;
       }
@@ -6600,10 +6614,17 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
     }
   }
 
-  if (rv)
+  // one should NEVER call pthread_cond_signal() when a server stop is in progress:
+  // see the note at pthread_cond_broadcast() ~ line 1944.
+  //
+  // During a server stop we call pthread_cond_broadcast() so, given the race condition
+  // mentioned there, we should NEVER call this pthread_cond_signal() while that server
+  // stop is in progress. Besides, it's okay we don't as the master thread, who otherwise
+  // would act upon this signal, is shutting down already.
+  if (rv && ctx->stop_flag == 0)
     (void) pthread_cond_signal(&ctx->sq_full);
   (void) pthread_mutex_unlock(&ctx->mutex);
-  
+
   return rv;
 }
 
@@ -6616,6 +6637,7 @@ static void worker_thread(struct mg_context *ctx) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     return;
   }
+  conn->client.sock = INVALID_SOCKET;
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
   // sq_empty condvar to wake up the master waiting in produce_socket()
@@ -6678,19 +6700,34 @@ static void worker_thread(struct mg_context *ctx) {
       // Clear everything in conn to ensure no value makes it into the next connection/session.
       // (Also clears the cached logfile path so it is recalculated on the next log operation.)
       memset(conn, 0, sizeof(*conn));
+	  conn->client.sock = INVALID_SOCKET;
     } else {
       // The simplest way is to push the current connection onto the queue, and then
       // let consume_socket() [and its internal select() logic] cope with it.
       DEBUG_TRACE(("%s: pushing MAYBE-IDLE connection back onto the queue", __func__));
       if (!produce_socket(ctx, conn)) {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
-        mg_cry(fc(ctx), "%s: closing active connection %s because server is shutting down",
+        mg_cry(conn, "%s: closing active connection %s because server is shutting down",
                __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
+        reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+        call_user(conn, MG_EXIT_CLIENT_CONN);
+        close_connection(conn);
         break;
       }
     }
   }
+  // close the kept-alive connection when a failure occurred, e.g. server stop pending:
+  if (conn->client.sock != INVALID_SOCKET) {
+    char src_addr[SOCKADDR_NTOA_BUFSIZE];
+    mg_cry(conn, "%s: closing keep-alive connection %s because server is shutting down",
+           __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
+    reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+    call_user(conn, MG_EXIT_CLIENT_CONN);
+    close_connection(conn);
+  }
   free(conn);
+
+  DEBUG_TRACE(("%s: exiting", __func__));
 
   // Signal master that we're done with connection and exiting
   (void) pthread_mutex_lock(&ctx->mutex);
@@ -6699,7 +6736,14 @@ static void worker_thread(struct mg_context *ctx) {
   assert(ctx->num_threads >= 0);
   (void) pthread_mutex_unlock(&ctx->mutex);
 
-  DEBUG_TRACE(("exiting"));
+  // WARNING: ctx->num_threads-- MUST be the VERY LAST THING this thread does.
+  //          any DEBUG_TRACE(), etc. after it will run past the moment in time
+  //          when mg_stop() completes -- and that one destroys all the
+  //          mutexes so writing DEBUG_TRACE() right here would cause a random
+  //          crash due to race conditions, due to this thread then running
+  //          DEBUG_TRACE() or other code while the master thread completes
+  //          due to num_threads reaching zero, which in turn will signal
+  //          mg_stop() to destroy the mutexes, etc..
 }
 
 static int accept_new_connection(const struct socket *listener,
@@ -6841,11 +6885,11 @@ static void master_thread(struct mg_context *ctx) {
   // Stop signal received: somebody called mg_stop. Quit.
   close_all_listening_sockets(ctx);
 
+  (void) pthread_mutex_lock(&ctx->mutex);
   // Wakeup workers that are waiting for connections to handle.
   pthread_cond_broadcast(&ctx->sq_full);
 
   // Wait until all threads finish
-  (void) pthread_mutex_lock(&ctx->mutex);
   while (ctx->num_threads > 0) {
     (void) pthread_cond_wait(&ctx->cond, &ctx->mutex);
   }
@@ -6873,13 +6917,19 @@ static void master_thread(struct mg_context *ctx) {
   uninitialize_ssl(ctx);
 #endif
 
-  // Signal mg_stop() that we're done
-  ctx->stop_flag = 2;
-
-  DEBUG_TRACE(("exiting"));
-
   // fix: issue 345 for the master thread
   call_user_over_ctx(ctx, 0, MG_EXIT_SERVER);
+
+  DEBUG_TRACE(("%s: exiting", __func__));
+
+  // Signal mg_stop() that we're done; ctx will be invalid after this as main thread may finish mg_stop() at any time now
+  ctx->stop_flag = 2;
+
+  // WARNING: stop_flag = 2 MUST be the VERY LAST THING this thread does.
+  //          any DEBUG_TRACE(), etc. after it will run past the moment in time
+  //          when mg_stop() completes -- and that one destroys all the
+  //          mutexes so writing DEBUG_TRACE() right here would cause a random
+  //          crash due to race conditions.
 }
 
 static void free_context(struct mg_context *ctx) {
@@ -6915,7 +6965,7 @@ mg_signal_stop() instead.
 void mg_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 
-  // Wait until mg_finish() stops
+  // Wait until master_thread() stops
   while (ctx->stop_flag != 2) {
     (void) mg_sleep(10);
   }
@@ -6926,7 +6976,8 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-  DeleteCriticalSection(&global_log_file_lock);
+  global_log_file_lock.active = 0;
+  DeleteCriticalSection(&global_log_file_lock.lock);
   DeleteCriticalSection(&DisconnectExPtrCS);
   (void) WSACleanup();
 #endif // _WIN32
@@ -6941,7 +6992,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
-  InitializeCriticalSection(&global_log_file_lock);
+  InitializeCriticalSection(&global_log_file_lock.lock);
+  global_log_file_lock.active = 1;
 #if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
