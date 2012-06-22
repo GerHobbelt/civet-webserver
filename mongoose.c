@@ -6814,6 +6814,7 @@ static void master_thread(struct mg_context *ctx) {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
           if (accept_new_connection(sp, ctx)) {
+		    call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_BEGIN);
             // severe failure; unbind and rebind to listening sockets
             // in order to discard pending incoming connections:
             close_all_listening_sockets(ctx);
@@ -6824,6 +6825,7 @@ static void master_thread(struct mg_context *ctx) {
                 break;
               // failed to rebind; retry after another bit of sleep
             } while (ctx->stop_flag == 0);
+		    call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_END);
             break; // do NOT check the other (now invalid) listeners!
           }
         }

@@ -102,6 +102,12 @@ enum mg_event {
   MG_EXIT_MASTER,           // The master thread is about to close
   MG_IDLE_MASTER,           // The master thread has been idle for 200ms, i.e.
                             // there's not been any HTTP connections very recently.
+  MG_RESTART_MASTER_BEGIN,  // The master thread failed (accept() barfed) and 
+                            // mongoose is going to re-init the listeners. This
+							// event is fired just before the current listeners
+							// are shut down.
+  MG_RESTART_MASTER_END,    // Paired with MG_RESTART_MASTER_BEGIN: invoked once
+                            // the listeners have been re-initialized again.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
   // fix: numbers were added to fix the ABI in case mongoose core and callback
