@@ -440,7 +440,7 @@ void mg_connection_must_close(struct mg_connection *conn)
 
 void mg_set_connection_abort_mode(struct mg_connection *conn, int mode)
 {
-	conn->abort_when_server_stops = !mode;
+    conn->abort_when_server_stops = !mode;
 }
 
 
@@ -481,12 +481,12 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     newconn->birth_time = time(NULL);
                     newconn->ctx = ctx;
                     newconn->client.sock = socks[i];
-					// by default, a client-side connection is assumed to be an arbitrary client,
-					// not necessarily a HTTP client:
-					newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
-					//newconn->consumed_content = 0;
-					newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
-					//newconn->request_len = newconn->data_len = 0;
+                    // by default, a client-side connection is assumed to be an arbitrary client,
+                    // not necessarily a HTTP client:
+                    newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+                    //newconn->consumed_content = 0;
+                    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+                    //newconn->request_len = newconn->data_len = 0;
                     newconn->client.rsa.u.sin.sin_family = AF_INET;
                     newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
                     newconn->client.rsa.u.sin.sin_port = 0;

@@ -374,47 +374,47 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
 };
 
 struct mg_context {
-  volatile int stop_flag;     // Should we stop event loop
-  SSL_CTX *ssl_ctx;           // SSL context
-  char *config[NUM_OPTIONS];  // Mongoose configuration parameters
+  volatile int stop_flag;     			// Should we stop event loop
+  SSL_CTX *ssl_ctx;           			// SSL context
+  char *config[NUM_OPTIONS];  			// Mongoose configuration parameters
   struct mg_user_class_t user_functions; // user-defined callbacks and data
 
   struct socket *listening_sockets;
 
-  volatile int num_threads;   // Number of threads
-  pthread_mutex_t mutex;      // Protects (max|num)_threads
-  pthread_cond_t  cond;       // Condvar for tracking workers terminations
+  volatile int num_threads;   			// Number of threads
+  pthread_mutex_t mutex;      			// Protects (max|num)_threads
+  pthread_cond_t  cond;       			// Condvar for tracking workers terminations
 
   struct mg_idle_connection queue_store[128]; // Cut down on malloc()/free()ing cost by using a static queue.
-  volatile int sq_head;       // Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
-  int idle_q_store_free_slot; // index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
+  volatile int sq_head;       			// Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
+  int idle_q_store_free_slot; 			// index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
 
-  pthread_cond_t sq_full;     // Signaled when socket is produced
-  pthread_cond_t sq_empty;    // Signaled when socket is consumed
+  pthread_cond_t sq_full;     			// Signaled when socket is produced
+  pthread_cond_t sq_empty;    			// Signaled when socket is consumed
 };
 
 struct mg_connection {
-  unsigned must_close: 1;     // 1 if connection must be closed
-  unsigned is_inited: 1;      // 1 when the connection been completely set up (SSL, local and remote peer info, ...)
-  unsigned abort_when_server_stops: 1;	// 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
-  int nested_err_or_pagereq_count;		// 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
+  unsigned must_close: 1;     			// 1 if connection must be closed
+  unsigned is_inited: 1;      			// 1 when the connection been completely set up (SSL, local and remote peer info, ...)
+  unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
+  int nested_err_or_pagereq_count;      // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;
-  SSL *ssl;                   // SSL descriptor
-  struct socket client;       // Connected client
-  time_t birth_time;          // Time when connection was accepted
-  int64_t num_bytes_sent;     // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
-  int64_t content_len;        // received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
-  int64_t consumed_content;   // How many bytes of content have already been read
-  char *buf;                  // Buffer for received data
-  int buf_size;               // Buffer size for received data / same buffer size is also used for transmitting data (response headers)
-  int request_len;            // Size of the request + headers in buffer buf[]
-  int data_len;               // Total size of received data in buffer buf[]
+  SSL *ssl;                   			// SSL descriptor
+  struct socket client;       			// Connected client
+  time_t birth_time;          			// Time when connection was accepted
+  int64_t num_bytes_sent;     			// Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
+  int64_t content_len;        			// received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
+  int64_t consumed_content;   			// How many bytes of content have already been read
+  char *buf;                  			// Buffer for received data
+  int buf_size;               			// Buffer size for received data / same buffer size is also used for transmitting data (response headers)
+  int request_len;            			// Size of the request + headers in buffer buf[]
+  int data_len;               			// Total size of received data in buffer buf[]
 
-  int tx_headers_len;         // Size of the response headers in buffer buf[]
-  int tx_can_compact_hdrstore;			// signal whether a 'compact' operation would have any effect at all
+  int tx_headers_len;         			// Size of the response headers in buffer buf[]
+  int tx_can_compact_hdrstore;          // signal whether a 'compact' operation would have any effect at all
 
-  char error_logfile_path[PATH_MAX+1];	// cached value: path to the error logfile designated to this connection/CTX
+  char error_logfile_path[PATH_MAX+1];  // cached value: path to the error logfile designated to this connection/CTX
   char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
 };
 
@@ -2588,10 +2588,10 @@ int mg_fclose(FILE *fp) {
 }
 
 static void add_to_set(SOCKET fd, fd_set *set, int *max_fd) {
-	FD_SET(fd, set);
-	if (((int)fd) > *max_fd) {
-		*max_fd = (int) fd;
-	}
+    FD_SET(fd, set);
+    if (((int)fd) > *max_fd) {
+        *max_fd = (int) fd;
+    }
 }
 
 // Write data to the IO channel - opened file descriptor, socket or SSL
@@ -2650,27 +2650,27 @@ static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
     if (ferror(fp))
       nread = -1;
   } else if (conn && conn->client.sock != INVALID_SOCKET) {
-	nread = 0;
-	// poll stop_flag to ensure that we'll be able to abort on server stop:
-	while (conn->ctx->stop_flag == 0 || !conn->abort_when_server_stops) {
-	  int sn = 1;
-	  // do we already know whether there's incoming data pending?
-	  if (!(conn->client.was_idle && conn->client.has_read_data)) {
-	    fd_set fdr;
-	    int max_fh = 0;
-		struct timeval tv = {0};
-		tv.tv_sec = 0;
-		tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
-	    FD_ZERO(&fdr);
-	    add_to_set(conn->client.sock, &fdr, &max_fh);
-	    sn = select(max_fh, &fdr, NULL, NULL, &tv);
-	  }
-	  if (sn > 0) {
+    nread = 0;
+    // poll stop_flag to ensure that we'll be able to abort on server stop:
+    while (conn->ctx->stop_flag == 0 || !conn->abort_when_server_stops) {
+      int sn = 1;
+      // do we already know whether there's incoming data pending?
+      if (!(conn->client.was_idle && conn->client.has_read_data)) {
+        fd_set fdr;
+        int max_fh = 0;
+        struct timeval tv = {0};
+        tv.tv_sec = 0;
+        tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
+        FD_ZERO(&fdr);
+        add_to_set(conn->client.sock, &fdr, &max_fh);
+        sn = select(max_fh, &fdr, NULL, NULL, &tv);
+      }
+      if (sn > 0) {
         nread = recv(conn->client.sock, buf, (size_t) len, 0);
-	    conn->client.read_error = (nread < 0);
-		break;
-	  }
-	}
+        conn->client.read_error = (nread < 0);
+        break;
+      }
+    }
     // ALWAYS reset the select() markers used by consume_socket() et al:
     conn->client.was_idle = 0;
     conn->client.has_read_data = 0;
@@ -2719,9 +2719,9 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
-	  // act like pull() when we're not involved with fetching HTTP request content:
-	  if (nread > 0 && conn->content_len == INT64_MAX)
-		break;
+      // act like pull() when we're not involved with fetching HTTP request content:
+      if (nread > 0 && conn->content_len == INT64_MAX)
+        break;
       n = pull(NULL, conn, (char *) buf, (int) len);
       if (n < 0) {
         // always propagate the error
@@ -4205,7 +4205,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         buffered_len = (int) conn->content_len;
       }
       if (buffered_len &&
-		  push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
+          push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
         goto failure;
       conn->consumed_content += buffered_len;
     }
@@ -5981,9 +5981,9 @@ static void close_socket_gracefully(struct mg_connection *conn) {
     sv = select(sock + 1, &fds, 0, 0, &tv);
     switch (sv) {
     case 1:
-	  // optimize the number of select() calls in the path: tell pull() we know there's some data waiting already
-	  conn->client.was_idle = 1;
-	  conn->client.has_read_data = 1;
+      // optimize the number of select() calls in the path: tell pull() we know there's some data waiting already
+      conn->client.was_idle = 1;
+      conn->client.has_read_data = 1;
       // only fetch RX data when there actually is some:
       n = pull(NULL, conn, buf, sizeof(buf));
       DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
@@ -5992,14 +5992,14 @@ static void close_socket_gracefully(struct mg_connection *conn) {
         linger_timeout = 0;
         break;
       }
-	  // hasten the close when this connection should abort on server stop:
-	  if (n > 0 && conn->ctx->stop_flag && abort_when_server_stops) {
+      // hasten the close when this connection should abort on server stop:
+      if (n > 0 && conn->ctx->stop_flag && abort_when_server_stops) {
         linger_timeout -= MG_SELECT_TIMEOUT_MSECS;
-		break;
+        break;
       }
       // connection closed from the other side. Don't count this against our linger time.
       assert(n == 0);
-	  break;
+      break;
 
     case 0:
       // timeout expired:
@@ -6436,7 +6436,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
   int head;
 
   if (ctx->stop_flag)
-	return 0;
+    return 0;
 
   (void) pthread_mutex_lock(&ctx->mutex);
   // If the queue is empty, wait. We're idle at this point.
@@ -6478,7 +6478,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         {
           // while setting up the FD_SET, also check for idle-timed-out sockets and mark 'em:
           if (arr[p].client.max_idle_seconds > 0 &&
-			  arr[p].birth_time + arr[p].client.max_idle_seconds <= now)
+              arr[p].birth_time + arr[p].client.max_idle_seconds <= now)
             arr[p].client.idle_time_expired = 1;
 
           add_to_set(arr[p].client.sock, &fdr, &max_fh);
@@ -6649,7 +6649,7 @@ static void worker_thread(struct mg_context *ctx) {
     conn->buf = (char *) (conn + 1);
     conn->ctx = ctx;
     conn->request_info.is_ssl = conn->client.is_ssl;
-	conn->abort_when_server_stops = 1;
+    conn->abort_when_server_stops = 1;
     if (conn->client.idle_time_expired) {
       DEBUG_TRACE(("%s: kept-alive(?) connection expired (keep-alive-timeout)", __func__));
       conn->must_close = 1;
@@ -6700,7 +6700,7 @@ static void worker_thread(struct mg_context *ctx) {
       // Clear everything in conn to ensure no value makes it into the next connection/session.
       // (Also clears the cached logfile path so it is recalculated on the next log operation.)
       memset(conn, 0, sizeof(*conn));
-	  conn->client.sock = INVALID_SOCKET;
+      conn->client.sock = INVALID_SOCKET;
     } else {
       // The simplest way is to push the current connection onto the queue, and then
       // let consume_socket() [and its internal select() logic] cope with it.
@@ -6858,7 +6858,7 @@ static void master_thread(struct mg_context *ctx) {
       for (sp = ctx->listening_sockets; sp != NULL; sp = sp->next) {
         if (ctx->stop_flag == 0 && FD_ISSET(sp->sock, &read_set)) {
           if (accept_new_connection(sp, ctx)) {
-		    call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_BEGIN);
+            call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_BEGIN);
             // severe failure; unbind and rebind to listening sockets
             // in order to discard pending incoming connections:
             close_all_listening_sockets(ctx);
@@ -6869,7 +6869,7 @@ static void master_thread(struct mg_context *ctx) {
                 break;
               // failed to rebind; retry after another bit of sleep
             } while (ctx->stop_flag == 0);
-		    call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_END);
+            call_user_over_ctx(ctx, 0, MG_RESTART_MASTER_END);
             break; // do NOT check the other (now invalid) listeners!
           }
         }
