@@ -4753,26 +4753,53 @@ static void put_file(struct mg_connection *conn, const char *path) {
   }
 }
 
+// Extract VVV from the string ' "VVV"' with optional leading WS and VVV not containing
+// any " itself. (Hence only useful for extracting 'simple' values such as file paths, etc.
+// from a quoted string.
+//
+// Return NULL on error.
+static char *extract_quoted_value(char *str)
+{
+  char *rv;
+  
+  str += strspn(str, " \t\r\n");
+  rv = str;
+  if (*str != '"') {
+    // no quotes around VVV are accepted, but then VVV can't contain whitespace either!
+	str += strcspn(str, " \t\r\n\"");
+  } else {
+	str = strchr(str, '"');
+	if (!str) {
+	  // erroneous format: no closing quote. Return NULL.
+	  return NULL;
+	}
+  }
+  *str = 0;
+  return rv;  
+}
+
 static int send_ssi_file(struct mg_connection *, const char *, FILE *, int);
 
 // Return 0 on success; non-zero on error, where negative number is a fatal I/O failure.
 static int do_ssi_include(struct mg_connection *conn, const char *ssi,
-                           const char tag[PATH_MAX+64], int include_level) {
-  char file_name[PATH_MAX+64], path[PATH_MAX], *p;
+                           char *tag, int include_level) {
+  char *file_name, path[PATH_MAX], *p;
   FILE *fp;
   int rv;
 
-  // sscanf() is safe here, since send_ssi_file() guarantees that tag is
-  // no larger than PATH_MAX+64 bytes, so strlen(tag) is always < PATH_MAX+64.
-  if (sscanf(tag, " virtual=\"%[^\"]\"", file_name) == 1) {
+  if (!strncmp(tag, "virtual=", 8)) {
     // File name is relative to the webserver root
+	file_name = extract_quoted_value(tag + 8);
+	if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
         get_conn_option(conn, DOCUMENT_ROOT), DIRSEP, file_name);
-  } else if (sscanf(tag, " file=\"%[^\"]\"", file_name) == 1) {
+  } else if (!strncmp(tag, "file=", 5)) {
     // File name is relative to the webserver working directory
     // or it is absolute system path
+    file_name = extract_quoted_value(tag + 5);
+	if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s", file_name);
-  } else if (sscanf(tag, " \"%[^\"]\"", file_name) == 1) {
+  } else if ((file_name = extract_quoted_value(tag)) != NULL && *file_name) {
     // File name is relative to the current document
     (void) mg_snprintf(conn, path, sizeof(path), "%s", ssi);
     if ((p = strrchr(path, '/')) != NULL) {
@@ -4781,7 +4808,8 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
     (void) mg_snprintf(conn, path + strlen(path),
         sizeof(path) - strlen(path), "%s", file_name);
   } else {
-    mg_cry(conn, "Bad SSI #include: [%s]", tag);
+faulty_tag_value:
+	mg_cry(conn, "Bad SSI #include: [%s] in SSI file [%s]", tag, ssi);
     return 1;
   }
 
@@ -4791,8 +4819,8 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
   conn->request_info.phys_path = path;
   if (!call_user(conn, MG_SSI_INCLUDE_REQUEST)) {
     if ((fp = mg_fopen(conn->request_info.phys_path, "rb")) == NULL) {
-      mg_cry(conn, "Cannot open SSI #include: [%s]: fopen(%s): %s",
-          tag, conn->request_info.phys_path, mg_strerror(ERRNO));
+      mg_cry(conn, "Cannot open SSI #include: [%s] in SSI file [%s]: %s",
+          conn->request_info.phys_path, ssi, mg_strerror(ERRNO));
       rv = 2;
     } else {
       set_close_on_exec(fileno(fp));
@@ -4814,14 +4842,14 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
 
 #if !defined(NO_POPEN)
 
-static int do_ssi_exec(struct mg_connection *conn, const char *tag) {
-  char cmd[SSI_LINE_BUFSIZ];
+static int do_ssi_exec(struct mg_connection *conn, char *tag) {
+  char *cmd;
   FILE *fp;
 
   // sscanf() is safe here, since send_ssi_file() also uses buffer
   // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
-  if (sscanf(tag, " \"%[^\"]\"", cmd) != 1) {
-    send_http_error(conn, 577, NULL, "Bad SSI #exec: [%s]", tag);
+  if ((cmd = extract_quoted_value(tag)) == NULL || !*cmd) {
+    send_http_error(conn, 577, NULL, "Bad SSI #exec");
     return -1;
   } else if ((fp = popen(cmd, "r")) == NULL) {
     send_http_error(conn, 577, NULL, "Cannot SSI #exec: [%s]: %s", cmd, mg_strerror(ERRNO));
@@ -4949,30 +4977,34 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
 		  return rv;
 		}
 	  } else if (!strncmp(s, "include", 7)) {
-        if (e - s - 7 > PATH_MAX + 64) {
-          send_http_error(conn, 577, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
-          return -1;
-        } else {
-          do_ssi_include(conn, path, s + 7, include_level);
-        }
+		s += 7;
+		s += strspn(s, " \t\r\n");
+        if (do_ssi_include(conn, path, (char *)s, include_level) < 0)
+		  return -1;
 #if !defined(NO_POPEN)
       } else if (!strncmp(s, "exec", 4)) {
-        if (do_ssi_exec(conn, s + 4))
+		s += 4;
+		s += strspn(s, " \t\r\n");
+        if (do_ssi_exec(conn, (char *)s))
           return -1;
 #endif // !NO_POPEN
 #if !defined(NO_CGI)
       } else if (!strncmp(s, "echo", 4)) {
         // http://www.ssi-developer.net/ssi/ssi-echo.shtml
-        s = mg_memfind(s, e - s, "var=", 4);
-        if (!s)
-          mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, buf);
-        else {
+	    s += 4;
+		s += strspn(s, " \t\r\n");
+        if (strncmp("var=", s, 4)) {
+          mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, s);
+		} else {
           const char *ve;
           int idx;
           s += 4;
-          s += strspn(s, "\" ");
-          ve = s + strcspn(s, " \"");
-          if (ve > e) ve = e;
+		  s = extract_quoted_value((char *)s);
+		  ve = s + strlen(s);
+          if (ve == e || !*s) {
+			send_http_error(conn, 577, NULL, "%s: invalid SSI 'echo' command", __func__);
+		    return -1;
+		  }
           *((char *)ve) = '=';
           // init 'blk' once, when we need it:
           if (!blk.conn) {
