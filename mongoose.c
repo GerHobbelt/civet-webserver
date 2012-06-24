@@ -477,6 +477,14 @@ static const char *call_user_conn_option_get(struct mg_connection *conn, const c
   }
 }
 
+static int call_user_ssi_command(struct mg_connection *conn, const char *ssi_commandline, const char *path, int include_level) {
+  if (conn && conn->ctx && conn->ctx->user_functions.user_ssi_command) {
+	return conn->ctx->user_functions.user_ssi_command(conn, ssi_commandline, path, include_level);
+  } else {
+	return 0;
+  }
+}
+
 static int is_empty(const char *str) {
   return !str || !*str;
 }
@@ -2735,6 +2743,8 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       len -= n;
     }
   }
+  DEBUG_TRACE(("--> %p %d %" INT64_FMT " %" INT64_FMT, buf, nread,
+	  conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -4848,7 +4858,7 @@ const char *mg_memfind(const char *haystack, size_t haysize, const char *needle,
 
 static int send_ssi_file(struct mg_connection *conn, const char *path,
                           FILE *fp, int include_level) {
-  char buf[SSI_LINE_BUFSIZ + 64];
+  char buf[SSI_LINE_BUFSIZ];
   int rlen, roff, taglen;
   struct vec ssi_start = {0}, ssi_end = {0};
   const char *m;
@@ -4888,6 +4898,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
     for(;;) {
       const char *e;
       const char *s;
+	  int rv;
       if (rlen < taglen) {
         if (b > buf) {
           memmove(buf, b, rlen);
@@ -4929,7 +4940,15 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       s--;
       // skip whitespace:
       s += strspn(s, " \t\r\n");
-      if (!memcmp(s, "include", 7)) {
+	  buf[e - buf] = 0;
+	  rv = call_user_ssi_command(conn, s, path, include_level);
+	  if (rv) {
+		if (rv < 0) {
+		  if (conn->request_info.status_code == 200)
+		    send_http_error(conn, 577, NULL, "%s: SSI tag processing failed (%s)", __func__, path);
+		  return rv;
+		}
+	  } else if (!strncmp(s, "include", 7)) {
         if (e - s - 7 > PATH_MAX + 64) {
           send_http_error(conn, 577, NULL, "%s: SSI INCLUDE tag is too large (%s)", __func__, path);
           return -1;
@@ -4937,12 +4956,12 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
           do_ssi_include(conn, path, s + 7, include_level);
         }
 #if !defined(NO_POPEN)
-      } else if (!memcmp(s, "exec", 4)) {
+      } else if (!strncmp(s, "exec", 4)) {
         if (do_ssi_exec(conn, s + 4))
           return -1;
 #endif // !NO_POPEN
 #if !defined(NO_CGI)
-      } else if (!memcmp(s, "echo", 4)) {
+      } else if (!strncmp(s, "echo", 4)) {
         // http://www.ssi-developer.net/ssi/ssi-echo.shtml
         s = mg_memfind(s, e - s, "var=", 4);
         if (!s)

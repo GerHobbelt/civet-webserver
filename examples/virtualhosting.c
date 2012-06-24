@@ -595,7 +595,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     return (void *)1;
   } else if (!strcmp(uri, "/_echo")) {
     const char * contentLength = mg_get_header(conn, "Content-Length");
-    const char * contentType = mg_get_header(conn, "Content-Type");
 
     mg_connection_must_close(conn);
     request_info->status_code = 200;
@@ -682,7 +681,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
           if (max_fd >= 0)
           {
             long int len = dataSize - gotSize;
-            unsigned long int readLen = 0;
             if (len > bufferSize - bufferFill)
                 len = bufferSize - bufferFill;
             gotNow = mg_read(conn, data + bufferFill, len);

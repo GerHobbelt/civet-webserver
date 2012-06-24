@@ -179,6 +179,22 @@ typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 //   the option (and possibly a default value is used instead).
 typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 
+// Prototype for the user-defined SSI command processing function. Mongoose invokes this function
+// when a SSI tag is found in a SSI include file. This function offers the user first pick in
+// how to process the SSI tag.
+//
+// Parameters:
+//   conn: the current connection.
+//   ssi_sommandline: the NUL-terminated string inside the SSI tag. e.g. "echo var=help"
+//   ssi_filepath: the path of the current SSI file.
+//   include_level: the SSI include depth (1..N)
+//
+// Return:
+//   = 0: Mongoose should apply the default SSI handler; the user did not process this command.
+//   > 0: The callback processed the tag (any output has been written to the connection).
+//   < 0: The callback reported an error. SSI processing will be aborted immediately.
+typedef int (*mg_ssi_command_callback_t)(struct mg_connection *conn, const char *ssi_commandline, const char *ssi_filepath, int include_level);
+
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
 typedef struct mg_user_class_t {
@@ -189,6 +205,8 @@ typedef struct mg_user_class_t {
   mg_option_decode_callback_t user_option_decode; // User-defined option decode/processing callback function
   mg_option_fill_callback_t   user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
   mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
+
+  mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
 } mg_user_class_t;
 
 
