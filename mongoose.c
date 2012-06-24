@@ -1860,7 +1860,9 @@ static void vsend_http_error(struct mg_connection *conn, int status,
         mg_write_http_response_head(conn, status, reason);
 
         if (len > 0) {
-          mg_write(conn, conn->request_info.status_custom_description, len);
+          if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
+			conn->must_close = 1;
+		  }
         }
       }
     } else if (mg_is_producing_nested_page(conn)) {
@@ -4768,7 +4770,8 @@ static char *extract_quoted_value(char *str)
     // no quotes around VVV are accepted, but then VVV can't contain whitespace either!
 	str += strcspn(str, " \t\r\n\"");
   } else {
-	str = strchr(str, '"');
+	rv++;
+	str = strchr(str + 1, '"');
 	if (!str) {
 	  // erroneous format: no closing quote. Return NULL.
 	  return NULL;
@@ -4787,6 +4790,7 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
   FILE *fp;
   int rv;
 
+  tag += strspn(tag, " \t\r\n");
   if (!strncmp(tag, "virtual=", 8)) {
     // File name is relative to the webserver root
 	file_name = extract_quoted_value(tag + 8);
@@ -5307,7 +5311,7 @@ fail_dramatically:
     ri.status_code = conn->request_info.status_code;
     conn->request_info = ri;
   }
-  return (conn->nested_err_or_pagereq_count == 1);
+  return (conn->nested_err_or_pagereq_count != 1);
 }
 
 int mg_is_producing_nested_page(struct mg_connection *conn) {
