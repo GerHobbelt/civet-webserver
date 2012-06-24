@@ -328,7 +328,7 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 {
     time_t timestamp = time(NULL);
 
-    mg_vwrite2log(conn, NULL, timestamp, severity, fmt, args);
+    mg_vwrite2log(conn, NULL, timestamp, severity ? severity : "debug", fmt, args);
 }
 
 
