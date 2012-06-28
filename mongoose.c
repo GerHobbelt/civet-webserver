@@ -38,7 +38,13 @@
 
 // The number of msecs to wait inside select() when there's nothing to do.
 #ifndef MG_SELECT_TIMEOUT_MSECS
-#define MG_SELECT_TIMEOUT_MSECS 200
+#define MG_SELECT_TIMEOUT_MSECS       200
+#endif
+// The number of msecs to wait inside select() or cond_wait() when the
+// connection queue is filled and there might be something to do elsewhere
+// while we wait for 'this bunch'
+#ifndef MG_SELECT_TIMEOUT_MSECS_TINY
+#define MG_SELECT_TIMEOUT_MSECS_TINY    1
 #endif
 
 
@@ -2673,7 +2679,7 @@ static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
         tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
         FD_ZERO(&fdr);
         add_to_set(conn->client.sock, &fdr, &max_fh);
-        sn = select(max_fh, &fdr, NULL, NULL, &tv);
+        sn = select(max_fh + 1, &fdr, NULL, NULL, &tv);
       }
       if (sn > 0) {
         nread = recv(conn->client.sock, buf, (size_t) len, 0);
@@ -4763,7 +4769,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
 static char *extract_quoted_value(char *str)
 {
   char *rv;
-  
+
   str += strspn(str, " \t\r\n");
   rv = str;
   if (*str != '"') {
@@ -4778,7 +4784,7 @@ static char *extract_quoted_value(char *str)
 	}
   }
   *str = 0;
-  return rv;  
+  return rv;
 }
 
 static int send_ssi_file(struct mg_connection *, const char *, FILE *, int);
@@ -6051,7 +6057,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
         break;
       }
       // connection closed from the other side. Don't count this against our linger time.
-      assert(n == 0);
+      //assert(n == 0);
       break;
 
     case 0:
@@ -6508,6 +6514,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
       idle_test_set = pull_testset_from_idle_queue(ctx, FD_SETSIZE);
       assert(idle_test_set >= 0 ? idle_test_set != head ? ctx->queue_store[idle_test_set].client.was_idle == 1 : 1 : 1);
       assert(idle_test_set >= 0 ? idle_test_set != head ? (ctx->queue_store[idle_test_set].client.has_read_data || ctx->queue_store[idle_test_set].client.idle_time_expired) : 1 : 1);
+      head = ctx->sq_head;
     }
     (void) pthread_mutex_unlock(&ctx->mutex);
 
@@ -6537,10 +6544,39 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
           add_to_set(arr[p].client.sock, &fdr, &max_fh);
           p = arr[p].next;
         } while (p != idle_test_set);
-        // do NOT wait in the select(), just check if anybody has anything for us or not.
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
-        sn = select(max_fh, &fdr, NULL, NULL, &tv);
+        /*
+		 Do NOT wait in the select(), just check if anybody has anything for us or not.
+
+		 Unless, that is, when we're checking the _last_ chunk of pending handles: if
+		 none of those deliver anything 'read ready' either, we know _none_ of them
+		 have anything useful for us right now and as the sq_full is still (correctly!)
+		 triggered, we just need to wait until there's some read data ready somewhere.
+		 Meanwhile, we don't want this loop to load the CPU @ 100% for this particular
+		 'everybody is silent now' scenario, so we add a wee bit of a delay here, just
+		 very small, so that us not seeing anything happening in this last series doesn't
+		 delay anything pending _now_ in the former chunks if the _very large_ (> FD_SETSIZE)
+		 connection queue we might have.
+		 If the connection queue is <= FD_SETSIZE elements large, then we might think
+		 we're safe with any delay as long as it's in select() here, as select() will
+		 be watching _all_ our queued connections then, but there can still be new
+		 connections incoming, getting queued and possibly with data ready, without us
+		 knowing yet -- we're outside the mutex-ed zone here!
+
+		 'head' is a thread-safe copy of the ctx->sq_head after extracting the current
+		 series from the connection queue; remember that it's not up-to-date as it
+		 represents the state of affairs while we were in the mutexed zone: the situation
+		 may have changed by now, so we MUST keep our select() delay as low as possible
+		 here to balance between CPU load reduction in 'everybody is silent' mode while
+		 ensuring swift reponse to new incoming connections with data available in them.
+		*/
+        if (head >= 0) {
+          tv.tv_sec = 0;
+          tv.tv_usec = 0;
+        } else {
+          tv.tv_sec = MG_SELECT_TIMEOUT_MSECS_TINY / 1000;
+          tv.tv_usec = MG_SELECT_TIMEOUT_MSECS_TINY * 1000;
+        }
+        sn = select(max_fh + 1, &fdr, NULL, NULL, &tv);
         if (sn > 0)
         {
           sn = -1;
@@ -6609,6 +6645,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         {
           // still more nodes to test
           idle_test_set = pull_testset_from_idle_queue(ctx, FD_SETSIZE);
+          head = ctx->sq_head;
         }
         else
         {
@@ -6628,9 +6665,11 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
     while (ctx->stop_flag == 0) {
       struct timespec tv = {0};
 
+	  // While we wait here, one or more queued connections may receive data,
+	  // which should be processed ASAP, so we shouldn't wait long then:
       if (ctx->sq_head >= 0) {
-        tv.tv_sec = (MG_SELECT_TIMEOUT_MSECS / 10) / 1000;
-        tv.tv_nsec = (MG_SELECT_TIMEOUT_MSECS / 10) * 1000000;
+        tv.tv_sec = MG_SELECT_TIMEOUT_MSECS_TINY / 1000;
+        tv.tv_nsec = MG_SELECT_TIMEOUT_MSECS_TINY * 1000000;
       } else {
         tv.tv_sec = MG_SELECT_TIMEOUT_MSECS / 1000;
         tv.tv_nsec = MG_SELECT_TIMEOUT_MSECS * 1000000;

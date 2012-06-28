@@ -24,7 +24,11 @@ all:
 ##########################################################################
 
 # Shut up GCC about these, because we know they're there and we don't mind. Don't crowd the screen with these.
-GCC_WARNINGS = -W -Wall -pedantic -Wno-missing-field-initializers -Wno-unused-parameter -Wno-format-zero-length
+GCC_WARNINGS = -W -Wall -pedantic \
+	-Wno-missing-field-initializers \
+	-Wno-unused-parameter \
+	-Wno-format-zero-length \
+	-Wno-missing-braces
 
 CFLAGS = -std=c99 -O2 $(GCC_WARNINGS) $(COPT)
 MAC_SHARED = -flat_namespace -bundle -undefined suppress
