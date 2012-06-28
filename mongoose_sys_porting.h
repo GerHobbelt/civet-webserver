@@ -678,7 +678,7 @@ typedef int socklen_t;
 /* buffer size used when copying data to/from file/socket/... */
 #define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
 /* buffer size used to load all HTTP headers into: if the client sends more header data than this, we'll barf a hairball! */
-#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 2048)
+#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 16384)
 /* buffer size used to extract/decode an SSI command line / file path; hence must be equal or larger than PATH_MAX, at least */
 #define SSI_LINE_BUFSIZ                 MG_MAX(BUFSIZ, PATH_MAX)
 
