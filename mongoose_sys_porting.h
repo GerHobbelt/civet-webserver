@@ -26,9 +26,9 @@
 #else
 #define _XOPEN_SOURCE 600     // For PATH_MAX and flockfile() on Linux
 #define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
+#endif
 #define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
 #define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
-#endif
 
 #if defined(__SYMBIAN32__)
 #define NO_SSL // SSL is not supported
@@ -175,7 +175,250 @@ typedef long off_t;
 #endif
 
 #define _POSIX_
-#define INT64_FMT  "I64d"
+
+// make sure code which hasn't been properly migrated, crashes at compile time:
+#define INT64_FMT  ++++"do not use; use the C99 format define(s) instead, e.g. PRId64"++++
+
+/*
+Since MSVC and MingW GCC don't have inttypes.h, we provide those printf/scanf formats here:
+
+GCC inttypes.h says:
+   "The ISO C99 standard specifies that these macros must only be
+   defined if explicitly requested."
+   
+We also check whether someone else has gone before us setting up these C99 defines.
+*/
+#if (!defined __cplusplus || defined __STDC_FORMAT_MACROS) && !defined(PRId64)
+
+#define __PRI64_PREFIX	"I64"
+
+/* Macros for printing format specifiers.  */
+
+/* Decimal notation.  */
+#define PRId8		"d"
+#define PRId16		"d"
+#define PRId32		"d"
+#define PRId64		__PRI64_PREFIX "d"
+
+#define PRIdLEAST8	"d"
+#define PRIdLEAST16	"d"
+#define PRIdLEAST32	"d"
+#define PRIdLEAST64	__PRI64_PREFIX "d"
+
+#define PRIdFAST8	"d"
+#define PRIdFAST16	"d"
+#define PRIdFAST32	"d"
+#define PRIdFAST64	__PRI64_PREFIX "d"
+
+
+#define PRIi8		"i"
+#define PRIi16		"i"
+#define PRIi32		"i"
+#define PRIi64		__PRI64_PREFIX "i"
+
+#define PRIiLEAST8	"i"
+#define PRIiLEAST16	"i"
+#define PRIiLEAST32	"i"
+#define PRIiLEAST64	__PRI64_PREFIX "i"
+
+#define PRIiFAST8	"i"
+#define PRIiFAST16	"i"
+#define PRIiFAST32	"i"
+#define PRIiFAST64	__PRI64_PREFIX "i"
+
+/* Octal notation.  */
+#define PRIo8		"o"
+#define PRIo16		"o"
+#define PRIo32		"o"
+#define PRIo64		__PRI64_PREFIX "o"
+
+#define PRIoLEAST8	"o"
+#define PRIoLEAST16	"o"
+#define PRIoLEAST32	"o"
+#define PRIoLEAST64	__PRI64_PREFIX "o"
+
+#define PRIoFAST8	"o"
+#define PRIoFAST16	"o"
+#define PRIoFAST32	"o"
+#define PRIoFAST64	__PRI64_PREFIX "o"
+
+/* Unsigned integers.  */
+#define PRIu8		"u"
+#define PRIu16		"u"
+#define PRIu32		"u"
+#define PRIu64		__PRI64_PREFIX "u"
+
+#define PRIuLEAST8	"u"
+#define PRIuLEAST16	"u"
+#define PRIuLEAST32	"u"
+#define PRIuLEAST64	__PRI64_PREFIX "u"
+
+#define PRIuFAST8	"u"
+#define PRIuFAST16	"u"
+#define PRIuFAST32	"u"
+#define PRIuFAST64	__PRI64_PREFIX "u"
+
+/* lowercase hexadecimal notation.  */
+#define PRIx8		"x"
+#define PRIx16		"x"
+#define PRIx32		"x"
+#define PRIx64		__PRI64_PREFIX "x"
+
+#define PRIxLEAST8	"x"
+#define PRIxLEAST16	"x"
+#define PRIxLEAST32	"x"
+#define PRIxLEAST64	__PRI64_PREFIX "x"
+
+#define PRIxFAST8	"x"
+#define PRIxFAST16	"x"
+#define PRIxFAST32	"x"
+#define PRIxFAST64	__PRI64_PREFIX "x"
+
+/* UPPERCASE hexadecimal notation.  */
+#define PRIX8		"X"
+#define PRIX16		"X"
+#define PRIX32		"X"
+#define PRIX64		__PRI64_PREFIX "X"
+
+#define PRIXLEAST8	"X"
+#define PRIXLEAST16	"X"
+#define PRIXLEAST32	"X"
+#define PRIXLEAST64	__PRI64_PREFIX "X"
+
+#define PRIXFAST8	"X"
+#define PRIXFAST16	"X"
+#define PRIXFAST32	"X"
+#define PRIXFAST64	__PRI64_PREFIX "X"
+
+
+/* Macros for printing `intmax_t' and `uintmax_t'.  */
+#define PRIdMAX	__PRI64_PREFIX "d"
+#define PRIiMAX	__PRI64_PREFIX "i"
+#define PRIoMAX	__PRI64_PREFIX "o"
+#define PRIuMAX	__PRI64_PREFIX "u"
+#define PRIxMAX	__PRI64_PREFIX "x"
+#define PRIXMAX	__PRI64_PREFIX "X"
+
+/* Macros for printing `intptr_t' and `uintptr_t'.  */
+#define PRIdPTR	__PRI64_PREFIX "d"
+#define PRIiPTR	__PRI64_PREFIX "i"
+#define PRIoPTR	__PRI64_PREFIX "o"
+#define PRIuPTR	__PRI64_PREFIX "u"
+#define PRIxPTR	__PRI64_PREFIX "x"
+#define PRIXPTR	__PRI64_PREFIX "X"
+
+
+/* Macros for scanning format specifiers.  */
+
+/* Signed decimal notation.  */
+//#define SCNd8		"hhd"
+#define SCNd16		"hd"
+#define SCNd32		"d"
+#define SCNd64		__PRI64_PREFIX "d"
+
+//#define SCNdLEAST8	"hhd"
+#define SCNdLEAST16	"hd"
+#define SCNdLEAST32	"d"
+#define SCNdLEAST64	__PRI64_PREFIX "d"
+
+//#define SCNdFAST8	"hhd"
+#define SCNdFAST16	"d"
+#define SCNdFAST32	"d"
+#define SCNdFAST64	__PRI64_PREFIX "d"
+
+/* Signed decimal notation.  */
+//#define SCNi8		"hhi"
+#define SCNi16		"hi"
+#define SCNi32		"i"
+#define SCNi64		__PRI64_PREFIX "i"
+
+//#define SCNiLEAST8	"hhi"
+#define SCNiLEAST16	"hi"
+#define SCNiLEAST32	"i"
+#define SCNiLEAST64	__PRI64_PREFIX "i"
+
+//#define SCNiFAST8	"hhi"
+#define SCNiFAST16	"i"
+#define SCNiFAST32	"i"
+#define SCNiFAST64	__PRI64_PREFIX "i"
+
+/* Unsigned decimal notation.  */
+//#define SCNu8		"hhu"
+#define SCNu16		"hu"
+#define SCNu32		"u"
+#define SCNu64		__PRI64_PREFIX "u"
+
+//#define SCNuLEAST8	"hhu"
+#define SCNuLEAST16	"hu"
+#define SCNuLEAST32	"u"
+#define SCNuLEAST64	__PRI64_PREFIX "u"
+
+//#define SCNuFAST8	"hhu"
+#define SCNuFAST16	"u"
+#define SCNuFAST32	"u"
+#define SCNuFAST64	__PRI64_PREFIX "u"
+
+/* Octal notation.  */
+//#define SCNo8		"hho"
+#define SCNo16		"ho"
+#define SCNo32		"o"
+#define SCNo64		__PRI64_PREFIX "o"
+
+//#define SCNoLEAST8	"hho"
+#define SCNoLEAST16	"ho"
+#define SCNoLEAST32	"o"
+#define SCNoLEAST64	__PRI64_PREFIX "o"
+
+//#define SCNoFAST8	"hho"
+#define SCNoFAST16	"o"
+#define SCNoFAST32	"o"
+#define SCNoFAST64	__PRI64_PREFIX "o"
+
+/* Hexadecimal notation.  */
+//#define SCNx8		"hhx"
+#define SCNx16		"hx"
+#define SCNx32		"x"
+#define SCNx64		__PRI64_PREFIX "x"
+
+//#define SCNxLEAST8	"hhx"
+#define SCNxLEAST16	"hx"
+#define SCNxLEAST32	"x"
+#define SCNxLEAST64	__PRI64_PREFIX "x"
+
+//#define SCNxFAST8	"hhx"
+#define SCNxFAST16	"x"
+#define SCNxFAST32	"x"
+#define SCNxFAST64	__PRI64_PREFIX "x"
+
+
+/* Macros for scanning `intmax_t' and `uintmax_t'.  */
+#define SCNdMAX	__PRI64_PREFIX "d"
+#define SCNiMAX	__PRI64_PREFIX "i"
+#define SCNoMAX	__PRI64_PREFIX "o"
+#define SCNuMAX	__PRI64_PREFIX "u"
+#define SCNxMAX	__PRI64_PREFIX "x"
+
+/* Macros for scanning `intptr_t' and `uintptr_t'.  */
+#define SCNdPTR	__PRI64_PREFIX "d"
+#define SCNiPTR	__PRI64_PREFIX "i"
+#define SCNoPTR	__PRI64_PREFIX "o"
+#define SCNuPTR	__PRI64_PREFIX "u"
+#define SCNxPTR	__PRI64_PREFIX "x"
+
+#endif	/* C++ && format macros */
+
+// See also: http://stackoverflow.com/questions/2354784/attribute-formatprintf-1-2-for-msvc/6849629#6849629
+#undef FORMAT_STRING
+#if _MSC_VER >= 1400
+# include <sal.h>
+# if _MSC_VER > 1400
+#  define FORMAT_STRING(p) _Printf_format_string_ p
+# else
+# define FORMAT_STRING(p) __format_string p
+# endif /* FORMAT_STRING */
+#else
+# define FORMAT_STRING(p) p
+#endif /* _MSC_VER */
 
 #define WINCDECL __cdecl
 
@@ -193,20 +436,22 @@ typedef long off_t;
 #define vsnprintf _vsnprintf
 #define mg_sleep(x) Sleep(x)
 
-#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY)
+#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY | _O_NOINHERIT)
 #define popen(x, y) _popen(x, y)
 #define pclose(x) _pclose(x)
 #define close(x) _close(x)
 #define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
 #define RTLD_LAZY  0
 #define fseeko(x, y, z) fseek((x), (y), (z))
+#if !defined(_POSIX_)
 #define fdopen(x, y) _fdopen((x), (y))
+#endif
 #define write(x, y, z) _write((x), (y), (unsigned) z)
 #define read(x, y, z) _read((x), (y), (unsigned) z)
 
 #if (NTDDI_VERSION >= NTDDI_VISTA)
   // Only Windoze Vista (and newer) have inet_ntop(); MingW doesn't seem to provide it though
-  #if !defined(__MINGW32__)
+  #if !defined(__MINGW32__) && !defined(__MINGW64__) // http://sourceforge.net/apps/mediawiki/predef/index.php?title=Compilers#MinGW_and_MinGW-w64
     #define HAVE_INET_NTOP
   #endif
 #endif
@@ -230,9 +475,9 @@ void mgW32_funlockfile(FILE *x);
 #define flockfile mgW32_flockfile
 #define funlockfile mgW32_funlockfile
 
-#if !defined(fileno)
+#if !defined(fileno) && (!defined(_POSIX_) || defined(_fileno))
 #define fileno(x) _fileno(x)
-#endif // !fileno MINGW #defines fileno
+#endif // !fileno MINGW #defines fileno; so does MSVC when in _POSIX_ mode, but _fileno is a faster(?) macro there.
 
 #if !defined(HAVE_PTHREAD)
 
@@ -294,6 +539,17 @@ int mg_rename(const char* oldname, const char* newname);
 int mg_remove(const char *path);
 int mg_mkdir(const char *path, int mode);
 
+#if defined(__MINGW32__) || defined(__MINGW64__) || 1
+// fixing the 'implicit declaration' warnings as the MingW headers aren't up to snuff:
+#if defined(_DLL) && !defined(_CRTIMP)
+#define _CRTIMP __declspec(dllimport)
+#endif
+_CRTIMP int __cdecl fileno(FILE * _File);
+_CRTIMP FILE * __cdecl fdopen(int _FileHandle, const char * _Mode);
+_CRTIMP int __cdecl _pclose(FILE * _File);
+_CRTIMP FILE * __cdecl _popen(const char * _Command, const char * _Mode);
+#endif
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
@@ -342,7 +598,6 @@ int mg_mkdir(const char *path, int mode);
 #define mg_sleep(x) usleep((x) * 1000)
 #define ERRNO errno
 #define INVALID_SOCKET (-1)
-#define INT64_FMT PRId64
 typedef int SOCKET;
 #define WINCDECL
 
@@ -353,6 +608,10 @@ typedef int SOCKET;
 #define HAVE_GETNAMEINFO
 
 #endif // End of Windows and UNIX specific includes
+
+#ifndef FORMAT_STRING
+# define FORMAT_STRING(p) p
+#endif
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
@@ -419,7 +678,7 @@ typedef int socklen_t;
 /* buffer size used when copying data to/from file/socket/... */
 #define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
 /* buffer size used to load all HTTP headers into: if the client sends more header data than this, we'll barf a hairball! */
-#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 2048)
+#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 16384)
 /* buffer size used to extract/decode an SSI command line / file path; hence must be equal or larger than PATH_MAX, at least */
 #define SSI_LINE_BUFSIZ                 MG_MAX(BUFSIZ, PATH_MAX)
 

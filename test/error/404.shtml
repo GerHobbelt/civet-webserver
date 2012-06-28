@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Mongoose Doing the B0rk B0rk B0rk In <!--#echo var="REDIRECT_STATUS"--> Time</title>
+<body>
+<h1>Robbery!</h1>
+
+<p>What you ask for isn't in store. We don't know who nabbed it or whether it's been around <em>at all</em>. Definitely <dfn>bad joss</dfn>.</p>
+
+<p>All we can say is: <!--#echo var="REDIRECT_ERROR_NOTES" --></p>
+</body>
+</html>

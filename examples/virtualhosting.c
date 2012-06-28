@@ -364,8 +364,8 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
       cl = n == 2 ? r2 - r1 + 1: cl - r1;
       (void) mg_snprintf(conn, range, sizeof(range),
                          "Content-Range: bytes "
-                         "%" INT64_FMT "-%"
-                         INT64_FMT "/%" INT64_FMT "\r\n",
+                         "%" PRId64 "-%"
+                         PRId64 "/%" PRId64 "\r\n",
                          r1, r1 + cl - 1, stp->size);
     }
 #endif
@@ -382,7 +382,7 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
                      "Last-Modified: %s\r\n"
                      "Etag: \"%s\"\r\n"
                      "Content-Type: text/html\r\n"
-                     "Content-Length: %" INT64_FMT "\r\n"
+                     "Content-Length: %" PRId64 "\r\n"
                      "Connection: %s\r\n"
                      // "Accept-Ranges: bytes\r\n"
                      "%s\r\n"
@@ -595,7 +595,6 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     return (void *)1;
   } else if (!strcmp(uri, "/_echo")) {
     const char * contentLength = mg_get_header(conn, "Content-Length");
-    const char * contentType = mg_get_header(conn, "Content-Type");
 
     mg_connection_must_close(conn);
     request_info->status_code = 200;
@@ -681,9 +680,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
           if (max_fd >= 0)
           {
-            // use mg_pull() instead when you're accessing custom protocol sockets
             long int len = dataSize - gotSize;
-            unsigned long int readLen = 0;
             if (len > bufferSize - bufferFill)
                 len = bufferSize - bufferFill;
             gotNow = mg_read(conn, data + bufferFill, len);

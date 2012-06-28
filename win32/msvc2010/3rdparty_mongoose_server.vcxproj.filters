@@ -28,6 +28,9 @@
     <Filter Include="test-website\imagetest">
       <UniqueIdentifier>{152a495e-c4fc-4ee0-b662-10a3fbaa4e97}</UniqueIdentifier>
     </Filter>
+    <Filter Include="test-website\error">
+      <UniqueIdentifier>{522e94bb-bbd0-4b29-a6e0-84a6b071f064}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\.gitmodules">
@@ -497,6 +500,15 @@
     </None>
     <None Include="..\..\test\imagetest\99.png">
       <Filter>test-website\imagetest</Filter>
+    </None>
+    <None Include="..\..\test\error\404.shtml">
+      <Filter>test-website\error</Filter>
+    </None>
+    <None Include="..\..\test\error\error.shtml">
+      <Filter>test-website\error</Filter>
+    </None>
+    <None Include="..\..\test\ajax\test-18.html">
+      <Filter>test-website\ajax</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

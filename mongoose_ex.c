@@ -200,7 +200,7 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
 static struct mg_connection *mg_connect(struct mg_connection *conn,
                                  const char *host, int port, int use_ssl) {
   struct mg_connection *newconn = NULL;
-  int sock;
+  SOCKET sock;
   struct addrinfo *result = NULL;
   struct addrinfo *ptr;
   struct addrinfo hints = {0};
@@ -227,7 +227,7 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
     // not necessarily a HTTP client:
     newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
     //newconn->consumed_content = 0;
-    newconn->content_len = INT64_MAX; // = -1; would mean we'd have to fetch and decode the (HTTP) headers first
+    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
     //newconn->request_len = newconn->data_len = 0;
     //newconn->must_close = 0;
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
@@ -265,16 +265,14 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
       closesocket(sock);
     } else {
       newconn->client.lsa.len = newconn->client.rsa.len;
-      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len))
-      {
+      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len)) {
         mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
         newconn->client.lsa.len = 0;
       }
       if (use_ssl && !sslize(newconn, SSL_connect)) {
         mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
         closesocket(sock);
-      }
-      else {
+      } else {
         if (result) freeaddrinfo(result);
         return newconn;
       }
@@ -291,36 +289,6 @@ struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *hos
     struct mg_connection *conn = fc(ctx);
 
     return mg_connect(conn, host, port, use_ssl);
-}
-
-int mg_pull(struct mg_connection *conn, void *buf, size_t max_bufsize)
-{
-    int nread;
-
-    assert((conn->content_len == -1 && conn->consumed_content == 0) ||
-        (conn->content_len == 0 && conn->consumed_content > 0) ||
-        conn->consumed_content <= conn->content_len);
-    DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)max_bufsize,
-        conn->content_len, conn->consumed_content));
-    nread = 0;
-    if (conn->consumed_content < conn->content_len)
-    {
-        // This is a connection with decoded headers (or something similar)
-        // --> use mg_read() to read up to the content 'boundary':
-        nread = mg_read(conn, buf, max_bufsize);
-    }
-    else
-    {
-        // We're using a connection that either isn't HTTP or with
-        // decoded content_length headers of any sort, or we're
-        // outside the 'content' area and we want to pull data from
-        // the socket anyway, say the headers themselves:
-        nread = pull(NULL, conn->client.sock, conn->ssl, (char *) buf, (int) max_bufsize);
-        if (nread > 0 && conn->content_len > 0) {
-            conn->consumed_content += nread;
-        }
-    }
-    return nread;
 }
 
 void mg_close_connection(struct mg_connection *conn)
@@ -360,7 +328,7 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 {
     time_t timestamp = time(NULL);
 
-    mg_vwrite2log(conn, NULL, timestamp, severity, fmt, args);
+    mg_vwrite2log(conn, NULL, timestamp, severity ? severity : "debug", fmt, args);
 }
 
 
@@ -470,6 +438,10 @@ void mg_connection_must_close(struct mg_connection *conn)
     conn->must_close = 1;
 }
 
+void mg_set_connection_abort_mode(struct mg_connection *conn, int mode)
+{
+    conn->abort_when_server_stops = !mode;
+}
 
 
 
@@ -509,6 +481,12 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     newconn->birth_time = time(NULL);
                     newconn->ctx = ctx;
                     newconn->client.sock = socks[i];
+                    // by default, a client-side connection is assumed to be an arbitrary client,
+                    // not necessarily a HTTP client:
+                    newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+                    //newconn->consumed_content = 0;
+                    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+                    //newconn->request_len = newconn->data_len = 0;
                     newconn->client.rsa.u.sin.sin_family = AF_INET;
                     newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
                     newconn->client.rsa.u.sin.sin_port = 0;

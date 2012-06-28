@@ -44,6 +44,7 @@ struct mg_ip_address {
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
+  struct mg_request_info *parent;  // points to the request_info block for the original request when we're currently producing a custom error page; NULL otherwise.
   const char *request_method;      // "GET", "POST", etc
   char *uri;                       // URL-decoded URI
   char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
@@ -62,12 +63,14 @@ struct mg_request_info {
   int status_code;                 // HTTP reply status code, e.g. 200
   char *status_custom_description; // complete info for the given status_code, basic and optional extended part separated by TAB; valid for event MG_HTTP_ERROR
   int is_ssl;                      // 1 if SSL-ed, 0 if not
+  int seq_no;                      // number of request served for this connection (1..N; can only be >1 for kept-alive connections)
   int num_headers;                 // Number of headers
   struct mg_header {
     char *name;                    // HTTP header name
     char *value;                   // HTTP header value
-  } http_headers[64];              // Maximum 64 headers
-  char* response_headers;          // Headers to be sent with HTTP response. Provided by user.
+  } http_headers[64];              // Maximum 64 request headers
+  int num_response_headers;        // Number of response headers
+  struct mg_header response_headers[64];  // Headers to be sent with HTTP response. Provided by user.
 };
 
 // Various events on which user-defined function is called by Mongoose.
@@ -98,10 +101,16 @@ enum mg_event {
   MG_ENTER_MASTER,          // Mongoose started the master thread
   MG_EXIT_MASTER,           // The master thread is about to close
   MG_IDLE_MASTER,           // The master thread has been idle for 200ms, i.e.
-                            // there's not been any HTTP requests very recently.
+                            // there's not been any HTTP connections very recently.
+  MG_RESTART_MASTER_BEGIN,  // The master thread failed (accept() barfed) and
+                            // mongoose is going to re-init the listeners. This
+                            // event is fired just before the current listeners
+                            // are shut down.
+  MG_RESTART_MASTER_END,    // Paired with MG_RESTART_MASTER_BEGIN: invoked once
+                            // the listeners have been re-initialized again.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
-  // fix: numbers were added to fix the abi in case mongoose core and callback
+  // fix: numbers were added to fix the ABI in case mongoose core and callback
 
   MG_EXIT0                  // Mongoose terminates and has already terminated its
                             // threads. This one is the counterpart of MG_INIT0, so
@@ -248,6 +257,22 @@ typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 //   the option (and possibly a default value is used instead).
 typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 
+// Prototype for the user-defined SSI command processing function. Mongoose invokes this function
+// when a SSI tag is found in a SSI include file. This function offers the user first pick in
+// how to process the SSI tag.
+//
+// Parameters:
+//   conn: the current connection.
+//   ssi_sommandline: the NUL-terminated string inside the SSI tag. e.g. "echo var=help"
+//   ssi_filepath: the path of the current SSI file.
+//   include_level: the SSI include depth (1..N)
+//
+// Return:
+//   = 0: Mongoose should apply the default SSI handler; the user did not process this command.
+//   > 0: The callback processed the tag (any output has been written to the connection).
+//   < 0: The callback reported an error. SSI processing will be aborted immediately.
+typedef int (*mg_ssi_command_callback_t)(struct mg_connection *conn, const char *ssi_commandline, const char *ssi_filepath, int include_level);
+
 // The user-initialized structure carrying the various user defined callback methods
 // and any optional associated user data.
 typedef struct mg_user_class_t {
@@ -262,7 +287,10 @@ typedef struct mg_user_class_t {
   mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication
   mg_receive_callback_t       receive_callback;   // Exposes received body data to user. Can act as substitute for file system I/O.
   mg_send_callback_t          send_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
+
+  mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
 } mg_user_class_t;
+
 
 
 
@@ -339,7 +367,7 @@ const char **mg_get_valid_option_names(void);
 //
 // See for example main.c for one possible use: there this call is used to
 // make sure that command line options, config file entries and hardcoded
-// defaults don't inadvertedly produce duplicate option entries in the
+// defaults don't inadvertently produce duplicate option entries in the
 // options[] list.
 const char *mg_get_option_long_name(const char *name);
 
@@ -364,9 +392,33 @@ int mg_modify_passwords_file(const char *passwords_file_name,
                              const char *password);
 
 // Send data to the client.
+//
+// Return the number of bytes written; 0 when the connection has been closed.
+// Return -1 on error.
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
-// Mark the end of the tranmission of HTTP headers.
+// Write the HTTP response code and the set of response headers which
+// have been collected using the mg_add_response_header() and
+// mg_remove_response_header() APIs.
+//
+// Note that this call implies the entire header section of the response
+// will now have been sent, i.e. mg_mark_end_of_header_transmission() is
+// called implicitly.
+//
+// When 'status_code' <= 0, then the default (stored in the
+// connection::request_info) will be used.
+//
+// When 'status_text' is NULL or an empty string, then the default
+// will be used (which is the string produced by mg_get_response_code_text()
+// for the (default or explicit) status_code.
+//
+// Returns the number of bytes written to the socket. 0 when the
+// connection was closed already or when the HTTP response header has
+// already been sent before.
+// Returns -1 on error.
+int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text);
+
+// Mark the end of the transmission of HTTP headers.
 //
 // Use this before proceeding and writing content data if you want your
 // access log to show the correct (actual) number.
@@ -377,7 +429,7 @@ void mg_mark_end_of_header_transmission(struct mg_connection *conn);
 // To be more specific, this function will return -1 when all HTTP headers
 // have been written (and anything sent now is considered part of the content),
 // while a return value of +1 indicates that the HTTP response has been
-// written but that you MAY decide to write some more headers to
+// (partially) written but that you MAY decide to write some more headers to
 // augment the HTTP header set being transmitted.
 int mg_have_headers_been_sent(const struct mg_connection *conn);
 
@@ -395,7 +447,7 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // mg_printf() is guaranteed to return 0 when an error occurs or when
 // and empty string was written, otherwise the function returns the
 // number of bytes in the formatted output, excluding the NUL sentinel.
-int mg_printf(struct mg_connection *, const char *fmt, ...)
+int mg_printf(struct mg_connection *, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
 #endif
@@ -473,6 +525,62 @@ int mg_get_var(const char *data, size_t data_len,
 int mg_get_cookie(const struct mg_connection *,
                   const char *cookie_name, char *buf, size_t buf_len);
 
+// Set HTTP response code -- iff no response code for the current request
+// has already been set.
+// Hence use this function to 'set & hold' response codes.
+//
+// Returns the HTTP response code.
+int mg_set_response_code(struct mg_connection *conn, int status);
+
+// Adds/Overrides header to be sent in outgoing HTTP response.
+//
+// The default behaviour (force_add == 0) is to 'upsert', i.e. either insert the tag+value when
+// it has not been added before, or replace the existing value for the given tag.
+// When replacing, it will always replace the first occurrence of the tag in the existing
+// set.
+// When force_add != 0, then the tag+value will always be added to the header set. This is handy for
+// cookie tags, for example.
+//
+// The value_fmt parameter is equivalent to a printf(fmt, ...) 'fmt' argument: the value stored
+// with the tag is constructed from this format string and any optional extra parameters a la sprintf().
+//
+// Return zero on success, non-zero otherwise.
+int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, FORMAT_STRING(const char *value_fmt), ...)
+#ifdef __GNUC__
+    __attribute__((format(printf, 4, 5)))
+#endif
+;
+
+// Remove the specified response header, if available.
+//
+// When multiple entries of the tag are found, all aare removed from the set.
+//
+// Return number of occurrences removed (zero or more) on success, negative value on error.
+int mg_remove_response_header(struct mg_connection *conn, const char *tag);
+
+// Handle custom error pages, i.e. nested page requests.
+// request_info struct will contain info about the original
+// request; the uri argument points at the subrequest itself.
+//
+// Error page requests are _always_ treated as GET requests.
+//
+// One substitution parameter is supported in the 'uri'
+// argument: '$E' will be replaced by the numeric status
+// code (HTTP response code), so you may feed us URIs
+// like '/error_page.php?status=$E'.
+//
+// This function will only produce the indicated uri page
+// when nothing has been sent to the connection yet - otherwise
+// we would be writing a HTTP response, headers and content into
+// a stream which is in an unknown state sending other material
+// already.
+//
+// Return zero on success, non-zero on failure.
+int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t uri_len);
+
+// Return non-zero when we are currently inside the nested page handler
+// (mg_produce_nested_page()), so that we can adjust our behaviour.
+int mg_is_producing_nested_page(struct mg_connection *conn);
 
 // Return Mongoose version.
 const char *mg_version(void);
@@ -480,16 +588,11 @@ const char *mg_version(void);
 
 // MD5 hash given strings.
 // Buffer 'buf' must be 33 bytes long. Varargs is a NULL terminated list of
-// asciiz strings. When function returns, buf will contain human-readable
+// ASCIIz strings. When function returns, buf will contain human-readable
 // MD5 hash. Example:
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
 void mg_md5(char *buf, ...);
-
-// Sets headers to be sent into outgoing response.
-// This function can be called multiple times. Each invocation adds provided headers.
-int mg_conn_add_response_headers(struct mg_connection *conn, char** headers, int nheaders);
-
 
 // Return the HTTP response code string for the given response code
 const char *mg_get_response_code_text(int response_code);
@@ -497,12 +600,24 @@ const char *mg_get_response_code_text(int response_code);
 
 // --- helper functions ---
 
+// a la strncpy() but doesn't copy past the source's NUL sentinel AND ensures that a NUL sentinel
+// is always written in 'dst'.
+// Returns the length of the 'dst' string.
+size_t mg_strlcpy(register char *dst, register const char *src, size_t dstsize);
+
+// Return the string length, limited by 'maxlen'. Does not scan beyond 'maxlen' characters in 'src'.
+size_t mg_strnlen(const char *src, size_t maxlen);
+
 // Compare two strings to a maximum length of n characters; the comparison is case-insensitive.
 // Return the (s1 - s2) last character difference value, which is zero(0) when both strings are equal.
 int mg_strncasecmp(const char *s1, const char *s2, size_t len);
 
 // same as strncasecmp() but without any string length limit
 int mg_strcasecmp(const char *s1, const char *s2);
+
+// find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which
+// aren't available on most platforms.
+const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize);
 
 // Allocate space for a copy of the given string on the heap.
 // The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).
@@ -523,7 +638,7 @@ char * mg_strdup(const char *str);
 int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnprintf() what printf() is to vprintf().
-int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
@@ -537,7 +652,7 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char
 int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnq0printf() what printf() is to vprintf().
-int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
@@ -557,7 +672,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, const ch
 //
 // The variable referenced by buf_ref is guaranteed to be set to NULL or a valid value
 // as returned by malloc/realloc(3).
-int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, ...)
+int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
@@ -587,7 +702,7 @@ int mg_fclose(FILE *fp);
 // Print error message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
-void mg_cry(struct mg_connection *conn, const char *fmt, ...)
+void mg_cry(struct mg_connection *conn, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
 #endif
@@ -623,7 +738,7 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 // Print log message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
-void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, const char *fmt, ...)
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 5, 6)))
 #endif
@@ -635,7 +750,7 @@ void mg_vwrite2log(struct mg_connection *conn, const char *logfile, time_t times
 
 /*
 Like strerror() but with included support for the same functionality for
-Win32 system error codes
+Win32 system error codes.
 */
 const char *mg_strerror(int errcode);
 
