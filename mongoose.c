@@ -422,7 +422,6 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
-
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   buf[0] = '\0';
@@ -570,7 +569,6 @@ static struct mg_connection *fc(struct mg_context *ctx) {
 
 // Print error message to the opened error log stream.
 static void cry(struct mg_connection *conn, const char *fmt, ...) {
-            if (q && q - u < sizeof(addr_buf)) {
   char buf[BUFSIZ], src_addr[20];
   va_list ap;
   FILE *fp;
@@ -973,7 +971,7 @@ static int should_keep_alive(struct mg_connection *conn) {
                (int)conn->must_close,
                (int)conn->request_info.status_code,
                (int)is_legal_response_code(conn->request_info.status_code),
-               get_conn_option(conn, ENABLE_KEEP_ALIVE),
+               conn->ctx->config[ENABLE_KEEP_ALIVE],
                header, http_version,
                mg_get_stop_flag(conn->ctx)));
 
@@ -3046,7 +3044,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
       "Last-Modified: %s\r\n"
       "Etag: \"%s\"\r\n"
       "Content-Type: %.*s\r\n"
-      "Content-Length: %" INT64_FMT "\r\n"
+      "Content-Length: %" PRId64 "\r\n"
       "Connection: %s\r\n"
       "Accept-Ranges: bytes\r\n"
       "%s\r\n",
@@ -5181,7 +5179,7 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
       *qp++ = '"';
       qp = strchr(qp, '\'');
       if (!qp) {
-        mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
+        cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
         free_context(ctx);
         return NULL;
       }
