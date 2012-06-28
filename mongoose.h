@@ -187,7 +187,7 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // Note that mg_printf() uses internal buffer of size IO_BUF_SIZE
 // (8 Kb by default) as temporary message storage for formatting. Do not
 // print data that is bigger than that, otherwise it will be truncated.
-int mg_printf(struct mg_connection *, const char *fmt, ...)
+int mg_printf(struct mg_connection *, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
 #endif
@@ -310,7 +310,7 @@ char * mg_strdup(const char *str);
 int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnprintf() what printf() is to vprintf().
-int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, ...)
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif

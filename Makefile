@@ -1,19 +1,20 @@
 # This file is part of Mongoose project, http://code.google.com/p/mongoose
 # $Id: Makefile 473 2009-09-02 11:20:06Z valenok $
 
-PROG=	mongoose
+PROG=   mongoose
 
 all:
 	@echo "make (linux|bsd|solaris|mac|windows|mingw)"
 
 # Possible COPT values: (in brackets are rough numbers for 'gcc -O2' on i386)
-# -DHAVE_MD5		- use system md5 library (-2kb)
-# -DNDEBUG		- strip off all debug code (-5kb)
-# -DDEBUG		- build debug version (very noisy) (+7kb)
-# -DNO_CGI		- disable CGI support (-5kb)
-# -DNO_SSL		- disable SSL functionality (-2kb)
-# -DCONFIG_FILE=\"file\" - use `file' as the default config file
-# -DHAVE_STRTOUI64	- use system strtoui64() function for strtoull()
+# -DHAVE_MD5                - use system md5 library (-2kb)
+# -DNDEBUG                  - strip off all debug code (-5kb)
+# -DDEBUG                   - build debug version (very noisy) (+7kb)
+# -DUSE_IPV6                - enable IPv6 support
+# -DNO_CGI                  - disable CGI support (-5kb)
+# -DNO_SSL                  - disable SSL functionality (-2kb)
+# -DCONFIG_FILE=\"file\"    - use `file' as the default config file
+# -DHAVE_STRTOUI64          - use system strtoui64() function for strtoull()
 # -DSSL_LIB=\"libssl.so.<version>\" - use system versioned SSL shared object
 # -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 
@@ -22,7 +23,10 @@ all:
 ###                 UNIX build: linux, bsd, mac, rtems
 ##########################################################################
 
-CFLAGS = -W -Wall -std=c99 -pedantic -O2 $(COPT)
+# Shut up GCC about these, because we know they're there and we don't mind. Don't crowd the screen with these.
+GCC_WARNINGS = -W -Wall -pedantic -Wno-missing-field-initializers -Wno-unused-parameter -Wno-format-zero-length
+
+CFLAGS = -std=c99 -O2 $(GCC_WARNINGS) $(COPT)
 MAC_SHARED = -flat_namespace -bundle -undefined suppress
 LINFLAGS = -ldl -pthread $(CFLAGS)
 LIB = _$(PROG).so
@@ -58,16 +62,16 @@ solaris:
 #  o  Set VC variable below to where VS 6.0 is installed on your system
 #  o  Run "PATH_TO_VC6\bin\nmake windows"
 
-VC=	z:
-CYA=	y:
-#DBG=	/Zi /DDEBUG /Od
-DBG=	/DNDEBUG /O1
-CL=	cl /MD /TC /nologo $(DBG) /Gz /W3 /DNO_SSL_DL
-GUILIB=	user32.lib shell32.lib
-LINK=	/link /incremental:no /libpath:$(VC)\lib /subsystem:windows \
-	ws2_32.lib advapi32.lib cyassl.lib
+VC=     z:
+CYA=    y:
+#DBG=   /Zi /DDEBUG /Od
+DBG=    /DNDEBUG /O1
+CL=     cl /MD /TC /nologo $(DBG) /Gz /W3 /DNO_SSL_DL
+GUILIB= user32.lib shell32.lib
+LINK=   /link /incremental:no /libpath:$(VC)\lib /subsystem:windows \
+		ws2_32.lib advapi32.lib cyassl.lib
 CYAFL = /c /I $(CYA)/include -I $(CYA)/include/openssl \
-        /I $(CYA)/ctaocrypt/include /D _LIB /D OPENSSL_EXTRA
+		/I $(CYA)/ctaocrypt/include /D _LIB /D OPENSSL_EXTRA
 
 CYASRC= \
 	$(CYA)/src/cyassl_int.c \
@@ -112,10 +116,10 @@ windows:
 	$(CL) mongoose.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
-#MINGWDBG= -DDEBUG -O0 -ggdb
-MINGWDBG= -DNDEBUG -Os
-MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(COPT)
-#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(COPT)
+#MINGWDBG=  -DDEBUG -O0 -ggdb
+MINGWDBG=   -DNDEBUG -Os
+MINGWOPT=   -std=c99 -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
+#MINGWOPT=  -std=c99 -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
 mingw:
 	windres win32\res.rc win32\res.o
 	$(CC) $(MINGWOPT) mongoose.c -lws2_32 \

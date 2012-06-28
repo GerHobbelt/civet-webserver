@@ -50,17 +50,22 @@ int mgW32_get_errno(void) {
   DWORD e2 = WSAGetLastError();
   int e3 = errno;
 
-  return (e2 ? e2 : e1 ? e1 : e3);
+  return (e2 ? (int)e2 : e1 ? (int)e1 : e3);
 }
 
-static CRITICAL_SECTION global_log_file_lock;
+static struct {
+  volatile int active;
+  CRITICAL_SECTION lock;
+} global_log_file_lock = {0};
 
 void mgW32_flockfile(UNUSED_PARAMETER(FILE *unused)) {
-  EnterCriticalSection(&global_log_file_lock);
+  if (global_log_file_lock.active)
+    EnterCriticalSection(&global_log_file_lock.lock);
 }
 
 void mgW32_funlockfile(UNUSED_PARAMETER(FILE *unused)) {
-  LeaveCriticalSection(&global_log_file_lock);
+  if (global_log_file_lock.active)
+    LeaveCriticalSection(&global_log_file_lock.lock);
 }
 
 
@@ -76,13 +81,11 @@ typedef BOOL (PASCAL * LPFN_DISCONNECTEX) (SOCKET s, LPOVERLAPPED lpOverlapped, 
 static LPFN_DISCONNECTEX DisconnectExPtr = 0;
 static CRITICAL_SECTION DisconnectExPtrCS;
 
-static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
+static BOOL PASCAL dummy_disconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved) {
   return 0;
 }
 
-static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
-{
+static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock) {
   /*
     Note  The function pointer for the DisconnectEx function must be obtained
           at run time by making a call to the WSAIoctl function with the
@@ -98,8 +101,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
 
   EnterCriticalSection(&DisconnectExPtrCS);
 
-  if (!DisconnectExPtr && sock)
-  {
+  if (!DisconnectExPtr && sock) {
     GUID dcex = WSAID_DISCONNECTEX;
     LPFN_DISCONNECTEX DisconnectExPtr = 0;
     DWORD len = 0;
@@ -108,8 +110,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
     rv = WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &dcex, sizeof(dcex),
                   &DisconnectExPtr, sizeof(DisconnectExPtr),
                   &len, 0, 0);
-    if (rv)
-    {
+    if (rv) {
       DisconnectExPtr = dummy_disconnectEx;
     }
   }
@@ -123,8 +124,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock)
   return ret;
 }
 
-static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved)
-{
+static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags, DWORD dwReserved) {
   LPFN_DISCONNECTEX fp = get_DisconnectEx_funcptr(sock);
 
   return (*fp)(sock, lpOverlapped, dwFlags, dwReserved);
@@ -132,8 +132,7 @@ static BOOL __DisconnectEx(SOCKET sock, LPOVERLAPPED lpOverlapped, DWORD dwFlags
 
 #else // _WIN32
 
-static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved)
-{
+static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwReserved) {
   return 0;
 }
 
@@ -417,6 +416,8 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
+  assert(index >= 0 && index < NUM_OPTIONS);
+  assert(index >= 0 && index < NUM_OPTIONS);
 
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
@@ -518,21 +519,17 @@ NOTE: has the mg_ prefix to prevent collisions with system's strerror();
       it is generally used in constructs like mg_strerror(ERRNO) where
       ERRNO is a mongoose-internal #define.
 */
-const char *mg_strerror(int errcode)
-{
+const char *mg_strerror(int errcode) {
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
   const char *s = strerror(errcode);
-  if (is_empty(s) || GetLastError() == (DWORD)errcode)
-  {
+  if (is_empty(s) || GetLastError() == (DWORD)errcode) {
     static __declspec(thread) char msg[256];
 
-    if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, errcode, 0, msg, ARRAY_SIZE(msg), NULL))
-    {
+    if (0 == FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                            errcode, 0, msg, ARRAY_SIZE(msg), NULL)) {
       snprintf(msg, ARRAY_SIZE(msg), "Unidentified error code %d", errcode);
-    }
-    else
-    {
+    } else {
       // strip trailing whitespace off the message.
       char *p = msg + strlen(msg) - 1;
       while (p >= msg && isspace((unsigned char)*p))
@@ -569,6 +566,7 @@ static struct mg_connection *fc(struct mg_context *ctx) {
 
 // Print error message to the opened error log stream.
 static void cry(struct mg_connection *conn, const char *fmt, ...) {
+            if (q && q - u < sizeof(addr_buf)) {
   char buf[BUFSIZ], src_addr[20];
   va_list ap;
   FILE *fp;
@@ -690,8 +688,7 @@ int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
-                       const char *fmt, ...)
-{
+                const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -703,8 +700,7 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 
-int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, size_t buflen, const char *fmt, va_list ap)
-{
+int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, size_t buflen, const char *fmt, va_list ap) {
   int n;
 
   if (buflen == 0)
@@ -728,8 +724,7 @@ int mg_vsnq0printf(UNUSED_PARAMETER(struct mg_connection *unused), char *buf, si
 }
 
 int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
-  const char *fmt, ...)
-{
+                  const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -741,8 +736,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen,
 }
 
 int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref, size_t max_buflen,
-  const char *fmt, va_list ap)
-{
+                 const char *fmt, va_list ap) {
   va_list aq;
   int n;
   int size = BUFSIZ;
@@ -784,8 +778,7 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
     //n = size - 1;
     //buf[n] = '\0';
     n = (int)strlen(buf);
-  }
-  else {
+  } else {
     buf[n] = '\0';
   }
   *buf_ref = buf;
@@ -793,8 +786,7 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
 }
 
 int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
-  const char *fmt, ...)
-{
+                const char *fmt, ...) {
   va_list ap;
   int n;
 
@@ -999,8 +991,7 @@ Send HTTP error response headers, if we still can. Log the error anyway.
 'fmt' + args is the content sent along as error report (request response).
 */
 static void vsend_http_error(struct mg_connection *conn, int status,
-                            const char *reason, const char *fmt, va_list ap)
-{
+                             const char *reason, const char *fmt, va_list ap) {
   char buf[BUFSIZ];
   int len;
   int custom_len;
@@ -1012,11 +1003,9 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   buf[0] = '\0';
   custom_len = 0;
   len = mg_snprintf(conn, buf, sizeof(buf) - 2, "Error %d: %s", status, reason);
-  if (!is_empty(fmt))
-  {
+  if (!is_empty(fmt)) {
     custom_len = mg_vsnprintf(conn, buf + len + 1, sizeof(buf) - len - 1, fmt, ap);
-    if (custom_len > 0)
-    {
+    if (custom_len > 0) {
       buf[len++] ='\t';
       len += custom_len;
     }
@@ -1041,9 +1030,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           (p ? p + 1 : ""));
       if (p)
         *p = '\n';
-    }
-    else
-    {
+    } else {
       len = 0;
     }
     DEBUG_TRACE(("[%s]", buf));
@@ -1063,8 +1050,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
                 suggest_connection_header(conn));
 
       mg_mark_end_of_header_transmission(conn);
-      if (len > 0)
-      {
+      if (len > 0) {
         mg_write(conn, buf, len);
       }
     }
@@ -1072,15 +1058,14 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 }
 
 static void send_http_error(struct mg_connection *conn, int status,
-  const char *reason, const char *fmt, ...)
+  const char *reason, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
   ;
 
 static void send_http_error(struct mg_connection *conn, int status,
-  const char *reason, const char *fmt, ...)
-{
+                            const char *reason, const char *fmt, ...) {
   va_list ap;
 
   va_start(ap, fmt);
@@ -1109,24 +1094,19 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return ReleaseMutex(*mutex) == 0 ? -1 : 0;
 }
 
-int pthread_spin_init(pthread_spinlock_t *lock, UNUSED_PARAMETER(int unused))
-{
+int pthread_spin_init(pthread_spinlock_t *lock, UNUSED_PARAMETER(int unused)) {
   return pthread_mutex_init(lock, 0);
 }
-int pthread_spin_destroy(pthread_spinlock_t *lock)
-{
+int pthread_spin_destroy(pthread_spinlock_t *lock) {
   return pthread_mutex_destroy(lock);
 }
-int pthread_spin_lock(pthread_spinlock_t *lock)
-{
+int pthread_spin_lock(pthread_spinlock_t *lock) {
   return pthread_mutex_lock(lock);
 }
-//int pthread_spin_trylock(pthread_spinlock_t *lock)
-//{
+//int pthread_spin_trylock(pthread_spinlock_t *lock) {
 // ...
 //}
-int pthread_spin_unlock(pthread_spinlock_t *lock)
-{
+int pthread_spin_unlock(pthread_spinlock_t *lock) {
   return pthread_mutex_unlock(lock);
 }
 
@@ -1201,8 +1181,7 @@ int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
   if (rwlock->rw) {
     ReleaseSRWLockExclusive(&rwlock->lock);
-  }
-  else {
+  } else {
     ReleaseSRWLockShared(&rwlock->lock);
   }
   return 0;
@@ -1482,7 +1461,7 @@ static struct dirent *readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
-  return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
+  return _beginthread((void (__cdecl *)(void *)) f, 0, p) == (uintptr_t)-1L ? -1 : 0;
 }
 
 static HANDLE dlopen(const char *dll_name, int flags) {
@@ -1712,8 +1691,7 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
 
 #endif // _WIN32
 
-int mg_fclose(FILE *fp)
-{
+int mg_fclose(FILE *fp) {
   if (fp != NULL && fp != stderr && fp != stdout && fp != stdin) {
     return fclose(fp);
   }
@@ -1779,7 +1757,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1 && conn->consumed_content == 0) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)len,
+  DEBUG_TRACE(("%p %" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len) {
@@ -1823,6 +1801,8 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       len -= n;
     }
   }
+  DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
+	  conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -1853,20 +1833,16 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   return rv;
 }
 
-int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
-{
+int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
   char *buf = NULL;
   int len;
   int rv;
 
   // handle the special case where there's nothing to do in terms of formatting --> print without the malloc/speed penalty:
-  if (!strchr(fmt, '%'))
-  {
+  if (!strchr(fmt, '%')) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
-  }
-  else
-  {
+  } else {
     len = mg_vasprintf(conn, &buf, 0, fmt, ap);
 
     if (buf) {
@@ -1879,8 +1855,7 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap)
   }
 }
 
-int mg_printf(struct mg_connection *conn, const char *fmt, ...)
-{
+int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
   int len;
   va_list ap;
 
@@ -2979,16 +2954,14 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 
     // Read from file, exit the loop on error
     num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-    if (num_read == 0 && ferror(fp))
-    {
+    if (num_read == 0 && ferror(fp)) {
       send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
       return -2;
     }
 
     // Send read bytes to the client, exit the loop on error
     num_written = mg_write(conn, buf, (size_t)num_read);
-    if (num_written != num_read)
-    {
+    if (num_written != num_read) {
       send_http_error(conn, 580, NULL, "%s: incomplete write to socket", __func__); // signal internal error or premature close by client in access log file at least
       return -1;
     }
@@ -3000,7 +2973,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 }
 
 static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
-  return sscanf(header, "bytes=%" INT64_FMT "-%" INT64_FMT, a, b);
+  return sscanf(header, "bytes=%" SCNd64 "-%" SCNd64, a, b);
 }
 
 static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
@@ -3039,8 +3012,8 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
     (void) mg_snprintf(conn, range, sizeof(range),
         "Content-Range: bytes "
-        "%" INT64_FMT "-%"
-        INT64_FMT "/%" INT64_FMT "\r\n",
+        "%" PRId64 "-%"
+        PRId64 "/%" PRId64 "\r\n",
         r1, r1 + cl - 1, stp->size);
   }
 
@@ -3290,7 +3263,7 @@ struct cgi_env_block {
 
 // Append VARIABLE=VALUE\0 string to the buffer, and add a respective
 // pointer into the vars array.
-static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
+static char *addenv(struct cgi_env_block *block, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
 #endif
@@ -3871,7 +3844,7 @@ static void print_props(struct mg_connection *conn, const char* uri,
        "<d:propstat>"
         "<d:prop>"
          "<d:resourcetype>%s</d:resourcetype>"
-         "<d:getcontentlength>%" INT64_FMT "</d:getcontentlength>"
+         "<d:getcontentlength>%" PRId64 "</d:getcontentlength>"
          "<d:getlastmodified>%s</d:getlastmodified>"
         "</d:prop>"
         "<d:status>HTTP/1.1 200 OK</d:status>"
@@ -4344,7 +4317,7 @@ static void log_access(const struct mg_connection *conn) {
 
   flockfile(fp);
 
-  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" INT64_FMT "%s",
+  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" PRId64 "%s",
           src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
           ri->request_method ? ri->request_method : "-",
           ri->uri ? ri->uri : "-", ri->http_version,
@@ -5264,10 +5237,8 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 }
 
 
-const char *mg_get_response_code_text(int response_code)
-{
-  switch (response_code)
-  {
+const char *mg_get_response_code_text(int response_code) {
+  switch (response_code) {
   case 100:   return "Continue"; // RFC2616 Section 10.1.1:
   case 101:   return "Switching Protocols"; // RFC2616 Section 10.1.2:
   case 200:   return "OK"; // RFC2616 Section 10.2.1:
@@ -5335,40 +5306,34 @@ const char *mg_get_response_code_text(int response_code)
   }
 }
 
-struct mg_context *mg_get_context(struct mg_connection *conn)
-{
+struct mg_context *mg_get_context(struct mg_connection *conn) {
     return conn ? conn->ctx : NULL;
 }
 
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn)
-{
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn) {
   return conn ? &conn->request_info : NULL;
 }
 
 
 
-int mg_get_stop_flag(struct mg_context *ctx)
-{
-    return ctx && ctx->stop_flag;
+int mg_get_stop_flag(struct mg_context *ctx) {
+  return ctx && ctx->stop_flag;
 }
 
-void mg_signal_stop(struct mg_context *ctx)
-{
+void mg_signal_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
 }
 
 
-void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
-{
-    va_list ap;
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...) {
+  va_list ap;
 
-    va_start(ap, fmt);
-    vsend_http_error(conn, status, reason, fmt, ap);
-    va_end(ap);
+  va_start(ap, fmt);
+  vsend_http_error(conn, status, reason, fmt, ap);
+  va_end(ap);
 }
 
-void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap)
-{
-    vsend_http_error(conn, status, reason, fmt, ap);
+void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap) {
+  vsend_http_error(conn, status, reason, fmt, ap);
 }
 
