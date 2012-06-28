@@ -364,8 +364,8 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
       cl = n == 2 ? r2 - r1 + 1: cl - r1;
       (void) mg_snprintf(conn, range, sizeof(range),
                          "Content-Range: bytes "
-                         "%" INT64_FMT "-%"
-                         INT64_FMT "/%" INT64_FMT "\r\n",
+                         "%" PRId64 "-%"
+                         PRId64 "/%" PRId64 "\r\n",
                          r1, r1 + cl - 1, stp->size);
     }
 #endif
@@ -382,7 +382,7 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
                      "Last-Modified: %s\r\n"
                      "Etag: \"%s\"\r\n"
                      "Content-Type: text/html\r\n"
-                     "Content-Length: %" INT64_FMT "\r\n"
+                     "Content-Length: %" PRId64 "\r\n"
                      "Connection: %s\r\n"
                      // "Accept-Ranges: bytes\r\n"
                      "%s\r\n"

@@ -200,7 +200,7 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
 static struct mg_connection *mg_connect(struct mg_connection *conn,
                                  const char *host, int port, int use_ssl) {
   struct mg_connection *newconn = NULL;
-  int sock;
+  SOCKET sock;
   struct addrinfo *result = NULL;
   struct addrinfo *ptr;
   struct addrinfo hints = {0};

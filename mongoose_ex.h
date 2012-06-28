@@ -151,7 +151,7 @@ Send HTTP error response headers, if we still can. Log the error anyway.
 
 'fmt' + args is the content sent along as error report (request response).
 */
-void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif

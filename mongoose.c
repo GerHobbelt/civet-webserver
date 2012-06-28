@@ -49,7 +49,7 @@ int mgW32_get_errno(void) {
   DWORD e2 = WSAGetLastError();
   int e3 = errno;
 
-  return (e2 ? e2 : e1 ? e1 : e3);
+  return (e2 ? (int)e2 : e1 ? (int)e1 : e3);
 }
 
 static struct {
@@ -542,7 +542,7 @@ const char *mg_get_option_long_name(const char *name) {
 
 static const char *get_option(struct mg_context *ctx, mg_option_index_t index) {
   const char *rv;
-  assert(index >= 0 && index < NUM_OPTIONS);
+  assert((int)index >= 0 && (int)index < NUM_OPTIONS);
   rv = call_user_option_get(ctx, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
   if (rv)
     return rv;
@@ -555,7 +555,7 @@ static const char *get_option(struct mg_context *ctx, mg_option_index_t index) {
 
 static const char *get_conn_option(struct mg_connection *conn, mg_option_index_t index) {
   const char *rv;
-  assert(index >= 0 && index < NUM_OPTIONS);
+  assert((int)index >= 0 && (int)index < NUM_OPTIONS);
   rv = call_user_conn_option_get(conn, config_options[index * MG_ENTRIES_PER_CONFIG_OPTION + 1]);
   if (rv)
     return rv;
@@ -817,7 +817,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             // limit the length to process:
             strncpy(addr_buf, u, sizeof(addr_buf));
             addr_buf[sizeof(addr_buf) - 1] = 0;
-            if (q && q - u < sizeof(addr_buf)) {
+            if (q && q - u < (int)sizeof(addr_buf)) {
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to 64 characters:
@@ -1626,7 +1626,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
   }
   if (i < 0) { // this tag wasn't found: add it
     i = conn->request_info.num_response_headers;
-    if (i >= ARRAY_SIZE(conn->request_info.response_headers)) {
+    if (i >= (int)ARRAY_SIZE(conn->request_info.response_headers)) {
       mg_cry(conn, "%s: too many headers", __func__);
       return -1;
     }
@@ -1878,7 +1878,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 }
 
 static void send_http_error(struct mg_connection *conn, int status,
-  const char *reason, const char *fmt, ...)
+  const char *reason, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 4, 5)))
 #endif
@@ -2310,7 +2310,7 @@ static struct dirent *readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t f, void *p) {
-  return _beginthread((void (__cdecl *)(void *)) f, 0, p) == -1L ? -1 : 0;
+  return _beginthread((void (__cdecl *)(void *)) f, 0, p) == (uintptr_t)-1L ? -1 : 0;
 }
 
 static HANDLE dlopen(const char *dll_name, int flags) {
@@ -2697,7 +2697,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1 && conn->consumed_content == 0) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %" INT64_FMT " %" INT64_FMT " %" INT64_FMT, buf, (int64_t)len,
+  DEBUG_TRACE(("%p %" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len) {
@@ -2745,7 +2745,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       len -= n;
     }
   }
-  DEBUG_TRACE(("--> %p %d %" INT64_FMT " %" INT64_FMT, buf, nread,
+  DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
 	  conn->content_len, conn->consumed_content));
   return nread;
 }
@@ -3977,7 +3977,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 }
 
 static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
-  return sscanf(header, "bytes=%" INT64_FMT "-%" INT64_FMT, a, b);
+  return sscanf(header, "bytes=%" SCNd64 "-%" SCNd64, a, b);
 }
 
 static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
@@ -4014,8 +4014,8 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
     (void) fseeko(fp, (off_t) r1, SEEK_SET);
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
     mg_add_response_header(conn, 0, "Content-Range", "bytes "
-        "%" INT64_FMT "-%"
-        INT64_FMT "/%" INT64_FMT,
+        "%" PRId64 "-%"
+        PRId64 "/%" PRId64,
         r1, r1 + cl - 1, stp->size);
   }
 
@@ -4029,7 +4029,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
                          (unsigned long) stp->mtime, (unsigned long) stp->size);
   mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
-  mg_add_response_header(conn, 0, "Content-Length", "%" INT64_FMT, cl);
+  mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
   n = mg_write_http_response_head(conn, 0, 0);
@@ -4274,7 +4274,7 @@ struct cgi_env_block {
 // pointer into the vars array.
 //
 // Return NULL on error, otherwise return pointer to saved variable=value string.
-static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
+static char *addenv(struct cgi_env_block *block, FORMAT_STRING(const char *fmt), ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 2, 3)))
 #endif
@@ -4850,8 +4850,6 @@ static int do_ssi_exec(struct mg_connection *conn, char *tag) {
   char *cmd;
   FILE *fp;
 
-  // sscanf() is safe here, since send_ssi_file() also uses buffer
-  // of size SSI_LINE_BUFSIZ to get the tag. So strlen(tag) is always < SSI_LINE_BUFSIZ.
   if ((cmd = extract_quoted_value(tag)) == NULL || !*cmd) {
     send_http_error(conn, 577, NULL, "Bad SSI #exec");
     return -1;
@@ -5096,7 +5094,7 @@ static void print_props(struct mg_connection *conn, const char* uri,
        "<d:propstat>"
         "<d:prop>"
          "<d:resourcetype>%s</d:resourcetype>"
-         "<d:getcontentlength>%" INT64_FMT "</d:getcontentlength>"
+         "<d:getcontentlength>%" PRId64 "</d:getcontentlength>"
          "<d:getlastmodified>%s</d:getlastmodified>"
         "</d:prop>"
         "<d:status>HTTP/1.1 200 OK</d:status>"
@@ -5278,7 +5276,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
                             (int)(s - uri), uri,
                             ri.status_code,
                             (int)(uri_len - (s + 2 - uri)), s + 2);
-      if (n + 1 >= sizeof(expanded_uri))
+      if (n + 1 >= (int)sizeof(expanded_uri))
         goto fail_dramatically;
     } else {
       mg_strlcpy(expanded_uri, uri, uri_len + 1);
@@ -5678,7 +5676,7 @@ static void log_access(struct mg_connection *conn) {
     return;
   flockfile(fp);
 
-  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" INT64_FMT "%s",
+  (void) fprintf(fp, "%s - %s [%s] \"%s %s HTTP/%s\" %d %s%" PRId64 "%s",
           src_addr, ri->remote_user == NULL ? "-" : ri->remote_user, date,
           ri->request_method ? ri->request_method : "-",
           ri->uri ? ri->uri : "-", ri->http_version,
@@ -6326,7 +6324,7 @@ static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test
     arr[x].next = nx;
     arr[x].prev = px;
   }
-  for (i = z; i < ARRAY_SIZE(node_set) - 1; i++)
+  for (i = z; i < (int)ARRAY_SIZE(node_set) - 1; i++)
   {
     int x = node_set[i];
     int nx = node_set[i + 1];
@@ -6337,7 +6335,7 @@ static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test
   }
 
   // 'active' set at the front:
-  if (z < ARRAY_SIZE(node_set) - 1)
+  if (z < (int)ARRAY_SIZE(node_set) - 1)
   {
     int x = node_set[z];
     int lx = node_set[ARRAY_SIZE(node_set) - 2];
@@ -6397,7 +6395,7 @@ static int pop_node_from_idle_queue(struct mg_context *ctx, int node, struct mg_
   int r;
 
   assert(node >= 0);
-  assert(node < ARRAY_SIZE(ctx->queue_store));
+  assert(node < (int)ARRAY_SIZE(ctx->queue_store));
   conn->request_info.req_user_data = arr->req_user_data;
   conn->request_info.remote_ip = arr->remote_ip;
   conn->request_info.local_ip = arr->local_ip;
@@ -6442,7 +6440,7 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
 
   if (i < 0)
     return -1;
-  assert(i < ARRAY_SIZE(ctx->queue_store));
+  assert(i < (int)ARRAY_SIZE(ctx->queue_store));
   ctx->idle_q_store_free_slot = arr->next;
 
   arr->req_user_data = conn->request_info.req_user_data;
@@ -7062,7 +7060,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 
   // init queue (free list)
   ctx->sq_head = -1;
-  for (i = 0; i < ARRAY_SIZE(ctx->queue_store) - 1; i++) {
+  for (i = 0; i < (int)ARRAY_SIZE(ctx->queue_store) - 1; i++) {
     ctx->queue_store[i].next = i + 1;
   }
   ctx->queue_store[ARRAY_SIZE(ctx->queue_store) - 1].next = -1;
