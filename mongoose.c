@@ -38,7 +38,13 @@
 
 // The number of msecs to wait inside select() when there's nothing to do.
 #ifndef MG_SELECT_TIMEOUT_MSECS
-#define MG_SELECT_TIMEOUT_MSECS 200
+#define MG_SELECT_TIMEOUT_MSECS       200
+#endif
+// The number of msecs to wait inside select() or cond_wait() when the
+// connection queue is filled and there might be something to do elsewhere
+// while we wait for 'this bunch'
+#ifndef MG_SELECT_TIMEOUT_MSECS_TINY
+#define MG_SELECT_TIMEOUT_MSECS_TINY    1
 #endif
 
 typedef void * (*mg_thread_func_t)(void *);

@@ -125,7 +125,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
   {
     FD_SET(soc, &fdw);
   }
-  srv = select(1, &fds, (we_re_writing_too ? &fdw : 0), 0, &tv);
+  srv = select(soc + 1, &fds, (we_re_writing_too ? &fdw : 0), 0, &tv);
   if (is_quit_key_pressed())
     bugger_off = 2;
   if (bugger_off)
