@@ -387,44 +387,44 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
 };
 
 struct mg_context {
-  volatile int stop_flag;     			// Should we stop event loop
-  SSL_CTX *ssl_ctx;           			// SSL context
-  char *config[NUM_OPTIONS];  			// Mongoose configuration parameters
+  volatile int stop_flag;               // Should we stop event loop
+  SSL_CTX *ssl_ctx;                     // SSL context
+  char *config[NUM_OPTIONS];            // Mongoose configuration parameters
   struct mg_user_class_t user_functions; // user-defined callbacks and data
 
   struct socket *listening_sockets;
 
-  volatile int num_threads;   			// Number of threads
-  pthread_mutex_t mutex;      			// Protects (max|num)_threads
-  pthread_cond_t  cond;       			// Condvar for tracking workers terminations
+  volatile int num_threads;             // Number of threads
+  pthread_mutex_t mutex;                // Protects (max|num)_threads
+  pthread_cond_t  cond;                 // Condvar for tracking workers terminations
 
   struct mg_idle_connection queue_store[128]; // Cut down on malloc()/free()ing cost by using a static queue.
-  volatile int sq_head;       			// Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
-  int idle_q_store_free_slot; 			// index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
+  volatile int sq_head;                 // Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
+  int idle_q_store_free_slot;           // index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
 
-  pthread_cond_t sq_full;     			// Signaled when socket is produced
-  pthread_cond_t sq_empty;    			// Signaled when socket is consumed
+  pthread_cond_t sq_full;               // Signaled when socket is produced
+  pthread_cond_t sq_empty;              // Signaled when socket is consumed
 };
 
 struct mg_connection {
-  unsigned must_close: 1;     			// 1 if connection must be closed
-  unsigned is_inited: 1;      			// 1 when the connection been completely set up (SSL, local and remote peer info, ...)
+  unsigned must_close: 1;               // 1 if connection must be closed
+  unsigned is_inited: 1;                // 1 when the connection been completely set up (SSL, local and remote peer info, ...)
   unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
   int nested_err_or_pagereq_count;      // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;
-  SSL *ssl;                   			// SSL descriptor
-  struct socket client;       			// Connected client
-  time_t birth_time;          			// Time when connection was accepted
-  int64_t num_bytes_sent;     			// Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
-  int64_t content_len;        			// received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
-  int64_t consumed_content;   			// How many bytes of content have already been read
-  char *buf;                  			// Buffer for received data
-  int buf_size;               			// Buffer size for received data / same buffer size is also used for transmitting data (response headers)
-  int request_len;            			// Size of the request + headers in buffer buf[]
-  int data_len;               			// Total size of received data in buffer buf[]
+  SSL *ssl;                             // SSL descriptor
+  struct socket client;                 // Connected client
+  time_t birth_time;                    // Time when connection was accepted
+  int64_t num_bytes_sent;               // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
+  int64_t content_len;                  // received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
+  int64_t consumed_content;             // How many bytes of content have already been read
+  char *buf;                            // Buffer for received data
+  int buf_size;                         // Buffer size for received data / same buffer size is also used for transmitting data (response headers)
+  int request_len;                      // Size of the request + headers in buffer buf[]
+  int data_len;                         // Total size of received data in buffer buf[]
 
-  int tx_headers_len;         			// Size of the response headers in buffer buf[]
+  int tx_headers_len;                   // Size of the response headers in buffer buf[]
   int tx_can_compact_hdrstore;          // signal whether a 'compact' operation would have any effect at all
 
   char error_logfile_path[PATH_MAX+1];  // cached value: path to the error logfile designated to this connection/CTX
@@ -492,9 +492,9 @@ static const char *call_user_conn_option_get(struct mg_connection *conn, const c
 
 static int call_user_ssi_command(struct mg_connection *conn, const char *ssi_commandline, const char *path, int include_level) {
   if (conn && conn->ctx && conn->ctx->user_functions.user_ssi_command) {
-	return conn->ctx->user_functions.user_ssi_command(conn, ssi_commandline, path, include_level);
+    return conn->ctx->user_functions.user_ssi_command(conn, ssi_commandline, path, include_level);
   } else {
-	return 0;
+    return 0;
   }
 }
 
@@ -1875,15 +1875,15 @@ static void vsend_http_error(struct mg_connection *conn, int status,
         if (!is_empty(allowed_methods)) {
           mg_printf(conn, "Allow: %s\r\n", allowed_methods);
         }
-	  }
+      }
 
         mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
         mg_write_http_response_head(conn, status, reason);
 
         if (len > 0) {
           if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
-			conn->must_close = 1;
-		  }
+            conn->must_close = 1;
+          }
         }
       }
     } else if (mg_is_producing_nested_page(conn)) {
@@ -2779,7 +2779,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
   }
   DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
-	  conn->content_len, conn->consumed_content));
+      conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -5136,7 +5136,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
     if (conn->ctx->user_functions.receive_callback != NULL) {
-	  XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     }
     if (forward_body_data(conn, fp, NULL, 1)) {
       mg_write_http_response_head(conn, 0, 0);
@@ -5158,14 +5158,14 @@ static char *extract_quoted_value(char *str)
   rv = str;
   if (*str != '"') {
     // no quotes around VVV are accepted, but then VVV can't contain whitespace either!
-	str += strcspn(str, " \t\r\n\"");
+    str += strcspn(str, " \t\r\n\"");
   } else {
-	rv++;
-	str = strchr(str + 1, '"');
-	if (!str) {
-	  // erroneous format: no closing quote. Return NULL.
-	  return NULL;
-	}
+    rv++;
+    str = strchr(str + 1, '"');
+    if (!str) {
+      // erroneous format: no closing quote. Return NULL.
+      return NULL;
+    }
   }
   *str = 0;
   return rv;
@@ -5183,15 +5183,15 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
   tag += strspn(tag, " \t\r\n");
   if (!strncmp(tag, "virtual=", 8)) {
     // File name is relative to the webserver root
-	file_name = extract_quoted_value(tag + 8);
-	if (!file_name || !*file_name) goto faulty_tag_value;
+    file_name = extract_quoted_value(tag + 8);
+    if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
         get_conn_option(conn, DOCUMENT_ROOT), DIRSEP, file_name);
   } else if (!strncmp(tag, "file=", 5)) {
     // File name is relative to the webserver working directory
     // or it is absolute system path
     file_name = extract_quoted_value(tag + 5);
-	if (!file_name || !*file_name) goto faulty_tag_value;
+    if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s", file_name);
   } else if ((file_name = extract_quoted_value(tag)) != NULL && *file_name) {
     // File name is relative to the current document
@@ -5203,7 +5203,7 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
         sizeof(path) - strlen(path), "%s", file_name);
   } else {
 faulty_tag_value:
-	mg_cry(conn, "Bad SSI #include: [%s] in SSI file [%s]", tag, ssi);
+    mg_cry(conn, "Bad SSI #include: [%s] in SSI file [%s]", tag, ssi);
     return 1;
   }
 
@@ -5318,7 +5318,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
     for(;;) {
       const char *e;
       const char *s;
-	  int rv;
+      int rv;
       if (rlen < taglen) {
         if (b > buf) {
           memmove(buf, b, rlen);
@@ -5360,43 +5360,43 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       s--;
       // skip whitespace:
       s += strspn(s, " \t\r\n");
-	  buf[e - buf] = 0;
-	  rv = call_user_ssi_command(conn, s, path, include_level);
-	  if (rv) {
-		if (rv < 0) {
-		  if (conn->request_info.status_code == 200)
-		    send_http_error(conn, 577, NULL, "%s: SSI tag processing failed (%s)", __func__, path);
-		  return rv;
-		}
-	  } else if (!strncmp(s, "include", 7)) {
-		s += 7;
-		s += strspn(s, " \t\r\n");
+      buf[e - buf] = 0;
+      rv = call_user_ssi_command(conn, s, path, include_level);
+      if (rv) {
+        if (rv < 0) {
+          if (conn->request_info.status_code == 200)
+            send_http_error(conn, 577, NULL, "%s: SSI tag processing failed (%s)", __func__, path);
+          return rv;
+        }
+      } else if (!strncmp(s, "include", 7)) {
+        s += 7;
+        s += strspn(s, " \t\r\n");
         if (do_ssi_include(conn, path, (char *)s, include_level) < 0)
-		  return -1;
+          return -1;
 #if !defined(NO_POPEN)
       } else if (!strncmp(s, "exec", 4)) {
-		s += 4;
-		s += strspn(s, " \t\r\n");
+        s += 4;
+        s += strspn(s, " \t\r\n");
         if (do_ssi_exec(conn, (char *)s))
           return -1;
 #endif // !NO_POPEN
 #if !defined(NO_CGI)
       } else if (!strncmp(s, "echo", 4)) {
         // http://www.ssi-developer.net/ssi/ssi-echo.shtml
-	    s += 4;
-		s += strspn(s, " \t\r\n");
+        s += 4;
+        s += strspn(s, " \t\r\n");
         if (strncmp("var=", s, 4)) {
           mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, s);
-		} else {
+        } else {
           const char *ve;
           int idx;
           s += 4;
-		  s = extract_quoted_value((char *)s);
-		  ve = s + strlen(s);
+          s = extract_quoted_value((char *)s);
+          ve = s + strlen(s);
           if (ve == e || !*s) {
-			send_http_error(conn, 577, NULL, "%s: invalid SSI 'echo' command", __func__);
-		    return -1;
-		  }
+            send_http_error(conn, 577, NULL, "%s: invalid SSI 'echo' command", __func__);
+            return -1;
+          }
           *((char *)ve) = '=';
           // init 'blk' once, when we need it:
           if (!blk.conn) {
@@ -6954,30 +6954,30 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
           p = arr[p].next;
         } while (p != idle_test_set);
         /*
-		 Do NOT wait in the select(), just check if anybody has anything for us or not.
+         Do NOT wait in the select(), just check if anybody has anything for us or not.
 
-		 Unless, that is, when we're checking the _last_ chunk of pending handles: if
-		 none of those deliver anything 'read ready' either, we know _none_ of them
-		 have anything useful for us right now and as the sq_full is still (correctly!)
-		 triggered, we just need to wait until there's some read data ready somewhere.
-		 Meanwhile, we don't want this loop to load the CPU @ 100% for this particular
-		 'everybody is silent now' scenario, so we add a wee bit of a delay here, just
-		 very small, so that us not seeing anything happening in this last series doesn't
-		 delay anything pending _now_ in the former chunks if the _very large_ (> FD_SETSIZE)
-		 connection queue we might have.
-		 If the connection queue is <= FD_SETSIZE elements large, then we might think
-		 we're safe with any delay as long as it's in select() here, as select() will
-		 be watching _all_ our queued connections then, but there can still be new
-		 connections incoming, getting queued and possibly with data ready, without us
-		 knowing yet -- we're outside the mutex-ed zone here!
+         Unless, that is, when we're checking the _last_ chunk of pending handles: if
+         none of those deliver anything 'read ready' either, we know _none_ of them
+         have anything useful for us right now and as the sq_full is still (correctly!)
+         triggered, we just need to wait until there's some read data ready somewhere.
+         Meanwhile, we don't want this loop to load the CPU @ 100% for this particular
+         'everybody is silent now' scenario, so we add a wee bit of a delay here, just
+         very small, so that us not seeing anything happening in this last series doesn't
+         delay anything pending _now_ in the former chunks if the _very large_ (> FD_SETSIZE)
+         connection queue we might have.
+         If the connection queue is <= FD_SETSIZE elements large, then we might think
+         we're safe with any delay as long as it's in select() here, as select() will
+         be watching _all_ our queued connections then, but there can still be new
+         connections incoming, getting queued and possibly with data ready, without us
+         knowing yet -- we're outside the mutex-ed zone here!
 
-		 'head' is a thread-safe copy of the ctx->sq_head after extracting the current
-		 series from the connection queue; remember that it's not up-to-date as it
-		 represents the state of affairs while we were in the mutexed zone: the situation
-		 may have changed by now, so we MUST keep our select() delay as low as possible
-		 here to balance between CPU load reduction in 'everybody is silent' mode while
-		 ensuring swift reponse to new incoming connections with data available in them.
-		*/
+         'head' is a thread-safe copy of the ctx->sq_head after extracting the current
+         series from the connection queue; remember that it's not up-to-date as it
+         represents the state of affairs while we were in the mutexed zone: the situation
+         may have changed by now, so we MUST keep our select() delay as low as possible
+         here to balance between CPU load reduction in 'everybody is silent' mode while
+         ensuring swift reponse to new incoming connections with data available in them.
+        */
         if (head >= 0) {
           tv.tv_sec = 0;
           tv.tv_usec = 0;
@@ -7074,8 +7074,8 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
     while (ctx->stop_flag == 0) {
       struct timespec tv = {0};
 
-	  // While we wait here, one or more queued connections may receive data,
-	  // which should be processed ASAP, so we shouldn't wait long then:
+      // While we wait here, one or more queued connections may receive data,
+      // which should be processed ASAP, so we shouldn't wait long then:
       if (ctx->sq_head >= 0) {
         tv.tv_sec = MG_SELECT_TIMEOUT_MSECS_TINY / 1000;
         tv.tv_nsec = MG_SELECT_TIMEOUT_MSECS_TINY * 1000000;
