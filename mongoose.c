@@ -422,8 +422,6 @@ const char *mg_get_option(const struct mg_context *ctx, const char *name) {
   }
 }
 
-  assert(index >= 0 && index < NUM_OPTIONS);
-  assert(index >= 0 && index < NUM_OPTIONS);
 
 // ntop()/ntoa() replacement for IPv6 + IPv4 support:
 static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
@@ -872,7 +870,7 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
 }
 
 // A helper function for traversing comma separated list of values.
-// It returns a list pointer shifted to the next value, of NULL if the end
+// It returns a list pointer shifted to the next value, or NULL if the end
 // of the list found.
 // Value is stored in val vector. If value has form "x=y", then eq_val
 // vector is initialized to point to the "y" part, and val vector length
@@ -971,6 +969,14 @@ static int should_keep_alive(struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
   const char *header = mg_get_header(conn, "Connection");
 
+  DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+               (int)conn->must_close,
+               (int)conn->request_info.status_code,
+               (int)is_legal_response_code(conn->request_info.status_code),
+               get_conn_option(conn, ENABLE_KEEP_ALIVE),
+               header, http_version,
+               mg_get_stop_flag(conn->ctx)));
+
   return (!conn->must_close &&
           conn->request_info.status_code != 401 &&
           // only okay persistence when we see legal response codes;
@@ -982,11 +988,13 @@ static int should_keep_alive(struct mg_connection *conn) {
           (header == NULL ?
            (http_version && !strcmp(http_version, "1.1")) :
            !mg_strcasecmp(header, "keep-alive")) &&
-          mg_get_stop_flag(conn->ctx) == 0);
+          conn->ctx->stop_flag == 0);
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
-  return should_keep_alive(conn) ? "keep-alive" : "close";
+  int rv = should_keep_alive(conn);
+  DEBUG_TRACE(("suggest_connection_header() --> %s", rv ? "keep-alive" : "close"));
+  return rv ? "keep-alive" : "close";
 }
 
 /*
@@ -1466,7 +1474,7 @@ static struct dirent *readdir(DIR *dir) {
 
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
-static int start_thread(struct mg_context *ctx, mg_thread_func_t f, void *p) {
+static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t f, void *p) {
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == (uintptr_t)-1L ? -1 : 0;
 }
 
@@ -1595,7 +1603,7 @@ static void set_close_on_exec(int fd) {
   (void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
-static int start_thread(struct mg_context *ctx, mg_thread_func_t func,
+static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t func,
                         void *param) {
   pthread_t thread_id;
   pthread_attr_t attr;
@@ -1775,6 +1783,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
 
     // How many bytes of data we have buffered in the request buffer?
+    assert(conn->request_len >= 0);
     buffered = conn->buf + conn->request_len + conn->consumed_content;
     buffered_len = conn->data_len - conn->request_len;
     assert(buffered_len >= 0);
@@ -1808,7 +1817,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
   }
   DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
-	  conn->content_len, conn->consumed_content));
+      conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -2001,7 +2010,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   // Win32: CGI can fail when being fed an interpreter plus relative path to the script;
   // keep in mind that other scenarios, e.g. user event handlers, may fail similarly
-  // when receiving releative filesystem paths, so we solve the issue once and for all,
+  // when receiving relative filesystem paths, so we solve the issue once and for all,
   // right here:
 #if defined(_WIN32)
   {
@@ -2049,6 +2058,8 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
+  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
+
   return stat_result;
 }
 
@@ -2061,7 +2072,6 @@ static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
 #else // NO_SSL
 #define sslize(conn, f)     0
 #endif // NO_SSL
-
 
 // Check whether full request is buffered. Return:
 //   -1  if request is malformed
@@ -3277,24 +3287,25 @@ static char *addenv(struct cgi_env_block *block, FORMAT_STRING(const char *fmt),
 
 static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
 {
-  int n, space;
+  int n;
+  size_t space;
   char *added;
   va_list ap;
 
   // Calculate how much space is left in the buffer
   space = sizeof(block->buf) - block->len - 2;
-  assert(space >= 0);
+  assert((int)space >= 0);
 
   // Make a pointer to the free space int the buffer
   added = block->buf + block->len;
 
   // Copy VARIABLE=VALUE\0 string into the free space
   va_start(ap, fmt);
-  n = mg_vsnprintf(block->conn, added, (size_t) space, fmt, ap);
+  n = mg_vsnprintf(block->conn, added, space, fmt, ap);
   va_end(ap);
 
   // Make sure we do not overflow buffer and the envp array
-  if (n > 0 && n < space &&
+  if (n > 0 && n < (int)space &&
       block->nvars < (int) ARRAY_SIZE(block->vars) - 2) {
     // Append a pointer to the added string into the envp array
     block->vars[block->nvars++] = block->buf + block->len;
@@ -4669,26 +4680,23 @@ static void close_socket_gracefully(struct mg_connection *conn) {
     int sv;
 
     tv.tv_sec = 0;
-    tv.tv_usec = 100 * 1000;
+    tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
 
     FD_ZERO(&fds);
     FD_SET(sock, &fds);
     sv = select(sock + 1, &fds, 0, 0, &tv);
-    switch (sv)
-    {
+    switch (sv) {
     case 1:
       // only fetch RX data when there actually is some:
       n = pull(NULL, sock, NULL, buf, sizeof(buf));
       DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
-      if (n < 0)
-      {
+      if (n < 0) {
         w = 0;
         linger_timeout = 0;
         break;
       }
       // fall through: connection closed from the other side. Don't count this against our linger time.
-      if (n == 0)
-      {
+      if (n == 0) {
         tv.tv_sec = tv.tv_usec = 0;
     case 0:
         // timeout expired or remote close signaled:
@@ -4701,8 +4709,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       // as we can detect how much TX data is pending, we can use that to terminate faster:
       {
         int wr_pending = 0;
-        if (ioctl(sock, SIOCOUTQ, &wr_pending))
-        {
+        if (ioctl(sock, SIOCOUTQ, &wr_pending)) {
           w = wr_pending;
         }
       }
@@ -4735,7 +4742,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
   DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
 
-  if (linger.l_onoff > 0)
+  if (linger.l_onoff)
     (void) __DisconnectEx(sock, 0, 0, 0);
 
   // Now we know that our FIN is ACK-ed, safe to close
@@ -4797,7 +4804,8 @@ static void process_new_connection(struct mg_connection *conn) {
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
       send_http_error(conn, 413, NULL, "");
       return;
-    } if (conn->request_len <= 0) {
+    }
+    if (conn->request_len <= 0) {
       // don't mind we cannot send the 500 response code, as long as we log the issue at least...
       send_http_error(conn, 500, NULL, "%s", mg_strerror(ERRNO));
       return;  // Remote end closed the connection or malformed request
@@ -4888,10 +4896,9 @@ static void worker_thread(struct mg_context *ctx) {
     conn->request_info.remote_port = get_socket_port(&conn->client.rsa);
     get_socket_ip_address(&conn->request_info.remote_ip, &conn->client.rsa);
     // get the actual local IP address+port the client connected to:
-    if (0 != getsockname(conn->client.sock, &conn->client.lsa.u.sa, &conn->client.lsa.len))
-    {
-        cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-        //conn->client.lsa.len = 0;
+    if (0 != getsockname(conn->client.sock, &conn->client.lsa.u.sa, &conn->client.lsa.len)) {
+      cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
+      //conn->client.lsa.len = 0;
     }
     conn->request_info.local_port = get_socket_port(&conn->client.lsa);
     get_socket_ip_address(&conn->request_info.local_ip, &conn->client.lsa);
@@ -4969,8 +4976,7 @@ static int accept_new_connection(const struct socket *listener,
       (void) closesocket(accepted.sock);
     }
     return 0;
-  }
-  else {
+  } else {
     const char *errmsg = mg_strerror(ERRNO);
     sockaddr_to_string(src_addr, sizeof(src_addr), &listener->lsa);
     cry(fc(ctx), "%s: accept() failed for listener %s : %s", __func__, src_addr, errmsg);
@@ -5016,7 +5022,7 @@ static void master_thread(struct mg_context *ctx) {
     }
 
     tv.tv_sec = 0;
-    tv.tv_usec = 200 * 1000;
+    tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
 
     n = select(max_fd + 1, &read_set, NULL, NULL, &tv);
     if (n < 0) {
@@ -5119,7 +5125,8 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
-  DeleteCriticalSection(&global_log_file_lock);
+  global_log_file_lock.active = 0;
+  DeleteCriticalSection(&global_log_file_lock.lock);
   DeleteCriticalSection(&DisconnectExPtrCS);
   (void) WSACleanup();
 #endif // _WIN32
@@ -5134,7 +5141,8 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   WSADATA data;
   WSAStartup(MAKEWORD(2,2), &data);
-  InitializeCriticalSection(&global_log_file_lock);
+  InitializeCriticalSection(&global_log_file_lock.lock);
+  global_log_file_lock.active = 1;
 #if _WIN32_WINNT >= _WIN32_WINNT_NT4_SP3
   InitializeCriticalSectionAndSpinCount(&DisconnectExPtrCS, 1000);
 #else
@@ -5164,21 +5172,21 @@ struct mg_context *mg_start(mg_callback_t user_callback, void *user_data,
     assert(i < (int)ARRAY_SIZE(ctx->config));
     assert(i >= 0);
     ctx->config[i] = mg_strdup(value);
-	// at least on Windows, replace single quotes around CGI binary path
-	// by double quotes or your CGI won't ever run.
-	// And you can't easily put double quotes around it from the command line,
-	// so kludge it is.
-	if (i == CGI_INTERPRETER && value[0] == '\'') {
-	  char *qp = ctx->config[i];
-	  *qp++ = '"';
-	  qp = strchr(qp, '\'');
-	  if (!qp) {
-		mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
-		free_context(ctx);
-		return NULL;
-	  }
-	  *qp = '"';
-	}
+    // at least on Windows, replace single quotes around CGI binary path
+    // by double quotes or your CGI won't ever run.
+    // And you can't easily put double quotes around it from the command line,
+    // so kludge it is.
+    if (i == CGI_INTERPRETER && value[0] == '\'') {
+      char *qp = ctx->config[i];
+      *qp++ = '"';
+      qp = strchr(qp, '\'');
+      if (!qp) {
+        mg_cry(fc(ctx), "Invalid option value (improper quoting): %s=%s", name, value);
+        free_context(ctx);
+        return NULL;
+      }
+      *qp = '"';
+    }
     DEBUG_TRACE(("[%s] -> [%s]", name, ctx->config[i]));
   }
 
