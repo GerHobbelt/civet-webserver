@@ -230,6 +230,11 @@ typedef int (*mg_read_callback_t)(struct mg_connection *conn,
                                   size_t  *content_length,
                                   char*   *mime);
 
+// Return 0 on success,
+// < 0 on error,
+// 1 when the default handler should be invoked instead 
+typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions_dstbuf, size_t chunk_extensions_dstbuf_size);
+
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
 // calls this function for every unidentified (global) option.
@@ -299,11 +304,13 @@ typedef struct mg_user_class_t {
   mg_option_fill_callback_t   user_option_fill;   // User-defined option callback function which fills any non-configured options with sensible defaults
   mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
 
+  mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
+
   mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication
   mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
   mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
-  mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
+  mg_write_chunk_header_t	  write_chunk_header;
 } mg_user_class_t;
 
 
@@ -484,6 +491,85 @@ int mg_send_file(struct mg_connection *conn, const char *path);
 int mg_read(struct mg_connection *, void *buf, size_t len);
 
 
+typedef enum mg_iomode_t {
+  MG_IOMODE_UNKNOWN = -1,
+  MG_IOMODE_STANDARD = 0,
+  MG_IOMODE_CHUNKED
+} mg_iomode_t;
+
+// Configure the connection's transmit mode.
+//
+// Use MG_IOMODE_CHUNKED mode for any transmit protocol which needs to transmit data
+// in segments which are delineated by special header blobs, e.g. HTTP 'chunked transfer'
+// mode or WebSockets.
+//
+// Note: when setting the mode to MG_IOMODE_CHUNKED, then the 'transmitted chunk count'
+//       will be reset to zero(0) and the next mg_write() (or function call using mg_write()
+//       under the hood) will also transmit the first chunk header.
+void mg_set_tx_mode(struct mg_connection *conn, mg_iomode_t mode);
+
+// Get the configured transmit mode for this connection.
+mg_iomode_t mg_get_tx_mode(struct mg_connection *conn);
+
+// Get the chunk number currently being transmitted (starting at zero(0)).
+int mg_get_tx_chunk_no(struct mg_connection *conn);
+
+// Get the amount of bytes left in the current chunk slot.
+int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn);
+
+// Set the amount of bytes for the new chunk slot.
+//
+// Note that this function assumes that the current chunk slot is empty.
+// This function will return a non-zero value when this assumption is not held and the
+// function will otherwise be a no-op, i.e. the new chunk size will NOT have been set.
+int64_t mg_set_tx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+
+// Configure the connection's receive mode.
+//
+// Use MG_IOMODE_CHUNKED mode for any receiver protocol which expects data to arrive
+// in segments which are delineated by special header blobs, e.g. HTTP 'chunked transfer'
+// mode or WebSockets.
+//
+// Note: when setting the mode to MG_IOMODE_CHUNKED, then the 'received chunk count'
+//       will be reset to zero(0) and the next mg_read() (or function call using mg_read()
+//       under the hood) is expected to receive and process the first chunk header, before
+//       if will receive any further content data.
+void mg_set_rx_mode(struct mg_connection *conn, mg_iomode_t mode);
+
+// Get the configured receive mode for this connection.
+mg_iomode_t mg_get_rx_mode(struct mg_connection *conn);
+
+// Get the chunk number currently being received (starting at zero(0)).
+int mg_get_rx_chunk_no(struct mg_connection *conn);
+
+// Get the amount of bytes left in the current chunk slot.
+int64_t mg_get_rx_remaining_chunk_size(struct mg_connection *conn);
+
+// Set the amount of bytes for the new chunk slot.
+//
+// Note that this function assumes that the current chunk slot is empty.
+// This function will return a non-zero value when this assumption is not held and the
+// function will otherwise be a no-op, i.e. the new chunk size will NOT have been set.
+int64_t mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+
+
+// Flush any lingering content data to the socket.
+//
+// Return 0 on success.
+int mg_flush(struct mg_connection *conn);
+
+// Set up and transmit a chunk header for the given chunk size.
+//
+// When chunk_size == 0, a SENTINEL chunk header will be transmitted.
+//
+// Return 0 on success.
+//
+// Note: a side-effect of this call is that the 'remaining chunk size' will be
+//       set to the specified 'chunk_size' and the 'chunk number' will be 
+//       incremented by one(1).
+int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size);
+
+
 // Get the value of particular HTTP header.
 //
 // This is a helper function. It traverses request_info->http_headers array,
@@ -553,10 +639,17 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
 
 // Remove the specified response header, if available.
 //
-// When multiple entries of the tag are found, all aare removed from the set.
+// When multiple entries of the tag are found, all are removed from the set.
 //
 // Return number of occurrences removed (zero or more) on success, negative value on error.
 int mg_remove_response_header(struct mg_connection *conn, const char *tag);
+
+// Get the value of particular HTTP response header, if available.
+//
+// When multiple entries of the tag are found, only the first occurrence is returned.
+//
+// If the requested tag is not present, NULL is returned.
+const char *mg_get_response_header(const struct mg_connection *conn, const char *tag);
 
 // Handle custom error pages, i.e. nested page requests.
 // request_info struct will contain info about the original
