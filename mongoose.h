@@ -142,23 +142,38 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 // of the received request.
 //
 // Parameters:
-//   conn:          the connection which processes the HTTP request.
-//   username:      the username for which a password is needed.
-//   len_password:  size of the buffer pointed by the 'password' parameter.
-//   password:      the buffer where user should store the requested password.
+//   conn:				the connection which processes the HTTP request.
+//   username:			the username for which a password is needed.
+//   auth_domain:		the authorization domain for which a password is needed (isn't necessarily equal to the 'Host:' request header)
+//   uri, nonce, nc, cnonce, qop, reponse:
+//                      the elements decoded from the 'Authorization:' HTTP header; 
+//						NULL when that header was not present or wasn't of the 'Digest' type.
+//   hash:				the buffer where user should store the requested password hash.
+//                      The usual way to construct the hash would be to call
+//                          mg_md5(hash, username, ":", auth_domain, ":", password, NULL);
+//   hash_bufsize:		size of the buffer pointed by the 'hash' parameter.
 //
 // Return:
-//   2 - escape authorization and handle request
-//   1 - perform authorization
-//   0 - don't authorize and send 401
+//   3 - perform authorization using the default file-based approach
+//   2 - bypass authorization and handle request (authorization PASS)
+//   1 - perform authorization using the produced hash
+//   0 - don't authorize and send 401 (authorization FAIL)
+//   anything else - fail the authorization, send a 5xx response code
 //
 // Notes:
 //   You can access the user data through the mg_get_user_data() and mg_get_context()
 //   API functions.
 typedef int (*mg_password_callback_t)(struct mg_connection *conn,
-                                const char *username,
-                                char password[],
-                                size_t password_bufsize);
+	                                  const char *username,
+	                                  const char *auth_domain,
+									  const char *uri,
+									  const char *nonce,
+									  const char *nc,
+									  const char *cnonce,
+									  const char *qop,
+									  const char *response,
+		                              char hash[],
+			                          size_t hash_bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // each time it receives a part of the request body from the network.
@@ -179,9 +194,9 @@ typedef int (*mg_password_callback_t)(struct mg_connection *conn,
 //   The number of successfully processed bytes.
 //   Should be equal to len_buff. Otherwise body receiving will be interrupted
 //   and error response will be sent to the remote peer.
-typedef int (*mg_receive_callback_t)(struct mg_connection *conn,
-                                const char *buf,
-                                size_t bufsize);
+typedef int (*mg_write_callback_t)(struct mg_connection *conn,
+                                   const char *buf,
+                                   size_t bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // each time it sends part of the content body while processing the GET request.
@@ -209,11 +224,11 @@ typedef int (*mg_receive_callback_t)(struct mg_connection *conn,
 // Returns:
 //   The number of bytes stored into the buffer.
 //   If zero or negative, sending will be stopped and the connection will be closed.
-typedef int (*mg_send_callback_t)(struct mg_connection *conn,
-                                char    *buf,
-                                size_t  bufsize,
-                                size_t  *content_length,
-                                char*   *mime);
+typedef int (*mg_read_callback_t)(struct mg_connection *conn,
+                                  char    *buf,
+                                  size_t  bufsize,
+                                  size_t  *content_length,
+                                  char*   *mime);
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
@@ -285,8 +300,8 @@ typedef struct mg_user_class_t {
   mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
 
   mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication
-  mg_receive_callback_t       receive_callback;   // Exposes received body data to user. Can act as substitute for file system I/O.
-  mg_send_callback_t          send_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
+  mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
+  mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
   mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
 } mg_user_class_t;
@@ -468,21 +483,6 @@ int mg_send_file(struct mg_connection *conn, const char *path);
 // Read data from the remote end, return number of bytes read.
 int mg_read(struct mg_connection *, void *buf, size_t len);
 
-// Send HTTP reject on the provided connection.
-// The Reason-Phase is set according status_code as defined in RFC2616 (HTTP).
-// body and mime can be NULL, if mime is NULL and body is not NULL,
-// 'text/plain' will be used.
-// The mime parameter may be followed by multiple parameters, each of which
-// represents single header in format of NULL-terminated strings.
-// The last parameter should be NULL.
-// Returns 1 on success, 0 if local buffer is too small to hold all headers.
-// Examples:
-//      mg_send_reject(pConn, 500, NULL, NULL, NULL);
-//      mg_send_reject(pConn, 405, NULL, NULL, "Allow: GET, PUT, DELETE", NULL);
-//      mg_send_reject(pConn, 403, "User is not registered", NULL);
-//
-int mg_send_reject(struct mg_connection *conn, int status_code,
-                   char* body, char* mime, ...);
 
 // Get the value of particular HTTP header.
 //

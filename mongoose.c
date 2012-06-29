@@ -21,8 +21,6 @@
 
 #include "mongoose.h"
 
-#define SAFE_STR(s)     ((s) ? (s) : "")
-
 
 
 #define MONGOOSE_VERSION "3.2"
@@ -340,7 +338,6 @@ struct mg_idle_connection {
 
 
 typedef enum {
-  AUTHENTICATE_ALL_REQUESTS,
   CGI_EXTENSIONS,
   ALLOWED_METHODS,
   CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
@@ -354,7 +351,6 @@ typedef enum {
 } mg_option_index_t;
 
 static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PER_CONFIG_OPTION] = {
-  "B", "authenticate_all_requests",     NULL,
   "C", "cgi_pattern",                   "**.cgi$|**.pl$|**.php$",
   "D", "allowed_methods",               NULL,
   "E", "cgi_environment",               NULL,
@@ -1354,7 +1350,7 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
   return get_header(&conn->request_info, name);
 }
 
-// A helper function for traversing comma separated list of values.
+// A helper function for traversing a comma separated list of values.
 // It returns a list pointer shifted to the next value, or NULL if the end
 // of the list found.
 // Value is stored in val vector. If value has form "x=y", then eq_val
@@ -1366,7 +1362,7 @@ static const char *next_option(const char *list, struct vec *val,
     // End of the list
     val->ptr = 0;
     val->len = 0;
-    if (eq_val) {
+    if (eq_val != NULL) {
       eq_val->ptr = 0;
       eq_val->len = 0;
     }
@@ -1526,6 +1522,13 @@ static const char *suggest_connection_header(struct mg_connection *conn) {
   int rv = should_keep_alive(conn);
   DEBUG_TRACE(("suggest_connection_header() --> %s", rv ? "keep-alive" : "close"));
   return rv ? "keep-alive" : "close";
+}
+
+static const char *mg_get_allowed_methods(struct mg_connection *conn) {
+  const char *allowed = get_conn_option(conn, ALLOWED_METHODS);
+  if (is_empty(allowed))
+    allowed = "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS";
+  return allowed;
 }
 
 // Return negative value on error; otherwise number of bytes saved by compacting.
@@ -1713,8 +1716,10 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
 
   if (status_code <= 0)
     status_code = conn->request_info.status_code;
+  else
+	status_code = mg_set_response_code(conn, status_code);
   if (is_empty(status_text))
-    status_text = mg_get_response_code_text(conn->request_info.status_code);
+    status_text = mg_get_response_code_text(status_code);
 
   /*
   Once we are sure of the header order assumption, this becomes an
@@ -1805,6 +1810,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
   mg_set_response_code(conn, status);
   conn->request_info.status_custom_description = buf;
 
+  if (status == 405) {
+    mg_add_response_header(conn, 0, "Allow", mg_get_allowed_methods(conn));
+  }
+
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
     // also override the 'reason' text when the status code
@@ -1869,14 +1878,6 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_add_response_header(conn, 0, "Content-Length", "%d", len);
           mg_add_response_header(conn, 0, "Content-Type", "text/plain");
         }
-
-      if (status == 405) {
-        const char *allowed_methods = get_conn_option(conn, ALLOWED_METHODS);
-        if (!is_empty(allowed_methods)) {
-          mg_printf(conn, "Allow: %s\r\n", allowed_methods);
-        }
-      }
-
         mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
         mg_write_http_response_head(conn, status, reason);
 
@@ -1913,18 +1914,6 @@ static void send_http_error(struct mg_connection *conn, int status,
   vsend_http_error(conn, status, reason, fmt, ap);
   va_end(ap);
 }
-
-
-static void send_http_ok(struct mg_connection *conn, int status) {
-
-    (void) mg_printf(conn,
-                     "HTTP/1.1 %d OK\r\n"
-                     "%s"
-                     "Connection: close\r\n"
-                     "Content-Length: 0\r\n\r\n", status,
-                     SAFE_STR(conn->request_info.response_headers));
-}
-
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
@@ -2779,7 +2768,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
     }
   }
   DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
-      conn->content_len, conn->consumed_content));
+               conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -3503,6 +3492,8 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   char *name, *value, *s;
   const char *auth_header;
 
+  (void) memset(ah, 0, sizeof(*ah));
+
   if ((auth_header = mg_get_header(conn, "Authorization")) == NULL ||
       mg_strncasecmp(auth_header, "Digest ", 7) != 0) {
     return 0;
@@ -3512,8 +3503,6 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   (void) mg_strlcpy(buf, auth_header + 7, buf_size);
 
   s = buf;
-  (void) memset(ah, 0, sizeof(*ah));
-
   // Parse authorization header
   for (;;) {
     // Gobble initial spaces
@@ -3562,81 +3551,82 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   return 1;
 }
 
-// Authorize against the opened passwords file. Return 1 if authorized.
+// Authorize against the opened passwords file or user callback. 
+// (The user callback takes precedence.)
+//
+// Return 1 if authorized.
 static int authorize(struct mg_connection *conn, FILE *fp) {
   struct ah ah;
   char line[256], f_user[256], ha1[256], f_domain[256], buf[BUFSIZ];
   const char *auth_domain;
+  int rv;
 
-  if (!parse_auth_header(conn, buf, sizeof(buf), &ah)) {
-    return 0;
-  }
-
-  // Loop over passwords file
+  rv = parse_auth_header(conn, buf, sizeof(buf), &ah);
   auth_domain = get_conn_option(conn, AUTHENTICATION_DOMAIN);
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
-      continue;
-    }
 
-    if (*f_user && *f_domain &&
-        !strcmp(ah.user, f_user) &&
-        !strcmp(auth_domain, f_domain))
-      return check_password(
-            conn->request_info.request_method,
-            ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
-            ah.response);
+  ha1[0] = 0;
+  if (conn->ctx->user_functions.password_callback != NULL) {
+	int m = conn->ctx->user_functions.password_callback(conn, 
+					ah.user, auth_domain, 
+					ah.uri, ah.nonce, 
+					ah.nc, ah.cnonce, 
+					ah.qop, ah.response,
+					ha1, sizeof(ha1));
+	if (m == 2)
+	  return 1;
+	else if (m == 0)
+	  return 0;
+	else if (m == 1)
+	  fp = NULL; // just use the current ha1[] data
+	else if (m != 3) {
+	  send_http_error(conn, 500, NULL, "");
+	  return 0;
+	}
   }
 
-  return 0;
-}
+  if (fp != NULL) {
+	// When parse_auth_header() failed, abort the mission:
+	if (!rv)
+	  return 0;
 
-// Authorizes against the user-defined callback.
-// Returns 1 if authorized, 0 otherwise.
-static int authorize_by_callback(struct mg_connection *conn) {
-    struct ah ah;
-    char password[64], ha1[33], buf[BUFSIZ];
-    const char* realm;
-    int  rv;
+    // Loop over passwords file
+	rv = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
+        continue;
+      }
 
-    if (conn->ctx->user_functions.password_callback == NULL) {
-        return 0;
+      if (*f_user && 
+          !strcmp(ah.user, f_user) &&
+          !strcmp(auth_domain, f_domain)) {
+		rv = 1;
+	    break;
+	  }
     }
-
-    if (!parse_auth_header(conn, buf, sizeof(buf), &ah)) {
-        return 0;
-    }
-
-    rv = conn->ctx->user_functions.password_callback(
-            conn, ah.user, password, ARRAY_SIZE(password));
-    if (rv == 2) {
-        return 1;
-    } else if (rv == 0) {
-        return 0;
-    }
-
-    realm = get_conn_option(conn, AUTHENTICATION_DOMAIN);
-
-    mg_md5(ha1, ah.user, ":", realm, ":", password, NULL);
-
-    return check_password(
-            conn->request_info.request_method,
-            ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
-            ah.response);
+	// no probable hit --> FAIL!
+	if (!rv)
+	  return 0;
+  }
+  return check_password(
+    conn->request_info.request_method,
+    ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
+    ah.response);
 }
 
 // Return 1 if request method is allowed, 0 otherwise.
 int check_allowed(struct mg_connection *conn) {
-  const char* request_method = conn->request_info.request_method;
+  const char *request_method = conn->request_info.request_method;
+  const char *allowed_methods = mg_get_allowed_methods(conn);
+  struct vec v;
 
-  if (get_conn_option(conn, ALLOWED_METHODS) != NULL  &&
-    strstr(get_conn_option(conn, ALLOWED_METHODS), request_method)==0) {
-      return 0;
+  while ((allowed_methods = next_option(allowed_methods, &v, NULL)) != NULL) {
+    if (!memcmp(request_method, v.ptr, v.len))
+      return 1;
   }
-  return 1;
+  return 0;
 }
 
-// Return 1 if request is authorized, 0 otherwise.
+// Return 1 if request is authorized.
 static int check_authorization(struct mg_connection *conn, const char *path) {
   FILE *fp;
   char fname[PATH_MAX];
@@ -3645,41 +3635,24 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   int authorized;
 
   fp = NULL;
-  authorized = 1;
-
-  if (is_empty(get_conn_option(conn, AUTHENTICATION_DOMAIN)))
-  {
-    return 1; /*authorized*/
-  }
-
-  if (get_conn_option(conn, AUTHENTICATE_ALL_REQUESTS) != NULL)
-  {
-    authorized = 0;  /* Force authorization */
-  }
-
-  if (conn->ctx->user_functions.password_callback != NULL) {
-    return authorize_by_callback(conn);
-  }
-
 
   list = get_conn_option(conn, PROTECT_URI);
   while ((list = next_option(list, &uri_vec, &filename_vec)) != NULL) {
     if (!memcmp(conn->request_info.uri, uri_vec.ptr, uri_vec.len)) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
-                        (int)filename_vec.len, filename_vec.ptr);
+                         (int)filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
-        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(ERRNO));
+        mg_cry(conn, "%s: cannot open authorization file %s: %s", __func__, fname, mg_strerror(ERRNO));
       }
       break;
     }
   }
 
-  if (fp == NULL  &&  conn->ctx->user_functions.receive_callback == NULL) {
+  if (fp == NULL) {
     fp = open_auth_file(conn, path);
   }
-
+  authorized = authorize(conn, fp);
   if (fp != NULL) {
-    authorized = authorize(conn, fp);
     (void) mg_fclose(fp);
   }
 
@@ -3687,9 +3660,10 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
 }
 
 static void send_authorization_request(struct mg_connection *conn) {
-  if (mg_is_producing_nested_page(conn))
+  if (mg_is_producing_nested_page(conn) || mg_have_headers_been_sent(conn))
     return;
-  conn->request_info.status_code = 401;
+  if (mg_set_response_code(conn, 401) != 401)
+	return;
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Content-Length", "0");
   mg_add_response_header(conn, 0, "WWW-Authenticate", "Digest qop=\"auth\", "
@@ -3699,22 +3673,22 @@ static void send_authorization_request(struct mg_connection *conn) {
   (void) mg_write_http_response_head(conn, 0, 0);
 }
 
+// Return 1 when authorized.
 static int is_authorized_for_put(struct mg_connection *conn) {
-  FILE *fp;
-  int ret = 0;
+  FILE *fp = NULL;
+  int ret;
   const char *pwd_filepath = get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE);
-
-  if (is_empty(get_conn_option(conn, AUTHENTICATION_DOMAIN)))
-  {
-      return 1;
-  }
 
   if (!is_empty(pwd_filepath)) {
     fp = mg_fopen(pwd_filepath, "r");
-    if (fp != NULL) {
-      ret = authorize(conn, fp);
-      (void) mg_fclose(fp);
-    }
+    if (fp == NULL) {
+      mg_cry(conn, "%s: cannot open authorization file %s: %s", __func__, pwd_filepath, mg_strerror(ERRNO));
+	  return 0;
+	}
+  }
+  ret = authorize(conn, fp);
+  if (fp != NULL) {
+    (void) mg_fclose(fp);
   }
   return ret;
 }
@@ -3949,7 +3923,7 @@ static void handle_directory_request(struct mg_connection *conn,
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
   conn->must_close = 1;
-  conn->request_info.status_code = 200;
+  mg_set_response_code(conn, 200);
   mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
   mg_write_http_response_head(conn, 0, 0);
@@ -4054,23 +4028,11 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
     if (feof(fp))
         break;
 
-    if (conn->ctx->user_functions.send_callback != NULL)
-    {
-      num_read = conn->ctx->user_functions.send_callback(conn, BUFSIZ, buf, NULL, NULL);
-      if (num_read <= 0)
-      {
-        send_http_error(conn, 578, NULL, "%s: failed to read data", __func__); // signal internal error in access log file at least
-        return -2;
-      }
-    }
-    else
-    {
-      // Read from file, exit the loop on error
-      num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-      if (num_read == 0 && ferror(fp)) {
-        send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
-        return -2;
-      }
+    // Read from file, exit the loop on error
+    num_read = (int)fread(buf, 1, (size_t)to_read, fp);
+    if (num_read == 0 && ferror(fp)) {
+      send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
+      return -2;
     }
 
     // Send read bytes to the client, exit the loop on error
@@ -4120,7 +4082,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   r1 = r2 = 0;
   hdr = mg_get_header(conn, "Range");
   if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
-    conn->request_info.status_code = 206;
+    mg_set_response_code(conn, 206);
     (void) fseeko(fp, (off_t) r1, SEEK_SET);
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
     mg_add_response_header(conn, 0, "Content-Range", "bytes "
@@ -4153,43 +4115,6 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   return (n > 0 ? 0 : -1);
 }
 
-static void handle_get_request(struct mg_connection *conn) {
-  char date[64];
-  const char *msg = "OK";
-  time_t curtime = time(NULL);
-  size_t cl;
-  char* mime;
-
-  conn->ctx->user_functions.send_callback(conn, NULL, &cl, &mime);
-  if (cl < 1)
-  {
-      send_http_error(conn, 500, "Internal Error",  "");
-      return;
-  }
-
-  // Set default status code if was not set by user
-  if (conn->request_info.status_code <= 0)
-  {
-      conn->request_info.status_code = 200;
-  }
-
-  // Prepare Date header. Must be in UTC, according to
-  // http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
-  gmt_time_string(date, sizeof(date), &curtime);
-
-  (void) mg_printf(conn,
-      "HTTP/1.1 %d %s\r\n"
-      "Date: %s\r\n"
-      "Connection: %s\r\n"
-      "%s"
-      "Content-Type: %s\r\n"
-      "Content-Length: %d\r\n\r\n",
-      conn->request_info.status_code, msg, date, suggest_connection_header(conn),
-      SAFE_STR(conn->request_info.response_headers), mime, cl);
-
-    send_file_data(conn, NULL, cl);
-}
-
 int mg_send_file(struct mg_connection *conn, const char *path) {
   struct mgstat st;
   if (mg_stat(path, &st) == 0) {
@@ -4200,49 +4125,6 @@ int mg_send_file(struct mg_connection *conn, const char *path) {
   }
 }
 
-int mg_send_reject(struct mg_connection *conn, int status_code,
-                   char* body, char* mime, ...) {
-  va_list  ap;
-  char*    header;
-  size_t   len_header;
-  char     buff[BUFSIZ];
-  char*    p;
-
-  p = buff;
-  buff[0] = '\0';
-
-  va_start(ap, mime);
-  header = va_arg(ap, char*);
-  while (header != NULL) {
-    len_header = strlen(header);
-    if ((p-buff) + len_header + 3 > BUFSIZ)  { // 3 for "\r\n\0"
-        return 0;
-    }
-    memcpy(p, header, len_header);
-    p += len_header;
-    memcpy(p, "\r\n\0", 3);
-    header = va_arg(ap, char*);
-  }
-  va_end(ap);
-
-  mg_printf(conn,
-     "HTTP/1.1 %d %s\r\n"
-     "%s"
-     "%s"
-     "Connection: %s\r\n"
-     "Content-Type: %s\r\n"
-     "Content-Length: %d\r\n\r\n",
-     status_code, mg_get_response_code_text(status_code),
-     buff, SAFE_STR(conn->request_info.response_headers),
-     suggest_connection_header(conn), (mime==NULL)?"text/plain":mime,
-     (body==NULL)?0:strlen(body));
-
-  if (body != NULL)
-  {
-    mg_printf(conn, "%s", body);
-  }
-  return 1;
-}
 
 // Parse HTTP headers from the given buffer, advance buffer to the point
 // where parsing stopped.
@@ -4467,7 +4349,7 @@ static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
     // Provide user with chunks buffered in the connection buffer
     while (chunk_read == chunk_size  &&  conn->consumed_content < conn->content_len) {
 
-        npushed = push(fp, sock, ssl, buffered, chunk_size);
+        npushed = push(fp, conn, buffered, chunk_size);
         if (npushed < chunk_size)
             return 0; // Failure - user failed to consume read bytes
         conn->consumed_content += chunk_size;
@@ -4503,7 +4385,7 @@ static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
         while (chunk_size < 0) {
 
             to_pull = (int)((BUFSIZ - buffered_len) < conn->content_len ? (BUFSIZ - buffered_len) : conn->content_len);
-            npulled = pull(NULL, conn->client.sock, conn->ssl,
+            npulled = pull(NULL, conn, 
                            buffered + buffered_len, to_pull);
             if (npulled < 0)
                 return 0; // Failed to read from network
@@ -4515,7 +4397,7 @@ static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
             }
             // Report received part of chunk to user
             if (chunk_read > 0) {
-                npushed = push(fp, sock, ssl, buffered, chunk_read);
+                npushed = push(fp, conn, buffered, chunk_read);
                 if (npushed < chunk_read)
                     return 0; // User failed to consume read bytes
             }
@@ -4529,12 +4411,12 @@ static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
         while (chunk_read < chunk_size) {
 
             to_pull = (int)(BUFSIZ < (chunk_size-chunk_read) ? BUFSIZ : (chunk_size-chunk_read));
-            npulled = pull(NULL, conn->client.sock, conn->ssl, buf, to_pull);
+            npulled = pull(NULL, conn, buf, to_pull);
             if (npulled <= 0)
                 return 0; // Failed to read from network
             chunk_read += npulled;
 
-            npushed = push(fp, sock, ssl, buf, npulled);
+            npushed = push(fp, conn, buf, npulled);
             if (npushed < npulled)
                 return 0; // User failed to consume read bytes
             conn->consumed_content += npulled;
@@ -4551,27 +4433,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   const char *expect, *buffered;
   char buf[DATA_COPY_BUFSIZ];
   int to_read, nread, buffered_len, success = 0;
-  const char *chunked;
 
   expect = mg_get_header(conn, "Expect");
-
-  assert(fp != NULL  ||  conn->ctx->user_functions.receive_callback != NULL);
-
-  chunked = mg_get_header(conn, "Transfer-Encoding");
-  if (strcmp(chunked, "chunked") == 0) {
-      if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
-          send_http_error(conn, 417, NULL, "");
-          return 0;
-      }
-      if (expect != NULL) {
-        (void) mg_printf(conn, "%s", "HTTP/1.1 100 Continue\r\n\r\n");
-      }
-      if (forward_body_chunks(conn, fp, sock, ssl) != 1) {
-          send_http_error(conn, 577, NULL, "");
-          return 0;
-      }
-      return 1;
-  }
+  assert(fp != NULL);
 
   if (conn->content_len == -1 &&
       (!strcmp(conn->request_info.request_method, "POST") ||
@@ -5131,12 +4995,9 @@ static void put_file(struct mg_connection *conn, const char *path) {
     range = mg_get_header(conn, "Content-Range");
     r1 = r2 = 0;
     if (range != NULL && parse_range_header(range, &r1, &r2) > 0) {
-      conn->request_info.status_code = 206;
+      mg_set_response_code(conn, 206);
       // TODO(lsm): handle seek error
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
-    }
-    if (conn->ctx->user_functions.receive_callback != NULL) {
-      XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     }
     if (forward_body_data(conn, fp, NULL, 1)) {
       mg_write_http_response_head(conn, 0, 0);
@@ -5464,15 +5325,10 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 }
 
 static void send_options(struct mg_connection *conn) {
-  const char *allowed;
-  
   if (mg_is_producing_nested_page(conn))
     return;
   mg_set_response_code(conn, 200);
-  allowed = get_conn_option(conn, ALLOWED_METHODS);
-  if (is_empty(allowed))
-    allowed = "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS";
-  mg_add_response_header(conn, 0, "Allow", allowed);
+  mg_add_response_header(conn, 0, "Allow", mg_get_allowed_methods(conn));
   mg_add_response_header(conn, 0, "DAV", "1");
 
   mg_write_http_response_head(conn, 0, 0);
@@ -5555,22 +5411,14 @@ static void handle_request(struct mg_connection *conn) {
   uri_len = (int)strlen(ri->uri);
   url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
   remove_double_dots_and_double_slashes(ri->uri);
-
-  if (conn->ctx->user_functions.receive_callback == NULL) {
-    stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
-  }
-  else {
-    path[0] = '\0';
-    stat_result = 0;
-    memset(&st, 0, sizeof(struct mgstat));
-  }
+  stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
   ri->phys_path = path;
 
   DEBUG_TRACE(("%s", ri->uri));
 
   if (!check_allowed(conn)) {
-    send_http_error(conn, 405, NULL, "Method is not allowed");
-  } else if (!check_authorization(conn, path)) {
+    send_http_error(conn, 405, NULL, "");
+  } else if (check_authorization(conn, path) != 1) {
     send_authorization_request(conn);
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
@@ -5597,23 +5445,18 @@ static void handle_request(struct mg_connection *conn) {
   } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
     send_http_error(conn, 404, NULL, "DocumentRoot has not been properly configured.");
   } else if ((!strcmp(ri->request_method, "PUT") ||
-        !strcmp(ri->request_method, "DELETE")) &&
-      (is_empty(get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE)) ||
-       !is_authorized_for_put(conn)) &&
-      get_conn_option(conn, AUTHENTICATE_ALL_REQUESTS) == NULL) {
+              !strcmp(ri->request_method, "DELETE")) &&
+             is_authorized_for_put(conn) != 1) {
     send_authorization_request(conn);
   } else if (!strcmp(ri->request_method, "PUT")) {
     put_file(conn, path);
   } else if (!strcmp(ri->request_method, "DELETE")) {
-    if (conn->ctx->user_functions.receive_callback != NULL || mg_remove(path) == 0) {
-      send_http_ok(conn, 200);
+    if (mg_remove(path) == 0) {
+      send_http_error(conn, 200, NULL, "");
     } else {
       send_http_error(conn, 500, NULL, "remove(%s): %s", path,
                       mg_strerror(ERRNO));
     }
-  } else if (!strcmp(ri->request_method, "GET")  &&
-         conn->ctx->user_functions.send_callback != NULL) {
-    handle_get_request(conn);
   } else if (stat_result != 0) {
     send_http_error(conn, 404, NULL, "File not found: URI=%s, PATH=%s", ri->uri, path);
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
@@ -6358,11 +6201,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->log_severity = 0;
   ri->log_dstfile = NULL;
   ri->log_timestamp = 0;
-
-  if (ri->response_headers != NULL) {
-      free(ri->response_headers);
-      ri->response_headers = NULL;
-  }
 
   conn->num_bytes_sent = -1;
   conn->consumed_content = 0;
