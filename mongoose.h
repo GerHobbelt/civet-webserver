@@ -142,16 +142,16 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 // of the received request.
 //
 // Parameters:
-//   conn:				the connection which processes the HTTP request.
-//   username:			the username for which a password is needed.
-//   auth_domain:		the authorization domain for which a password is needed (isn't necessarily equal to the 'Host:' request header)
+//   conn:              the connection which processes the HTTP request.
+//   username:          the username for which a password is needed.
+//   auth_domain:       the authorization domain for which a password is needed (isn't necessarily equal to the 'Host:' request header)
 //   uri, nonce, nc, cnonce, qop, reponse:
-//                      the elements decoded from the 'Authorization:' HTTP header; 
-//						NULL when that header was not present or wasn't of the 'Digest' type.
-//   hash:				the buffer where user should store the requested password hash.
+//                      the elements decoded from the 'Authorization:' HTTP header;
+//                      NULL when that header was not present or wasn't of the 'Digest' type.
+//   hash:              the buffer where user should store the requested password hash.
 //                      The usual way to construct the hash would be to call
 //                          mg_md5(hash, username, ":", auth_domain, ":", password, NULL);
-//   hash_bufsize:		size of the buffer pointed by the 'hash' parameter.
+//   hash_bufsize:      size of the buffer pointed by the 'hash' parameter.
 //
 // Return:
 //   3 - perform authorization using the default file-based approach
@@ -164,16 +164,16 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //   You can access the user data through the mg_get_user_data() and mg_get_context()
 //   API functions.
 typedef int (*mg_password_callback_t)(struct mg_connection *conn,
-	                                  const char *username,
-	                                  const char *auth_domain,
-									  const char *uri,
-									  const char *nonce,
-									  const char *nc,
-									  const char *cnonce,
-									  const char *qop,
-									  const char *response,
-		                              char hash[],
-			                          size_t hash_bufsize);
+                                      const char *username,
+                                      const char *auth_domain,
+                                      const char *uri,
+                                      const char *nonce,
+                                      const char *nc,
+                                      const char *cnonce,
+                                      const char *qop,
+                                      const char *response,
+                                      char hash[],
+                                      size_t hash_bufsize);
 
 // Prototype for the user-defined function. Mongoose calls this function
 // each time it receives a part of the request body from the network.
@@ -232,7 +232,7 @@ typedef int (*mg_read_callback_t)(struct mg_connection *conn,
 
 // Return 0 on success,
 // < 0 on error,
-// 1 when the default handler should be invoked instead 
+// 1 when the default handler should be invoked instead
 typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions_dstbuf, size_t chunk_extensions_dstbuf_size);
 
 
@@ -310,7 +310,7 @@ typedef struct mg_user_class_t {
   mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
   mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
-  mg_write_chunk_header_t	  write_chunk_header;
+  mg_write_chunk_header_t     write_chunk_header;
 } mg_user_class_t;
 
 
@@ -493,8 +493,43 @@ int mg_read(struct mg_connection *, void *buf, size_t len);
 
 typedef enum mg_iomode_t {
   MG_IOMODE_UNKNOWN = -1,
+
+  // mg_read() will read up to connection::content_len bytes of content data from an mongoose
+  // HTTP request connection; mg_read() will read an unlimited (2^63) number of bytes
+  // from any other connection (mg_socketpair(), mg_connect())
+  // mg_write() will write an unlimited number of bytes to any connection, HTTP or other.
+  //
+  // NOTE: this has always been the 'standard' behaviour of Mongoose's mg_read/mg_write.
   MG_IOMODE_STANDARD = 0,
-  MG_IOMODE_CHUNKED
+
+  // mg_read() will read content data bytes until either Mongoose itself or the user callback
+  // reports they encountered the End-Of-File header/zero-length chunk. When this mode is
+  // set, mg_read() expects to read at least one 'chunk header', which MAY be the End-Of-File
+  // header.
+  // mg_write() will write keep score about the number of bytes written in the 'current' chunk
+  // and generate a 'chunk header' when it runs out. After setting this mode, we start with
+  // 'zero bytes left', i.e. the need to write a 'chunk header' immediately. Call
+  // mg_set_tx_chunk_size() to set a known 'chunk size' or let mg_write() do this automatically
+  // for you, in which case mg_write() will generate a 'chunk header' fitting each individual
+  // mg_write() invocation. (I.e.: every mg_write() call will be a header+content dump then.)
+  //
+  // Note: Use this mode for 'chunked' transfer protocols, such as HTTP Transfer-Encoding:chunked
+  //       or WebSockets.
+  MG_IOMODE_CHUNKED_DATA,
+
+  // mg_read() and mg_write() read and write to the socket without any restriction, nor do they
+  // account for the bytes written in this mode. This mode is ONLY RECOGNIZED AS VALID when set
+  // inside the chunk header encode+write/read+decode user callbacks and is switched back to
+  // MG_IOMODE_CHUNKED_DATA automatically when exiting the callback. Anywhere else, this mode
+  // is considered identical to having specified MG_IOMODE_CHUNKED_DATA and acts accordingly.
+  //
+  // Note: this mode is also automatically set by Mongoose when the aforementioned user callbacks
+  //       are invoked, so you don't need to do anything to switch between both chunk modes. This
+  //       mode is provided as a convenience detection mechanism when you share code between
+  //       different user callbacks and need to know the internal state: mg_get_tx_mode() / mg_get_rx_mode()
+  //       will tell you. This mode is also made available so you may create specialized custom
+  //       behaviour in the chunk header processing user callbacks; mg_read/mg_write are re-entrant.
+  MG_IOMODE_CHUNKED_HEADER,
 } mg_iomode_t;
 
 // Configure the connection's transmit mode.
@@ -565,7 +600,7 @@ int mg_flush(struct mg_connection *conn);
 // Return 0 on success.
 //
 // Note: a side-effect of this call is that the 'remaining chunk size' will be
-//       set to the specified 'chunk_size' and the 'chunk number' will be 
+//       set to the specified 'chunk_size' and the 'chunk number' will be
 //       incremented by one(1).
 int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size);
 
@@ -636,6 +671,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     __attribute__((format(printf, 4, 5)))
 #endif
 ;
+int mg_vadd_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, va_list ap);
 
 // Remove the specified response header, if available.
 //

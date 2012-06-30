@@ -362,11 +362,12 @@ static void test_client_connect() {
     struct mg_context ctx = {0};
     struct mg_connection c = {0};
     struct mg_connection *g;
+    struct mg_request_info *ri;
     int rv;
 
     c.ctx = &ctx;
 
-    g = mg_connect(&c, "example.com", 80, 0);
+    g = mg_connect(&c, "example.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -378,9 +379,9 @@ static void test_client_connect() {
     free(g);
 
 
-    g = mg_connect(&c, "google.com", 80, 1);
+    g = mg_connect(&c, "google.com", 80, MG_CONNECT_USE_SSL);
     ASSERT(!g);
-    g = mg_connect(&c, "google.com", 80, 0);
+    g = mg_connect(&c, "google.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -390,6 +391,69 @@ static void test_client_connect() {
     ASSERT(rv > 0);
     mg_close_connection(g);
     //free(g);
+
+
+    // now with HTTP header support:
+    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    // set up the request the rude way: directly patch the request_info struct. Nasty!
+    //
+    // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+    ri = mg_get_request_info(g);
+    ri->http_version = "1.1";
+    ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+    ri->request_method = "GET";
+    ri->uri = "/search";
+    
+    rv = mg_write_http_request_head(g, NULL, NULL);
+    ASSERT(rv == 18);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+    // and now fetch the content:
+    rv = mg_read(g, buf, sizeof(buf));
+    ASSERT(rv > 0);
+    mg_close_connection(g);
+    //free(g);
+
+
+    // now with _full_ HTTP header support:
+    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    // set up the request the rude way: directly patch the request_info struct. Nasty!
+    //
+    // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+    ri = mg_get_request_info(g);
+    ri->http_version = "1.1";
+    ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+    ri->request_method = "GET";
+    ri->uri = "/search";
+    
+    rv = mg_write_http_request_head(g, NULL, NULL);
+    ASSERT(rv == 18);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+    // and now fetch the content:
+    rv = mg_read(g, buf, sizeof(buf));
+    ASSERT(rv > 0);
+    mg_close_connection(g);
+    //free(g);
+
 }
 
 

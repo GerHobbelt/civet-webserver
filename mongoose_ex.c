@@ -197,26 +197,33 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
     return 0;
 }
 
-static struct mg_connection *mg_connect(struct mg_connection *conn,
-                                 const char *host, int port, int use_ssl) {
+struct mg_connection *mg_connect(struct mg_connection *conn,
+                                 const char *host, int port, mg_connect_flags_t flags) {
   struct mg_connection *newconn = NULL;
   SOCKET sock;
   struct addrinfo *result = NULL;
   struct addrinfo *ptr;
   struct addrinfo hints = {0};
+  int http_io_buf_size;
 
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = IPPROTO_TCP;
 
-  if (conn->ctx->ssl_ctx == NULL && use_ssl) {
+  assert(conn->ctx);
+  if (flags & MG_CONNECT_HTTP_IO)
+    http_io_buf_size = atoi(get_conn_option(conn, MAX_REQUEST_SIZE));
+  else
+    http_io_buf_size = 0;
+  if (conn->ctx->ssl_ctx == NULL && (flags & MG_CONNECT_USE_SSL)) {
     mg_cry(conn, "%s: SSL is not initialized", __func__);
   } else if (getaddrinfo(host, NULL, &hints, &result)) {
     mg_cry(conn, "%s: getaddrinfo(%s): %s", __func__, host, mg_strerror(ERRNO));
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
     mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
   } else if ((newconn = (struct mg_connection *)
-      calloc(1, sizeof(*newconn))) == NULL) {
+      calloc(1, sizeof(*newconn) + http_io_buf_size * 3 /* RX headers, TX headers, scratch space */
+            )) == NULL) {
     mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
     closesocket(sock);
   } else {
@@ -225,11 +232,19 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
     newconn->client.sock = sock;
     // by default, a client-side connection is assumed to be an arbitrary client,
     // not necessarily a HTTP client:
-    newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
-    //newconn->consumed_content = 0;
-    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
-    //newconn->request_len = newconn->data_len = 0;
-    //newconn->must_close = 0;
+    if (!http_io_buf_size) {
+      newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+      //newconn->consumed_content = 0;
+      newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+      //newconn->request_len = newconn->data_len = 0;
+      //newconn->must_close = 0;
+    } else {
+      newconn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
+      //newconn->consumed_content = 0;
+      newconn->content_len = -1; // means we'd have to fetch and decode the (HTTP) headers first
+      newconn->buf = (char *)(newconn + 1);
+      newconn->buf_size = http_io_buf_size;
+    }
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
       if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
         continue;
@@ -269,7 +284,7 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
         mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
         newconn->client.lsa.len = 0;
       }
-      if (use_ssl && !sslize(newconn, SSL_connect)) {
+      if ((flags & MG_CONNECT_USE_SSL) && !sslize(newconn, SSL_connect)) {
         mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
         closesocket(sock);
       } else {
@@ -284,11 +299,11 @@ static struct mg_connection *mg_connect(struct mg_connection *conn,
   return NULL;
 }
 
-struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl)
+struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags)
 {
     struct mg_connection *conn = fc(ctx);
 
-    return mg_connect(conn, host, port, use_ssl);
+    return mg_connect(conn, host, port, flags);
 }
 
 void mg_close_connection(struct mg_connection *conn)
@@ -297,7 +312,163 @@ void mg_close_connection(struct mg_connection *conn)
     free(conn);
 }
 
+int mg_write_http_request_head(struct mg_connection *conn, const char *request_method, const char *request_path_and_query, ...) {
+  const char *http_version;
+  const char *uri;
+  const char *q;
+  const char *q_str;
 
+  if (!conn || !conn->buf_size)
+    return -1;
+
+  assert(conn->buf);
+  if (is_empty(request_method))
+    request_method = conn->request_info.request_method;
+  else
+    conn->request_info.request_method = request_method;
+
+  if (is_empty(conn->request_info.http_version))
+    conn->request_info.http_version = "1.1";
+  http_version = conn->request_info.http_version;
+
+  // construct the request line from the arguments / request_info?
+  if (!is_empty(request_path_and_query)) {
+    va_list ap;
+    int rv;
+    char *d;
+    char *scratch;
+    int space;
+
+    // see the note above the write_http_read() implementation: we MAY use the scratch buffer here.
+    scratch = conn->buf + 2 * conn->buf_size;
+    space = conn->buf_size;
+
+    va_start(ap, request_path_and_query);
+    rv = mg_vsnq0printf(conn, scratch, space, request_path_and_query, ap);
+    va_end(ap);
+
+    if (rv == 0) {
+      mg_cry(conn, "%s: failed to produce the request line for format string [%s]", __func__, request_path_and_query);
+      return -1;
+    }
+    space -= rv;
+    // check overflow, i.e. whether we hit the edge in scratch space
+    if (space <= 1) {
+      mg_cry(conn, "%s: scratch buffer overflow while constructing the request line [%.*s(...)]", __func__, 200, scratch);
+      return -1;
+    }
+
+    // re-arrange the TX headers buffer so that uri and query part fit in there too
+    // so we can persist them beyond this call in a fashion similar to the server-side
+    // mongoose code which stores the uri+query in the RX buffer together with
+    // the headers there.
+    //
+    // WARNING: we happen to know EXACTLY how compact_tx_headers() behaves and we're
+    //          counting on that knowledge here to both keep the copying to a minimum
+    //          and assure that the URI + QUERY strings don't get damaged during the
+    //          compaction process there!
+    uri = conn->request_info.uri = d = scratch;
+    d += strcspn(d, "?");
+    *d++ = 0;
+    q_str = conn->request_info.query_string = d;
+    conn->tx_can_compact_hdrstore = 1;  // always trigger a compact cycle!
+  } else {
+    if (is_empty(conn->request_info.uri)) {
+      mg_cry(conn, "%s: request URI is nil", __func__);
+      return -1;
+    }
+    
+    uri = conn->request_info.uri;
+    q_str = conn->request_info.query_string;
+    if (q_str == NULL)
+      q_str = "";
+  }
+  if (!is_empty(q_str))
+    q = "?";
+  else
+    q = "";
+
+  return write_http_head(conn, "%s %s%s%s HTTP/%s\r\n", request_method, uri, q, q_str, http_version);
+}
+
+int mg_read_http_response(struct mg_connection *conn) {
+  char *buf;
+  struct mg_request_info *ri;
+  const char *status_code;
+  char * chknum;
+
+  if (!conn || !conn->buf_size)
+    return -1;
+
+  ri = &conn->request_info;
+  ri->num_headers = 0;
+  conn->request_len = read_request(NULL, conn,
+                                   conn->buf, conn->buf_size,
+                                   &conn->data_len);
+  assert(conn->data_len >= conn->request_len);
+  ri->seq_no++;
+  if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
+    return 413;
+  }
+  if (conn->request_len <= 0) {
+    // In case we didn't receive ANY data, we don't mess with the connection any further
+    // by trying to send any more data, so we tag the connection as done for that:
+    if (conn->data_len == 0) {
+      mg_mark_end_of_header_transmission(conn);
+    }
+    return -2; // Remote end closed the connection or sent malformed response
+  }
+
+  // Nul-terminate the request 'cause parse_http_request() is C-string based
+  conn->buf[conn->request_len - 1] = 0;
+  
+  buf = conn->buf;
+
+  // RFC says that all initial whitespace should be ignored
+  while (*buf != 0 && isspace(* (unsigned char *) buf)) {
+    buf++;
+  }
+
+  ri->http_version = skip(&buf, " ");
+  status_code = skip(&buf, " ");
+  ri->status_custom_description = skip(&buf, "\r\n");
+
+  chknum = NULL;
+  ri->status_code = (status_code == NULL ? -1 : (int)strtol(status_code, &chknum, 10));
+  if (chknum != NULL)
+    chknum += strspn(chknum, " ");
+  if (!is_empty(chknum))
+    return -3; // Cannot parse HTTP response
+
+  if (strncmp(ri->http_version, "HTTP/", 5) == 0) {
+    ri->http_version += 5;   // Skip "HTTP/"
+    parse_http_headers(&buf, ri);
+  } else {
+    return -4; // Cannot parse HTTP response
+  }
+  if (strcmp(ri->http_version, "1.0") &&
+      strcmp(ri->http_version, "1.1")) {
+    // Response seems valid, but HTTP version is strange
+    return -5;
+  } else {
+    // Response is valid, handle the basics.
+    const char *cl = get_header(ri, "Transfer-Encoding");
+    if (cl && strstr("chunked", cl)) {
+      assert(conn->content_len == -1);
+      mg_set_rx_mode(conn, MG_IOMODE_CHUNKED_DATA);
+    } else {
+      cl = get_header(ri, "Content-Length");
+      chknum = NULL;
+      conn->content_len = (cl == NULL ? -1 : strtoll(cl, &chknum, 10));
+      if (chknum != NULL)
+        chknum += strspn(chknum, " ");
+      if (!is_empty(chknum))
+        return -6; // Cannot parse HTTP response
+    }
+    conn->birth_time = time(NULL);
+    return 0;
+  }
+}
 
 
 

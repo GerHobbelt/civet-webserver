@@ -89,8 +89,49 @@ void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 // Same as FD_ISSET but now for mongoose sockets (struct socket)
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
-// set up a outgoing client connection: connect to the given host/port
-struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, int use_ssl);
+// bitwise OR-able constants for mg_connect_to_host(..., flags):
+typedef enum mg_connect_flags_t {
+  // nothing special; the default
+  MG_CONNECT_BASIC = 0,
+  // set up and use a SSL encrypted connection
+  MG_CONNECT_USE_SSL = 0x0001,
+  // tell Mongoose we're going to connect to a HTTP server; this allows us
+  // the usage of the built-in HTTP specific features such as mg_get_header(), etc.
+  //
+  // Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
+  //       rather inappropriately, as they are geared towards server-side use, a
+  //       set of more sensible rx/tx aliases is provided in this header, such as
+  //       mg_add_tx_header().
+  //
+  //       Also note that HTTP I/O connections allocate buffer space from the heap,
+  //       so their memory footprint is quite a bit larger than for non-HTTP I/O
+  //       sockets.
+  MG_CONNECT_HTTP_IO = 0x0002
+} mg_connect_flags_t;
+
+// set up an outgoing client connection: connect to the given host/port
+struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags);
+
+// identical to mg_connect_to_host(); CTX is obtained from the 'conn' parameter
+// so you don't need to call mg_get_context():
+struct mg_connection *mg_connect(struct mg_connection *conn, const char *host, int port, mg_connect_flags_t flags);
+
+
+// The set of mg_connect savvy API aliases:
+#define mg_add_tx_header            mg_add_response_header
+#define mg_vadd_tx_header           mg_vadd_response_header
+#define mg_remove_tx_header         mg_remove_response_header
+#define mg_get_tx_header            mg_get_response_header
+
+#define mg_get_rx_header            mg_get_header
+#define mg_get_rx_headers           mg_get_headers
+
+
+// Read & parse an HTTP response, fill in the mg_request_info structure.
+//
+// Return 0 on success.
+int mg_read_http_response(struct mg_connection *conn);
+
 
 // create a socket pair over local loopback. Used for inter-thread communications.
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
