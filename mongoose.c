@@ -430,6 +430,7 @@ struct mg_connection {
 
   int64_t tx_remaining_chunksize;       // How many bytes of content remain to be sent in the current chunk
   int64_t rx_remaining_chunksize;       // How many bytes of content remain to be received in the current chunk
+  int64_t tx_next_chunksize;			// How many bytes of content will be sent in the next chunk
   int tx_chunk_count;                   // The number of chunks transmitted so far.
   int rx_chunk_count;                   // The number of chunks received so far.
 
@@ -7874,13 +7875,14 @@ int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn)
     return -1;
 }
 
-int64_t mg_set_tx_chunk_size(struct mg_connection *conn, int64_t chunk_size)
+int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size)
 {
     if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
     {
         if (conn->tx_remaining_chunksize > 0)
         {
-            return conn->tx_remaining_chunksize;
+            conn->tx_next_chunksize = chunk_size;
+			return +1;
         }
         // chunk_size == 0 POSSIBLY marks the end of chunked transmission:
         // out of mg_write()), mg_flush() and mg_close(), the first one called
@@ -7891,15 +7893,16 @@ int64_t mg_set_tx_chunk_size(struct mg_connection *conn, int64_t chunk_size)
         // the mg_write() call.
         // This process flow is designed to facilitate simple user code like
         //
-        //   mg_set_tx_chunk_size(conn, 0);
+        //   mg_set_tx_next_chunk_size(conn, 0);
         //   // oh! forgot to write something!
         //   mg_write/mg_printf(conn, "bla bla"); -- one more chunk, size = 7
-        //   mg_set_tx_chunk_size(conn, 0);
+        //   mg_set_tx_next_chunk_size(conn, 0);
         //   // this time it's End All, Good All:
         //   mg_flush(conn, 0);  -- we want to persist the connection, so we don't mg_close() here instead.
         //
         conn->tx_remaining_chunksize = chunk_size;
         conn->tx_chunk_header_sent = 0;
+		conn->tx_next_chunksize = 0;
         return 0;
     }
     return -1;
@@ -7968,13 +7971,13 @@ int64_t mg_get_rx_remaining_chunk_size(struct mg_connection *conn)
     return -1;
 }
 
-int64_t mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size)
+int mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size)
 {
     if (conn && conn->rx_is_in_chunked_mode && chunk_size >= 0)
     {
         if (conn->rx_remaining_chunksize > 0)
         {
-            return conn->rx_remaining_chunksize;
+            return 1;
         }
         // chunk_size == 0 maks end of chunked transmission: the next
         // mg_read() should fetch and parse the sentinel chunk header then.

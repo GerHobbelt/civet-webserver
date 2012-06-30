@@ -509,7 +509,7 @@ typedef enum mg_iomode_t {
   // mg_write() will write keep score about the number of bytes written in the 'current' chunk
   // and generate a 'chunk header' when it runs out. After setting this mode, we start with
   // 'zero bytes left', i.e. the need to write a 'chunk header' immediately. Call
-  // mg_set_tx_chunk_size() to set a known 'chunk size' or let mg_write() do this automatically
+  // mg_set_tx_next_chunk_size() to set a known 'chunk size' or let mg_write() do this automatically
   // for you, in which case mg_write() will generate a 'chunk header' fitting each individual
   // mg_write() invocation. (I.e.: every mg_write() call will be a header+content dump then.)
   //
@@ -554,10 +554,12 @@ int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn);
 
 // Set the amount of bytes for the new chunk slot.
 //
-// Note that this function assumes that the current chunk slot is empty.
-// This function will return a non-zero value when this assumption is not held and the
-// function will otherwise be a no-op, i.e. the new chunk size will NOT have been set.
-int64_t mg_set_tx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+// This function will return a negative value on error, 0 when the current chunk slot
+// has been completely consumed (mg_get_tx_remaining_chunk_size() --> 0) or +1 when
+// the current chunk hasn't been sent completely yet; in the latter case the specified
+// chunk_size is stored for future use and you can override this chunk size as long as 
+// the current chunk hasn't completed yet.
+int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size);
 
 // Configure the connection's receive mode.
 //
@@ -585,7 +587,10 @@ int64_t mg_get_rx_remaining_chunk_size(struct mg_connection *conn);
 // Note that this function assumes that the current chunk slot is empty.
 // This function will return a non-zero value when this assumption is not held and the
 // function will otherwise be a no-op, i.e. the new chunk size will NOT have been set.
-int64_t mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+//
+// Note: this function is offered as a means to help implement additional protocols
+//       on top of the current HTTP connections (e.g. WebSockets).
+int mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
 
 
 // Flush any lingering content data to the socket.
