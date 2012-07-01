@@ -430,7 +430,7 @@ struct mg_connection {
 
   int64_t tx_remaining_chunksize;       // How many bytes of content remain to be sent in the current chunk
   int64_t rx_remaining_chunksize;       // How many bytes of content remain to be received in the current chunk
-  int64_t tx_next_chunksize;			// How many bytes of content will be sent in the next chunk
+  int64_t tx_next_chunksize;            // How many bytes of content will be sent in the next chunk
   int tx_chunk_count;                   // The number of chunks transmitted so far.
   int rx_chunk_count;                   // The number of chunks received so far.
 
@@ -2918,6 +2918,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   const char *src = (const char *)buf;
   int64_t txlen = (int64_t) len;
 
+  assert(len > 0);
   if (conn->tx_is_in_chunked_mode) {
     int64_t txlen_1;
 
@@ -2935,23 +2936,27 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
         assert(!"Should never get here; if you do, then your user I/O code is faulty!");
         return -1;
     }
-    txlen_1 = txlen;
-    if (conn->tx_remaining_chunksize > 0 && txlen_1 > conn->tx_remaining_chunksize)
-      txlen_1 = conn->tx_remaining_chunksize;
 
     // was the chunk size sent to the peer already?
     if (conn->tx_chunk_header_sent == 0) {
       // prep and transmit a 'chunk header' for the given size:
-      rv = mg_write_chunk_header(conn, txlen_1 > txlen ? txlen_1 : txlen);
+      txlen_1 = txlen;
+      assert(conn->tx_remaining_chunksize == 0);
+      if (txlen_1 < conn->tx_next_chunksize)
+        txlen_1 = conn->tx_next_chunksize;
+      rv = mg_write_chunk_header(conn, txlen_1);
       if (rv < 0)
         return rv;
-
-      // mg_write_chunk_header() MAY have changed the tx_remaining_chunksize value, so we need to recalc:
-      txlen_1 = txlen;
+      assert(conn->tx_chunk_header_sent == 1);
       assert(conn->tx_remaining_chunksize > 0);
-      if (txlen_1 > conn->tx_remaining_chunksize)
-        txlen_1 = conn->tx_remaining_chunksize;
+      assert(conn->tx_next_chunksize == 0);
+
+      // mg_write_chunk_header() MAY have changed the tx_remaining_chunksize value
     }
+    assert(conn->tx_remaining_chunksize > 0);
+    txlen_1 = txlen;
+    if (txlen_1 > conn->tx_remaining_chunksize)
+      txlen_1 = conn->tx_remaining_chunksize;
     rv = (int) push(NULL, conn, src, txlen_1);
     if (rv > 0) {
       if (conn->num_bytes_sent < 0)
@@ -2973,6 +2978,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
     // b) We've sent all the data we had and maybe have some space left in the current chunk.
     //    (In which case we're happy campers, doing nothing at all.)
     if (conn->tx_remaining_chunksize > 0) {
+      assert(txlen == 0);
       return rv;
     }
     assert(conn->tx_remaining_chunksize == 0);
@@ -2981,9 +2987,15 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
       return rv;
     }
     // prep and transmit a 'chunk header' for the remaining size:
-    rv = mg_write_chunk_header(conn, txlen);
+    txlen_1 = txlen;
+    if (txlen_1 < conn->tx_next_chunksize)
+      txlen_1 = conn->tx_next_chunksize;
+    rv = mg_write_chunk_header(conn, txlen_1);
     if (rv < 0)
       return rv;
+    assert(conn->tx_chunk_header_sent == 1);
+    assert(conn->tx_remaining_chunksize > 0);
+    assert(conn->tx_next_chunksize == 0);
   }
 
   rv = (int) push(NULL, conn, src, txlen);
@@ -6462,6 +6474,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->rx_chunk_header_parsed = 0;
   conn->tx_chunk_count = 0;
   conn->tx_remaining_chunksize = 0;
+  conn->tx_next_chunksize = 0;
   conn->rx_chunk_count = 0;
   conn->rx_remaining_chunksize = 0;
 }
@@ -7839,6 +7852,7 @@ void mg_set_tx_mode(struct mg_connection *conn, mg_iomode_t mode)
     {
         conn->tx_is_in_chunked_mode = (mode >= MG_IOMODE_CHUNKED_DATA);
         conn->tx_remaining_chunksize = 0;
+        conn->tx_next_chunksize = 0;
         conn->tx_chunk_header_sent = 0;
         conn->tx_chunk_count = 0;
     }
@@ -7879,11 +7893,6 @@ int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size)
 {
     if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
     {
-        if (conn->tx_remaining_chunksize > 0)
-        {
-            conn->tx_next_chunksize = chunk_size;
-			return +1;
-        }
         // chunk_size == 0 POSSIBLY marks the end of chunked transmission:
         // out of mg_write()), mg_flush() and mg_close(), the first one called
         // will determine the exact behaviour:
@@ -7900,10 +7909,8 @@ int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size)
         //   // this time it's End All, Good All:
         //   mg_flush(conn, 0);  -- we want to persist the connection, so we don't mg_close() here instead.
         //
-        conn->tx_remaining_chunksize = chunk_size;
-        conn->tx_chunk_header_sent = 0;
-		conn->tx_next_chunksize = 0;
-        return 0;
+        conn->tx_next_chunksize = chunk_size;
+        return (conn->tx_remaining_chunksize > 0);
     }
     return -1;
 }
@@ -8003,6 +8010,9 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
         if (conn->tx_chunk_header_sent != 0)
             return 1 + conn->tx_chunk_header_sent;
 
+        // reset the 'next chunk size' first thing, so that the user callback MAY update it for the NEXT chunk:
+        conn->tx_next_chunksize = 0;
+
         // switch to 'header TX mode' to cajole mg_write() et al into writing straight through.
         conn->tx_chunk_header_sent = 2;
         d[20] = 0;
@@ -8074,7 +8084,7 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
             *d++ = 10;
         }
 
-        conn->tx_remaining_chunksize = 0;
+        conn->tx_chunk_header_sent = 2;
         space = (int)(d - scratch);
         if (space != mg_write(conn, scratch, space))
         {

@@ -557,7 +557,7 @@ int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn);
 // This function will return a negative value on error, 0 when the current chunk slot
 // has been completely consumed (mg_get_tx_remaining_chunk_size() --> 0) or +1 when
 // the current chunk hasn't been sent completely yet; in the latter case the specified
-// chunk_size is stored for future use and you can override this chunk size as long as 
+// chunk_size is stored for future use and you can override this chunk size as long as
 // the current chunk hasn't completed yet.
 int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size);
 
