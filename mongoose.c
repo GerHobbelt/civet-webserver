@@ -904,7 +904,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters or whatever the template said itself:
-			if (parlen <= 0) 
+			if (parlen <= 0)
 			  parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
 			else if (parlen > (int)sizeof(addr_buf) - 1)
 			  parlen = (int)sizeof(addr_buf) - 1;
@@ -925,7 +925,7 @@ copy_partial2dst:
 		  // addr_buf[] is guaranteed to be filled when we get here
 		  powerscrub_filepath(addr_buf, 0);
 		  abuflen = (int)strlen(addr_buf);
-		  if (parlen <= 0) 
+		  if (parlen <= 0)
 			parlen = abuflen;
 		  assert(len > 0);
 		  if (parlen > len)
@@ -4172,15 +4172,16 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 // have some data. The length of the data is stored in nread.
 // Upon every read operation, increase nread by the number of bytes read.
 static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int bufsiz, int *nread) {
-  int request_len, n = 0;
+  int request_len, n = 1;
 
-  do {
-    request_len = get_request_len(buf, *nread);
-    if (request_len == 0 &&
-        (n = pull(fp, conn, buf + *nread, bufsiz - *nread)) > 0) {
+  request_len = get_request_len(buf, *nread);
+  while (*nread < bufsiz && request_len == 0 && n > 0) {
+    n = pull(fp, conn, buf + *nread, bufsiz - *nread);
+    if (n > 0) {
       *nread += n;
+      request_len = get_request_len(buf, *nread);
     }
-  } while (*nread < bufsiz && request_len == 0 && n > 0);
+  }
 
   if (n < 0) {
     // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
