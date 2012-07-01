@@ -1,4 +1,7 @@
-<html><pre>
+<html>
+<body>
+<h1>SSI: <code>#include file=&quot;Makefile&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#include file="Makefile" -->
 ssi_end

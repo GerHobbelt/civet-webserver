@@ -1,4 +1,6 @@
-<html><pre>
+<html><body>
+<h1>SSI: <code>#exec &quot;ls -l&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#exec "ls -l" -->
 ssi_end

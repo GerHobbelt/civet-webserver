@@ -1,4 +1,6 @@
-<html><pre>
+<html><body>
+<h1>SSI: <code>#include virtual=&quot;embed.c&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#include virtual="embed.c" -->
 ssi_end

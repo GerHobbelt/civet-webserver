@@ -1,4 +1,6 @@
-<html><pre>
+<html><body>
+<h1>SSI: <code>#include file=&quot;/etc/passwd&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#include file="/etc/passwd" -->
 ssi_end
