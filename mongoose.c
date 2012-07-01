@@ -50,7 +50,7 @@
 // The maximum length of a %[U] or %[U] component in a logfile path template.
 // Should be at larger than 8 to make any sense.
 #ifndef MG_LOGFILE_MAX_URI_COMPONENT_LEN
-#define MG_LOGFILE_MAX_URI_COMPONENT_LEN	64
+#define MG_LOGFILE_MAX_URI_COMPONENT_LEN    64
 #endif
 
 
@@ -784,16 +784,16 @@ static int powerscrub_filepath(char *path, int tolerate_dirsep)
       // OS/storage formats):
       if (d > path && strchr("/.", d[-1]))
         d[-1] = (tolerate_dirsep ? '/' : '.');
-	  else
-		*d++ = (tolerate_dirsep ? '/' : '.');
+      else
+        *d++ = (tolerate_dirsep ? '/' : '.');
       continue;
 
     default:
       // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
       if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", s[-1]))
         *d++ = s[-1];
-	  else if (d == path || d[-1] != '_')
-		*d++ = '_';
+      else if (d == path || d[-1] != '_')
+        *d++ = '_';
       continue;
     }
     break;
@@ -842,16 +842,16 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         int len = PATH_MAX - (int)(d - fnbuf); // assert(len > 0);
         char *s_cont = NULL;
         // Enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
-		// Note: +2 in case MG_LOGFILE_MAX_URI_COMPONENT_LEN is the biggest of the three: we want to be able to
-		//       detect buffer overflow, i.e. clipping by snprintf()!
+        // Note: +2 in case MG_LOGFILE_MAX_URI_COMPONENT_LEN is the biggest of the three: we want to be able to
+        //       detect buffer overflow, i.e. clipping by snprintf()!
         char addr_buf[MG_MAX(SOCKADDR_NTOA_BUFSIZE, MG_MAX(MG_LOGFILE_MAX_URI_COMPONENT_LEN + 2, PATH_MAX))];
         char *old_d = d;
-		int abuflen, abufoffset;
-		int parlen = (int)strtol(s + 2, &s_cont, 10);
-		if (parlen > len)
-		  parlen = len;
-		if (s_cont)
-		  s = s_cont;
+        int abuflen, abufoffset;
+        int parlen = (int)strtol(s + 2, &s_cont, 10);
+        if (parlen > len)
+          parlen = len;
+        if (s_cont)
+          s = s_cont;
 
         *d = 0;
         switch (*s) {
@@ -860,7 +860,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             unsigned short int port = get_socket_port(&conn->client.rsa);
 
             if (port != 0) {
-			  if (parlen <= 0) parlen = 1;
+              if (parlen <= 0) parlen = 1;
               (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
@@ -879,7 +879,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             unsigned short int port = get_socket_port(&conn->client.lsa);
 
             if (port != 0) {
-			  if (parlen <= 0) parlen = 1;
+              if (parlen <= 0) parlen = 1;
               (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
@@ -898,7 +898,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           // filter URI so the result is a valid filepath piece without any format codes
           if (conn && !is_empty(conn->request_info.uri)) {
             const char *q, *u;
-		    char h[33];
+            char h[33];
 
             u = conn->request_info.uri;
             q = strchr(u, '?');
@@ -909,7 +909,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
               } else {
                 u = q + 1;
                 q = NULL;
-			  }
+              }
             }
             // limit the length to process:
             mg_strlcpy(addr_buf, u, sizeof(addr_buf));
@@ -917,38 +917,38 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters or whatever the template said itself:
-			if (parlen <= 0) 
-			  parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
-			else if (parlen > (int)sizeof(addr_buf) - 1)
-			  parlen = (int)sizeof(addr_buf) - 1;
-			if ((int)strlen(addr_buf) > parlen) {
+            if (parlen <= 0)
+              parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
+            else if (parlen > (int)sizeof(addr_buf) - 1)
+              parlen = (int)sizeof(addr_buf) - 1;
+            if ((int)strlen(addr_buf) > parlen) {
               mg_md5(h, addr_buf, NULL);  // hash the 'raw' (clipped) URI component; only calc the hash when it MIGHT be needed
-			} else {
-			  h[0] = 0;
-			}
-			// yet paste the hash into the 'scrubbed' URI component ONLY when the scrubbed component is overlarge
-			if (powerscrub_filepath(addr_buf, 0) > parlen) {
+            } else {
+              h[0] = 0;
+            }
+            // yet paste the hash into the 'scrubbed' URI component ONLY when the scrubbed component is overlarge
+            if (powerscrub_filepath(addr_buf, 0) > parlen) {
               mg_strlcpy(addr_buf + MG_MAX(0, parlen - 8), h, 8 + 1);
-			}
+            }
             goto copy_partial2dst;
           }
           goto replacement_done;
 
 copy_partial2dst:
-		  // addr_buf[] is guaranteed to be filled when we get here
-		  powerscrub_filepath(addr_buf, 0);
-		  abuflen = (int)strlen(addr_buf);
-		  if (parlen <= 0) 
-			parlen = abuflen;
-		  assert(len > 0);
-		  if (parlen > len)
-			parlen = len;
-		  // take the right-most part when we must clip: determine the offset
-		  if (abuflen > parlen)
-			abufoffset = abuflen - parlen;
-		  else
-			abufoffset = 0;
-		  d += mg_strlcpy(d, addr_buf + abufoffset, parlen + 1);
+          // addr_buf[] is guaranteed to be filled when we get here
+          powerscrub_filepath(addr_buf, 0);
+          abuflen = (int)strlen(addr_buf);
+          if (parlen <= 0)
+            parlen = abuflen;
+          assert(len > 0);
+          if (parlen > len)
+            parlen = len;
+          // take the right-most part when we must clip: determine the offset
+          if (abuflen > parlen)
+            abufoffset = abuflen - parlen;
+          else
+            abufoffset = 0;
+          d += mg_strlcpy(d, addr_buf + abufoffset, parlen + 1);
 replacement_done:
           // and the %[?] macros ALWAYS produce at least ONE character output in the template,
           // otherwise you get screwed up paths with, f.e. 'a/%[Q]/b' --> 'a//b':
@@ -1639,18 +1639,23 @@ static int compact_tx_headers(struct mg_connection *conn) {
   if (cache_uri_query_str_in_txbuf) {
     if (conn->request_info.uri != scratch) {
       l = (int)mg_strlcpy(scratch, conn->request_info.uri, space) + 1;
-      conn->request_info.uri = scratch - conn->buf_size;
-      scratch += l;
-      space -= l;
+    } else {
+      l = strlen(conn->request_info.uri) + 1;
     }
+    conn->request_info.uri = scratch - conn->buf_size;
+    scratch += l;
+    space -= l;
     if (is_empty(conn->request_info.query_string)) {
       conn->request_info.query_string = "";
+      l = 0;
     } else if (conn->request_info.query_string != scratch && space > 0) {
       l = (int)mg_strlcpy(scratch, conn->request_info.query_string, space) + 1;
-      conn->request_info.query_string = scratch - conn->buf_size;
-      scratch += l;
-      space -= l;
+    } else {
+      l = strlen(conn->request_info.query_string) + 1;
     }
+    conn->request_info.query_string = scratch - conn->buf_size;
+    scratch += l;
+    space -= l;
     if (space < 6)
       return -1;
     // remember offset:
@@ -1676,7 +1681,7 @@ static int compact_tx_headers(struct mg_connection *conn) {
     l += 2;
     scratch += l;
     space -= l;
-    if (space <= 0)
+    if (space <= 2)
       return -1;
   }
   conn->tx_can_compact_hdrstore = 0;
@@ -1686,9 +1691,10 @@ static int compact_tx_headers(struct mg_connection *conn) {
   memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, n);
 
   n -= cache_uri_query_str_in_txbuf;
+  l = conn->tx_headers_len - n;
   conn->tx_headers_len = n;
-  assert(conn->tx_headers_len - n >= 0);
-  return conn->tx_headers_len - n;
+  assert(l >= 0);
+  return l;
 }
 
 int mg_remove_response_header(struct mg_connection *conn, const char *tag) {
@@ -1871,6 +1877,12 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   if (mg_have_headers_been_sent(conn))
     return 0;
 
+  va_start(ap, first_line_fmt);
+  rv = mg_vprintf(conn, first_line_fmt, ap);
+  va_end(ap);
+  if (rv <= 0)
+    return -1; // malformed first line or transmit failure.
+
   /*
   This code expects all headers to be stored in memory 'in order'.
 
@@ -1887,9 +1899,12 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   with ": " and "\r\n" respectively.
 
   Since the assumption above is now assured, we know that the very
-  first header starts at the beginning of the buffer!
+  first header starts at the beginning of the buffer, after the optionally
+  stored uri+query_string!
   */
-  buf = conn->buf + conn->buf_size;
+  buf = conn->request_info.response_headers[0].name;
+  assert(buf >= conn->buf + conn->buf_size);
+  assert(buf < conn->buf + 2 * conn->buf_size);
 
   n = conn->request_info.num_response_headers;
   if (n) {
@@ -1905,13 +1920,10 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
     }
     buf[conn->tx_headers_len - 2] = '\r';
     buf[conn->tx_headers_len - 1] = '\n';
-    assert(conn->tx_headers_len + 2 <= conn->buf_size);
+    assert(conn->tx_headers_len + 2 + (buf - conn->buf - conn->buf_size) <= conn->buf_size);
     buf[conn->tx_headers_len] = '\r';
     buf[conn->tx_headers_len + 1] = '\n';
 
-    va_start(ap, first_line_fmt);
-    rv = mg_vprintf(conn, first_line_fmt, ap);
-    va_end(ap);
     rv2 = mg_write(conn, buf, conn->tx_headers_len + 2);
     if (rv2 != conn->tx_headers_len + 2)
       rv = -1;
@@ -1931,9 +1943,6 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
     }
     buf[conn->tx_headers_len - 2] = 0;
   } else {
-    va_start(ap, first_line_fmt);
-    rv = mg_vprintf(conn, first_line_fmt, ap);
-    va_end(ap);
     rv2 = mg_write(conn, "\r\n", 2);
     if (rv2 != 2)
       rv = -1;
@@ -2902,15 +2911,14 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   int n, buffered_len, nread;
   const char *buffered;
 
-  assert((conn->content_len == -1 && conn->consumed_content == 0) ||
+  assert((conn->content_len == -1) ||
          conn->consumed_content <= conn->content_len);
   DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
-  if (conn->consumed_content < conn->content_len) {
-
+  if (conn->consumed_content < conn->content_len || conn->content_len == -1) {
     // Adjust number of bytes to read.
-    int64_t to_read = conn->content_len - conn->consumed_content;
+    int64_t to_read = (conn->content_len == -1 ? INT_MAX : conn->content_len - conn->consumed_content);
     if (to_read < (int64_t) len) {
       len = (size_t) to_read;
     }
@@ -2932,13 +2940,16 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       buf = (char *) buf + buffered_len;
       conn->consumed_content += buffered_len;
       nread = buffered_len;
+    } else {
+      buffered_len = 0;
     }
 
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
-      // act like pull() when we're not involved with fetching HTTP request content:
-      if (nread > 0 && conn->content_len == INT64_MAX)
+      // act like pull() when we're not involved with fetching 'Content-Length'-defined HTTP content:
+      if (nread > 0 && conn->content_len == -1 && buffered_len == 0)
         break;
+      buffered_len = 0;
       n = pull(NULL, conn, (char *) buf, (int) len);
       if (n < 0) {
         // always propagate the error
@@ -4461,15 +4472,16 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 // have some data. The length of the data is stored in nread.
 // Upon every read operation, increase nread by the number of bytes read.
 static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int bufsiz, int *nread) {
-  int request_len, n = 0;
+  int request_len, n = 1;
 
-  do {
-    request_len = get_request_len(buf, *nread);
-    if (request_len == 0 &&
-        (n = pull(fp, conn, buf + *nread, bufsiz - *nread)) > 0) {
+  request_len = get_request_len(buf, *nread);
+  while (*nread < bufsiz && request_len == 0 && n > 0) {
+    n = pull(fp, conn, buf + *nread, bufsiz - *nread);
+    if (n > 0) {
       *nread += n;
+      request_len = get_request_len(buf, *nread);
     }
-  } while (*nread < bufsiz && request_len == 0 && n > 0);
+  }
 
   if (n < 0) {
     // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
@@ -4532,185 +4544,6 @@ static int is_not_modified(const struct mg_connection *conn,
   return ims != NULL && stp->mtime <= parse_date_string(ims);
 }
 
-// Checks if the provided buffer contains at least one chunk.
-// According HTTP RFC 2616 (http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html)
-// chunked body has following format:
-//  {[chunk size (as hexa string)]\r\n[chunk]\r\n}+ {"0"\r\n}
-// Returns number of chunk bytes found in buffer not including chunk size bytes,
-// -1 on error (parsing error).
-// buf - buffer where chunk and chunk size are expected to be found
-// buf_len   - number of bytes stored in buf
-// chunk     - pointer to the buf where chunk starts
-// chunk_size - size of chunk as it was found at the beginning of buf, -1 if was not found
-//
-static int64_t get_chunk(const char* buf, int64_t buf_len, const char** chunk, int64_t * chunk_size) {
-
-    const char *p, *p_chunk_size_start, *p_chunk_size_end;
-    int64_t len;
-    int found_chunk_size;
-    int powered16;
-    int digit;
-
-    // Escape heading CRLF-s (\r\n).
-    p = buf;
-    while (p < buf + buf_len && (*p == '\r'  ||  *p == '\n')) {
-        p++;
-    }
-    if (p == buf + buf_len) {  // Failed to find not CRLF symbols
-        *chunk_size = -1;
-        return 0;
-    }
-
-    // Fetch chunk size. It should start at the buffer beginning and
-    // should end at the first CRLF (\r\n).
-    p_chunk_size_start = p;
-    while (p < buf + buf_len - 2) {   // '-2' stands for final CRLF
-        if (p[1] == '\r'  &&  p[2] == '\n') {
-            break;
-        }
-        p++;
-    }
-    if (p[1] != '\r'  ||  p[2] != '\n') {  // Failed to find separator (CRLF)
-        *chunk_size = -1;
-        return 0;
-    }
-    p_chunk_size_end = p;
-
-    // Go back to start of buffer and convert characters to integer
-    powered16 = 0;
-    found_chunk_size = 0;
-    while (p >= p_chunk_size_start  &&  found_chunk_size < 0xffff) {  // Prevent overflow
-
-        digit = (*p >= '0' && *p <= '9') ? (*p -'0') :
-                (*p >= 'A' && *p <= 'F') ? (*p - 'A' + 10) :
-                (*p >= 'a' && *p <= 'f') ? (*p - 'a' + 10) : -1;
-        if (digit == -1) {
-            return -1;     // Parsing failure: string is not hexadecimal number
-        }
-
-        if (powered16 == 0) {   // The first iteration
-            found_chunk_size += digit;
-            powered16 = 1;
-        } else {
-            powered16 *= 16;
-            found_chunk_size += digit * powered16;
-        }
-        p--;
-    }
-    *chunk_size = found_chunk_size;
-    *chunk = p_chunk_size_end + 3;
-
-    len = buf_len - (*chunk-buf);
-    len = found_chunk_size < len ? found_chunk_size : len;
-    return len;
-}
-
-// Returns 1 on success, 0 on failure.
-// HTTP reject is not sent on failure! It is responsibility of the caller
-// function to send the reject.
-static int forward_body_chunks(struct mg_connection *conn, FILE *fp,
-                               SOCKET sock, SSL *ssl)
-{
-    char *buffered;
-    char buf[BUFSIZ];
-    int npulled, to_pull;
-    int64_t npushed, buffered_len, chunk_size, chunk_read;
-
-    buffered = conn->buf + conn->request_len;
-    buffered_len = conn->data_len - conn->request_len;
-    assert(buffered_len >= 0);
-    assert(conn->consumed_content == 0);
-
-    chunk_read = get_chunk(buffered, buffered_len, &buffered, &chunk_size);
-    if (chunk_read == -1) {
-        return 0;  // Parsing failure
-    }
-    if (chunk_size == 0) {
-        return 0;  // Terminated chunk only was received
-    }
-
-    // Provide user with chunks buffered in the connection buffer
-    while (chunk_read == chunk_size  &&  conn->consumed_content < conn->content_len) {
-
-        npushed = push(fp, conn, buffered, chunk_size);
-        if (npushed < chunk_size)
-            return 0; // Failure - user failed to consume read bytes
-        conn->consumed_content += chunk_size;
-
-        buffered += chunk_size; buffered_len -= chunk_size;
-        chunk_read = get_chunk(buffered, buffered_len, &buffered, &chunk_size);
-        if (chunk_read == -1) {
-            return 0;  // Parsing failure
-        }
-    }
-
-    // If NULL chunk was found in buffer or content_len was consumed - report success.
-    if (chunk_size == 0  ||  conn->consumed_content >= conn->content_len) {
-        return 1;
-    }
-
-    // If partial chunk in buffer was left - copy it to the local buffer
-    // and wait for the rest of chunk from the network.
-    if (chunk_size < 0) {
-        memcpy(buf, buffered, (size_t)buffered_len);
-        buffered = buf;
-    } else if (chunk_read < chunk_size) {
-        memcpy(buf, buffered, (size_t)chunk_read);
-        buffered = buf;
-        buffered_len = chunk_read;
-    } else {
-        return 0; // Should not reach here!
-    }
-
-    while (conn->consumed_content < conn->content_len) {
-
-        // Wait for chunk size to be received
-        while (chunk_size < 0) {
-
-            to_pull = (int)((BUFSIZ - buffered_len) < conn->content_len ? (BUFSIZ - buffered_len) : conn->content_len);
-            npulled = pull(NULL, conn,
-                           buffered + buffered_len, to_pull);
-            if (npulled < 0)
-                return 0; // Failed to read from network
-            buffered_len += npulled;
-
-            chunk_read = get_chunk(buffered, buffered_len, &buffered, &chunk_size);
-            if (chunk_read == -1) {
-                return 0;  // Parsing failure
-            }
-            // Report received part of chunk to user
-            if (chunk_read > 0) {
-                npushed = push(fp, conn, buffered, chunk_read);
-                if (npushed < chunk_read)
-                    return 0; // User failed to consume read bytes
-            }
-        }
-        if (chunk_size < 0)
-            return 0;  // Received all bytes (content_len) but failed to recognize chunk
-        if (chunk_size == 0)
-            return 1;  // Success - terminating chunk was received
-
-        // Wait for rest of chunk if need
-        while (chunk_read < chunk_size) {
-
-            to_pull = (int)(BUFSIZ < (chunk_size-chunk_read) ? BUFSIZ : (chunk_size-chunk_read));
-            npulled = pull(NULL, conn, buf, to_pull);
-            if (npulled <= 0)
-                return 0; // Failed to read from network
-            chunk_read += npulled;
-
-            npushed = push(fp, conn, buf, npulled);
-            if (npushed < npulled)
-                return 0; // User failed to consume read bytes
-            conn->consumed_content += npulled;
-        }
-        buffered     = buf;
-        buffered_len = 0;
-        chunk_size   = -1;
-    }
-    return 1;  // All content-len body was received (before terminating chunk was received)
-}
-
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
                              struct mg_connection *dst_conn, int send_error_on_fail) {
   const char *expect, *buffered;
@@ -4720,9 +4553,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   expect = mg_get_header(conn, "Expect");
   assert(fp != NULL);
 
-  if (conn->content_len == -1 &&
-      (!strcmp(conn->request_info.request_method, "POST") ||
-       !strcmp(conn->request_info.request_method, "PUT"))) {
+  // content_len==-1 is all right; it's just either Transfer-Encoding or a HTTP/1.0 client.
+  if (!strcmp(conn->request_info.request_method, "POST") ||
+      !strcmp(conn->request_info.request_method, "PUT")) {
     send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
@@ -4756,28 +4589,34 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       conn->consumed_content += buffered_len;
     }
 
-    while (conn->consumed_content < conn->content_len) {
+    nread = 0;
+    while (conn->consumed_content < conn->content_len || conn->content_len == -1) {
+      int nwrite;
+
       to_read = sizeof(buf);
-      if ((int64_t) to_read > conn->content_len - conn->consumed_content) {
+      if ((int64_t) to_read > conn->content_len - conn->consumed_content && conn->content_len >= 0) {
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
       nread = pull(NULL, conn, buf, to_read);
-      if (nread <= 0 || push(fp, dst_conn, buf, nread) != nread) {
+      if (nread <= 0)
+        break;
+      nwrite = push(fp, dst_conn, buf, nread);
+      if (nwrite != nread) {
+        nread = -1;
         break;
       }
       conn->consumed_content += nread;
     }
 
-    if (conn->consumed_content == conn->content_len ||
-        (conn->consumed_content == 0 && conn->content_len == -1)) {
-      success = 1;
+    if (conn->consumed_content == conn->content_len || conn->content_len == -1) {
+      success = (nread >= 0);
     }
 
     // Each error code path in this function must send an error
     if (!success) {
 failure:
       if (send_error_on_fail) {
-        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : ""), __func__, mg_strerror(ERRNO));
+        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : "%s: I/O error: failed to forward all bytes"), __func__, mg_strerror(ERRNO));
       }
     }
   } else {
@@ -7312,7 +7151,7 @@ static void worker_thread(struct mg_context *ctx) {
   int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
   if (buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
-    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting, aborting worker thread(s), OOM");
+    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
     goto fail_dramatically;
   }
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */

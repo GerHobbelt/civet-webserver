@@ -477,14 +477,13 @@ static void test_header_processing()
 static void test_client_connect() {
     char buf[512];
     struct mg_context ctx = {0};
-    struct mg_connection c = {0};
     struct mg_connection *g;
     struct mg_request_info *ri;
     int rv;
+	const char *cookies[16];
+	int cl;
 
-    c.ctx = &ctx;
-
-    g = mg_connect(&c, "example.com", 80, MG_CONNECT_BASIC);
+    g = mg_connect_to_host(&ctx, "example.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -496,9 +495,9 @@ static void test_client_connect() {
     //free(g);
 
 
-    g = mg_connect(&c, "google.com", 80, MG_CONNECT_USE_SSL);
+    g = mg_connect_to_host(&ctx, "google.com", 80, MG_CONNECT_USE_SSL);
     ASSERT(!g);
-    g = mg_connect(&c, "google.com", 80, MG_CONNECT_BASIC);
+    g = mg_connect_to_host(&ctx, "google.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -511,7 +510,16 @@ static void test_client_connect() {
 
 
     // now with HTTP header support:
-    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+	ASSERT_STREQ(get_option(&ctx, MAX_REQUEST_SIZE), "");
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(!g);
+
+	// all options are empty
+	ASSERT_STREQ(get_option(&ctx, MAX_REQUEST_SIZE), "");
+	// so we should set them up, just like one would've got when calling mg_start():
+    ctx.config[MAX_REQUEST_SIZE] = "256";
+
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
@@ -526,27 +534,28 @@ static void test_client_connect() {
     ri->uri = "/search";
     
     rv = mg_write_http_request_head(g, NULL, NULL);
-    ASSERT(rv == 18);
+    ASSERT(rv == 153);
     // signal request phase done:
     mg_shutdown(g, SHUT_WR);
     // fetch response, blocking I/O:
     //
     // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
     rv = mg_read_http_response(g);
-    ASSERT(rv == 0);
-    // and now fetch the content:
-    rv = mg_read(g, buf, sizeof(buf));
-    ASSERT(rv > 0);
+	// google will spit back more tan 256-1 header bytes in its response, so we'll get a buffer overrun:
+    ASSERT(rv == 413);
+    ASSERT(g->data_len == 256);
     mg_close_connection(g);
-    //free(g);
 
 
-    // now with _full_ HTTP header support:
-    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+
+	// retry with a suitably large buffer:
+    ctx.config[MAX_REQUEST_SIZE] = "2048";
+
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
-    mg_add_tx_header(g, 0, "Host", "www.google.com");
-    mg_add_tx_header(g, 0, "Connection", "close");
+    ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
+    ASSERT(0 == mg_add_tx_header(g, 0, "Connection", "close"));
     // set up the request the rude way: directly patch the request_info struct. Nasty!
     //
     // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
@@ -557,7 +566,41 @@ static void test_client_connect() {
     ri->uri = "/search";
     
     rv = mg_write_http_request_head(g, NULL, NULL);
-    ASSERT(rv == 18);
+    ASSERT(rv == 153);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+	// google will spit back more tan 256-1 header bytes in its response, so we'll get a buffer overrun:
+    ASSERT(rv == 0);
+	ASSERT_STREQ(mg_get_header(g, "Connection"), "close");
+	ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), g, "Set-Cookie") > 0);
+	cl = atoi(mg_get_header(g, "Content-Length"));
+	ASSERT(cl > 0);
+
+    // and now fetch the content:
+    rv = mg_read(g, buf, sizeof(buf));
+    ASSERT(rv > 0);
+	ASSERT(rv == cl);
+	ASSERT(mg_get_request_info(g));
+	ASSERT(mg_get_request_info(g)->status_code == 302 /* Moved */ );
+
+    mg_close_connection(g);
+    //free(g);
+
+
+
+    // now with _full_ HTTP header support:
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+    rv = mg_write_http_request_head(g, "GET", "%s?%s", "/search", "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
+    ASSERT(rv == 153);
     // signal request phase done:
     mg_shutdown(g, SHUT_WR);
     // fetch response, blocking I/O:
@@ -565,12 +608,93 @@ static void test_client_connect() {
     // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
     rv = mg_read_http_response(g);
     ASSERT(rv == 0);
+	cl = atoi(mg_get_header(g, "Content-Length"));
+	ASSERT(cl > 0);
+	ASSERT(mg_get_request_info(g));
+	ASSERT(mg_get_request_info(g)->status_code == 302 /* Moved */ );
+
     // and now fetch the content:
     rv = mg_read(g, buf, sizeof(buf));
     ASSERT(rv > 0);
-    mg_close_connection(g);
+	ASSERT(rv == cl);
+
+	mg_close_connection(g);
     //free(g);
 
+
+
+    // check the new google search page at /cse
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+	// http://www.google.com/cse?q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    rv = mg_write_http_request_head(g, "GET", "%s%s%s", "/cse", "?q=mongoose", "&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
+    ASSERT(rv == 150);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+	ASSERT(mg_get_request_info(g));
+	ASSERT(mg_get_request_info(g)->status_code == 404); // funny thing: google doesn't like this; sends a 404; see next for a 'valid' eqv. request: note the '&amp;' vs '&' down there
+	ASSERT_STREQ(mg_get_request_info(g)->http_version, "1.1");
+
+    // and now fetch the content:
+	for (;;) {
+	  int r = mg_read(g, buf, sizeof(buf));
+
+	  if (r > 0)
+		rv += r;
+	  else
+		break;
+	}
+    ASSERT(rv > 0);
+	//ASSERT(rv == cl);
+
+	mg_close_connection(g);
+    //free(g);
+
+
+
+    // again: check the new google search page at /cse
+    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+	// http://www.google.com/cse?q=mongoose&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    rv = mg_write_http_request_head(g, "GET", "%s%s%s", "/cse", "?q=mongoose", "&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i");
+    ASSERT(rv == 170);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+	ASSERT(NULL == mg_get_header(g, "Content-Length")); // google doesn't send a Content-Length with this one
+	ASSERT(mg_get_request_info(g));
+	ASSERT(mg_get_request_info(g)->status_code == 200);
+	ASSERT_STREQ(mg_get_request_info(g)->http_version, "1.1");
+
+    // and now fetch the content:
+	for (;;) {
+	  int r = mg_read(g, buf, sizeof(buf));
+
+	  if (r > 0)
+		rv += r;
+	  else
+		break;
+	}
+    ASSERT(rv > 0);
+	//ASSERT(rv == cl);
+
+	mg_close_connection(g);
+    //free(g);
 }
 
 

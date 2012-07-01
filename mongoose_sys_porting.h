@@ -185,7 +185,7 @@ Since MSVC and MingW GCC don't have inttypes.h, we provide those printf/scanf fo
 GCC inttypes.h says:
    "The ISO C99 standard specifies that these macros must only be
    defined if explicitly requested."
-   
+
 We also check whether someone else has gone before us setting up these C99 defines.
 */
 #if (!defined __cplusplus || defined __STDC_FORMAT_MACROS) && !defined(PRId64)
