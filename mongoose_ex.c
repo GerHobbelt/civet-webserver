@@ -383,7 +383,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
       mg_cry(conn, "%s: request URI is nil", __func__);
       return -1;
     }
-    
+
     uri = conn->request_info.uri;
     q_str = conn->request_info.query_string;
     if (q_str == NULL)
@@ -427,7 +427,7 @@ int mg_read_http_response(struct mg_connection *conn) {
 
   // Nul-terminate the request 'cause parse_http_request() is C-string based
   conn->buf[conn->request_len - 1] = 0;
-  
+
   buf = conn->buf;
 
   // RFC says that all initial whitespace should be ignored
