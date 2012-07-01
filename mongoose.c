@@ -47,6 +47,12 @@
 #define MG_SELECT_TIMEOUT_MSECS_TINY    1
 #endif
 
+// The maximum length of a %[U] or %[U] component in a logfile path template.
+// Should be at larger than 8 to make any sense.
+#ifndef MG_LOGFILE_MAX_URI_COMPONENT_LEN
+#define MG_LOGFILE_MAX_URI_COMPONENT_LEN	64
+#endif
+
 
 #if defined(_WIN32)
 
@@ -604,7 +610,7 @@ static char *sockaddr_to_string(char *buf, size_t len, const struct usa *usa) {
   // WARNING: ntoa() is very probably not thread-safe on your platform!
   //          (we'll abuse the (DisconnectExPtrCS) critical section to cover this up as well...)
   EnterCriticalSection(&DisconnectExPtrCS);
-  strncpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
+  mg_strlcpy(buf, inet_ntoa(usa->u.sin.sin_addr), len);
   LeaveCriticalSection(&DisconnectExPtrCS);
 #else
 #error check your platform for inet_ntop/etc.
@@ -735,8 +741,8 @@ static struct mg_connection *fc(struct mg_context *ctx) {
 //         %[C] with client IP (sanitized for filesystem paths)
 //         %[p] with server port number
 //         %[s] with server IP (sanitized for filesystem paths)
-//         %[U] with the request URI path section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters URL hash))
-//         %[Q] with the request URI query section (sanitized for filesystem paths and limited to 64 characters max. (+ 8 characters query hash))
+//         %[U] with the request URI path section (sanitized for filesystem paths and limited to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters max. (last 8 characters on overflow: URL hash))
+//         %[Q] with the request URI query section (sanitized for filesystem paths and limited to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters max. (last 8 characters on overflow: query hash))
 //
 //         any other % parameter is processed by strftime.
 const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfile_template, struct mg_connection *conn, time_t timestamp) {
@@ -768,8 +774,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         size_t len = PATH_MAX - (d - fnbuf); // assert(len > 0);
         const char *u = NULL;
         // enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
-        //char addr_buf[MAX(MAX(64+32-8+1, SOCKADDR_NTOA_BUFSIZE), PATH_MAX)];
-        char addr_buf[PATH_MAX];
+        char addr_buf[MG_MAX(SOCKADDR_NTOA_BUFSIZE, MG_MAX(MG_LOGFILE_MAX_URI_COMPONENT_LEN + 1, PATH_MAX))];
         char *old_d = d;
 
         *d = 0;
@@ -829,20 +834,23 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             if (s[2] == 'Q') {
               if (!q) {
                 // empty query section: replace as empty string.
-                q = "";
-              }
-              u = q + 1;
-              q = NULL;
+                u = "";
+              } else {
+                u = q + 1;
+                q = NULL;
+			  }
             }
             // limit the length to process:
-            strncpy(addr_buf, u, sizeof(addr_buf));
-            addr_buf[sizeof(addr_buf) - 1] = 0;
+            mg_strlcpy(addr_buf, u, sizeof(addr_buf));
             if (q && q - u < (int)sizeof(addr_buf)) {
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to 64 characters:
-            mg_md5(addr_buf + 64 - 8, addr_buf, NULL);
-            addr_buf[64] = 0;
+			if (strlen(addr_buf) >= MG_LOGFILE_MAX_URI_COMPONENT_LEN) {
+			  char h[33];
+              mg_md5(h, addr_buf, NULL);
+              mg_strlcpy(addr_buf + MG_LOGFILE_MAX_URI_COMPONENT_LEN - 8, h, 8 + 1);
+			}
             u = addr_buf;
             goto copy_partial2dst;
           }
