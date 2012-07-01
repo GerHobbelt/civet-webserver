@@ -6794,7 +6794,7 @@ static void worker_thread(struct mg_context *ctx) {
   int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
   if (buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
-    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting, aborting worker thread(s), OOM");
+    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
     goto fail_dramatically;
   }
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
