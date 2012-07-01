@@ -210,11 +210,17 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_protocol = IPPROTO_TCP;
 
+  assert(conn);
   assert(conn->ctx);
-  if (flags & MG_CONNECT_HTTP_IO)
+  if (flags & MG_CONNECT_HTTP_IO) {
     http_io_buf_size = atoi(get_conn_option(conn, MAX_REQUEST_SIZE));
-  else
+    if (http_io_buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
+      mg_cry(conn, "%s: Invalid MAX_REQUEST_SIZE setting: %d", __func__, http_io_buf_size);
+      return NULL;
+    }
+  } else {
     http_io_buf_size = 0;
+  }
   if (conn->ctx->ssl_ctx == NULL && (flags & MG_CONNECT_USE_SSL)) {
     mg_cry(conn, "%s: SSL is not initialized", __func__);
   } else if (getaddrinfo(host, NULL, &hints, &result)) {
