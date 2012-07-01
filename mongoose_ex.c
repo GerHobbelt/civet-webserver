@@ -235,13 +235,13 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
     if (!http_io_buf_size) {
       newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
       //newconn->consumed_content = 0;
-      newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+      newconn->content_len = -1;
       //newconn->request_len = newconn->data_len = 0;
       //newconn->must_close = 0;
     } else {
       newconn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
       //newconn->consumed_content = 0;
-      newconn->content_len = -1; // means we'd have to fetch and decode the (HTTP) headers first
+      newconn->content_len = -1;
       newconn->buf = (char *)(newconn + 1);
       newconn->buf_size = http_io_buf_size;
     }
@@ -377,7 +377,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
       mg_cry(conn, "%s: request URI is nil", __func__);
       return -1;
     }
-    
+
     uri = conn->request_info.uri;
     q_str = conn->request_info.query_string;
     if (q_str == NULL)
@@ -421,7 +421,7 @@ int mg_read_http_response(struct mg_connection *conn) {
 
   // Nul-terminate the request 'cause parse_http_request() is C-string based
   conn->buf[conn->request_len - 1] = 0;
-  
+
   buf = conn->buf;
 
   // RFC says that all initial whitespace should be ignored
@@ -656,7 +656,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     // not necessarily a HTTP client:
                     newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
                     //newconn->consumed_content = 0;
-                    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+                    newconn->content_len = -1;
                     //newconn->request_len = newconn->data_len = 0;
                     newconn->client.rsa.u.sin.sin_family = AF_INET;
                     newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
