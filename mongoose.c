@@ -409,6 +409,7 @@ struct mg_connection {
   unsigned must_close: 1;     			// 1 if connection must be closed
   unsigned is_inited: 1;      			// 1 when the connection been completely set up (SSL, local and remote peer info, ...)
   unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
+  
   int nested_err_or_pagereq_count;      // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;

@@ -1,10 +1,26 @@
 #include "mongoose_ex.c"
 
-#define FATAL(str, line) do {                     \
-  printf("Fail on line %d: [%s]\n", line, str);   \
-  abort();                                        \
+#define FATAL(str, line) do {												\
+  printf("Fail on line %d: [%s]\n", line, str);								\
+  abort();																	\
 } while (0)
-#define ASSERT(expr) do { if (!(expr)) FATAL(#expr, __LINE__); } while (0)
+
+#define ASSERT(expr)														\
+	do { 																	\
+	  if (!(expr)) {														\
+		FATAL(#expr, __LINE__); 											\
+	  } 																	\
+	} while (0)
+
+#define ASSERT_STREQ(str1, str2) 											\
+	do { 																	\
+	  if (strcmp(str1, str2)) {												\
+	    printf("Fail on line %d: strings not matching: "					\
+			   "inp:\"%s\" != ref:\"%s\"\n", 								\
+			   __LINE__, str1, str2);										\
+		/* abort(); */                                        				\
+	  }																		\
+	} while (0)
 
 static void test_parse_http_request() {
   struct mg_request_info ri;
@@ -13,7 +29,7 @@ static void test_parse_http_request() {
   char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
 
   ASSERT(parse_http_request(req1, &ri) == 1);
-  ASSERT(strcmp(ri.http_version, "1.1") == 0);
+  ASSERT_STREQ(ri.http_version, "1.1");
   ASSERT(ri.num_headers == 0);
 
   ASSERT(parse_http_request(req2, &ri) == 0);
@@ -21,7 +37,7 @@ static void test_parse_http_request() {
   // TODO(lsm): Fix this. Bah is not a valid header.
   ASSERT(parse_http_request(req3, &ri) == 1);
   ASSERT(ri.num_headers == 1);
-  ASSERT(strcmp(ri.http_headers[0].name, "Bah\r\n") == 0);
+  ASSERT_STREQ(ri.http_headers[0].name, "Bah\r\n");
 
   // TODO(lsm): add more tests.
 }
@@ -120,7 +136,7 @@ static void test_remove_double_dots() {
   for (i = 0; i < ARRAY_SIZE(data); i++) {
     //printf("[%s] -> [%s]\n", data[i].before, data[i].after);
     remove_double_dots_and_double_slashes(data[i].before);
-    ASSERT(strcmp(data[i].before, data[i].after) == 0);
+    ASSERT_STREQ(data[i].before, data[i].after);
   }
 }
 
@@ -213,56 +229,157 @@ static void test_IPaddr_parsing() {
 }
 
 static void test_logpath_fmt() {
+	char *uri_input[] = {
+	  "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
+	  "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....?&_&_&_&_&_ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
+	  "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!"
+	};
     const char *path;
     char buf[512];
     char tinybuf[13];
     struct mg_context ctx = {0};
-    struct mg_connection c = {0};
+    struct mg_connection c;
     c.ctx = &ctx;
 
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "_.long-blubb"));
+    ASSERT_STREQ(path, "_.long-blubb");
 
-    c.request_info.uri = "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[2];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "http.example"));
+    ASSERT_STREQ(path, "http.example");
 
-    c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "_Y/http.exam"));
+    ASSERT_STREQ(path, "_Y/http.exam");
 
-    c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "_Y/_/_d/_m/b"));
+    ASSERT_STREQ(path, "_Y/_/_d/_m/b");
 
 
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
     c.request_info.uri = NULL;
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "_.long-blubber.log"));
+    ASSERT_STREQ(path, "_.long-blubber.log");
 
-    c.request_info.uri = "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[2];
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "http.example.com.sample.page.tree.long-blubber.log"));
+    ASSERT_STREQ(path, "http.example.com.sample.page.tree.long-blubber.log");
 
-    c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.396693b9/14/02/blubber.log"));
+    ASSERT_STREQ(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.yeah.errr396693b9/14/02/blubber.log");
 
-    c.request_info.uri = "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....?&_&_&_&_&_ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........";
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
-    ASSERT(0 == strcmp(path, "2009/__________ohhhhh.you_shouldn_t_have._Now_let_s_seed2d6cc07/14/02/blubber.log"));
+    ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
+
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[0];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/_/14/02/blubber.log");
+
+	// check the %[nX] numeric size parameter for %[Q/U] path formatters:
+
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/_ohhhhh.you_d2d6cc07/14/02/blubber.log");
+
+	// invalid; ignore
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[0Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
+
+	// invalid, ignore
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[-5Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
+
+	// very tiny; crunch the hash
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[4Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/cc07/14/02/blubber.log");
+
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20U]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/http.examplefa0ce5b0/14/02/blubber.log");
+
+	// edge case; should not produce a hash
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[56U]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.yeah.errr/14/02/blubber.log");
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[55U]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.fa0ce5b0/14/02/blubber.log");
+
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20U]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/http.examplefa0ce5b0/14/02/blubber.log");
+
+	// hash from raw; place at end of scrubbed uri component:
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = uri_input[1];
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20Q]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/_ohhhhh.you_d2d6cc07/14/02/blubber.log");
+
+	// IPv4 ports:
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    c.request_info.uri = NULL;
+    ASSERT(parse_ipvX_addr_string("10.11.12.13", 80, &c.client.lsa));
+    ASSERT(parse_ipvX_addr_string("120.121.122.123", 180, &c.client.rsa));
+    path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[C]/%[P]/%[s]/%[p]/%d/%m/blubber.log", &c, 1234567890);
+    ASSERT(path);
+    ASSERT_STREQ(path, "2009/120.121.122.123/180/10.11.12.13/80/14/02/blubber.log");
+
+
+
+	// test illegal %[ formatters:
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    path = mg_get_logfile_path(buf, sizeof(buf), "%[?].long-blubber.log", &c, time(NULL));
+    ASSERT(path);
+    ASSERT_STREQ(path, "![?].long-blubber.log"); // Note: we don't sanitize the template bits that originate in the server itself, and rightly so. Hence the '?' in here.
+
+	memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    path = mg_get_logfile_path(buf, sizeof(buf), "%[bugger].%[-12345678901234567890boo].%[20~].long-blubber.log", &c, time(NULL));
+    ASSERT(path);
+    ASSERT_STREQ(path, "![bugger].![boo].![~].long-blubber.log");
 }
 
-
-
+/*
+Fail on line 338: strings not matching: inp:"2009/http.example.com.Oops.I.did.it.again.yeah.yeah.yeah.errr/14/02/blubber.log" != ref:"2009/http.example.com.Oops.I.didfa0ce5b0/14/02/blubber.log"
+Fail on line 341: strings not matching: inp:"2009/http.example.com.Oops.I.did.it.again.yeah.yeah.fa0ce5b0/14/02/blubber.log" != ref:"2009/http.example.com.Oops.I.didfa0ce5b0/14/02/blubber.log"
+*/
 
 static void test_header_processing()
 {
@@ -375,7 +492,7 @@ static void test_client_connect() {
     rv = mg_read(g, buf, sizeof(buf));
     ASSERT(rv > 0);
     mg_close_connection(g);
-    free(g);
+    //free(g);
 
 
     g = mg_connect(&c, "google.com", 80, 1);
@@ -390,6 +507,69 @@ static void test_client_connect() {
     ASSERT(rv > 0);
     mg_close_connection(g);
     //free(g);
+
+
+    // now with HTTP header support:
+    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+    ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
+    ASSERT(0 == mg_add_tx_header(g, 0, "Connection", "close"));
+    // set up the request the rude way: directly patch the request_info struct. Nasty!
+    //
+    // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+    ri = mg_get_request_info(g);
+    ri->http_version = "1.1";
+    ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+    ri->request_method = "GET";
+    ri->uri = "/search";
+    
+    rv = mg_write_http_request_head(g, NULL, NULL);
+    ASSERT(rv == 18);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+    // and now fetch the content:
+    rv = mg_read(g, buf, sizeof(buf));
+    ASSERT(rv > 0);
+    mg_close_connection(g);
+    //free(g);
+
+
+    // now with _full_ HTTP header support:
+    g = mg_connect(&c, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(g);
+
+    mg_add_tx_header(g, 0, "Host", "www.google.com");
+    mg_add_tx_header(g, 0, "Connection", "close");
+    // set up the request the rude way: directly patch the request_info struct. Nasty!
+    //
+    // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+    ri = mg_get_request_info(g);
+    ri->http_version = "1.1";
+    ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+    ri->request_method = "GET";
+    ri->uri = "/search";
+    
+    rv = mg_write_http_request_head(g, NULL, NULL);
+    ASSERT(rv == 18);
+    // signal request phase done:
+    mg_shutdown(g, SHUT_WR);
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(g);
+    ASSERT(rv == 0);
+    // and now fetch the content:
+    rv = mg_read(g, buf, sizeof(buf));
+    ASSERT(rv > 0);
+    mg_close_connection(g);
+    //free(g);
+
 }
 
 
