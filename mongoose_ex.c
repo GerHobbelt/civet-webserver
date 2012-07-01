@@ -485,7 +485,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     // not necessarily a HTTP client:
                     newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
                     //newconn->consumed_content = 0;
-                    newconn->content_len = INT64_MAX; // ; -1 would mean we'd have to fetch and decode the (HTTP) headers first
+                    newconn->content_len = -1;
                     //newconn->request_len = newconn->data_len = 0;
                     newconn->client.rsa.u.sin.sin_family = AF_INET;
                     newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);

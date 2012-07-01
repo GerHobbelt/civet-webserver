@@ -2761,15 +2761,14 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   int n, buffered_len, nread;
   const char *buffered;
 
-  assert((conn->content_len == -1 && conn->consumed_content == 0) ||
+  assert((conn->content_len == -1) ||
          conn->consumed_content <= conn->content_len);
   DEBUG_TRACE(("%p %" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
-  if (conn->consumed_content < conn->content_len) {
-
+  if (conn->consumed_content < conn->content_len || conn->content_len == -1) {
     // Adjust number of bytes to read.
-    int64_t to_read = conn->content_len - conn->consumed_content;
+    int64_t to_read = (conn->content_len == -1 ? INT_MAX : conn->content_len - conn->consumed_content);
     if (to_read < (int64_t) len) {
       len = (size_t) to_read;
     }
@@ -2791,13 +2790,16 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       buf = (char *) buf + buffered_len;
       conn->consumed_content += buffered_len;
       nread = buffered_len;
+    } else {
+      buffered_len = 0;
     }
 
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
-      // act like pull() when we're not involved with fetching HTTP request content:
-      if (nread > 0 && conn->content_len == INT64_MAX)
+      // act like pull() when we're not involved with fetching 'Content-Length'-defined HTTP content:
+      if (nread > 0 && conn->content_len == -1 && buffered_len == 0)
         break;
+      buffered_len = 0;
       n = pull(NULL, conn, (char *) buf, (int) len);
       if (n < 0) {
         // always propagate the error
@@ -4253,9 +4255,9 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
   expect = mg_get_header(conn, "Expect");
   assert(fp != NULL);
 
-  if (conn->content_len == -1 &&
-      (!strcmp(conn->request_info.request_method, "POST") ||
-       !strcmp(conn->request_info.request_method, "PUT"))) {
+  // content_len==-1 is all right; it's just either Transfer-Encoding or a HTTP/1.0 client.
+  if (!strcmp(conn->request_info.request_method, "POST") ||
+      !strcmp(conn->request_info.request_method, "PUT")) {
     send_http_error(conn, 411, NULL, "");
   } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
     send_http_error(conn, 417, NULL, "");
@@ -4289,28 +4291,34 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       conn->consumed_content += buffered_len;
     }
 
-    while (conn->consumed_content < conn->content_len) {
+    nread = 0;
+    while (conn->consumed_content < conn->content_len || conn->content_len == -1) {
+      int nwrite;
+
       to_read = sizeof(buf);
-      if ((int64_t) to_read > conn->content_len - conn->consumed_content) {
+      if ((int64_t) to_read > conn->content_len - conn->consumed_content && conn->content_len >= 0) {
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
       nread = pull(NULL, conn, buf, to_read);
-      if (nread <= 0 || push(fp, dst_conn, buf, nread) != nread) {
+      if (nread <= 0)
+        break;
+      nwrite = push(fp, dst_conn, buf, nread);
+      if (nwrite != nread) {
+        nread = -1;
         break;
       }
       conn->consumed_content += nread;
     }
 
-    if (conn->consumed_content == conn->content_len ||
-        (conn->consumed_content == 0 && conn->content_len == -1)) {
-      success = 1;
+    if (conn->consumed_content == conn->content_len || conn->content_len == -1) {
+      success = (nread >= 0);
     }
 
     // Each error code path in this function must send an error
     if (!success) {
 failure:
       if (send_error_on_fail) {
-        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : ""), __func__, mg_strerror(ERRNO));
+        send_http_error(conn, 577, NULL, ((fp && ferror(fp)) ? "%s: I/O error: %s" : "%s: I/O error: failed to forward all bytes"), __func__, mg_strerror(ERRNO));
       }
     }
   } else {
