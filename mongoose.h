@@ -621,21 +621,29 @@ const char *mg_get_header(const struct mg_connection *, const char *name);
 // Get a value of particular form variable.
 //
 // Parameters:
-//   data: pointer to form-uri-encoded buffer. This could be either POST data,
-//         or request_info.query_string.
-//   data_len: length of the encoded data.
-//   var_name: variable name to decode from the buffer
-//   buf: destination buffer for the decoded variable
-//   buf_len: length of the destination buffer
+//   data:		pointer to form-uri-encoded buffer. This could be either 
+//              POST data, or request_info.query_string.
+//   data_len:	length of the encoded data.
+//   var_name:	variable name to decode from the buffer
+//   buf:		destination buffer for the decoded variable
+//   buf_len:	length of the destination buffer
+//   is_form_url_encoded: 
+//              1 if the 'data' buffer is form-url-encoded, 0 otherwise,
+//              i.e. when the 'data' buffer is URI encoded, e.g. a query string.
+//
+// Note: form-url-encoded data differs from URI encoding in a way that it
+//       uses '+' as character for space, see RFC 1866 section 8.2.1
+//       http://ftp.ics.uci.edu/pub/ietf/html/rfc1866.txt
 //
 // Return:
 //   On success, length of the decoded variable.
 //   On error, -1 (variable not found, or destination buffer is too small).
+//   On error, -2 (destination buffer NULL or zero length).
 //
-// Destination buffer is guaranteed to be '\0' - terminated. In case of
-// failure, dst[0] == '\0'.
-int mg_get_var(const char *data, size_t data_len,
-               const char *var_name, char *buf, size_t buf_len);
+// Destination buffer is guaranteed to be '\0'-terminated whenever possible. 
+// In case of failure, dst[0] == '\0'.
+int mg_get_var(const char *data, size_t data_len, const char *var_name, 
+	           char *buf, size_t buf_len, int is_form_url_encoded);
 
 // Fetch value of certain cookie variable into the destination buffer.
 //

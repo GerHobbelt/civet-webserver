@@ -65,7 +65,7 @@ static struct session *get_session(const struct mg_connection *conn) {
 static void get_qsvar(const struct mg_request_info *request_info,
                       const char *name, char *dst, size_t dst_len) {
   const char *qs = request_info->query_string;
-  mg_get_var(qs, strlen(qs == NULL ? "" : qs), name, dst, dst_len);
+  mg_get_var(qs, strlen(qs == NULL ? "" : qs), name, dst, dst_len, 0);
 }
 
 // Get a set of messages with IDs greater than last_id and transform them
