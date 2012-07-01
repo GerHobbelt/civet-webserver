@@ -416,7 +416,7 @@ struct mg_connection {
   unsigned rx_is_in_chunked_mode: 1;    // 1 when reception through the connection is chunked (segmented)
   unsigned tx_chunk_header_sent: 2;     // 1 when the current chunk's header has already been transmitted, 2 when header transmit is in progress
   unsigned rx_chunk_header_parsed: 2;   // 1 when the current chunk's header has already been (received and) parsed, 2 when header reception/parsing is in progress
-  
+
   int nested_err_or_pagereq_count;      // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
   struct mg_request_info request_info;
   struct mg_context *ctx;
@@ -2935,7 +2935,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
       // just send the data; don't count the bytes against any totals though!
       return (int) push(NULL, conn, src, txlen);
     }
-    
+
     // when the connection has been previously signaled as 'flushed', then you
     // CANNOT SEND ANY MORE DATA, unless mongoose resets the connection to process
     // another request (e.g. in HTTP keep-alive mode):
