@@ -1,4 +1,6 @@
-<html><pre>
+<html><body>
+<h1>SSI: <code>#exec &quot;dir /w&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#exec "dir /w" -->
 ssi_end

@@ -1,4 +1,6 @@
-<html><pre>
+<html><body>
+<h1>SSI: <code>#include file=&quot;c:\boot.ini&quot;</code></h1>
+<pre>
 ssi_begin
 <!--#include file="c:\boot.ini" -->
 ssi_end
