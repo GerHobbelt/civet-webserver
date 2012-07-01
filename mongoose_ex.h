@@ -138,6 +138,13 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
 
 void mg_close_connection(struct mg_connection *conn);
 
+// Prepare an kept-alive connection for transmitting another request.
+//
+// Use with client-side connections such as the ones created using mg_connect() when
+// sending multiple requests over this HTTP keep-alive connection.
+//
+// Return 0 on success.
+int mg_cleanup_after_request(struct mg_connection *conn);
 
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...);

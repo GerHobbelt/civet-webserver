@@ -2,7 +2,8 @@
 
 #define FATAL(str, line) do {                                               \
   printf("Fail on line %d: [%s]\n", line, str);                             \
-  abort();                                                                  \
+  mg_signal_stop(ctx);														\
+  abort();																	\
 } while (0)
 
 #define ASSERT(expr)                                                        \
@@ -18,11 +19,14 @@
         printf("Fail on line %d: strings not matching: "                    \
                "inp:\"%s\" != ref:\"%s\"\n",                                \
                __LINE__, str1, str2);                                       \
+		mg_signal_stop(ctx);												\
         /* abort(); */                                                      \
       }                                                                     \
     } while (0)
 
 static void test_parse_http_request() {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
   struct mg_request_info ri;
   char req1[] = "GET / HTTP/1.1\r\n\r\n";
   char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
@@ -43,23 +47,23 @@ static void test_parse_http_request() {
 }
 
 static void test_should_keep_alive(void) {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
   struct mg_connection conn;
-  struct mg_context ctx;
   char req1[] = "GET / HTTP/1.1\r\n\r\n";
   char req2[] = "GET / HTTP/1.0\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
   char req4[] = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n";
 
   memset(&conn, 0, sizeof(conn));
-  memset(&ctx, 0, sizeof(ctx));
-  conn.ctx = &ctx;
+  conn.ctx = ctx;
   parse_http_request(req1, &conn.request_info);
   conn.request_info.status_code = 200;
 
-  ctx.config[ENABLE_KEEP_ALIVE] = "no";
+  ctx->config[ENABLE_KEEP_ALIVE] = "no";
   ASSERT(should_keep_alive(&conn) == 0);
 
-  ctx.config[ENABLE_KEEP_ALIVE] = "yes";
+  ctx->config[ENABLE_KEEP_ALIVE] = "yes";
   ASSERT(should_keep_alive(&conn) == 1);
 
   conn.must_close = 1;
@@ -90,6 +94,9 @@ static void test_should_keep_alive(void) {
 }
 
 static void test_match_prefix(void) {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+
   ASSERT(match_prefix("/api", 4, "/api") == 4);
   ASSERT(match_prefix("/a/", 3, "/a/b/c") == 3);
   ASSERT(match_prefix("/a/", 3, "/ab/c") == -1);
@@ -132,6 +139,8 @@ static void test_remove_double_dots() {
     {"/a\\", "/a\\"},
   };
   size_t i;
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
 
   for (i = 0; i < ARRAY_SIZE(data); i++) {
     //printf("[%s] -> [%s]\n", data[i].before, data[i].after);
@@ -141,9 +150,11 @@ static void test_remove_double_dots() {
 }
 
 static void test_IPaddr_parsing() {
-    struct usa sa;
-    struct vec v;
-    struct socket s;
+  struct usa sa;
+  struct vec v;
+  struct socket s;
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
 
     memset(&sa, 0, sizeof(sa));
     ASSERT(!parse_ipvX_addr_string("example.com", 80, &sa));
@@ -229,67 +240,68 @@ static void test_IPaddr_parsing() {
 }
 
 static void test_logpath_fmt() {
-    char *uri_input[] = {
-      "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
-      "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....?&_&_&_&_&_ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
-      "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!"
-    };
-    const char *path;
-    char buf[512];
-    char tinybuf[13];
-    struct mg_context ctx = {0};
-    struct mg_connection c;
-    c.ctx = &ctx;
+  char *uri_input[] = {
+    "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
+    "http://example.com/Oops.I.did.it.again....yeah....yeah....yeah....errr....?&_&_&_&_&_ohhhhh....you shouldn't have.... Now let's see whether this bugger does da right thang for long URLs when we wanna have them as part of the logpath..........",
+    "http://example.com/sample/page/tree?with-query=y&oh%20baby,%20oops!%20I%20did%20it%20again!"
+  };
+  const char *path;
+  char buf[512];
+  char tinybuf[13];
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+  struct mg_connection c;
+  c.ctx = ctx;
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "_.long-blubb");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[2];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "http.example");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "_Y/http.exam");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "_Y/_/_d/_m/b");
 
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = NULL;
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "_.long-blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[2];
     path = mg_get_logfile_path(buf, sizeof(buf), "%[U].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "http.example.com.sample.page.tree.long-blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.yeah.errr396693b9/14/02/blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[0];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
@@ -297,41 +309,41 @@ static void test_logpath_fmt() {
 
     // check the %[nX] numeric size parameter for %[Q/U] path formatters:
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/_ohhhhh.you_d2d6cc07/14/02/blubber.log");
 
     // invalid; ignore
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[0Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
 
     // invalid, ignore
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[-5Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/_ohhhhh.you_shouldn_t_have._Now_let_s_see_whether_this_bd2d6cc07/14/02/blubber.log");
 
     // very tiny; crunch the hash
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[4Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/cc07/14/02/blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/http.examplefa0ce5b0/14/02/blubber.log");
 
     // edge case; should not produce a hash
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[56U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
@@ -340,21 +352,21 @@ static void test_logpath_fmt() {
     ASSERT(path);
     ASSERT_STREQ(path, "2009/http.example.com.Oops.I.did.it.again.yeah.yeah.fa0ce5b0/14/02/blubber.log");
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20U]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/http.examplefa0ce5b0/14/02/blubber.log");
 
     // hash from raw; place at end of scrubbed uri component:
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = uri_input[1];
     path = mg_get_logfile_path(buf, sizeof(buf), "%Y/%[20Q]/%d/%m/blubber.log", &c, 1234567890);
     ASSERT(path);
     ASSERT_STREQ(path, "2009/_ohhhhh.you_d2d6cc07/14/02/blubber.log");
 
     // IPv4 ports:
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     c.request_info.uri = NULL;
     ASSERT(parse_ipvX_addr_string("10.11.12.13", 80, &c.client.lsa));
     ASSERT(parse_ipvX_addr_string("120.121.122.123", 180, &c.client.rsa));
@@ -365,12 +377,12 @@ static void test_logpath_fmt() {
 
 
     // test illegal %[ formatters:
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     path = mg_get_logfile_path(buf, sizeof(buf), "%[?].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "![?].long-blubber.log"); // Note: we don't sanitize the template bits that originate in the server itself, and rightly so. Hence the '?' in here.
 
-    memset(&c, 0, sizeof(c)); c.ctx = &ctx;
+    memset(&c, 0, sizeof(c)); c.ctx = ctx;
     path = mg_get_logfile_path(buf, sizeof(buf), "%[bugger].%[-12345678901234567890boo].%[20~].long-blubber.log", &c, time(NULL));
     ASSERT(path);
     ASSERT_STREQ(path, "![bugger].![boo].![~].long-blubber.log");
@@ -403,14 +415,15 @@ static void test_header_processing()
         "<A HREF=\"http://www.google.nl/\">here</A>.\r\n"
         "</BODY></HTML>\r\n";
 
-    char buf[8192];
-    struct mg_context ctx = {0};
-    struct mg_connection c = {0};
-    int rv;
-    char *p;
-    const char *values[64];
+  char buf[8192];
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+  struct mg_connection c = {0};
+  int rv;
+  char *p;
+  const char *values[64];
 
-    c.ctx = &ctx;
+    c.ctx = ctx;
 
     strcpy(buf, input);
 
@@ -475,15 +488,16 @@ static void test_header_processing()
 
 
 static void test_client_connect() {
-    char buf[512];
-    struct mg_context ctx = {0};
-    struct mg_connection *g;
-    struct mg_request_info *ri;
-    int rv;
-    const char *cookies[16];
-    int cl;
+  char buf[512];
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+  struct mg_connection *g;
+  struct mg_request_info *ri;
+  int rv;
+  const char *cookies[16];
+  int cl;
 
-    g = mg_connect_to_host(&ctx, "example.com", 80, MG_CONNECT_BASIC);
+    g = mg_connect_to_host(ctx, "example.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -495,9 +509,9 @@ static void test_client_connect() {
     //free(g);
 
 
-    g = mg_connect_to_host(&ctx, "google.com", 80, MG_CONNECT_USE_SSL);
+    g = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_USE_SSL);
     ASSERT(!g);
-    g = mg_connect_to_host(&ctx, "google.com", 80, MG_CONNECT_BASIC);
+    g = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
     rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
@@ -510,16 +524,16 @@ static void test_client_connect() {
 
 
     // now with HTTP header support:
-    ASSERT_STREQ(get_option(&ctx, MAX_REQUEST_SIZE), "");
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(!g);
 
     // all options are empty
-    ASSERT_STREQ(get_option(&ctx, MAX_REQUEST_SIZE), "");
+    ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
     // so we should set them up, just like one would've got when calling mg_start():
-    ctx.config[MAX_REQUEST_SIZE] = "256";
+    ctx->config[MAX_REQUEST_SIZE] = "256";
 
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
@@ -549,9 +563,9 @@ static void test_client_connect() {
 
 
     // retry with a suitably large buffer:
-    ctx.config[MAX_REQUEST_SIZE] = "2048";
+    ctx->config[MAX_REQUEST_SIZE] = "2048";
 
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
@@ -593,7 +607,7 @@ static void test_client_connect() {
 
 
     // now with _full_ HTTP header support:
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     mg_add_tx_header(g, 0, "Host", "www.google.com");
@@ -624,7 +638,7 @@ static void test_client_connect() {
 
 
     // check the new google search page at /cse
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     // http://www.google.com/cse?q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i
@@ -661,7 +675,7 @@ static void test_client_connect() {
 
 
     // again: check the new google search page at /cse
-    g = mg_connect_to_host(&ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(g);
 
     // http://www.google.com/cse?q=mongoose&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i
@@ -697,6 +711,231 @@ static void test_client_connect() {
     //free(g);
 }
 
+
+
+
+static void *chunky_server_callback(enum mg_event event, struct mg_connection *conn) {
+  struct mg_request_info *request_info = mg_get_request_info(conn);
+  struct mg_context *ctx = mg_get_context(conn);
+  char content[1024];
+  int content_length;
+
+  if (event == MG_NEW_REQUEST &&
+      strstr(request_info->uri, "/chunky")) {
+	int chunk_size;
+	int chunk_count;
+	int i, c;
+
+	if (mg_get_var(request_info->query_string, (size_t)-1, "chunksize", content, sizeof(content), 0) > 0) {
+	  chunk_size = atoi(content);
+	} else {
+	  chunk_size = 0;
+	}
+	if (mg_get_var(request_info->query_string, (size_t)-1, "count", content, sizeof(content), 0) > 0) {
+	  chunk_count = atoi(content);
+	} else {
+	  chunk_size = 50;
+	}
+
+    mg_add_response_header(conn, 0, "Content-Length", "1234"); // fake; should be removed by the next one:
+	// mongoose auto-detects TE when you set the proper header and use mg_write_http_response_head()
+    mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+    mg_add_response_header(conn, 0, "Content-Type", "text/html");
+    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
+	// leading whitespace will be ignored:
+    mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millenium Hand and Shrimp");
+    mg_write_http_response_head(conn, 200, NULL);
+
+	// because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
+	mg_set_tx_next_chunk_size(conn, chunk_size);
+
+	// any header added/changed AFTER the HEAD was written will be appended to the tail chunk
+    mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "Buggerit!");
+
+    // send a test page, in chunks
+    mg_printf(conn, 
+              "<html><body><h1>Chunky page</h1>\n"
+              "<p><a href=\"/chunky\">Click here</a> to get "
+              "the chunky page again.</p>\n");
+
+	do {
+	  // because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
+	  mg_set_tx_next_chunk_size(conn, chunk_size);
+	  // you may call mg_set_tx_next_chunksize() as often as you like; it only takes effect when a new chunk is generated
+
+	  i = (int)mg_get_tx_remaining_chunk_size(conn);
+	  c = mg_get_tx_chunk_no(conn);
+
+  	  // any header added/changed AFTER the HEAD was written will be appended to the tail chunk
+      mg_add_response_header(conn, 0, "X-Mongoose-Chunky", "Alter-%d-of-%d", i, c);
+
+	  mg_printf(conn, 
+				"\n<pre>\n chunk #%d / %d, (size?: %d) remaining: %d \n</pre>\n"
+				"<p>And this is some more lorem ipsum bla bla used as filler for the chunks...</p>\n",
+				c, chunk_count, chunk_size, i);
+	} while (c < chunk_count);
+
+	i = (int)mg_get_tx_remaining_chunk_size(conn);
+	c = mg_get_tx_chunk_no(conn);
+
+	mg_printf(conn, 
+			  "\n<pre>\n chunk #%d, remaining: %d \n</pre>\n"
+			  "<p><b>Now we've reached the end of our chunky page.</b></p>\n"
+			  "<blockquote><p><b>Note</b>: When you look at the page source,\n"
+			  "            you may see extra whitespace padding at the end\n"
+			  "            of the page to fill the last chunk (if the chunk size\n"
+			  "            was rather large and there was a lot 'remaining', that is).\n"
+			  "</p></blockquote>\n"
+			  "<hr><h1>Bye!</h1>\n",
+			  c, i);
+
+	// pump out whitespace when the last explicit chunk wasn't entirely filled:
+	i = (int)mg_get_tx_remaining_chunk_size(conn);
+	mg_printf(conn, "%*s", i, "\n");
+
+    return (void *)1;
+  } else if (event == MG_NEW_REQUEST) {
+    content_length = mg_snprintf(conn, content, sizeof(content),
+                                 "<html><body><p>Hello from mongoose! Remote port: %d."
+                                 "<p><a href=\"/chunky\">Click here</a> to receive "
+                                 "a Transfer-Encoding=chunked transmitted page from the server.",
+                                 request_info->remote_port);
+
+    mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
+    mg_add_response_header(conn, 0, "Content-Type", "text/html");
+    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
+    mg_write_http_response_head(conn, 200, NULL);
+
+    mg_write(conn, content, content_length);
+
+    // Mark as processed
+    return (void *)1;
+  } else {
+    return NULL;
+  }
+}
+
+
+static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions_dstbuf, size_t chunk_extensions_dstbuf_size) {
+  int c = mg_get_tx_chunk_no(conn);
+
+  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
+  if ((c % 3) == 2) {
+	mg_snq0printf(conn, chunk_extensions_dstbuf, chunk_extensions_dstbuf_size, "mongoose-ext=oh-la-la-%d", c);
+  }
+  return 1; // run default handler; we were just here to add extensions...
+}
+
+
+int test_chunked_transfer(void) {
+  struct mg_context *ctx;
+  const char *options[] = {"listening_ports", "8080", NULL};
+  struct mg_user_class_t ucb = {
+    NULL,
+    chunky_server_callback
+  };
+  struct mg_connection *conn;
+  char buf[4096];
+  int rv;
+
+  ucb.write_chunk_header = chunky_write_chunk_header;
+    ctx = mg_start(&ucb, options);
+    if (!ctx)
+      return -1;
+
+    printf("Restartable server started on ports %s.\n",
+           mg_get_option(ctx, "listening_ports"));
+
+	// open client connection to server and GET and POST chunked content
+
+    // again: check the new google search page at /cse
+    conn = mg_connect_to_host(ctx, "localhost", 8080, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    ASSERT(conn);
+
+    mg_add_tx_header(conn, 0, "Host", "localhost");
+    mg_add_tx_header(conn, 0, "Connection", "keep-alive");
+    rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
+    ASSERT(rv == 170);
+    // signal request phase done:
+    //mg_shutdown(g, SHUT_WR);
+
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(conn);
+    ASSERT(rv == 0);
+    ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
+    ASSERT(mg_get_request_info(conn));
+    ASSERT(mg_get_request_info(conn)->status_code == 200);
+    ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
+    ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
+	// leading whitespace will be ignored:
+    ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+    ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+
+    // and now fetch the content:
+    for (;;) {
+      int r = mg_read(conn, buf, sizeof(buf));
+
+      if (r > 0)
+        rv += r;
+      else
+        break;
+    }
+    ASSERT(rv > 0);
+    //ASSERT(rv == cl);
+
+
+	// as we've got a kept-alive connection, we can send another request!
+	ASSERT(0 == mg_cleanup_after_request(conn));
+
+
+    mg_add_tx_header(conn, 0, "Host", "localhost");
+    mg_add_tx_header(conn, 0, "Connection", "keep-alive");
+    rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
+    ASSERT(rv == 170);
+    // signal request phase done:
+    //mg_shutdown(g, SHUT_WR);
+
+    // fetch response, blocking I/O:
+    //
+    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+    rv = mg_read_http_response(conn);
+    ASSERT(rv == 0);
+    ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
+    ASSERT(mg_get_request_info(conn));
+    ASSERT(mg_get_request_info(conn)->status_code == 200);
+    ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
+    ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
+	// leading whitespace will be ignored:
+    ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+    ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+
+    // and now fetch the content:
+    for (;;) {
+      int r = mg_read(conn, buf, sizeof(buf));
+
+      if (r > 0)
+        rv += r;
+      else
+        break;
+    }
+    ASSERT(rv > 0);
+    //ASSERT(rv == cl);
+
+
+    mg_close_connection(conn);
+    //free(g);
+
+
+	// now stop the server: done testing
+    mg_stop(ctx);
+    printf("Server stopped.\n");
+
+  mg_sleep(1000);
+  printf("Server terminating now.\n");
+  return EXIT_SUCCESS;
+}
 
 
 int main(void) {
