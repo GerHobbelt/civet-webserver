@@ -737,6 +737,74 @@ static struct mg_connection *fc(struct mg_context *ctx) {
   return &fake_connection;
 }
 
+// Replace all illegal characters by '_'; reduce multiple
+// occurrences of these by a single character (so you don't
+// get filepaths like '_______/buggered.dir').
+//
+// Replaces '%' by '!' and otherwise only allows [a-z0-9-]
+// and of course '/' and '\' (which is converted to '/')
+// to pass, so as to create paths which are suitable for the
+// most restrictive file systems.
+//
+// Does not allow the path to end at a '/'.
+//
+// Modifies the path in place; the result is always smaller
+// or equal in size, compared to the input.
+//
+// Returns the length of the result.
+static int powerscrub_filepath(char *path, int tolerate_dirsep)
+{
+  char *d = path;
+  char *s = path;
+
+  for (;;) {
+    switch (*s++) {
+    case 0:
+      break;
+
+    case '%':
+      *d++ = '!';
+      continue;
+
+    case ':':
+    case '.':
+      // don't allow output sequences with multiple dots following one another,
+      // nor do we allow a dot at the start or end of the produced part (which would
+      // possibly generate hidden files/dirs and file create issues on some
+      // OS/storage formats):
+      if (d > path && !strchr("/.", d[-1]))
+        *d++ = '.';
+      continue;
+
+    case '/':
+    case '\\':
+      // don't allow output sequences with multiple dots following one another,
+      // nor do we allow a dot at the start or end of the produced part (which would
+      // possibly generate hidden files/dirs and file create issues on some
+      // OS/storage formats):
+      if (d > path && strchr("/.", d[-1]))
+        d[-1] = (tolerate_dirsep ? '/' : '.');
+	  else
+		*d++ = (tolerate_dirsep ? '/' : '.');
+      continue;
+
+    default:
+      // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
+      if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", s[-1]))
+        *d++ = s[-1];
+	  else if (d == path || d[-1] != '_')
+		*d++ = '_';
+      continue;
+    }
+    break;
+  }
+  // make sure there's no '/' or '.' dot at the very end to prevent file create issues on some platforms:
+  while (d > path && strchr("/.", d[-1]))
+    d--;
+  *d = 0;
+  return (int)(d - path);
+}
+
 // replace %[P] with client port number
 //         %[C] with client IP (sanitized for filesystem paths)
 //         %[p] with server port number
@@ -770,21 +838,30 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
       break;
 
     case '%':
-      if (s[1] == '[' && s[2] && s[3] == ']') {
-        size_t len = PATH_MAX - (d - fnbuf); // assert(len > 0);
-        const char *u = NULL;
-        // enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
-        char addr_buf[MG_MAX(SOCKADDR_NTOA_BUFSIZE, MG_MAX(MG_LOGFILE_MAX_URI_COMPONENT_LEN + 1, PATH_MAX))];
+      if (s[1] == '[') {
+        int len = PATH_MAX - (int)(d - fnbuf); // assert(len > 0);
+        char *s_cont = NULL;
+        // Enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
+		// Note: +2 in case MG_LOGFILE_MAX_URI_COMPONENT_LEN is the biggest of the three: we want to be able to
+		//       detect buffer overflow, i.e. clipping by snprintf()!
+        char addr_buf[MG_MAX(SOCKADDR_NTOA_BUFSIZE, MG_MAX(MG_LOGFILE_MAX_URI_COMPONENT_LEN + 2, PATH_MAX))];
         char *old_d = d;
+		int abuflen, abufoffset;
+		int parlen = (int)strtol(s + 2, &s_cont, 10);
+		if (parlen > len)
+		  parlen = len;
+		if (s_cont)
+		  s = s_cont;
 
         *d = 0;
-        switch (s[2]) {
+        switch (*s) {
         case 'P':
           if (conn) {
             unsigned short int port = get_socket_port(&conn->client.rsa);
 
             if (port != 0) {
-              (void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
+			  if (parlen <= 0) parlen = 1;
+              (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
           }
@@ -793,11 +870,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         case 'C':
           if (conn) {
             sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.rsa);
-
-            if (addr_buf[0]) {
-              u = addr_buf;
-              goto copy_partial2dst;
-            }
+            goto copy_partial2dst;
           }
           goto replacement_done;
 
@@ -806,7 +879,8 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             unsigned short int port = get_socket_port(&conn->client.lsa);
 
             if (port != 0) {
-              (void)mg_snprintf(conn, d, len, "%u", (unsigned int)port);
+			  if (parlen <= 0) parlen = 1;
+              (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
           }
@@ -815,23 +889,20 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         case 's':
           if (conn) {
             sockaddr_to_string(addr_buf, sizeof(addr_buf), &conn->client.lsa);
-
-            if (addr_buf[0]) {
-              u = addr_buf;
-              goto copy_partial2dst;
-            }
+            goto copy_partial2dst;
           }
           goto replacement_done;
 
         case 'U':
         case 'Q':
-          // filter URI so the result is a valid filepath piece without any format codes (so % is transformed to %% here as well!)
-          if (conn && conn->request_info.uri) {
-            const char *q;
+          // filter URI so the result is a valid filepath piece without any format codes
+          if (conn && !is_empty(conn->request_info.uri)) {
+            const char *q, *u;
+		    char h[33];
 
             u = conn->request_info.uri;
             q = strchr(u, '?');
-            if (s[2] == 'Q') {
+            if (*s == 'Q') {
               if (!q) {
                 // empty query section: replace as empty string.
                 u = "";
@@ -845,74 +916,54 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             if (q && q - u < (int)sizeof(addr_buf)) {
               addr_buf[q - u] = 0;
             }
-            // limit the string inserted into the filepath template to 64 characters:
-			if (strlen(addr_buf) >= MG_LOGFILE_MAX_URI_COMPONENT_LEN) {
-			  char h[33];
-              mg_md5(h, addr_buf, NULL);
-              mg_strlcpy(addr_buf + MG_LOGFILE_MAX_URI_COMPONENT_LEN - 8, h, 8 + 1);
+            // limit the string inserted into the filepath template to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters or whatever the template said itself:
+			if (parlen <= 0) 
+			  parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
+			else if (parlen > (int)sizeof(addr_buf) - 1)
+			  parlen = (int)sizeof(addr_buf) - 1;
+			if ((int)strlen(addr_buf) > parlen) {
+              mg_md5(h, addr_buf, NULL);  // hash the 'raw' (clipped) URI component; only calc the hash when it MIGHT be needed
+			} else {
+			  h[0] = 0;
 			}
-            u = addr_buf;
+			// yet paste the hash into the 'scrubbed' URI component ONLY when the scrubbed component is overlarge
+			if (powerscrub_filepath(addr_buf, 0) > parlen) {
+              mg_strlcpy(addr_buf + MG_MAX(0, parlen - 8), h, 8 + 1);
+			}
             goto copy_partial2dst;
           }
           goto replacement_done;
 
 copy_partial2dst:
-          if (len > 0 && u) {
-            // anticipate the occurrence of a '%' in here: that one gets expended to '%%' so we keep an extra slot for that second '%' in the condition:
-            for ( ; d - fnbuf < PATH_MAX - 1; u++) {
-              switch (*u) {
-              case 0:
-                break;
-
-              case '%':
-                *d++ = '%';
-                *d++ = '%';
-                continue;
-
-              case ':':
-              case '/':
-              case '.':
-                // don't allow output sequences with multiple dots following one another,
-                // nor do we allow a dot at the start or end of the produced part (which would
-                // possibly generate hidden files/dirs and file create issues on some
-                // OS/storage formats):
-                if (d > fnbuf && !strchr(":\\/.", d[-1])) {
-                  *d++ = '.';
-                }
-                continue;
-
-              default:
-                // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
-                if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", *u)) {
-                  *d++ = *u;
-                  continue;
-                }
-                *d++ = '_';
-                continue;
-              }
-              break;
-            }
-
-            // make sure there's no '.' dot at the very end to prevent file create issues on some platforms:
-            if (d != old_d && d[-1] == '.')
-              d--;
-          }
+		  // addr_buf[] is guaranteed to be filled when we get here
+		  powerscrub_filepath(addr_buf, 0);
+		  abuflen = (int)strlen(addr_buf);
+		  if (parlen <= 0) 
+			parlen = abuflen;
+		  assert(len > 0);
+		  if (parlen > len)
+			parlen = len;
+		  // take the right-most part when we must clip: determine the offset
+		  if (abuflen > parlen)
+			abufoffset = abuflen - parlen;
+		  else
+			abufoffset = 0;
+		  d += mg_strlcpy(d, addr_buf + abufoffset, parlen + 1);
 replacement_done:
           // and the %[?] macros ALWAYS produce at least ONE character output in the template,
           // otherwise you get screwed up paths with, f.e. 'a/%[Q]/b' --> 'a//b':
           if (d == old_d && d - fnbuf < PATH_MAX)
             *d++ = '_';
 
-          s += 4;
+          s += 2;
           continue;
 
         default:
-          // illegal format code: keep as is, but add another % to make a literal code:
+          // illegal format code: keep as is, but destroy the %:
           if (len >= 2) {
-            *d++ = '%';
-            *d++ = '%';
+            *d++ = '!';
+            *d++ = '[';
           }
-          s++;
           continue;
         }
       }
@@ -7257,13 +7308,17 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
 }
 
 static void worker_thread(struct mg_context *ctx) {
-  struct mg_connection *conn;
+  struct mg_connection *conn = NULL;
   int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
+  if (buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
+    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting, aborting worker thread(s), OOM");
+    goto fail_dramatically;
+  }
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
-    return;
+    goto fail_dramatically;
   }
   conn->client.sock = INVALID_SOCKET;
 
@@ -7354,7 +7409,17 @@ static void worker_thread(struct mg_context *ctx) {
     close_connection(conn);
   }
   free(conn);
+  conn = NULL;
 
+fail_dramatically:
+  assert(conn == NULL);
+#if defined(_WIN32)
+  // wait a wee bit to prevent possible _createthread race condition in Windows.
+  // See also Remarks section in http://msdn.microsoft.com/en-us/library/kdzttdcb(v=vs.80).aspx,
+  // at the paragraph that begins "It is safer to use...". We don't, as _beginthread() is fitting
+  // our purposes nicely, but we need to tweak the behaviour to prevent the race:
+  mg_sleep(1 + 1000 / CLK_TCK);
+#endif
   DEBUG_TRACE(("%s: exiting", __func__));
 
   // Signal master that we're done with connection and exiting
