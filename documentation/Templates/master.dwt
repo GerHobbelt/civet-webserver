@@ -5,7 +5,7 @@
 <!-- #BeginEditable "doctitle" -->
 <title>XYZ</title>
 <!-- #EndEditable -->
-<link href="styles/style3.css" media="screen" rel="stylesheet" title="CSS" type="text/css" />
+<link href="../styles/style3.css" media="screen" rel="stylesheet" title="CSS" type="text/css" />
 </head>
 
 <body>
@@ -20,10 +20,10 @@
 	<!-- Begin Navigation -->
 	<div id="navigation">
 		<ul>
-			<li><a href="default.html">Overview</a></li>
-			<li><a href="MongooseManual.html">Manual</a></li>
-			<li><a href="development-info.html">Development Info</a></li>
-			<li><a href="UsefulResources.html">Resources</a></li>
+			<li><a href="../default.html">Overview</a></li>
+			<li><a href="../MongooseManual.html">Manual</a></li>
+			<li><a href="../development-info.html">Development Info</a></li>
+			<li><a href="../UsefulResources.html">Resources</a></li>
 		</ul>
 	</div>
 	<!-- End Navigation -->
@@ -33,7 +33,7 @@
 		<div id="column_left">
 			<!-- #BeginEditable "content" -->
 			<h2>Headline 2</h2>
-			<p>insert content here</p>
+			<p>insert content here...</p>
 			<!-- #EndEditable -->
 		</div>
 		<!-- End Left Column -->
@@ -51,10 +51,10 @@
 				<p>Copyright © 2012. All Rights Reserved.</p>
 			</div>
 			<p>
-			<a href="default.html">Overview</a> |
-			<a href="MongooseManual.html">Manual</a> |
-			<a href="development-info.html">Development Info</a> |
-			<a href="UsefulResources.html">Resources</a>
+			<a href="../default.html">Overview</a> |
+			<a href="../MongooseManual.html">Manual</a> |
+			<a href="../development-info.html">Development Info</a> |
+			<a href="../UsefulResources.html">Resources</a>
 			</p>
 		</div>
 		<!-- End Footer -->
