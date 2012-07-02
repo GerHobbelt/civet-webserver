@@ -6707,7 +6707,7 @@ static int pull_testset_from_idle_queue(struct mg_context *ctx, int n)
         return p;
       }
       arr[p].client.was_idle = 0;
-      arr[p].client.has_read_data = 0;
+      assert(arr[p].client.has_read_data == 0);
       p = arr[p].next;
     } while (--n > 0 && p != idle_test_set);
     // decouple set from idle queue:
@@ -6899,6 +6899,9 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
   arr->ssl = conn->ssl;
   arr->client = conn->client;
   arr->birth_time = conn->birth_time;
+  // make sure to clear the 'has_read_data' when it would be in an unknown state before
+  if (!arr->client.was_idle)
+	arr->client.has_read_data = 0;
   arr->client.was_idle = 1;
 
   // add element at the end of the queue:

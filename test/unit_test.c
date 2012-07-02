@@ -837,6 +837,7 @@ int test_chunked_transfer(void) {
   struct mg_connection *conn;
   char buf[4096];
   int rv;
+  int prospect_chunk_size;
 
   ucb.write_chunk_header = chunky_write_chunk_header;
     ctx = mg_start(&ucb, options);
@@ -848,80 +849,170 @@ int test_chunked_transfer(void) {
 
 	// open client connection to server and GET and POST chunked content
 
-    // again: check the new google search page at /cse
     conn = mg_connect_to_host(ctx, "localhost", 8080, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(conn);
 
-    mg_add_tx_header(conn, 0, "Host", "localhost");
-    mg_add_tx_header(conn, 0, "Connection", "keep-alive");
-    rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
-    ASSERT(rv == 170);
-    // signal request phase done:
-    //mg_shutdown(g, SHUT_WR);
+	for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
+	{
+		mg_add_tx_header(conn, 0, "Host", "localhost");
+		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
+		rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
+		ASSERT(rv == 170);
 
-    // fetch response, blocking I/O:
-    //
-    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-    rv = mg_read_http_response(conn);
-    ASSERT(rv == 0);
-    ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
-    ASSERT(mg_get_request_info(conn));
-    ASSERT(mg_get_request_info(conn)->status_code == 200);
-    ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
-    ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
-	// leading whitespace will be ignored:
-    ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
-    ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+		// this one is optional here as we didn't send any data:
+		mg_flush(conn);
+		// signal request phase done:
+		//mg_shutdown(g, SHUT_WR);
 
-    // and now fetch the content:
-    for (;;) {
-      int r = mg_read(conn, buf, sizeof(buf));
+		// fetch response, blocking I/O:
+		//
+		// but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+		rv = mg_read_http_response(conn);
+		ASSERT(rv == 0);
+		ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
+		ASSERT(mg_get_request_info(conn));
+		ASSERT(mg_get_request_info(conn)->status_code == 200);
+		ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
+		ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
+		// leading whitespace will be ignored:
+		ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+		ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
 
-      if (r > 0)
-        rv += r;
-      else
-        break;
-    }
-    ASSERT(rv > 0);
-    //ASSERT(rv == cl);
+		// and now fetch the content:
+		for (;;) {
+		  int r = mg_read(conn, buf, sizeof(buf));
+
+		  if (r > 0)
+			rv += r;
+		  else
+			break;
+		}
+		ASSERT(rv > 0);
+		//ASSERT(rv == cl);
 
 
-	// as we've got a kept-alive connection, we can send another request!
-	ASSERT(0 == mg_cleanup_after_request(conn));
+		// as we've got a kept-alive connection, we can send another request!
+		ASSERT(0 == mg_cleanup_after_request(conn));
+	}
 
 
-    mg_add_tx_header(conn, 0, "Host", "localhost");
-    mg_add_tx_header(conn, 0, "Connection", "keep-alive");
-    rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
-    ASSERT(rv == 170);
-    // signal request phase done:
-    //mg_shutdown(g, SHUT_WR);
+	// now do the same for POST requests: send chunked, receive another chunked stream:
+	for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
+	{
+		int i, c, chunk_size;
+		int rx_state;
+		int rcv_amount;
 
-    // fetch response, blocking I/O:
-    //
-    // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-    rv = mg_read_http_response(conn);
-    ASSERT(rv == 0);
-    ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
-    ASSERT(mg_get_request_info(conn));
-    ASSERT(mg_get_request_info(conn)->status_code == 200);
-    ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
-    ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
-	// leading whitespace will be ignored:
-    ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
-    ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+		mg_add_tx_header(conn, 0, "Host", "localhost");
+		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
+		mg_add_response_header(conn, 0, "Content-Type", "text/plain");
+		mg_add_response_header(conn, 0, "Transfer-Encoding", "%s", "chunked"); // '%s'? Just foolin' with ya. 'chunked' mode must be detected AFTER printf-formatting has been applied to value.
+		rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chun_size=%d", 10, 128);
+		ASSERT(rv == 170);
 
-    // and now fetch the content:
-    for (;;) {
-      int r = mg_read(conn, buf, sizeof(buf));
+		//----------------------------------------------------------------------------------------
+		// WARNING:
+		// We have the test server deliver a 'echo'-alike service, which starts responding
+		// before the POST data is transmitted in its entirety.
+		// We MUST interleave writing and reading from the connection as we'll otherwise run into
+		// TCP buffer flooding issues (see also issue349 work) as the other side of the pipe needs
+		// to read data from the pipe before it fills up, or you get yourself a case of deadlock
+		// across a TCP connection.
+		// 
+		// It is worrysome that the client needs to know how the server behaves, transmission-wise,
+		// as mg_read_http_response() is a blocking operation. Of course we have 100% knowledge of 
+		// our test server here, but we should think this through in light of the Internet as our
+		// scope/context, and then we'd quickly realize that we require a NON-BLOCKING means to
+		// detect when the server actually started transmitting the response (not just the content, 
+		// but the entire response, response line and headers included). 
+		//
+		// This is where the new mg_is_read_data_available() API comes in. It will check for 
+		// any incoming data, non-blocking and at minimal cost (one select() call) and should
+		// always be used in your code before invoking mg_read() and friends in a client-side
+		// connection setting.
+		//----------------------------------------------------------------------------------------
 
-      if (r > 0)
-        rv += r;
-      else
-        break;
-    }
-    ASSERT(rv > 0);
-    //ASSERT(rv == cl);
+		rx_state = 0;
+		rcv_amount = 0;
+		// now send our data, CHUNKED. We're using 'auto chunking' here: each printf() will be a separate chunk.
+		for (chunk_size = 1; chunk_size <= 2048; chunk_size *= 2)
+		{
+			// we set the chunk sizes explicitly for every chunk:
+			mg_set_tx_next_chunk_size(conn, chunk_size);
+			// you may call mg_set_tx_next_chunksize() as often as you like; it only takes effect when a new chunk is generated
+
+			i = (int)mg_get_tx_remaining_chunk_size(conn);
+			c = mg_get_tx_chunk_no(conn);
+
+  			// any header added/changed AFTER the HEAD was written will be appended to the tail chunk
+			mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "Alter-%d-of-%d", i, c);
+
+			mg_printf(conn, 
+					"We're looking at chunk #%d here, (size?: %d) remaining: %d \n\n",
+					c, chunk_size, i);
+			// for small chunk sizes, we'll have fallen back to 'auto chunking' around now:
+			i = (int)mg_get_tx_remaining_chunk_size(conn);
+			c = mg_get_tx_chunk_no(conn);
+			mg_printf(conn, 
+					"chunk #%5d \n"
+					"padding: [*s] \n",
+				c, chunk_size, i, - MG_MAX(1, chunk_size - 30), "xxx");
+
+			if (mg_is_read_data_available(conn))
+			{
+				// fetch response, blocking I/O:
+				//
+				// but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+				switch (rx_state)
+				{
+				case 0:
+					rv = mg_read_http_response(conn);
+					ASSERT(rv == 0);
+					ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
+					ASSERT(mg_get_request_info(conn));
+					ASSERT(mg_get_request_info(conn)->status_code == 200);
+					ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
+					ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
+					// leading whitespace will be ignored:
+					ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+					ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+
+					rx_state++;
+					break;
+
+				case 1:
+					rv = mg_read(conn, buf, sizeof(buf));
+
+					ASSERT(rv >= 0);
+					rcv_amount += rv;
+					break;
+
+				default:
+					ASSERT(!"should never get here");
+					break;
+				}
+			}
+		}
+		
+		// make sure we mark the chunked transmission as finished!
+		mg_flush(conn);
+		// signal request phase done:
+		//mg_shutdown(g, SHUT_WR);
+
+
+		// and now fetch the remaining content:
+		for (;;) {
+		  rv = mg_read(conn, buf, sizeof(buf));
+
+		  ASSERT(rv >= 0);
+		  rcv_amount += rv;
+		}
+		ASSERT(rv == 0);
+		ASSERT(rcv_amount > 0);
+
+		// as we've got a kept-alive connection, we can send another request!
+		ASSERT(0 == mg_cleanup_after_request(conn));
+	}
 
 
     mg_close_connection(conn);
@@ -934,7 +1025,7 @@ int test_chunked_transfer(void) {
 
   mg_sleep(1000);
   printf("Server terminating now.\n");
-  return EXIT_SUCCESS;
+  return 0;
 }
 
 
@@ -965,5 +1056,6 @@ int main(void) {
 #endif // _WIN32
 
   test_client_connect();
+  test_chunked_transfer();
   return 0;
 }

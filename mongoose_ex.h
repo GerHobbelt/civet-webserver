@@ -132,6 +132,14 @@ struct mg_connection *mg_connect(struct mg_connection *conn, const char *host, i
 // Return 0 on success.
 int mg_read_http_response(struct mg_connection *conn);
 
+// Return non-zero when data is pending for reading on this connection.
+//
+// Note: This is a non-blocking, very low cost operation which should be
+//       used together with mg_read() and its descendents (e.g.
+//       mg_read_http_response()) in client-side connections at least.
+//       See also the test/unit_test.c::test_chunked_transfer().
+int mg_is_read_data_available(struct mg_connection *conn);
+
 
 // create a socket pair over local loopback. Used for inter-thread communications.
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);

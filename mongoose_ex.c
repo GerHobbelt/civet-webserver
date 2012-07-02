@@ -50,8 +50,15 @@ int mg_set_non_blocking_mode(struct mg_connection *conn, int on)
 
 int mg_shutdown(struct mg_connection *conn, int how)
 {
-    if (conn && conn->client.sock != INVALID_SOCKET)
+    if (conn && conn->client.sock != INVALID_SOCKET) 
+	{
+		// make sure to properly terminate a chunked/segmented transfer wefore we shut down the write side!
+		if (how & SHUT_WR)
+		{
+			mg_flush(conn);
+		}
         return shutdown(conn->client.sock, how);
+	}
     return -1;
 }
 
@@ -498,6 +505,35 @@ int mg_read_http_response(struct mg_connection *conn) {
   }
 }
 
+int mg_is_read_data_available(struct mg_connection *conn)
+{
+	if (conn)
+	{
+		// do we already know whether there's incoming data pending?
+		if (conn->client.was_idle && conn->client.has_read_data)
+		{
+			return +1;
+		}
+		else
+		{
+			int sn;
+			fd_set fdr;
+			int max_fh = 0;
+			FD_ZERO(&fdr);
+			add_to_set(conn->client.sock, &fdr, &max_fh);
+			// waste no time on this check...
+			sn = select(max_fh + 1, &fdr, NULL, NULL, NULL);
+			if (sn > 0)
+			{
+				assert(FD_ISSET(conn->client.sock, &fdr));
+				conn->client.was_idle = 1;
+				conn->client.has_read_data = 1;
+				return +1;
+			}
+		}
+	}
+	return 0;
+}
 
 
 
