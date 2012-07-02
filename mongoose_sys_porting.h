@@ -615,6 +615,7 @@ typedef int SOCKET;
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
+#define MG_MIN(a, b)      ((a) <= (b) ? (a) : (b))
 
 /*
  * The following VA_COPY was coded following an example in

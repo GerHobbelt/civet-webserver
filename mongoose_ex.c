@@ -434,6 +434,8 @@ int mg_read_http_response(struct mg_connection *conn) {
   assert(conn->data_len >= conn->request_len);
   ri->seq_no++;
   if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
+    mg_cry(conn, "%f: peer sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes: [.*s]",
+                      (unsigned int)conn->buf_size, MG_MIN(200, conn->data_len), conn->buf);
     return 413;
   }
   if (conn->request_len <= 0) {
