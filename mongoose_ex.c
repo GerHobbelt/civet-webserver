@@ -320,22 +320,22 @@ void mg_close_connection(struct mg_connection *conn)
 
 int mg_cleanup_after_request(struct mg_connection *conn)
 {
-	if (conn)
-	{
-		reset_per_request_attributes(conn);
-		if (!conn->buf_size) 
-		{
-			conn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
-			conn->content_len = -1;
-		} 
-		else 
-		{
-			conn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
-			conn->content_len = -1;
-		}
-		return 0;
-	}
-	return -1;
+    if (conn)
+    {
+        reset_per_request_attributes(conn);
+        if (!conn->buf_size)
+        {
+            conn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+            conn->content_len = -1;
+        }
+        else
+        {
+            conn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
+            conn->content_len = -1;
+        }
+        return 0;
+    }
+    return -1;
 }
 
 int mg_write_http_request_head(struct mg_connection *conn, const char *request_method, const char *request_path_and_query, ...) {

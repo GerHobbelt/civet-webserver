@@ -3161,7 +3161,7 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 // It can be specified in query string, or in the POST data.
 // Return -1 if the variable not found, or length of the URLdecoded
 // value stored in dst[].
-// The dst[] buffer is always NUL-terminated whenever possible, 
+// The dst[] buffer is always NUL-terminated whenever possible,
 // also when -1 is returned.
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
                char *dst, size_t dst_len, int is_form_url_encoded) {
@@ -3170,15 +3170,15 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
   int len;
 
   if (dst == NULL || dst_len == 0)
-	return -2;
+    return -2;
   assert(dst);
   assert(dst_len > 0);
   dst[0] = '\0';
   if (buf == NULL || name == NULL || buf_len == 0)
-	return -1;
+    return -1;
   name_len = strlen(name);
   if (buf_len == (size_t)-1)
-	buf_len = strlen(buf);
+    buf_len = strlen(buf);
   e = buf + buf_len;
   len = -1;
 
@@ -7927,7 +7927,7 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
 
     if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
     {
-		char buf[BUFSIZ];
+        char buf[BUFSIZ];
         char *scratch;
         int space;
         char *d;
