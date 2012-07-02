@@ -24,11 +24,11 @@ static void *callback(enum mg_event event,
 
     mg_connection_must_close(conn);
 
-    mg_set_response_code(conn, 200);
+    //mg_set_response_code(conn, 200);
     mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
-    mg_write_http_response_head(conn, 0, 0);
+    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+    mg_write_http_response_head(conn, 200, 0);
 
     mg_write(conn, content, content_length);
 
@@ -46,11 +46,11 @@ static void *callback(enum mg_event event,
 
     mg_connection_must_close(conn);
 
-    mg_set_response_code(conn, 200);
+    //mg_set_response_code(conn, 200);
     mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
-    mg_write_http_response_head(conn, 0, 0);
+    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+    mg_write_http_response_head(conn, 200, 0);
 
     mg_write(conn, content, content_length);
 
@@ -68,11 +68,11 @@ static void *callback(enum mg_event event,
                                  "the server.",
                                  request_info->remote_port);
 
-    mg_set_response_code(conn, 200);
+    //mg_set_response_code(conn, 200); -- not needed any longer
     mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
-    mg_write_http_response_head(conn, 0, 0);
+    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+    mg_write_http_response_head(conn, 200, 0);
 
     mg_write(conn, content, content_length);
 

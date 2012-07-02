@@ -280,7 +280,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
             if (ie_hack)
             {
-                mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn));
+                //mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn)); -- not needed any longer
                 mg_add_response_header(conn, 0, "Content-Type", contentType);
                 mg_add_response_header(conn, 0, "Content-Length", "%d", contentLength);
                 mg_write_http_response_head(conn, 0, 0);  // let the previous mg_set_response_code() decide for us
@@ -293,7 +293,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
                 if (!ie_hack)
                 {
-                    mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn));
+                    //mg_add_response_header(conn, 0, "Connection", mg_suggest_connection_header(conn)); -- not needed any longer
                     mg_add_response_header(conn, 0, "Content-Type", contentType);
                     mg_add_response_header(conn, 0, "Content-Length", "%d", dataRead);
                     mg_write_http_response_head(conn, 0, 0);  // let the previous mg_set_response_code() decide for us

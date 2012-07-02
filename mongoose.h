@@ -334,6 +334,14 @@ int mg_write(struct mg_connection *, const void *buf, size_t len);
 // connection was closed already or when the HTTP response header has
 // already been sent before.
 // Returns -1 on error.
+//
+// Note: adds/adjusts the 'Connection' header with a lean towards 'Connection: close',
+//       meaning: when you already set the 'Connection' header to 'close',
+//       then nothing will be changed; however, when the 'Connection' header
+//       has not been set or has been set to a value other than 'close', than the
+//       transmitted Status Code will help determine the 'Connection' header
+//       value.
+//       A 'Connection' header will be sent along in any case.
 int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text);
 
 // Mark the end of the transmission of HTTP headers.

@@ -1827,6 +1827,27 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
   return rv;
 }
 
+int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
+  const char *ka;
+
+  if (status_code <= 0)
+    status_code = conn->request_info.status_code;
+  else
+    status_code = mg_set_response_code(conn, status_code);
+  if (is_empty(status_text))
+    status_text = mg_get_response_code_text(status_code);
+
+  mg_set_response_code(conn, status_code);
+  // update/set the Connection: keep-alive header as we now know the Status Code:
+  ka = mg_get_response_header(conn, "Connection");
+  if (!ka || mg_strcasecmp(ka, "close")) {
+    if (mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)))
+	  return -1;
+  }
+
+  return write_http_head(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
+}
+
 /*
 Send HTTP error response headers, if we still can. Log the error anyway.
 
@@ -1927,8 +1948,8 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 		    
           if (len > 0) {
             if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
-            conn->must_close = 1;
-          }
+              conn->must_close = 1;
+            }
           }
 		} else {
           conn->must_close = 1;
