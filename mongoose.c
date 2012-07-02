@@ -1962,12 +1962,22 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
 }
 
 int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
+  const char *ka;
+
   if (status_code <= 0)
     status_code = conn->request_info.status_code;
   else
     status_code = mg_set_response_code(conn, status_code);
   if (is_empty(status_text))
     status_text = mg_get_response_code_text(status_code);
+
+  mg_set_response_code(conn, status_code);
+  // update/set the Connection: keep-alive header as we now know the Status Code:
+  ka = mg_get_response_header(conn, "Connection");
+  if (!ka || mg_strcasecmp(ka, "close")) {
+    if (mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)))
+	  return -1;
+  }
 
   return write_http_head(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
 }
@@ -2071,7 +2081,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_add_response_header(conn, 0, "Content-Length", "%d", len);
           mg_add_response_header(conn, 0, "Content-Type", "text/plain");
         }
-        mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
+        //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
         mg_write_http_response_head(conn, status, reason);
 
         if (len > 0) {
@@ -3964,7 +3974,7 @@ static void send_authorization_request(struct mg_connection *conn) {
     return;
   if (mg_set_response_code(conn, 401) != 401)
     return;
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Length", "0");
   mg_add_response_header(conn, 0, "WWW-Authenticate", "Digest qop=\"auth\", "
                          "realm=\"%s\", nonce=\"%lu\"",
@@ -4222,14 +4232,14 @@ static void handle_directory_request(struct mg_connection *conn,
   sort_direction = conn->request_info.query_string != NULL &&
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
-  mg_set_response_code(conn, 200);
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  //mg_set_response_code(conn, 200); -- not needed any longer
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
   if (strcmp(conn->request_info.http_version, "1.1") >= 0)
     mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
   else // HTTP/1.0:
     conn->must_close = 1;
-  mg_write_http_response_head(conn, 0, 0);
+  mg_write_http_response_head(conn, 200, 0);
   mg_printf(conn,
       "<html><head><title>Index of %s</title>"
       "<style>th {text-align: left;}</style></head>"
@@ -4407,7 +4417,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
                          (unsigned long) stp->mtime, (unsigned long) stp->size);
   mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
   mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
   n = mg_write_http_response_head(conn, 0, 0);
   n--; // 0 --> -1
@@ -5470,15 +5480,15 @@ static void handle_ssi_file_request(struct mg_connection *conn,
   } else {
     //conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-    mg_set_response_code(conn, 200);
+    //mg_set_response_code(conn, 200); -- not needed any longer
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+    //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
     if (strcmp(conn->request_info.http_version, "1.1") >= 0)
       mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
     else // HTTP/1.0:
       conn->must_close = 1;
 
-    mg_write_http_response_head(conn, 0, 0);
+    mg_write_http_response_head(conn, 200, 0);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
     mg_flush(conn);
@@ -5488,11 +5498,11 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 static void send_options(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
     return;
-  mg_set_response_code(conn, 200);
+  //mg_set_response_code(conn, 200); -- not needed any longer
   mg_add_response_header(conn, 0, "Allow", mg_get_allowed_methods(conn));
   mg_add_response_header(conn, 0, "DAV", "1");
 
-  mg_write_http_response_head(conn, 0, 0);
+  mg_write_http_response_head(conn, 200, 0);
 }
 
 // Writes PROPFIND properties for a collection element
@@ -5533,15 +5543,15 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   if (mg_is_producing_nested_page(conn))
     return;
   //conn->must_close = 1;
-  mg_set_response_code(conn, 207);
-  mg_add_response_header(conn, 0, "Connection", "close");
+  //mg_set_response_code(conn, 207); -- not needed any longer
+  //mg_add_response_header(conn, 0, "Connection", "close"); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Type", "text/xml; charset=utf-8");
   if (strcmp(conn->request_info.http_version, "1.1") >= 0)
     mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
   else // HTTP/1.0:
     conn->must_close = 1;
 
-  mg_write_http_response_head(conn, 0, 0);
+  mg_write_http_response_head(conn, 207, 0);
 
   mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
@@ -5629,7 +5639,9 @@ static void handle_request(struct mg_connection *conn) {
     if (301 == mg_set_response_code(conn, 301)) {
       mg_add_response_header(conn, 0, "Location", "%s/", ri->uri);
       mg_write_http_response_head(conn, 0, 0);
-    }
+    } else {
+      send_http_error(conn, 500, "%s: failed to set Status Code", __func__);
+	}
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&

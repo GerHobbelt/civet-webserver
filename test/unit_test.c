@@ -726,7 +726,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	int chunk_count;
 	int i, c;
 
-	if (mg_get_var(request_info->query_string, (size_t)-1, "chunksize", content, sizeof(content), 0) > 0) {
+	if (mg_get_var(request_info->query_string, (size_t)-1, "chunk_size", content, sizeof(content), 0) > 0) {
 	  chunk_size = atoi(content);
 	} else {
 	  chunk_size = 0;
@@ -741,10 +741,15 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	// mongoose auto-detects TE when you set the proper header and use mg_write_http_response_head()
     mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
+    ASSERT_STREQ(mg_suggest_connection_header(conn), "close");  // mongoose plays it safe as long as it doesn't know the Status Code yet!
+	mg_set_response_code(conn, 200);
+    ASSERT_STREQ(mg_suggest_connection_header(conn), "keep-alive");
+    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+
 	// leading whitespace will be ignored:
     mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millenium Hand and Shrimp");
-    mg_write_http_response_head(conn, 200, NULL);
+
+    mg_write_http_response_head(conn, 0, NULL);
 
 	// because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
 	mg_set_tx_next_chunk_size(conn, chunk_size);
@@ -801,10 +806,11 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
                                  "a Transfer-Encoding=chunked transmitted page from the server.",
                                  request_info->remote_port);
 
+	mg_set_response_code(conn, 200);
     mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
     mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn));
-    mg_write_http_response_head(conn, 200, NULL);
+    mg_write_http_response_head(conn, 0, NULL);
 
     mg_write(conn, content, content_length);
 
@@ -856,8 +862,8 @@ int test_chunked_transfer(void) {
 	{
 		mg_add_tx_header(conn, 0, "Host", "localhost");
 		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
-		rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chun_size=%d", 10, 128);
-		ASSERT(rv == 170);
+		rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
+		ASSERT(rv >= 89);
 
 		// this one is optional here as we didn't send any data:
 		mg_flush(conn);
