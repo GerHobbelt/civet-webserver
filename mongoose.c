@@ -4628,8 +4628,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
                              buf, sizeof(buf), &data_len);
   if (headers_len <= 0) {
     send_http_error(conn, 500, NULL,
-                    "CGI program sent malformed HTTP headers: [%.*s]",
-                    data_len, buf);
+                    "CGI program sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes: [%.*s]",
+                    (unsigned int)sizeof(buf), data_len, buf);
     goto done;
   }
   pbuf = buf;
@@ -6269,7 +6269,8 @@ static int process_new_connection(struct mg_connection *conn) {
     assert(conn->data_len >= conn->request_len);
     conn->request_info.seq_no++;
     if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
-      send_http_error(conn, 413, NULL, "");
+      send_http_error(conn, 413, NULL, "client sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes",
+                      (unsigned int)conn->buf_size);
       return -1;
     }
     if (conn->request_len <= 0) {
