@@ -749,7 +749,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	// leading whitespace will be ignored:
     mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millenium Hand and Shrimp");
 
-    mg_write_http_response_head(conn, 0, NULL);
+    ASSERT(149 == mg_write_http_response_head(conn, 0, NULL));
 
 	// because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
 	mg_set_tx_next_chunk_size(conn, chunk_size);
@@ -863,7 +863,7 @@ int test_chunked_transfer(void) {
 		mg_add_tx_header(conn, 0, "Host", "localhost");
 		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
 		rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
-		ASSERT(rv >= 89);
+		ASSERT(rv >= 88);
 
 		// this one is optional here as we didn't send any data:
 		mg_flush(conn);
