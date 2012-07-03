@@ -409,8 +409,8 @@ struct mg_connection {
   unsigned must_close: 1;     			// 1 if connection must be closed
   unsigned is_inited: 1;      			// 1 when the connection been completely set up (SSL, local and remote peer info, ...)
   unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
-  
-  int nested_err_or_pagereq_count;      // 1 when we're requesting an error page; > 1 when the error page request is failing (nested errors)
+  unsigned nested_err_or_pagereq_count: 2; // 1 when we're requesting an error/'nested' page; > 1 when the page request is failing (nested errors)
+
   struct mg_request_info request_info;
   struct mg_context *ctx;
   SSL *ssl;                   			// SSL descriptor
@@ -1912,32 +1912,35 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           conn->request_len <= 0 ||
           conn->client.write_error ||
           conn->client.read_error ||
-          (mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len) &&
-           !mg_have_headers_been_sent(conn))) {
-        /* issue #229: Only include the content-length if there is a response body.
-         Otherwise an incorrect Content-Type generates a warning in
-         some browsers when a static file request returns a 304
-         "not modified" error. */
-        if (len > 0) {
-          mg_add_response_header(conn, 0, "Content-Length", "%d", len);
-          mg_add_response_header(conn, 0, "Content-Type", "text/plain");
-        }
-        mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn));
-        mg_write_http_response_head(conn, status, reason);
-
-        if (len > 0) {
-          if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
-			conn->must_close = 1;
-		  }
-        }
+          mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len)) {
+		if (!mg_have_headers_been_sent(conn)) {
+          /* issue #229: Only include the content-length if there is a response body.
+           Otherwise an incorrect Content-Type generates a warning in
+           some browsers when a static file request returns a 304
+           "not modified" error. */
+          if (len > 0) {
+            mg_add_response_header(conn, 0, "Content-Length", "%d", len);
+            mg_add_response_header(conn, 0, "Content-Type", "text/plain");
+          }
+          //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
+          mg_write_http_response_head(conn, status, reason);
+		    
+          if (len > 0) {
+            if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
+            conn->must_close = 1;
+          }
+          }
+		} else {
+          conn->must_close = 1;
+		}
       }
     } else if (mg_is_producing_nested_page(conn)) {
       // mark nested error anyhow
-      conn->nested_err_or_pagereq_count++;
+      conn->nested_err_or_pagereq_count = 2;
     }
   } else if (mg_is_producing_nested_page(conn)) {
     // mark nested error anyhow
-    conn->nested_err_or_pagereq_count++;
+    conn->nested_err_or_pagereq_count = 2;
   }
   // kill lingering reference to local storage:
   conn->request_info.status_custom_description = NULL;
@@ -3662,10 +3665,11 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
 }
 
 static void send_authorization_request(struct mg_connection *conn) {
-  if (mg_is_producing_nested_page(conn))
+  if (mg_is_producing_nested_page(conn) || mg_have_headers_been_sent(conn))
     return;
-  conn->request_info.status_code = 401;
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  if (mg_set_response_code(conn, 401) != 401)
+    return;
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Length", "0");
   mg_add_response_header(conn, 0, "WWW-Authenticate", "Digest qop=\"auth\", "
                          "realm=\"%s\", nonce=\"%lu\"",
@@ -3918,11 +3922,14 @@ static void handle_directory_request(struct mg_connection *conn,
   sort_direction = conn->request_info.query_string != NULL &&
     conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
 
-  conn->must_close = 1;
-  conn->request_info.status_code = 200;
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  //mg_set_response_code(conn, 200); -- not needed any longer
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
-  mg_write_http_response_head(conn, 0, 0);
+  if (strcmp(conn->request_info.http_version, "1.1") >= 0)
+    mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+  else // HTTP/1.0:
+    conn->must_close = 1;
+  mg_write_http_response_head(conn, 200, 0);
   mg_printf(conn,
       "<html><head><title>Index of %s</title>"
       "<style>th {text-align: left;}</style></head>"
@@ -4098,7 +4105,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
                          (unsigned long) stp->mtime, (unsigned long) stp->size);
   mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
   mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
-  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+  //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
   n = mg_write_http_response_head(conn, 0, 0);
   n--; // 0 --> -1
@@ -4676,8 +4683,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     assert(headers_len > 0);
     i = pull(err, NULL, buf, headers_len);
     if (i > 0) {
-      mg_remove_response_header(conn, "Content-Length");
-      conn->must_close = 1;
+      if (strcmp(conn->request_info.http_version, "1.1") >= 0)
+        mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+      else { 
+		// HTTP/1.0:
+        mg_remove_response_header(conn, "Content-Length");
+        conn->must_close = 1;
+	  }
     } else if (i < 0) {
       send_http_error(conn, 500, NULL,
             "CGI program clobbered stderr: %s",
@@ -4706,7 +4718,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
                 "===========\n\n");
     }
     // Send prefetched chunk to client
-    (void) mg_write(conn, buf, i);
+    (void)mg_write(conn, buf, i);
     // Read the rest of CGI stderr output and send to the client
     (void)send_file_data(conn, err, INT64_MAX);
     if (is_text_out == 2) {
@@ -5136,13 +5148,16 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     send_http_error(conn, 500, NULL, "fopen(%s): %s", path,
                     mg_strerror(ERRNO));
   } else {
-    conn->must_close = 1;
     set_close_on_exec(fileno(fp));
-    mg_set_response_code(conn, 200);
+    //mg_set_response_code(conn, 200); -- not needed any longer
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
+    //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
+    if (strcmp(conn->request_info.http_version, "1.1") >= 0)
+      mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+    else // HTTP/1.0:
+      conn->must_close = 1;
 
-    mg_write_http_response_head(conn, 0, 0);
+    mg_write_http_response_head(conn, 200, 0);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
   }
@@ -5151,11 +5166,11 @@ static void handle_ssi_file_request(struct mg_connection *conn,
 static void send_options(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
     return;
-  mg_set_response_code(conn, 200);
+  //mg_set_response_code(conn, 200); -- not needed any longer
   mg_add_response_header(conn, 0, "Allow", "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
   mg_add_response_header(conn, 0, "DAV", "1");
 
-  mg_write_http_response_head(conn, 0, 0);
+  mg_write_http_response_head(conn, 200, 0);
 }
 
 // Writes PROPFIND properties for a collection element
@@ -5195,12 +5210,15 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
 
   if (mg_is_producing_nested_page(conn))
     return;
-  conn->must_close = 1;
-  mg_set_response_code(conn, 207);
-  mg_add_response_header(conn, 0, "Connection", "close");
+  //mg_set_response_code(conn, 207); -- not needed any longer
+  //mg_add_response_header(conn, 0, "Connection", "close"); -- not needed any longer
   mg_add_response_header(conn, 0, "Content-Type", "text/xml; charset=utf-8");
+  if (strcmp(conn->request_info.http_version, "1.1") >= 0)
+    mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+  else // HTTP/1.0:
+    conn->must_close = 1;
 
-  mg_write_http_response_head(conn, 0, 0);
+  mg_write_http_response_head(conn, 207, 0);
 
   mg_printf(conn,
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
@@ -5285,7 +5303,9 @@ static void handle_request(struct mg_connection *conn) {
     if (301 == mg_set_response_code(conn, 301)) {
       mg_add_response_header(conn, 0, "Location", "%s/", ri->uri);
       mg_write_http_response_head(conn, 0, 0);
-    }
+    } else {
+      send_http_error(conn, 500, "%s: failed to set Status Code", __func__);
+	}
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -5332,8 +5352,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
       return -1;
     uri_len = l;
   }
-  conn->nested_err_or_pagereq_count++;
-  if (conn->nested_err_or_pagereq_count == 1) {
+  if (conn->nested_err_or_pagereq_count == 0) {
     // store the original ri:
     struct mg_request_info ri = conn->request_info;
     char expanded_uri[PATH_MAX];
@@ -5341,7 +5360,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     int i;
 
     // fail when error happens in this section...
-    conn->nested_err_or_pagereq_count++;
+    conn->nested_err_or_pagereq_count = 2;
     if (sizeof(expanded_uri) < uri_len + 1)
       goto fail_dramatically;
 
@@ -5356,7 +5375,7 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     } else {
       mg_strlcpy(expanded_uri, uri, uri_len + 1);
     }
-    conn->nested_err_or_pagereq_count--;
+    conn->nested_err_or_pagereq_count = 1;
     // end of section...
 
     conn->request_info.uri = expanded_uri;
@@ -5376,6 +5395,9 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     }
 
     handle_request(conn);  // may increment nested_err_or_pagereq_count when failing internally!
+	// did we actually write a response? If not, make sure we report it as a fail to complete:
+	if (!mg_have_headers_been_sent(conn))
+	  conn->nested_err_or_pagereq_count = 2;
 
     // reset original values, but keep the latest HTTP response code:
     // that one will have been 'upgraded' with the latest (graver) errors
@@ -5384,6 +5406,7 @@ fail_dramatically:
     ri.status_code = conn->request_info.status_code;
     conn->request_info = ri;
   }
+  assert(conn->nested_err_or_pagereq_count == 1 || conn->nested_err_or_pagereq_count == 2);
   return (conn->nested_err_or_pagereq_count != 1);
 }
 
