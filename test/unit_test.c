@@ -734,7 +734,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	if (mg_get_var(request_info->query_string, (size_t)-1, "count", content, sizeof(content), 0) > 0) {
 	  chunk_count = atoi(content);
 	} else {
-	  chunk_size = 50;
+	  chunk_count = 50;
 	}
 
     mg_add_response_header(conn, 0, "Content-Length", "1234"); // fake; should be removed by the next one:
