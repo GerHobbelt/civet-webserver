@@ -57,6 +57,7 @@
 #if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600 // To make it link in VS200x (with IPv6 support from Win2K onwards, with improved support from Vista onwards)
+#pragma message("Warning: _WIN32_WINNT is not set explicitly. Default to support Windows Vista and newer.")
 #endif
 // load winSock2 before windows.h or you won't be able to access to IPv6 goodness due to windows.h loading winsock.h (v1):
 #include <ws2tcpip.h>
@@ -723,9 +724,17 @@ int pthread_cond_broadcast(pthread_cond_t *cv);
 int pthread_cond_destroy(pthread_cond_t *cv);
 pthread_t pthread_self(void);
 
+#if !defined(USE_SRWLOCK)
+#if defined(RTL_SRWLOCK_INIT) && (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
+#define USE_SRWLOCK      1
+#else
+#define USE_SRWLOCK      0
+#endif
+#endif
+
 typedef struct {
     unsigned rw: 1;
-#if defined(RTL_SRWLOCK_INIT) // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+#if USE_SRWLOCK         // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
     SRWLOCK lock;
 #else
     pthread_mutex_t mutex;
@@ -736,7 +745,7 @@ typedef void pthread_rwlockattr_t;
 
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr);
 
-#if defined(RTL_SRWLOCK_INIT) // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+#if USE_SRWLOCK         // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
 #define PTHREAD_RWLOCK_INITIALIZER          { 0, RTL_SRWLOCK_INIT }
 #else
 #define PTHREAD_RWLOCK_INITIALIZER          { 0 }

@@ -2083,7 +2083,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           }
           //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
           mg_write_http_response_head(conn, status, reason);
-		    
+
           if (len > 0) {
             if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
               conn->must_close = 1;
@@ -2203,7 +2203,7 @@ pthread_t pthread_self(void) {
 
 // rwlock types have been moved to mongoose_sys_porting.h
 
-#if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+#if USE_SRWLOCK         // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
 
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
   InitializeSRWLock(&rwlock->lock);
@@ -5009,7 +5009,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (i > 0) {
       if (strcmp(conn->request_info.http_version, "1.1") >= 0)
         mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
-      else { 
+      else {
 		// HTTP/1.0:
         mg_remove_response_header(conn, "Content-Length");
         conn->must_close = 1;
