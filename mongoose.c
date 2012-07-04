@@ -1407,7 +1407,7 @@ const char *mg_get_header(const struct mg_connection *conn, const char *name) {
   return get_header(&conn->request_info, name);
 }
 
-// A helper function for traversing comma separated list of values.
+// A helper function for traversing a comma separated list of values.
 // It returns a list pointer shifted to the next value, or NULL if the end
 // of the list found.
 // Value is stored in val vector. If value has form "x=y", then eq_val
@@ -1419,7 +1419,7 @@ static const char *next_option(const char *list, struct vec *val,
     // End of the list
     val->ptr = 0;
     val->len = 0;
-    if (eq_val) {
+    if (eq_val != NULL) {
       eq_val->ptr = 0;
       eq_val->len = 0;
     }
@@ -1945,7 +1945,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           }
           //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
           mg_write_http_response_head(conn, status, reason);
-		    
+
           if (len > 0) {
             if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
               conn->must_close = 1;
@@ -2787,7 +2787,7 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
 
   assert((conn->content_len == -1) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p %" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
+  DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
   nread = 0;
   if (conn->consumed_content < conn->content_len || conn->content_len == -1) {
@@ -2837,8 +2837,8 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
       len -= n;
     }
   }
-  DEBUG_TRACE(("--> %p %d %" PRId64 " %" PRId64, buf, nread,
-	  conn->content_len, conn->consumed_content));
+  DEBUG_TRACE(("%p nread: %d %" PRId64 " %" PRId64, buf, nread,
+               conn->content_len, conn->consumed_content));
   return nread;
 }
 
@@ -2918,6 +2918,9 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
   int a, b;
 #define HEXTOI(x) (isdigit(x) ? x - '0' : x - 'W')
 
+  assert(dst);
+  assert(dst_len > 0);
+  assert(src);
   for (i = j = 0; i < src_len && j < dst_len - 1; i++, j++) {
     if (src[i] == '%' &&
         isxdigit(* (const unsigned char *) (src + i + 1)) &&
@@ -4706,7 +4709,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (i > 0) {
       if (strcmp(conn->request_info.http_version, "1.1") >= 0)
         mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
-      else { 
+      else {
 		// HTTP/1.0:
         mg_remove_response_header(conn, "Content-Length");
         conn->must_close = 1;
@@ -4975,7 +4978,7 @@ static int do_ssi_exec(struct mg_connection *conn, char *tag) {
 
 const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
 {
-    if (haysize < needlesize)
+    if (haysize < needlesize || !haystack || !needle)
         return NULL;
     haysize -= needlesize - 1;
     while (haysize > 0)
@@ -6574,6 +6577,9 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
   arr->ssl = conn->ssl;
   arr->client = conn->client;
   arr->birth_time = conn->birth_time;
+  // make sure to clear the 'has_read_data' when it would be in an unknown state before
+  if (!arr->client.was_idle)
+	arr->client.has_read_data = 0;
   arr->client.was_idle = 1;
 
   // add element at the end of the queue:

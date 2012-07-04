@@ -464,7 +464,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
 
 // Remove the specified response header, if available.
 //
-// When multiple entries of the tag are found, all aare removed from the set.
+// When multiple entries of the tag are found, all are removed from the set.
 //
 // Return number of occurrences removed (zero or more) on success, negative value on error.
 int mg_remove_response_header(struct mg_connection *conn, const char *tag);
