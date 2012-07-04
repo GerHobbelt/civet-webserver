@@ -1980,7 +1980,7 @@ pthread_t pthread_self(void) {
 
 // rwlock types have been moved to mongoose_sys_porting.h
 
-#if defined(RTL_SRWLOCK_INIT) // Winows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
+#if USE_SRWLOCK         // Windows 7 / Server 2008 with the correct header files, i.e. this also 'fixes' MingW casualties
 
 int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
   InitializeSRWLock(&rwlock->lock);
