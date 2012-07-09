@@ -160,6 +160,37 @@ static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwRe
 #endif // _WIN32
 
 
+#if defined(_MSC_VER)
+
+void *mg_malloca(size_t size) {
+  return _malloca(size);
+}
+void mg_freea(void *ptr) {
+  if (ptr)
+	_freea(ptr);
+}
+
+#elif defined(alloca) || defined(HAVE_ALLOCA)
+
+void *mg_malloca(size_t size) {
+  return alloca(size);
+}
+void mg_freea(void *ptr) {
+  // no-op
+}
+
+#else
+
+void *mg_malloca(size_t size) {
+  return malloc(size);
+}
+void mg_freea(void *ptr) {
+  if (ptr)
+	free(ptr);
+}
+
+#endif
+
 
 #if !defined(NO_SSL)
 
@@ -437,10 +468,13 @@ struct mg_connection {
   int64_t num_bytes_sent;               // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
   int64_t content_len;                  // received Content-Length header value or chunk size; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
   int64_t consumed_content;             // How many bytes of content have already been read
-  char *buf;                            // Buffer for received data
-  int buf_size;                         // Buffer size for received data / same buffer size is also used for transmitting data (response headers)
+  char *buf;                            // Buffer for received data [buf_size] / chunk header reception [CHUNK_HEADER_BUFSIZ] / headers to transmit [buf_size]
+  int buf_size;                         // Buffer size for received data + chunk header reception
   int request_len;                      // Size of the request + headers in buffer buf[]
   int data_len;                         // Total size of received data in buffer buf[]
+
+  int rx_chunk_buf_size;                // Maximum available number of bytes for the RX chunk header buffer, starting at buf[request_len]
+  int rx_chunk_fetch_len;               // Number of bytes loaded into the RX chunk buffer
 
   int tx_headers_len;                   // Size of the response headers in buffer buf[]
 
@@ -1613,18 +1647,21 @@ static const char *mg_get_allowed_methods(struct mg_connection *conn) {
 
 // Return negative value on error; otherwise number of bytes saved by compacting.
 //
-// NOTE: we MAY also be storing the URI+QUERY strings in the TX (or SCRATCH) buffers,
+// NOTE: we MAY also be storing the URI+QUERY strings in the TX buffer,
 //       which we can quickly detect inside here and then we take care to keep those
 //       strings intact as well, though these will be relocated, just like the
 //       tx_headers[] themselves.
 //       This is extremely useful for client-side mg_connect()-based HTTP connections
 //       as available in mongoose_ex. (See also: mg_write_http_request_head())
 static int compact_tx_headers(struct mg_connection *conn) {
-  char *scratch;
+  // C89 doesn't allow run-time dimensioned arrays so we use alloca() instead:
+  char *buf;
   int i, n, l;
-  int space;
   struct mg_header hdrs[ARRAY_SIZE(conn->request_info.response_headers)];
   int cache_uri_query_str_in_txbuf;
+  char *tx_buf;
+  char *d;
+  int space;
 
   if (!conn->buf_size) // mg_connect() creates connections without header buffer space
     return -1;
@@ -1632,79 +1669,86 @@ static int compact_tx_headers(struct mg_connection *conn) {
   if (!conn->tx_can_compact_hdrstore)
     return 0;
 
-  // detect whether the URI+QUERY are stored in the TX/SCRATCH section:
-  scratch = conn->buf + conn->buf_size;
-  space = 2 * conn->buf_size;
-  cache_uri_query_str_in_txbuf = (conn->request_info.uri >= scratch &&
-                                  conn->request_info.uri < scratch + space);
+  tx_buf = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
+
+  buf = mg_malloca(conn->buf_size);
+  assert(buf);
+  if (!buf) goto fail_dramatically;
+
+  // detect whether the URI+QUERY are stored in the TX section:
+  cache_uri_query_str_in_txbuf = (conn->request_info.uri >= tx_buf &&
+                                  conn->request_info.uri < tx_buf + conn->buf_size);
   assert(conn->request_info.query_string ?
-         (conn->request_info.query_string >= scratch &&
-          conn->request_info.query_string < scratch + space) ==
+         (conn->request_info.query_string >= tx_buf &&
+          conn->request_info.query_string < tx_buf + conn->buf_size) ==
          cache_uri_query_str_in_txbuf : 1);
 
-  scratch = conn->buf + 2 * conn->buf_size;
+  d = buf;
   space = conn->buf_size;
 
   // when they are, copy them to the start of SCRATCH space if they aren't there already
   if (cache_uri_query_str_in_txbuf) {
-    if (conn->request_info.uri != scratch) {
-      l = (int)mg_strlcpy(scratch, conn->request_info.uri, space) + 1;
-    } else {
-      l = strlen(conn->request_info.uri) + 1;
-    }
-    conn->request_info.uri = scratch - conn->buf_size;
-    scratch += l;
+    l = (int)mg_strlcpy(d, conn->request_info.uri, space) + 1;
+    conn->request_info.uri = tx_buf;
+    d += l;
+	tx_buf += l;
     space -= l;
     if (is_empty(conn->request_info.query_string)) {
       conn->request_info.query_string = "";
       l = 0;
-    } else if (conn->request_info.query_string != scratch && space > 0) {
-      l = (int)mg_strlcpy(scratch, conn->request_info.query_string, space) + 1;
+    } else if (space > 0) {
+      l = (int)mg_strlcpy(d, conn->request_info.query_string, space) + 1;
     } else {
-      l = strlen(conn->request_info.query_string) + 1;
+	  goto fail_dramatically;
     }
-    conn->request_info.query_string = scratch - conn->buf_size;
-    scratch += l;
+    conn->request_info.query_string = tx_buf;
+    d += l;
+	tx_buf += l;
     space -= l;
     if (space < 6)
-      return -1;
+	  goto fail_dramatically;
     // remember offset:
     cache_uri_query_str_in_txbuf = conn->buf_size - space;
   }
 
   // now perform the header compaction process:
-  memcpy(hdrs, conn->request_info.response_headers, sizeof(hdrs));
-
   n = conn->request_info.num_response_headers;
   for (i = 0; i < n; i++) {
-    l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].name, space) + 1;
-    scratch[l] = conn->request_info.response_headers[i].name[l]; // copy 'edited/added' marker too!
+    l = (int)mg_strlcpy(d, conn->request_info.response_headers[i].name, space) + 1;
+    d[l] = conn->request_info.response_headers[i].name[l]; // copy 'edited/added' marker too!
     // calc new name+value pointers for when we're done with the compact cycle:
-    hdrs[i].name = scratch - conn->buf_size;
+    hdrs[i].name = tx_buf;
     l++;
-    scratch += l;
+    d += l;
+	tx_buf += l;
     space -= l;
     if (space <= 2)
-      return -1;
-    l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].value, space);
-    hdrs[i].value = scratch - conn->buf_size;
+	  goto fail_dramatically;
+    l = (int)mg_strlcpy(d, conn->request_info.response_headers[i].value, space);
+    hdrs[i].value = tx_buf;
     l += 2;
-    scratch += l;
+    d += l;
+	tx_buf += l;
     space -= l;
     if (space <= 2)
-      return -1;
+	  goto fail_dramatically;
   }
   conn->tx_can_compact_hdrstore = 0;
   n = conn->buf_size - space;
 
   memcpy(conn->request_info.response_headers, hdrs, sizeof(hdrs));
-  memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, n);
+  tx_buf = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
+  memcpy(tx_buf, buf, n);
 
   n -= cache_uri_query_str_in_txbuf;
-  l = conn->tx_headers_len - n;
+  l = conn->tx_headers_len - n;			// how many bytes did we 'gain' by compacting?
   conn->tx_headers_len = n;
   assert(l >= 0);
   return l;
+
+fail_dramatically:
+  mg_freea(buf);
+  return -1;
 }
 
 int mg_remove_response_header(struct mg_connection *conn, const char *tag) {
@@ -1766,7 +1810,7 @@ int mg_vadd_response_header(struct mg_connection *conn, int force_add, const cha
   if (!value_fmt)
     value_fmt = "";
 
-  bufbase = conn->buf + conn->buf_size;
+  bufbase = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
   dst = bufbase + conn->tx_headers_len;
   space = conn->buf_size - conn->tx_headers_len;
 
@@ -1850,12 +1894,9 @@ int mg_vadd_response_header(struct mg_connection *conn, int force_add, const cha
 
 const char *mg_get_response_header(const struct mg_connection *conn, const char *tag) {
   int i;
-  char *bufbase;
 
   if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
     return NULL;
-
-  bufbase = conn->buf + conn->buf_size;
 
   for (i = conn->request_info.num_response_headers; i-- > 0; ) {
     const char *key = conn->request_info.response_headers[i].name;
@@ -1873,10 +1914,6 @@ static int write_http_head(struct mg_connection *conn, FORMAT_STRING(const char 
 #endif
   ;
 
-// NOTE: write_http_head() GUARANTEES *NOT* TO WRITE into the connection 'scratch buffer space' before
-//       the entire first line (first_line_fmt + args) has been written.
-//       (This implies that calling functions MAY use the scratch space to construct the first line.)
-//
 // Return number of bytes sent; return 0 when nothing was done; -1 on error.
 static int write_http_head(struct mg_connection *conn, const char *first_line_fmt, ...) {
   int i, n, rv, rv2;
@@ -1912,12 +1949,11 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   first header starts at the beginning of the buffer, after the optionally
   stored uri+query_string!
   */
-  buf = conn->request_info.response_headers[0].name;
-  assert(buf >= conn->buf + conn->buf_size);
-  assert(buf < conn->buf + 2 * conn->buf_size);
-
   n = conn->request_info.num_response_headers;
   if (n) {
+    buf = conn->request_info.response_headers[0].name;
+	assert(buf >= conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ);
+	assert(buf < conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ + conn->buf_size);
     conn->request_info.response_headers[0].value[-2] = ':';
     conn->request_info.response_headers[0].value[-1] = ' ';
     for (i = 1; i < n; i++) {
@@ -7199,7 +7235,7 @@ static void worker_thread(struct mg_context *ctx) {
     mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
     goto fail_dramatically;
   }
-  conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
+  conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     goto fail_dramatically;
@@ -7960,9 +7996,7 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
 
     if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
     {
-        char buf[BUFSIZ];
-        char *scratch;
-        int space;
+        char buf[CHUNK_HEADER_BUFSIZ];
         char *d;
 
         // report special error code when calling us repeatedly or in re-entrant fashion:
@@ -7974,10 +8008,32 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
 
         // switch to 'header TX mode' to cajole mg_write() et al into writing straight through.
         conn->tx_chunk_header_sent = 2;
-        buf[0] = 0;
+
+		// No matter which protocol the user callback will be doing, we'll prep the buffer for the
+		// first bit of a HTTP/1.1 chunk header; it's low cost and that way the callback can write
+		// any HTTP/1.1 header extensions directly to our write buffer when it wants to do that.
+        d = buf;
+
+        // HTTP/1.1 chunking it is. Four scenarios to account for:
+        // 1) initial chunk (~ dump hex size + extras, CRLF and go: data)
+        // 2) subsequent chunks (~ write final CRLF, then as (1))
+        // 3) sentinel ('zero') chunk (~ write final CRLF, then write 0 + extras, trailer, last CRLF and we're done)
+        // 4) sentinel ('zero') chunk which is also the very first chunk: no data at all. (~ like (3) but without the CRLF)
+        //
+        // --> write CRLF when we're terminating a previous chunk:
+        if (conn->tx_chunk_count > 0)
+        {
+            *d++ = 13;
+            *d++ = 10;
+        }
+		// write basic chunk header plus header extension prefix all at once:
+        d += mg_snq0printf(conn, d, sizeof(buf) - 3, "%" PRIx64 ";", chunk_size);
+
+		// user callback anyone?
+		*d = 0;
         if (conn->ctx->user_functions.write_chunk_header != NULL)
         {
-            int rv = conn->ctx->user_functions.write_chunk_header(conn, chunk_size, buf, sizeof(buf));
+            int rv = conn->ctx->user_functions.write_chunk_header(conn, chunk_size, d, sizeof(buf) - (d - buf));
             // do we fall back to the default (HTTP 1.1 chunking) or are we done?
             if (rv != 1)
             {
@@ -7992,28 +8048,12 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
             }
         }
 
-        scratch = conn->buf + 2 * conn->buf_size;
-        space = conn->buf_size;
-        d = scratch;
-
-        // HTTP/1.1 chunking it is. Four scenarios to account for:
-        // 1) initial chunk (~ dump hex size + extras, CRLF and go: data)
-        // 2) subsequent chunks (~ write final CRLF, then as (1))
-        // 3) sentinel ('zero') chunk (~ write final CRLF, then write 0 + extras, trailer, last CRLF and we're done)
-        // 4) sentinel ('zero') chunk which is also the very first chunk: no data at all. (~ like (3) but without the CRLF)
-        //
-        // --> write CRLF when we're terminating a previous chunk:
-        if (conn->tx_chunk_count > 0)
+        // do we need to write chunk extensions? If so, then they were delivered by the user callback,
+		// otherwise we wind back to a basic chunk header, as HTTP/1.1 chunked transfer it is when we get here.
+        if (!*d)
         {
-            *d++ = 13;
-            *d++ = 10;
-        }
-        d += mg_snq0printf(conn, d, BUFSIZ - 3, "%" PRIx64, chunk_size);
-        // do we need to write chunk extensions? If so, then they were delivered by the user callback
-        if (buf[0])
-        {
-            *d++ = ';';
-            d += mg_strlcpy(d, buf, space - (d - scratch));
+			// undo that ';' up there
+            --d;
         }
         *d++ = 13;
         *d++ = 10;
@@ -8032,10 +8072,10 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
                 // If yes, dump it in the trailer block!
                 if (h->name[strlen(h->name) + 1] == '!')
                 {
-                    d += mg_snq0printf(conn, d, space - (d - scratch), "%s: %s\r\n", h->name, h->value);
+                    d += mg_snq0printf(conn, d, sizeof(buf) - (d - buf), "%s: %s\r\n", h->name, h->value);
                 }
             }
-            if (d + 2 >= scratch + space)
+            if (d + 2 >= buf + sizeof(buf))
             {
                 mg_cry(conn, "%s: buffer overflow while writing sentinel chunk trailer; ignoring all headers", __func__);
                 d = o_d;
@@ -8046,8 +8086,7 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
         }
 
         conn->tx_chunk_header_sent = 2;
-        space = (int)(d - scratch);
-        if (space != mg_write(conn, scratch, space))
+        if ((d - buf) != mg_write(conn, buf, (d - buf)))
         {
             // make sure we reset the state first
             if (conn->tx_chunk_header_sent == 2)

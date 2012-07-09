@@ -36,6 +36,25 @@
 #define PATH_MAX FILENAME_MAX
 #endif // __SYMBIAN32__
 
+/*
+ * improve memory debugging on WIN32 by using crtdbg.h (only MSVC
+ * compiler and debug builds!)
+ *
+ * make sure crtdbg.h is loaded before malloc.h!
+ */
+#if defined(_MSC_VER) && (_MSC_VER >= 1400)
+// Studio 2008+
+# if (defined(WIN32) || defined(__WIN32)) && !defined(UNDER_CE)
+#  if defined(DEBUG) || defined(_DEBUG)
+#   ifndef _CRTDBG_MAP_ALLOC
+#    define _CRTDBG_MAP_ALLOC 1
+#   endif
+#  endif
+#  include <crtdbg.h>
+#  include <malloc.h>
+# endif
+#endif
+
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -785,6 +804,20 @@ static size_t strftime(char *dst, size_t dst_size, const char *fmt,
 #endif
 
 #endif // _WIN32 -- for pthread and time lib support
+
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
+void *mg_malloca(size_t size);
+void mg_freea(void *ptr);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 
 
 #undef UNUSED_PARAMETER
