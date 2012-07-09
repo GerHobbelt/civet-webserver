@@ -4645,30 +4645,15 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       assert(mg_have_headers_been_sent(conn) == 0);
     }
 
-    buffered = conn->buf + conn->request_len;
-    buffered_len = conn->data_len - conn->request_len;
-    assert(buffered_len >= 0);
-    assert(conn->consumed_content == 0);
-
-    if (buffered_len > 0) {
-      if ((int64_t) buffered_len > conn->content_len && conn->content_len >= 0) {
-        buffered_len = (int) conn->content_len;
-      }
-      if (buffered_len &&
-          push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
-        goto failure;
-      conn->consumed_content += buffered_len;
-    }
-
     nread = 0;
     while (conn->consumed_content < conn->content_len || conn->content_len == -1) {
       int nwrite;
 
       to_read = sizeof(buf);
-      if ((int64_t) to_read > conn->content_len - conn->consumed_content && conn->content_len >= 0) {
+      if (conn->content_len >= 0 && (int64_t) to_read > conn->content_len - conn->consumed_content) {
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
-      nread = pull(NULL, conn, buf, to_read);
+      nread = mg_read(conn, buf, to_read);
       if (nread <= 0)
         break;
       nwrite = push(fp, dst_conn, buf, nread);
@@ -4676,7 +4661,6 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         nread = -1;
         break;
       }
-      conn->consumed_content += nread;
     }
 
     if (conn->consumed_content == conn->content_len || conn->content_len == -1) {
