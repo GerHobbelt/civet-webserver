@@ -134,8 +134,15 @@
 extern "C" {
 #endif // __cplusplus
 
+#ifndef _OFF_T_DEFINED
 typedef long off_t;
+#elif __STDC__ && defined(_OFF_T_DEFINED)
+typedef _off_t off_t;
+#endif
+
+#ifndef BUFSIZ
 #define BUFSIZ  4096
+#endif
 
 #define errno   ((int)GetLastError())
 #define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
@@ -459,15 +466,20 @@ We also check whether someone else has gone before us setting up these C99 defin
 #define pipe(x) _pipe(x, BUFSIZ, _O_BINARY | _O_NOINHERIT)
 #define popen(x, y) _popen(x, y)
 #define pclose(x) _pclose(x)
-#define close(x) _close(x)
+
 #define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
 #define RTLD_LAZY  0
-#define fseeko(x, y, z) fseek((x), (y), (z))
 #if !defined(_POSIX_)
 #define fdopen(x, y) _fdopen((x), (y))
 #endif
-#define write(x, y, z) _write((x), (y), (unsigned) z)
-#define read(x, y, z) _read((x), (y), (unsigned) z)
+#define fseeko(x, y, z) fseek((x), (y), (z))
+
+// prevent collisions / odd replacements outside mongoose.c + mongoose_ex.c:
+#if defined(INSIDE_MONGOOSE_C)
+#define close _close
+#define write _write
+#define read  _read
+#endif
 
 #if (NTDDI_VERSION >= NTDDI_VISTA)
   // Only Windoze Vista (and newer) have inet_ntop(); MingW doesn't seem to provide it though
