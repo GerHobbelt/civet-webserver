@@ -426,6 +426,7 @@ struct mg_connection {
   unsigned rx_is_in_chunked_mode: 1;    // 1 when reception through the connection is chunked (segmented)
   unsigned tx_chunk_header_sent: 2;     // 1 when the current chunk's header has already been transmitted, 2 when header transmit is in progress
   unsigned rx_chunk_header_parsed: 2;   // 1 when the current chunk's header has already been (received and) parsed, 2 when header reception/parsing is in progress
+  unsigned tx_can_compact_hdrstore: 1;  // signal whether a TX header store 'compact' operation would have any effect at all
   unsigned nested_err_or_pagereq_count: 2; // 1 when we're requesting an error/'nested' page; > 1 when the page request is failing (nested errors)
 
   struct mg_request_info request_info;
@@ -442,7 +443,6 @@ struct mg_connection {
   int data_len;                         // Total size of received data in buffer buf[]
 
   int tx_headers_len;                   // Size of the response headers in buffer buf[]
-  int tx_can_compact_hdrstore;          // signal whether a 'compact' operation would have any effect at all
 
   int64_t tx_remaining_chunksize;       // How many bytes of content remain to be sent in the current chunk
   int64_t rx_remaining_chunksize;       // How many bytes of content remain to be received in the current chunk
