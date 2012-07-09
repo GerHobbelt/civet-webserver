@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 
+#define INSIDE_MONGOOSE_C		1
 #include "mongoose.h"
 
 
