@@ -6617,7 +6617,7 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
     conn->must_close = 1;
   } else if (conn->data_len > conn->request_len + conn->consumed_content) {
     int remaining = conn->data_len - conn->request_len - (int)conn->consumed_content;
-    memmove(conn->buf, conn->buf + conn->data_len + remaining, remaining);
+    memmove(conn->buf, conn->buf + conn->data_len - remaining, remaining);
     conn->data_len = remaining;
   } else {
     conn->data_len = 0;
