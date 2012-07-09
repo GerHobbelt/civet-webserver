@@ -540,7 +540,7 @@ int mg_rename(const char* oldname, const char* newname);
 int mg_remove(const char *path);
 int mg_mkdir(const char *path, int mode);
 
-#if defined(__MINGW32__) || defined(__MINGW64__) || 1
+#if defined(__MINGW32__) || defined(__MINGW64__)
 // fixing the 'implicit declaration' warnings as the MingW headers aren't up to snuff:
 #if defined(_DLL) && !defined(_CRTIMP)
 #define _CRTIMP __declspec(dllimport)
