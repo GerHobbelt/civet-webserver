@@ -7199,11 +7199,12 @@ static void worker_thread(struct mg_context *ctx) {
     mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
     goto fail_dramatically;
   }
-  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
+  conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     goto fail_dramatically;
   }
+  memset(conn, 0, sizeof(conn[0]));
   conn->client.sock = INVALID_SOCKET;
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
