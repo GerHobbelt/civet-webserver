@@ -468,6 +468,7 @@ struct mg_connection {
   int64_t num_bytes_sent;               // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
   int64_t content_len;                  // received Content-Length header value or chunk size; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
   int64_t consumed_content;             // How many bytes of content have already been read
+  int64_t consumed_chunk_header_data;   // How many bytes of chunk headers have already been read
   char *buf;                            // Buffer for received data [buf_size] / chunk header reception [CHUNK_HEADER_BUFSIZ] / headers to transmit [buf_size]
   int buf_size;                         // Buffer size for received data + chunk header reception
   int request_len;                      // Size of the request + headers in buffer buf[]
@@ -6419,6 +6420,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 
   conn->num_bytes_sent = -1;
   conn->consumed_content = 0;
+  conn->consumed_chunk_header_data = 0;
   conn->content_len = -1;
   conn->request_len = 0;
   //conn->must_close = 0;  -- do NOT reset must_close: once set, it should remain so until the connection is closed/dropped
@@ -6615,8 +6617,8 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   // when an error occurred, we must close the connection
   if (n < 0) {
     conn->must_close = 1;
-  } else if (conn->data_len > conn->request_len + conn->consumed_content) {
-    int remaining = conn->data_len - conn->request_len - (int)conn->consumed_content;
+  } else if (conn->data_len > conn->request_len + conn->consumed_content + conn->consumed_chunk_header_data) {
+    int remaining = conn->data_len - conn->request_len - (int)conn->consumed_content - (int)conn->consumed_chunk_header_data;
     memmove(conn->buf, conn->buf + conn->data_len - remaining, remaining);
     conn->data_len = remaining;
   } else {
