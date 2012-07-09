@@ -29,6 +29,16 @@
 #define MAX_CGI_ENVIR_VARS 64
 
 
+/* buffer size used when copying data to/from file/socket/... */
+#define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
+/* buffer size used to load all HTTP headers into: if the client sends more header data than this, we'll barf a hairball! */
+#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 16384)
+/* buffer size used to extract/decode an SSI command line / file path; hence must be equal or larger than PATH_MAX, at least */
+#define SSI_LINE_BUFSIZ                 MG_MAX(BUFSIZ, PATH_MAX)
+/* buffer size used to extract/decode/store a HTTP/1.1 'chunked transfer' header */
+#define CHUNK_HEADER_BUFSIZ             MG_MAX(BUFSIZ, 80)
+
+
 // The maximum amount of data we're willing to dump in a single mg_cry() log call.
 // In embedded environments with limited RAM, you may want to override this
 // value as this value determines the malloc() size used inside mg_vasprintf().
@@ -5065,7 +5075,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
 
   // Send chunk of data that may have been read after the headers
-  (void) mg_write(conn, buf + headers_len, data_len - headers_len);
+  if (data_len > headers_len)
+    (void)mg_write(conn, buf + headers_len, data_len - headers_len);
 
   // Read the rest of CGI output and send to the client
   (void)send_file_data(conn, out, INT64_MAX);
