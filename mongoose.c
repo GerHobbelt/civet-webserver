@@ -167,7 +167,7 @@ void *mg_malloca(size_t size) {
 }
 void mg_freea(void *ptr) {
   if (ptr)
-	_freea(ptr);
+    _freea(ptr);
 }
 
 #elif defined(alloca) || defined(HAVE_ALLOCA)
@@ -186,7 +186,7 @@ void *mg_malloca(size_t size) {
 }
 void mg_freea(void *ptr) {
   if (ptr)
-	free(ptr);
+    free(ptr);
 }
 
 #endif
@@ -1691,7 +1691,7 @@ static int compact_tx_headers(struct mg_connection *conn) {
     l = (int)mg_strlcpy(d, conn->request_info.uri, space) + 1;
     conn->request_info.uri = tx_buf;
     d += l;
-	tx_buf += l;
+    tx_buf += l;
     space -= l;
     if (is_empty(conn->request_info.query_string)) {
       conn->request_info.query_string = "";
@@ -1699,14 +1699,14 @@ static int compact_tx_headers(struct mg_connection *conn) {
     } else if (space > 0) {
       l = (int)mg_strlcpy(d, conn->request_info.query_string, space) + 1;
     } else {
-	  goto fail_dramatically;
+      goto fail_dramatically;
     }
     conn->request_info.query_string = tx_buf;
     d += l;
-	tx_buf += l;
+    tx_buf += l;
     space -= l;
     if (space < 6)
-	  goto fail_dramatically;
+      goto fail_dramatically;
     // remember offset:
     cache_uri_query_str_in_txbuf = conn->buf_size - space;
   }
@@ -1720,18 +1720,18 @@ static int compact_tx_headers(struct mg_connection *conn) {
     hdrs[i].name = tx_buf;
     l++;
     d += l;
-	tx_buf += l;
+    tx_buf += l;
     space -= l;
     if (space <= 2)
-	  goto fail_dramatically;
+      goto fail_dramatically;
     l = (int)mg_strlcpy(d, conn->request_info.response_headers[i].value, space);
     hdrs[i].value = tx_buf;
     l += 2;
     d += l;
-	tx_buf += l;
+    tx_buf += l;
     space -= l;
     if (space <= 2)
-	  goto fail_dramatically;
+      goto fail_dramatically;
   }
   conn->tx_can_compact_hdrstore = 0;
   n = conn->buf_size - space;
@@ -1741,7 +1741,7 @@ static int compact_tx_headers(struct mg_connection *conn) {
   memcpy(tx_buf, buf, n);
 
   n -= cache_uri_query_str_in_txbuf;
-  l = conn->tx_headers_len - n;			// how many bytes did we 'gain' by compacting?
+  l = conn->tx_headers_len - n;         // how many bytes did we 'gain' by compacting?
   conn->tx_headers_len = n;
   assert(l >= 0);
   return l;
@@ -1952,8 +1952,8 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   n = conn->request_info.num_response_headers;
   if (n) {
     buf = conn->request_info.response_headers[0].name;
-	assert(buf >= conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ);
-	assert(buf < conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ + conn->buf_size);
+    assert(buf >= conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ);
+    assert(buf < conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ + conn->buf_size);
     conn->request_info.response_headers[0].value[-2] = ':';
     conn->request_info.response_headers[0].value[-1] = ' ';
     for (i = 1; i < n; i++) {
@@ -2022,7 +2022,7 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
   ka = mg_get_response_header(conn, "Connection");
   if (!ka || mg_strcasecmp(ka, "close")) {
     if (mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)))
-	  return -1;
+      return -1;
   }
 
   return write_http_head(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
@@ -2118,7 +2118,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           conn->client.write_error ||
           conn->client.read_error ||
           mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len)) {
-		if (!mg_have_headers_been_sent(conn)) {
+        if (!mg_have_headers_been_sent(conn)) {
           /* issue #229: Only include the content-length if there is a response body.
            Otherwise an incorrect Content-Type generates a warning in
            some browsers when a static file request returns a 304
@@ -2136,9 +2136,9 @@ static void vsend_http_error(struct mg_connection *conn, int status,
             }
           }
           mg_flush(conn);
-		} else {
+        } else {
           conn->must_close = 1;
-		}
+        }
       }
     } else if (mg_is_producing_nested_page(conn)) {
       // mark nested error anyhow
@@ -5056,10 +5056,10 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
       if (strcmp(conn->request_info.http_version, "1.1") >= 0)
         mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
       else {
-		// HTTP/1.0:
+        // HTTP/1.0:
         mg_remove_response_header(conn, "Content-Length");
         conn->must_close = 1;
-	  }
+      }
     } else if (i < 0) {
       send_http_error(conn, 500, NULL,
             "CGI program clobbered stderr: %s",
@@ -5691,7 +5691,7 @@ static void handle_request(struct mg_connection *conn) {
       mg_write_http_response_head(conn, 0, 0);
     } else {
       send_http_error(conn, 500, "%s: failed to set Status Code", __func__);
-	}
+    }
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -5781,9 +5781,9 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     }
 
     handle_request(conn);  // may increment nested_err_or_pagereq_count when failing internally!
-	// did we actually write a response? If not, make sure we report it as a fail to complete:
-	if (!mg_have_headers_been_sent(conn))
-	  conn->nested_err_or_pagereq_count = 2;
+    // did we actually write a response? If not, make sure we report it as a fail to complete:
+    if (!mg_have_headers_been_sent(conn))
+      conn->nested_err_or_pagereq_count = 2;
 
     // reset original values, but keep the latest HTTP response code:
     // that one will have been 'upgraded' with the latest (graver) errors
@@ -6966,7 +6966,7 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
   arr->birth_time = conn->birth_time;
   // make sure to clear the 'has_read_data' when it would be in an unknown state before
   if (!arr->client.was_idle)
-	arr->client.has_read_data = 0;
+    arr->client.has_read_data = 0;
   arr->client.was_idle = 1;
 
   // add element at the end of the queue:
@@ -8009,9 +8009,9 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
         // switch to 'header TX mode' to cajole mg_write() et al into writing straight through.
         conn->tx_chunk_header_sent = 2;
 
-		// No matter which protocol the user callback will be doing, we'll prep the buffer for the
-		// first bit of a HTTP/1.1 chunk header; it's low cost and that way the callback can write
-		// any HTTP/1.1 header extensions directly to our write buffer when it wants to do that.
+        // No matter which protocol the user callback will be doing, we'll prep the buffer for the
+        // first bit of a HTTP/1.1 chunk header; it's low cost and that way the callback can write
+        // any HTTP/1.1 header extensions directly to our write buffer when it wants to do that.
         d = buf;
 
         // HTTP/1.1 chunking it is. Four scenarios to account for:
@@ -8026,11 +8026,11 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
             *d++ = 13;
             *d++ = 10;
         }
-		// write basic chunk header plus header extension prefix all at once:
+        // write basic chunk header plus header extension prefix all at once:
         d += mg_snq0printf(conn, d, sizeof(buf) - 3, "%" PRIx64 ";", chunk_size);
 
-		// user callback anyone?
-		*d = 0;
+        // user callback anyone?
+        *d = 0;
         if (conn->ctx->user_functions.write_chunk_header != NULL)
         {
             int rv = conn->ctx->user_functions.write_chunk_header(conn, chunk_size, d, sizeof(buf) - (d - buf));
@@ -8049,10 +8049,10 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
         }
 
         // do we need to write chunk extensions? If so, then they were delivered by the user callback,
-		// otherwise we wind back to a basic chunk header, as HTTP/1.1 chunked transfer it is when we get here.
+        // otherwise we wind back to a basic chunk header, as HTTP/1.1 chunked transfer it is when we get here.
         if (!*d)
         {
-			// undo that ';' up there
+            // undo that ';' up there
             --d;
         }
         *d++ = 13;
