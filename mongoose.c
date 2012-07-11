@@ -2011,6 +2011,7 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
 
 int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
   const char *ka;
+  const char *cl;
 
   if (status_code <= 0)
     status_code = conn->request_info.status_code;
@@ -2020,10 +2021,16 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     status_text = mg_get_response_code_text(status_code);
 
   mg_set_response_code(conn, status_code);
-  // update/set the Connection: keep-alive header as we now know the Status Code:
+  // make sure must_close state and Connection: output are in sync
   ka = mg_get_response_header(conn, "Connection");
-  if (!ka || mg_strcasecmp(ka, "close")) {
-    if (mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)))
+  if (!conn->must_close) {
+	if (ka && mg_strcasecmp(ka, "close") == 0)
+	  conn->must_close = 1;
+  }
+  cl = suggest_connection_header(conn);
+  // update/set the Connection: keep-alive header as we now know the Status Code:
+  if (!ka || mg_strcasecmp(ka, cl)) {
+    if (mg_add_response_header(conn, 0, "Connection", cl))
       return -1;
   }
 
@@ -4619,9 +4626,9 @@ static int is_not_modified(const struct mg_connection *conn,
 
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
                              struct mg_connection *dst_conn, int send_error_on_fail) {
-  const char *expect, *buffered;
+  const char *expect;
   char buf[DATA_COPY_BUFSIZ];
-  int to_read, nread, buffered_len, success = 0;
+  int to_read, nread, success = 0;
 
   expect = mg_get_header(conn, "Expect");
   assert(fp != NULL);
