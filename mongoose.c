@@ -4473,7 +4473,11 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
   mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
                          (unsigned long) stp->mtime, (unsigned long) stp->size);
-  mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
+  // 'text/...' mime types default to ISO-8859-1; make sure they use the more modern UTF-8 charset instead:
+  if (mime_vec.len > 5 && !memcmp("text/", mime_vec.ptr, 5))
+	mg_add_response_header(conn, 0, "Content-Type", "%.*s; charset=%s", (int) mime_vec.len, mime_vec.ptr, "utf-8");
+  else
+	mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
   mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
   //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
