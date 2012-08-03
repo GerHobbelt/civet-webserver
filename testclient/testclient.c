@@ -261,7 +261,7 @@ static void send_dummy_data(SOCKET soc, io_info_t *io)
         l = io->fake_output_databuf_size;
       s = io->fake_output_databuf;
     }
-          
+
     rv = send(soc, s, l, 0);
     if (rv <= 0)
     {
@@ -501,7 +501,7 @@ int WINAPI ClientMain(void * clientNo) {
     linger.l_onoff = 1;
     linger.l_linger = linger_timeout;
     setsockopt(soc, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
-    
+
     // Send FIN to the client
     //(void) shutdown(soc, SHUT_WR);  -- done that above already
 
@@ -718,7 +718,7 @@ int main(int argc, char * argv[]) {
   WSADATA       wsaData = {0};
   HOSTENT     * lpHost = 0;
   int desired_testcase = atoi_def((argc > 1 ? argv[1] : 0), 0);
-    
+
   if (argc > 1 && !strcmp(argv[1], "-h"))
   {
     printf(""

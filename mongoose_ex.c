@@ -236,8 +236,8 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
     mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
   } else if ((newconn = (struct mg_connection *)
       calloc(1, sizeof(*newconn) + (http_io_buf_size
-				? http_io_buf_size * 2 + CHUNK_HEADER_BUFSIZ /* RX headers, TX headers, RX chunked scratch space */
-				: 0))) == NULL) {
+        ? http_io_buf_size * 2 + CHUNK_HEADER_BUFSIZ /* RX headers, TX headers, RX chunked scratch space */
+        : 0))) == NULL) {
     mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
     closesocket(sock);
   } else {
@@ -252,14 +252,14 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
       newconn->content_len = -1;
       //newconn->request_len = 0;
       //newconn->must_close = 0;
-	  //newconn->rx_chunk_buf_size = 0;
+      //newconn->rx_chunk_buf_size = 0;
     } else {
       newconn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
       //newconn->consumed_content = 0;
       newconn->content_len = -1;
       newconn->buf = (char *)(newconn + 1);
-	  newconn->buf_size = http_io_buf_size;
-	  newconn->rx_chunk_buf_size = CHUNK_HEADER_BUFSIZ;
+      newconn->buf_size = http_io_buf_size;
+      newconn->rx_chunk_buf_size = CHUNK_HEADER_BUFSIZ;
     }
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
       if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
@@ -372,7 +372,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
   if (!is_empty(request_path_and_query)) {
     va_list ap;
     int rv;
-	char *d;
+  char *d;
 
     va_start(ap, request_path_and_query);
     rv = mg_vsnq0printf(conn, uribuf, sizeof(uribuf), request_path_and_query, ap);
@@ -399,8 +399,8 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
     //          compaction process there!
     uri = conn->request_info.uri = d = uribuf;
     d += strcspn(d, "?");
-	if (*d)
-	  *d++ = 0;
+    if (*d)
+      *d++ = 0;
     q_str = conn->request_info.query_string = d;
     conn->tx_can_compact_hdrstore |= 2;  // always trigger a compact cycle, where uri+q are pulled into the tx buffer space for persistence!
   } else {
@@ -436,16 +436,16 @@ int mg_read_http_response(struct mg_connection *conn) {
   ri = &conn->request_info;
   ri->num_headers = 0;
 
-	// when a bit of buffered data is still available, make sure it's in the right spot:
-	data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
-	if (data_len > 0)
-	{
-		memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
-	}
-	else
-	{
-		data_len = 0;
-	}
+  // when a bit of buffered data is still available, make sure it's in the right spot:
+  data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
+  if (data_len > 0)
+  {
+    memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
+  }
+  else
+  {
+    data_len = 0;
+  }
 
   conn->request_len = read_request(NULL, conn,
                                    conn->buf, conn->buf_size,
@@ -508,36 +508,36 @@ int mg_read_http_response(struct mg_connection *conn) {
       assert(conn->content_len == -1);
       mg_set_rx_mode(conn, MG_IOMODE_CHUNKED_DATA);
     } else {
-	  assert(!conn->rx_is_in_chunked_mode);
+      assert(!conn->rx_is_in_chunked_mode);
       cl = get_header(ri->http_headers, ri->num_headers, "Content-Length");
       chknum = NULL;
-	  if (cl != NULL)
+      if (cl != NULL)
         conn->content_len = strtoll(cl, &chknum, 10);
       if (chknum != NULL)
         chknum += strspn(chknum, " ");
       if (!is_empty(chknum))
         return -6; // Cannot parse HTTP response
 
-	  if (conn->content_len == -1) {
-		// this is a bit of a tough case: we may be HTTP/1.0, in which case
-		// case we gobble everything, assuming one request per connection,
-		// but when we're HTTP/1.1, this MAY be either a request without
-		// content OR a chunked transfer request.
-		// The heuristic we apply here is to gobble all when we're 
-		// okay re Connection: keep-alive.
-		// The chunked transfer case resolves itself, as long as we make sure
-		// to keep content_len == -1 then.
-		const char *http_version = ri->http_version;
-		const char *header = get_header(ri->http_headers, ri->num_headers, "Connection");
+      if (conn->content_len == -1) {
+        // this is a bit of a tough case: we may be HTTP/1.0, in which case
+        // case we gobble everything, assuming one request per connection,
+        // but when we're HTTP/1.1, this MAY be either a request without
+        // content OR a chunked transfer request.
+        // The heuristic we apply here is to gobble all when we're
+        // okay re Connection: keep-alive.
+        // The chunked transfer case resolves itself, as long as we make sure
+        // to keep content_len == -1 then.
+        const char *http_version = ri->http_version;
+        const char *header = get_header(ri->http_headers, ri->num_headers, "Connection");
 
-		if (!conn->must_close &&
+        if (!conn->must_close &&
             !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
-			(header == NULL ?
+            (header == NULL ?
              (http_version && !strcmp(http_version, "1.1")) :
              !mg_strcasecmp(header, "keep-alive"))) {
-		  conn->content_len = 0;
-		}
-	  }
+          conn->content_len = 0;
+        }
+      }
     }
     conn->last_active_time = conn->birth_time = time(NULL);
     return 0;

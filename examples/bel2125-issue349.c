@@ -275,7 +275,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
             mg_set_response_code(conn, 200);
 
             if (ie_hack2) mg_connection_must_close(conn);  // the stackoverflow suggested fix: http://stackoverflow.com/questions/3731420/why-does-ie-issue-random-xhr-408-12152-responses-using-jquery-post
-                
+
             contentType = mg_get_header(conn, "Content-Type");
 
             if (ie_hack)
@@ -314,7 +314,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     }
   }
 #endif // USE_BEL2125_TEST_NR_18_EVENT_HANDLER
-  
+
   if (event != MG_NEW_REQUEST) {
     // This callback currently only handles new requests
     return NULL;

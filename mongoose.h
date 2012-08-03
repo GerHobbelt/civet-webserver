@@ -41,7 +41,7 @@ struct mg_ip_address {
   } ip_addr;
 };
 
-// A HTTP header: 
+// A HTTP header:
 //   Name: <value>
 struct mg_header {
   char *name;                    // HTTP header name
@@ -234,18 +234,18 @@ typedef int (*mg_read_callback_t)(struct mg_connection *conn,
                                   size_t  *content_length,
                                   char*   *mime);
 
-// Invoked when a HTTP chunk header is being written. 
+// Invoked when a HTTP chunk header is being written.
 // The user may choose to either write an entirely custom chunk header, using the
 // provided buffer and mg_write(), and return 1, or append any optional HTTP chunk
 // extensions as a C string, starting at chunk_extenions, and return 0.
 //
 // chunk_extensions points into the dstbuf buffer space; hence the space available
-// for chunk extensions (plus terminating NUL C string sentinel) equals 
+// for chunk extensions (plus terminating NUL C string sentinel) equals
 //   dstbuf_size - (chunk_extensions - dstbuf)
 //
 // Return:
 // 1   on success when a custom chunk header has been written,
-// 0   when the default behaviour should be assumed, where the HTTP chunk header 
+// 0   when the default behaviour should be assumed, where the HTTP chunk header
 //     should be written, with or without added chunk extensions,
 // < 0 on error.
 typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions);
@@ -260,16 +260,16 @@ typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk
 //
 // In order to facilitate reading fully custom chunk headers (e.g. WebSockets),
 // this callback is invoked at the start of the chunk read process.
-// When the user simply returns 0 then, mongoose will proceed with the default 
-// behaviour and invoke the process_rx_chunk_header callback once the complete 
+// When the user simply returns 0 then, mongoose will proceed with the default
+// behaviour and invoke the process_rx_chunk_header callback once the complete
 // HTTP chunk header has been loaded into the buffer.
-// 
+//
 // '*dstbuf_fill' is the number of valid bytes already present in the buffer,
-// and should contain the total number of bytes loaded into dstbuf[] when done. 
+// and should contain the total number of bytes loaded into dstbuf[] when done.
 //
 // Return:
 // > 0 on success when a custom chunk header has been read,
-// 0   when the default behaviour should be assumed where the HTTP chunk header 
+// 0   when the default behaviour should be assumed where the HTTP chunk header
 //     should be read, with or without added chunk extensions,
 // < 0 on error.
 typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, size_t dstbuf_size, int *dstbuf_fill);
@@ -281,7 +281,7 @@ typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, 
 // Be aware that chunk_headers points to data in a temporary buffer and thus any chunk_headers[] data
 // will be only valid for the duration of this call.
 //
-// The chunk_extensions buffer is NUL-terminated like a regular C string and may be 
+// The chunk_extensions buffer is NUL-terminated like a regular C string and may be
 // modified by the user; this data is discarded by mongoose after this call.
 //
 // Return:
@@ -365,7 +365,7 @@ typedef struct mg_user_class_t {
   mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
   mg_write_chunk_header_t       write_chunk_header;
-  mg_read_chunk_header_t		read_chunk_header;
+  mg_read_chunk_header_t    read_chunk_header;
   mg_process_rx_chunk_header_t  process_rx_chunk_header;
 } mg_user_class_t;
 
