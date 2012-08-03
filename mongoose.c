@@ -444,7 +444,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "p", "listening_ports",               "8080",
   "r", "document_root",                 ".",
   "s", "ssl_certificate",               NULL,
-  "t", "num_threads",                   "1",
+  "t", "num_threads",                   "10",
   "u", "run_as_user",                   NULL,
   "w", "url_rewrite_patterns",          NULL,
   NULL, NULL, NULL
@@ -3143,11 +3143,9 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 		assert(conn->rx_remaining_chunksize == 0);
 		// nonblocking: check if any data is pending; only then do we fetch one more chunk header...
 		if (nread == 0 || mg_is_read_data_available(conn) == 1 || !nonblocking) {
-		    DEBUG_TRACE(("going to read new chunk header %d @ nread = %d / nonblocking: %d", conn->rx_chunk_count + 1, nread, nonblocking));
 			cl = read_and_parse_chunk_header(conn);
-		    DEBUG_TRACE(("read the new chunk header %d -> size: %u, ret: %d @ nread = %d / nonblocking: %d", conn->rx_chunk_count, (unsigned)conn->rx_remaining_chunksize, cl, nread, nonblocking));
 			if (conn->rx_remaining_chunksize == 0) {
-		      DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d / nonblocking: %d", conn->rx_chunk_count, nread, nonblocking));
+		      DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d", conn->rx_chunk_count, nread));
 			}
 			if (cl < 0)
 			  return cl;
@@ -3169,7 +3167,6 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 	  // as user-defined chunk readers may read data into the connection buffer, 
 	  // it CAN happen that buf == buffered. Otherwise, use memmove() instead
 	  // of memcpy() to be on the safe side.
-      DEBUG_TRACE(("reading %u bytes from the RX buffer @ nread = %d / nonblocking: %d", (unsigned)buffered_len, nread, nonblocking));
 	  if (buf != buffered)
 		memmove(buf, buffered, (size_t)buffered_len);
       len -= buffered_len;
@@ -3204,12 +3201,10 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 			n = (int) len;
 			if (n > conn->rx_remaining_chunksize)
 			  n = conn->rx_remaining_chunksize;
-			DEBUG_TRACE(("pull up to %u bytes @ nread = %d / nonblocking: %d", (unsigned)n, nread, nonblocking));
 		    n = pull(NULL, conn, (char *) buf, n);
 		  }
 		} else {
 		  assert(conn->rx_buffer_read_len >= conn->rx_buffer_loaded_len);
-		  DEBUG_TRACE(("pull up to %u bytes @ nread = %d / nonblocking: %d", (unsigned)len, nread, nonblocking));
 		  n = pull(NULL, conn, (char *) buf, (int) len);
 		}
 
@@ -3238,14 +3233,19 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   int nread;
 
+#if 0
   DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
+#endif
 
   nread = read_bytes(conn, buf, len, ((conn->content_len == -1) && !conn->rx_is_in_chunked_mode) || 
 									  conn->rx_chunk_header_parsed >= 2);
 
+#if 0
   DEBUG_TRACE(("%p nread: %d %" PRId64 " %" PRId64, buf, nread,
               conn->content_len, conn->consumed_content));
+#endif
+
   return nread;
 }
 
@@ -3622,7 +3622,6 @@ static int get_request_len(const char *buf, int buflen) {
   const char *s, *e;
   int len = 0;
 
-  DEBUG_TRACE(("buf: %p, len: %d", buf, buflen));
   for (s = buf, e = s + buflen - 1; len <= 0 && s < e; s++)
     // Control characters are not allowed but >=128 is.
     if (!isprint(* (const unsigned char *) s) && *s != '\r' &&
@@ -6816,12 +6815,15 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port, local_ip, local_port
-  ri->phys_path = NULL;
-  ri->remote_user = NULL;
+  if (ri->remote_user != NULL) {
+	free((void *) ri->remote_user);
+	ri->remote_user = NULL;
+  }
   ri->request_method = NULL;
   ri->query_string = NULL;
   ri->uri = NULL;
   ri->http_version = NULL;
+  ri->phys_path = NULL;
   ri->path_info = NULL;
   ri->num_headers = 0;
   ri->num_response_headers = 0;
@@ -7089,8 +7091,8 @@ static int process_new_connection(struct mg_connection *conn) {
     conn->request_info.seq_no++;
     if (conn->request_len <= 0) {
       if (conn->request_len == 0 && data_len == conn->buf_size) {
-        send_http_error(conn, 413, NULL, "client sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes",
-                        (unsigned int)conn->buf_size);
+        send_http_error(conn, 413, NULL, "%s: client sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes",
+                        __func__, (unsigned int)conn->buf_size);
         return -1;
       }
       // In case we didn't receive ANY data, we don't mess with the connection any further
@@ -7099,7 +7101,7 @@ static int process_new_connection(struct mg_connection *conn) {
         mg_mark_end_of_header_transmission(conn);
       }
 	  // when persistent connection was closed, we simply exit, 
-	  // iff at least 1 request has been serviced already:
+	  // IFF at least 1 request has been serviced already:
       if (conn->request_len == 0 && data_len == 0 && conn->request_info.seq_no > 1) {
 		// NOT an error! Just quit!
         return -1;
@@ -7739,7 +7741,7 @@ static void worker_thread(struct mg_context *ctx) {
 
       if (!conn->client.is_ssl ||
           (conn->client.is_ssl && sslize(conn, SSL_accept))) {
-        reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+        //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
         doing_fine = 1;
         conn->is_inited = 1;
         call_user(conn, MG_INIT_CLIENT_CONN);
@@ -7758,7 +7760,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!doing_fine) {
       DEBUG_TRACE(("%s: closing connection", __func__));
-      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+      //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_EXIT_CLIENT_CONN);
       close_connection(conn);
       // Clear everything in conn to ensure no value makes it into the next connection/session.
@@ -7773,7 +7775,7 @@ static void worker_thread(struct mg_context *ctx) {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
         mg_cry(conn, "%s: closing active connection %s because server is shutting down",
                __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
-        reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+        //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
         call_user(conn, MG_EXIT_CLIENT_CONN);
         close_connection(conn);
         break;
@@ -7785,7 +7787,7 @@ static void worker_thread(struct mg_context *ctx) {
     char src_addr[SOCKADDR_NTOA_BUFSIZE];
     mg_cry(conn, "%s: closing keep-alive connection %s because server is shutting down",
            __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
-    reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+    //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
   }
@@ -8564,7 +8566,6 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
             conn->tx_chunk_header_sent = 1;
         conn->tx_chunk_count++;
         conn->tx_remaining_chunksize = chunk_size;
-		DEBUG_TRACE(("written chunk header %d, size: %u", conn->tx_chunk_count, (unsigned)chunk_size));
         return 0;
     }
     return -1;

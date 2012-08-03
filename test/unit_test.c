@@ -31,6 +31,9 @@
 static void test_MSVC_fix() {
   // when no assert fired in mg_freea(), we're good to go (see mongoose.c: crtdbg.h + malloc.h don't mesh 100% in MSVC2010)
   void *buf = mg_malloca(BUFSIZ);
+
+  printf("=== TEST: %s ===\n", __func__);
+
   assert(buf);
   mg_freea(buf);
 }
@@ -42,6 +45,8 @@ static void test_parse_http_request() {
   char req1[] = "GET / HTTP/1.1\r\n\r\n";
   char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
+
+  printf("=== TEST: %s ===\n", __func__);
 
   ASSERT(parse_http_request(req1, &ri) == 1);
   ASSERT_STREQ(ri.http_version, "1.1");
@@ -65,6 +70,8 @@ static void test_should_keep_alive(void) {
   char req2[] = "GET / HTTP/1.0\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
   char req4[] = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n";
+
+  printf("=== TEST: %s ===\n", __func__);
 
   memset(&conn, 0, sizeof(conn));
   conn.ctx = ctx;
@@ -107,6 +114,8 @@ static void test_should_keep_alive(void) {
 static void test_match_prefix(void) {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
+
+  printf("=== TEST: %s ===\n", __func__);
 
   ASSERT(match_prefix("/api", 4, "/api") == 4);
   ASSERT(match_prefix("/a/", 3, "/a/b/c") == 3);
@@ -153,6 +162,8 @@ static void test_remove_double_dots() {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
 
+  printf("=== TEST: %s ===\n", __func__);
+
   for (i = 0; i < ARRAY_SIZE(data); i++) {
     //printf("[%s] -> [%s]\n", data[i].before, data[i].after);
     remove_double_dots_and_double_slashes(data[i].before);
@@ -166,6 +177,8 @@ static void test_IPaddr_parsing() {
   struct socket s;
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
+
+  printf("=== TEST: %s ===\n", __func__);
 
     memset(&sa, 0, sizeof(sa));
     ASSERT(!parse_ipvX_addr_string("example.com", 80, &sa));
@@ -262,7 +275,8 @@ static void test_logpath_fmt() {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
   struct mg_connection c;
-  c.ctx = ctx;
+
+  printf("=== TEST: %s ===\n", __func__);
 
     memset(&c, 0, sizeof(c)); c.ctx = ctx;
     path = mg_get_logfile_path(tinybuf, sizeof(tinybuf), "%[U].long-blubber.log", &c, time(NULL));
@@ -434,6 +448,8 @@ static void test_header_processing()
   char *p;
   const char *values[64];
 
+  printf("=== TEST: %s ===\n", __func__);
+
     c.ctx = ctx;
 
     strcpy(buf, input);
@@ -507,6 +523,8 @@ static void test_response_header_rw() {
   struct mg_header *hdr;
 
   const int bufsiz = 1380;
+
+  printf("=== TEST: %s ===\n", __func__);
 
   conn = calloc(1, sizeof(*conn) + bufsiz * 2 + CHUNK_HEADER_BUFSIZ);
   ASSERT(conn != NULL);
@@ -761,6 +779,8 @@ static void test_client_connect() {
   const char *cookies[16];
   int cl;
 
+  printf("=== TEST: %s ===\n", __func__);
+
     g = mg_connect_to_host(ctx, "example.com", 80, MG_CONNECT_BASIC);
     ASSERT(g);
 
@@ -978,6 +998,19 @@ static void test_client_connect() {
 
 
 
+static struct 
+{
+	int connections_opened;
+	int connections_served;
+	int connections_closed_due_to_server_stop;
+	int requests_sent;
+	int requests_processed;
+	int responses_sent;
+	int responses_processed;
+	int chunks_sent;
+	int chunks_processed;
+} chunky_request_counters;
+static pthread_spinlock_t chunky_request_spinlock;
 
 static void *chunky_server_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_request_info *request_info = mg_get_request_info(conn);
@@ -989,7 +1022,21 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	  return 0;
 
   if (event == MG_INIT_CLIENT_CONN) {
-	  return "yes";
+	  pthread_spin_lock(&chunky_request_spinlock);
+	  chunky_request_counters.connections_served++;
+	  pthread_spin_unlock(&chunky_request_spinlock);
+	  return 0;
+  }
+
+  if (event == MG_EXIT_CLIENT_CONN) {
+	if (mg_get_stop_flag(ctx))
+	{
+	  pthread_spin_lock(&chunky_request_spinlock);
+	  chunky_request_counters.connections_closed_due_to_server_stop++;
+	  pthread_spin_unlock(&chunky_request_spinlock);
+	}
+
+	return 0;
   }
 
   if (event == MG_NEW_REQUEST &&
@@ -997,6 +1044,10 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	int chunk_size;
 	int chunk_count;
 	int i, c;
+
+	pthread_spin_lock(&chunky_request_spinlock);
+	chunky_request_counters.requests_processed++;
+	pthread_spin_unlock(&chunky_request_spinlock);
 
 	if (mg_get_var(request_info->query_string, (size_t)-1, "chunk_size", content, sizeof(content), 0) > 0) {
 	  chunk_size = atoi(content);
@@ -1036,8 +1087,6 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
               "the chunky page again.</p>\n");
 
 	do {
-	  DEBUG_TRACE(("test server callback: %s request servicing @ chunk size %d", request_info->uri, chunk_size));
-
 	  // because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
 	  mg_set_tx_next_chunk_size(conn, chunk_size);
 	  // you may call mg_set_tx_next_chunksize() as often as you like; it only takes effect when a new chunk is generated
@@ -1072,6 +1121,10 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	i = (int)mg_get_tx_remaining_chunk_size(conn);
 	mg_printf(conn, "%*s", i, "\n");
 
+	pthread_spin_lock(&chunky_request_spinlock);
+	chunky_request_counters.responses_sent++;
+	pthread_spin_unlock(&chunky_request_spinlock);
+
 	DEBUG_TRACE(("test server callback: %s request serviced", request_info->uri));
 
     return (void *)1;
@@ -1101,6 +1154,10 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
   int c = mg_get_tx_chunk_no(conn);
 
+  pthread_spin_lock(&chunky_request_spinlock);
+  chunky_request_counters.chunks_sent++;
+  pthread_spin_unlock(&chunky_request_spinlock);
+
   // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
   if ((c % 3) == 2) {
 	mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
@@ -1111,6 +1168,10 @@ static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_s
 static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions, struct mg_header *chunk_headers, int header_count) {
   int c = mg_get_rx_chunk_no(conn);
   struct mg_context *ctx = mg_get_context(conn);
+
+  pthread_spin_lock(&chunky_request_spinlock);
+  chunky_request_counters.chunks_processed++;
+  pthread_spin_unlock(&chunky_request_spinlock);
 
   // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
   if ((c % 3) == 2) {
@@ -1125,16 +1186,21 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
 
 int test_chunked_transfer(void) {
   struct mg_context *ctx;
-  const char *options[] = {"listening_ports", "8080", NULL};
+  const char *options[] = {"listening_ports", "32156", NULL};
   struct mg_user_class_t ucb = {
     NULL,
     chunky_server_callback
   };
-  struct mg_connection *conn;
+  struct mg_connection *conn = NULL;
   char buf[4096];
   int rv;
   int prospect_chunk_size;
   int runs;
+
+  printf("=== TEST: %s ===\n", __func__);
+
+  pthread_spin_init(&chunky_request_spinlock, 0);
+  memset(&chunky_request_counters, 0, sizeof(chunky_request_counters));
 
   ucb.write_chunk_header = chunky_write_chunk_header;
   ucb.process_rx_chunk_header = chunky_process_rx_chunk_header;
@@ -1145,14 +1211,21 @@ int test_chunked_transfer(void) {
 
     printf("Restartable server started on ports %s.\n",
            mg_get_option(ctx, "listening_ports"));
+	
+	printf("WARNING: multiple runs test the HTTP chunked I/O mode extensively; this may take a while.\n");
 
   for (runs = 16; runs > 0; runs--) {
 
 	DEBUG_TRACE(("######### RUN: %d #############", runs));
 
 	// open client connection to server and GET and POST chunked content
-    conn = mg_connect_to_host(ctx, "localhost", 8080, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    conn = mg_connect_to_host(ctx, "localhost", 32156, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(conn);
+	rv = 0;
+
+	pthread_spin_lock(&chunky_request_spinlock);
+	chunky_request_counters.connections_opened++;
+	pthread_spin_unlock(&chunky_request_spinlock);
 
 	for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
 	{
@@ -1160,6 +1233,10 @@ int test_chunked_transfer(void) {
 		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
 		rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
 		ASSERT(rv >= 88);
+
+		pthread_spin_lock(&chunky_request_spinlock);
+		chunky_request_counters.requests_sent++;
+		pthread_spin_unlock(&chunky_request_spinlock);
 
 		// this one is optional here as we didn't send any data:
 		mg_flush(conn);
@@ -1194,13 +1271,20 @@ int test_chunked_transfer(void) {
 		ASSERT(rv > 0);
 		//ASSERT(rv == cl);
 
+		pthread_spin_lock(&chunky_request_spinlock);
+		chunky_request_counters.responses_processed++;
+		pthread_spin_unlock(&chunky_request_spinlock);
 
 		// as we've got a kept-alive connection, we can send another request!
 		ASSERT(0 == mg_cleanup_after_request(conn));
 	}
 
-	if (rv == -2)
+
+	if (rv == -2) {
+		mg_close_connection(conn);
+		conn = NULL;
 		continue;
+	}
 
 
 	// now do the same for POST requests: send chunked, receive another chunked stream:
@@ -1216,6 +1300,10 @@ int test_chunked_transfer(void) {
 		mg_add_response_header(conn, 0, "Transfer-Encoding", "%s", "chunked"); // '%s'? Just foolin' with ya. 'chunked' mode must be detected AFTER printf-formatting has been applied to value.
 		rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
 		ASSERT(rv >= 143);
+
+		pthread_spin_lock(&chunky_request_spinlock);
+		chunky_request_counters.requests_sent++;
+		pthread_spin_unlock(&chunky_request_spinlock);
 
 		//----------------------------------------------------------------------------------------
 		// WARNING:
@@ -1363,14 +1451,27 @@ int test_chunked_transfer(void) {
 		ASSERT(rv == 0);
 		ASSERT(rcv_amount >= 0);
 
+		pthread_spin_lock(&chunky_request_spinlock);
+		chunky_request_counters.responses_processed++;
+		pthread_spin_unlock(&chunky_request_spinlock);
+
 		// as we've got a kept-alive connection, we can send another request!
 		ASSERT(0 == mg_cleanup_after_request(conn));
 	}
 
 
     mg_close_connection(conn);
+	conn = NULL;
     //free(g);
 
+  }
+
+	// allow all threads / connections on the server side to clean up by themselves:
+	// wait for the linger timeout to trigger for any laggard.
+    {
+	  const char *lv = mg_get_option(ctx, "socket_linger_timeout");
+	  int linger_timeout = atoi(lv ? lv : "1") * 1000;
+	  mg_sleep(MG_SELECT_TIMEOUT_MSECS * 2 + linger_timeout);
 	}
 
 	// now stop the server: done testing
@@ -1378,6 +1479,18 @@ int test_chunked_transfer(void) {
     printf("Server stopped.\n");
 
   mg_sleep(1000);
+  pthread_spin_destroy(&chunky_request_spinlock);
+
+  ASSERT(chunky_request_counters.connections_opened == 16);
+  ASSERT(chunky_request_counters.connections_served == 16);
+  ASSERT(chunky_request_counters.requests_sent == 256);
+  ASSERT(chunky_request_counters.requests_processed == 256);
+  ASSERT(chunky_request_counters.responses_sent == 256);
+  ASSERT(chunky_request_counters.responses_processed == 256);
+  ASSERT(chunky_request_counters.chunks_sent == 5984);
+  ASSERT(chunky_request_counters.chunks_processed == 5984);
+  ASSERT(chunky_request_counters.connections_closed_due_to_server_stop == 0);
+
   printf("Server terminating now.\n");
   return 0;
 }
@@ -1414,5 +1527,9 @@ int main(void) {
 
   test_client_connect();
   test_chunked_transfer();
+
+  printf("\nAll tests have completed successfully.\n"
+	     "(Some error log messages may be visible. No worries, that's perfectly all right!)\n");
+
   return 0;
 }
