@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 
+#define INSIDE_MONGOOSE_C		1
 #include "mongoose.h"
 
 
@@ -27,6 +28,16 @@
 #define PASSWORDS_FILE_NAME ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE 4096
 #define MAX_CGI_ENVIR_VARS 64
+
+
+/* buffer size used when copying data to/from file/socket/... */
+#define DATA_COPY_BUFSIZ                MG_MAX(BUFSIZ, 4096)
+/* buffer size used to load all HTTP headers into: if the client sends more header data than this, we'll barf a hairball! */
+#define HTTP_HEADERS_BUFSIZ             MG_MAX(BUFSIZ, 16384)
+/* buffer size used to extract/decode an SSI command line / file path; hence must be equal or larger than PATH_MAX, at least */
+#define SSI_LINE_BUFSIZ                 MG_MAX(BUFSIZ, PATH_MAX)
+/* buffer size used to extract/decode/store a HTTP/1.1 'chunked transfer' header */
+#define CHUNK_HEADER_BUFSIZ             MG_MAX(BUFSIZ, 80)
 
 
 // The maximum amount of data we're willing to dump in a single mg_cry() log call.
@@ -50,7 +61,7 @@
 // The maximum length of a %[U] or %[U] component in a logfile path template.
 // Should be at larger than 8 to make any sense.
 #ifndef MG_LOGFILE_MAX_URI_COMPONENT_LEN
-#define MG_LOGFILE_MAX_URI_COMPONENT_LEN	64
+#define MG_LOGFILE_MAX_URI_COMPONENT_LEN    64
 #endif
 
 
@@ -150,6 +161,44 @@ static int __DisconnectEx(SOCKET sock, void *lpOverlapped, int dwFlags, int dwRe
 #endif // _WIN32
 
 
+#if defined(_MSC_VER)
+
+// Fix buf in MSVC2010 malloc.h header: _malloca is not properly redefined when crtdbg is enabled in debug mode:
+#if defined(_ALLOCA_S_MARKER_SIZE) && defined(_ALLOCA_S_MARKER_SIZE)
+// fix:
+#if defined(_DEBUG)
+#if defined(_CRTDBG_MAP_ALLOC)
+#undef _malloca
+#define _malloca(size) \
+__pragma(warning(suppress: 6255)) \
+        _MarkAllocaS(malloc((size) + _ALLOCA_S_MARKER_SIZE), _ALLOCA_S_HEAP_MARKER)
+#endif
+#endif
+// end of fix
+#endif
+
+// these MUST be macros, NOT functions:
+#define mg_malloca(size)	_malloca(size)
+#define mg_freea(ptr)		_freea(ptr)
+
+#elif defined(alloca) || defined(HAVE_ALLOCA)
+
+// these MUST be macros, NOT functions:
+#define mg_malloca(size)	alloca(size)
+#define mg_freea(ptr)		// no-op
+
+#else
+
+void *mg_malloca(size_t size) {
+  return malloc(size);
+}
+void mg_freea(void *ptr) {
+  if (ptr)
+    free(ptr);
+}
+
+#endif
+
 
 #if !defined(NO_SSL)
 
@@ -160,8 +209,16 @@ typedef struct ssl_st SSL;
 typedef struct ssl_method_st SSL_METHOD;
 typedef struct ssl_ctx_st SSL_CTX;
 
-#define SSL_ERROR_WANT_READ 2
-#define SSL_ERROR_WANT_WRITE 3
+#define SSL_ERROR_NONE				0
+#define SSL_ERROR_SSL				1
+#define SSL_ERROR_WANT_READ			2
+#define SSL_ERROR_WANT_WRITE		3
+#define SSL_ERROR_WANT_X509_LOOKUP	4
+#define SSL_ERROR_SYSCALL			5
+#define SSL_ERROR_ZERO_RETURN		6
+#define SSL_ERROR_WANT_CONNECT		7
+#define SSL_ERROR_WANT_ACCEPT		8
+
 #define SSL_FILETYPE_PEM 1
 #define CRYPTO_LOCK  1
 
@@ -172,6 +229,7 @@ extern int SSL_connect(SSL *);
 extern int SSL_shutdown(SSL *);
 extern int SSL_read(SSL *, void *, int);
 extern int SSL_write(SSL *, const void *, int);
+extern int SSL_peek(SSL *ssl,void *buf,int num);
 extern int SSL_get_error(const SSL *, int);
 extern int SSL_set_fd(SSL *, int);
 extern SSL *SSL_new(SSL_CTX *);
@@ -202,22 +260,23 @@ struct ssl_func {
 #define SSL_shutdown (* (int (*)(SSL *)) ssl_sw[3].ptr)
 #define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[4].ptr)
 #define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[5].ptr)
-#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[6].ptr)
-#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[7].ptr)
-#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[8].ptr)
-#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[9].ptr)
-#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[10].ptr)
-#define SSL_library_init (* (int (*)(void)) ssl_sw[11].ptr)
+#define SSL_peek (* (int (*)(SSL *, void *, int)) ssl_sw[6].ptr)
+#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[7].ptr)
+#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[8].ptr)
+#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[9].ptr)
+#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[10].ptr)
+#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[11].ptr)
+#define SSL_library_init (* (int (*)(void)) ssl_sw[12].ptr)
 #define SSL_CTX_use_PrivateKey_file (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[12].ptr)
-#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
         const char *, int)) ssl_sw[13].ptr)
+#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
+        const char *, int)) ssl_sw[14].ptr)
 #define SSL_CTX_set_default_passwd_cb \
-  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[14].ptr)
-#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[15].ptr)
-#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[16].ptr)
+  (* (void (*)(SSL_CTX *, mg_callback_t)) ssl_sw[15].ptr)
+#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[16].ptr)
+#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[17].ptr)
 #define SSL_CTX_use_certificate_chain_file \
-  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[17].ptr)
+  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[18].ptr)
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
 #define CRYPTO_set_locking_callback \
@@ -238,6 +297,7 @@ static struct ssl_func ssl_sw[] = {
   {"SSL_shutdown",                          NULL},
   {"SSL_read",                              NULL},
   {"SSL_write",                             NULL},
+  {"SSL_peek",                              NULL},
   {"SSL_get_error",                         NULL},
   {"SSL_set_fd",                            NULL},
   {"SSL_new",                               NULL},
@@ -272,6 +332,7 @@ typedef struct bogus_ssl_ctx_st SSL_CTX;
 #define SSL_shutdown(ssl)       0
 #define SSL_read(ssl, p, l)     (-1)
 #define SSL_write(ssl, p, l)    (-1)
+#define SSL_peek(ssl, p, l)     (-1)
 #define SSL_CTX_free(ctx)       (void)0
 
 #endif // NO_SSL
@@ -335,6 +396,7 @@ struct mg_idle_connection {
   SSL *ssl;                         // SSL descriptor
   struct socket client;             // Connected client
   time_t birth_time;                // Time when connection was accepted
+  time_t last_active_time;          // Time when connection was last active
   unsigned is_inited: 1;
 
   // book-keeping:
@@ -344,7 +406,9 @@ struct mg_idle_connection {
 
 
 typedef enum {
-  CGI_EXTENSIONS, CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
+  CGI_EXTENSIONS,
+  ALLOWED_METHODS,
+  CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
   PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ERROR_FILE, ACCESS_LOG_FILE,
   SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
@@ -356,6 +420,7 @@ typedef enum {
 
 static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PER_CONFIG_OPTION] = {
   "C", "cgi_pattern",                   "**.cgi$|**.pl$|**.php$",
+  "D", "allowed_methods",               NULL,
   "E", "cgi_environment",               NULL,
   "G", "put_delete_passwords_file",     NULL,
   "I", "cgi_interpreter",               NULL,
@@ -386,46 +451,60 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
 };
 
 struct mg_context {
-  volatile int stop_flag;     			// Should we stop event loop
-  SSL_CTX *ssl_ctx;           			// SSL context
-  char *config[NUM_OPTIONS];  			// Mongoose configuration parameters
+  volatile int stop_flag;               // Should we stop event loop
+  SSL_CTX *ssl_ctx;                     // SSL context
+  char *config[NUM_OPTIONS];            // Mongoose configuration parameters
   struct mg_user_class_t user_functions; // user-defined callbacks and data
 
   struct socket *listening_sockets;
 
-  volatile int num_threads;   			// Number of threads
-  pthread_mutex_t mutex;      			// Protects (max|num)_threads
-  pthread_cond_t  cond;       			// Condvar for tracking workers terminations
+  volatile int num_threads;             // Number of threads
+  pthread_mutex_t mutex;                // Protects (max|num)_threads
+  pthread_cond_t  cond;                 // Condvar for tracking workers terminations
 
   struct mg_idle_connection queue_store[128]; // Cut down on malloc()/free()ing cost by using a static queue.
-  volatile int sq_head;       			// Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
-  int idle_q_store_free_slot; 			// index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
+  volatile int sq_head;                 // Index to first node of cyclic linked list of 'pushed back' sockets which expect to serve more requests but are currently inactive. '-1' ~ empty!
+  int idle_q_store_free_slot;           // index into the idle_queue_store[] where scanning for a free slot should start. Single linked list on '.next'.
 
-  pthread_cond_t sq_full;     			// Signaled when socket is produced
-  pthread_cond_t sq_empty;    			// Signaled when socket is consumed
+  pthread_cond_t sq_full;               // Signaled when socket is produced
+  pthread_cond_t sq_empty;              // Signaled when socket is consumed
 };
 
 struct mg_connection {
-  unsigned must_close: 1;     			// 1 if connection must be closed
-  unsigned is_inited: 1;      			// 1 when the connection been completely set up (SSL, local and remote peer info, ...)
+  unsigned must_close: 1;               // 1 if connection must be closed
+  unsigned is_inited: 1;                // 1 when the connection been completely set up (SSL, local and remote peer info, ...)
   unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
+  unsigned tx_is_in_chunked_mode: 1;    // 1 when transmission through the connection must be chunked (segmented)
+  unsigned rx_is_in_chunked_mode: 1;    // 1 when reception through the connection is chunked (segmented)
+  unsigned tx_chunk_header_sent: 2;     // 1 when the current chunk's header has already been transmitted, 2 when header transmit is in progress
+  unsigned rx_chunk_header_parsed: 2;   // 1 when the current chunk's header has already been (received and) parsed, 2 when header reception/parsing is in progress, 3 when header was parsed and is now processed
+  unsigned tx_can_compact_hdrstore: 2;  // signal whether a TX header store 'compact' operation would have any effect at all; 1: regular compact; 2: always pull the request uri and query string into the tx buffer space for persistence
   unsigned nested_err_or_pagereq_count: 2; // 1 when we're requesting an error/'nested' page; > 1 when the page request is failing (nested errors)
 
   struct mg_request_info request_info;
   struct mg_context *ctx;
-  SSL *ssl;                   			// SSL descriptor
-  struct socket client;       			// Connected client
-  time_t birth_time;          			// Time when connection was accepted
-  int64_t num_bytes_sent;     			// Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
-  int64_t content_len;        			// received Content-Length header value; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
-  int64_t consumed_content;   			// How many bytes of content have already been read
-  char *buf;                  			// Buffer for received data
-  int buf_size;               			// Buffer size for received data / same buffer size is also used for transmitting data (response headers)
-  int request_len;            			// Size of the request + headers in buffer buf[]
-  int data_len;               			// Total size of received data in buffer buf[]
+  SSL *ssl;                             // SSL descriptor
+  struct socket client;                 // Connected client
+  time_t birth_time;                    // Time when connection was accepted
+  time_t last_active_time;              // Time when connection was last active
+  int64_t num_bytes_sent;               // Total bytes sent to client; negative number is the amount of header bytes sent; positive number is the amount of data bytes
+  int64_t content_len;                  // received Content-Length header value or chunk size; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
+  int64_t consumed_content;             // How many bytes of content have already been read
+  char *buf;                            // Buffer for received data [buf_size] / chunk header reception [CHUNK_HEADER_BUFSIZ] / headers to transmit [buf_size]
+  int buf_size;                         // Buffer size for received data + chunk header reception
+  int request_len;                      // Size of the request + headers in buffer buf[]
 
-  int tx_headers_len;         			// Size of the response headers in buffer buf[]
-  int tx_can_compact_hdrstore;          // signal whether a 'compact' operation would have any effect at all
+  int rx_chunk_buf_size;                // Maximum available number of bytes for the RX chunk header buffer, starting at buf[request_len]
+  int rx_buffer_loaded_len;               // Number of bytes loaded into the RX chunk buffer
+  int rx_buffer_read_len;                // Number of bytes already read from the RX chunk buffer (<= rx_buffer_loaded_len)
+
+  int tx_headers_len;                   // Size of the response headers (client: + possibly cached request URI+query string) in buffer buf[]
+
+  int64_t tx_remaining_chunksize;       // How many bytes of content remain to be sent in the current chunk
+  int64_t rx_remaining_chunksize;       // How many bytes of content remain to be received in the current chunk
+  int64_t tx_next_chunksize;            // How many bytes of content will be sent in the next chunk
+  int tx_chunk_count;                   // The number of chunks transmitted so far.
+  int rx_chunk_count;                   // The number of chunks received so far.
 
   char error_logfile_path[PATH_MAX+1];  // cached value: path to the error logfile designated to this connection/CTX
   char access_logfile_path[PATH_MAX+1]; // cached value: path to the access logfile designated to this connection/CTX
@@ -492,9 +571,9 @@ static const char *call_user_conn_option_get(struct mg_connection *conn, const c
 
 static int call_user_ssi_command(struct mg_connection *conn, const char *ssi_commandline, const char *path, int include_level) {
   if (conn && conn->ctx && conn->ctx->user_functions.user_ssi_command) {
-	return conn->ctx->user_functions.user_ssi_command(conn, ssi_commandline, path, include_level);
+    return conn->ctx->user_functions.user_ssi_command(conn, ssi_commandline, path, include_level);
   } else {
-	return 0;
+    return 0;
   }
 }
 
@@ -718,8 +797,9 @@ const char *mg_strerror(int errcode) {
 static struct mg_connection *fc(struct mg_context *ctx) {
   static struct mg_connection fake_connection = {0};
   fake_connection.ctx = ctx;
+  fake_connection.last_active_time = time(NULL);
   if (fake_connection.birth_time == 0) {
-    fake_connection.birth_time = time(NULL);
+    fake_connection.birth_time = fake_connection.last_active_time;
   }
   return &fake_connection;
 }
@@ -771,16 +851,16 @@ static int powerscrub_filepath(char *path, int tolerate_dirsep)
       // OS/storage formats):
       if (d > path && strchr("/.", d[-1]))
         d[-1] = (tolerate_dirsep ? '/' : '.');
-	  else
-		*d++ = (tolerate_dirsep ? '/' : '.');
+      else
+        *d++ = (tolerate_dirsep ? '/' : '.');
       continue;
 
     default:
       // be very conservative in our estimate what your filesystem will tolerate as valid characters in a filename:
       if (strchr("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-", s[-1]))
         *d++ = s[-1];
-	  else if (d == path || d[-1] != '_')
-		*d++ = '_';
+      else if (d == path || d[-1] != '_')
+        *d++ = '_';
       continue;
     }
     break;
@@ -829,16 +909,16 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
         int len = PATH_MAX - (int)(d - fnbuf); // assert(len > 0);
         char *s_cont = NULL;
         // Enough space for all: ntoa() output, URL path and it's limited-length copy + MD5 hash at the end:
-		// Note: +2 in case MG_LOGFILE_MAX_URI_COMPONENT_LEN is the biggest of the three: we want to be able to
-		//       detect buffer overflow, i.e. clipping by snprintf()!
+        // Note: +2 in case MG_LOGFILE_MAX_URI_COMPONENT_LEN is the biggest of the three: we want to be able to
+        //       detect buffer overflow, i.e. clipping by snprintf()!
         char addr_buf[MG_MAX(SOCKADDR_NTOA_BUFSIZE, MG_MAX(MG_LOGFILE_MAX_URI_COMPONENT_LEN + 2, PATH_MAX))];
         char *old_d = d;
-		int abuflen, abufoffset;
-		int parlen = (int)strtol(s + 2, &s_cont, 10);
-		if (parlen > len)
-		  parlen = len;
-		if (s_cont)
-		  s = s_cont;
+        int abuflen, abufoffset;
+        int parlen = (int)strtol(s + 2, &s_cont, 10);
+        if (parlen > len)
+          parlen = len;
+        if (s_cont)
+          s = s_cont;
 
         *d = 0;
         switch (*s) {
@@ -847,7 +927,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             unsigned short int port = get_socket_port(&conn->client.rsa);
 
             if (port != 0) {
-			  if (parlen <= 0) parlen = 1;
+              if (parlen <= 0) parlen = 1;
               (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
@@ -866,7 +946,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
             unsigned short int port = get_socket_port(&conn->client.lsa);
 
             if (port != 0) {
-			  if (parlen <= 0) parlen = 1;
+              if (parlen <= 0) parlen = 1;
               (void)mg_snprintf(conn, d, len, "%0*u", parlen, (unsigned int)port);
               d += strlen(d);
             }
@@ -885,7 +965,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
           // filter URI so the result is a valid filepath piece without any format codes
           if (conn && !is_empty(conn->request_info.uri)) {
             const char *q, *u;
-		    char h[33];
+            char h[33];
 
             u = conn->request_info.uri;
             q = strchr(u, '?');
@@ -896,7 +976,7 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
               } else {
                 u = q + 1;
                 q = NULL;
-			  }
+              }
             }
             // limit the length to process:
             mg_strlcpy(addr_buf, u, sizeof(addr_buf));
@@ -904,38 +984,38 @@ const char *mg_get_logfile_path(char *dst, size_t dst_maxsize, const char *logfi
               addr_buf[q - u] = 0;
             }
             // limit the string inserted into the filepath template to MG_LOGFILE_MAX_URI_COMPONENT_LEN characters or whatever the template said itself:
-			if (parlen <= 0)
-			  parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
-			else if (parlen > (int)sizeof(addr_buf) - 1)
-			  parlen = (int)sizeof(addr_buf) - 1;
-			if ((int)strlen(addr_buf) > parlen) {
+            if (parlen <= 0)
+              parlen = MG_LOGFILE_MAX_URI_COMPONENT_LEN;
+            else if (parlen > (int)sizeof(addr_buf) - 1)
+              parlen = (int)sizeof(addr_buf) - 1;
+            if ((int)strlen(addr_buf) > parlen) {
               mg_md5(h, addr_buf, NULL);  // hash the 'raw' (clipped) URI component; only calc the hash when it MIGHT be needed
-			} else {
-			  h[0] = 0;
-			}
-			// yet paste the hash into the 'scrubbed' URI component ONLY when the scrubbed component is overlarge
-			if (powerscrub_filepath(addr_buf, 0) > parlen) {
+            } else {
+              h[0] = 0;
+            }
+            // yet paste the hash into the 'scrubbed' URI component ONLY when the scrubbed component is overlarge
+            if (powerscrub_filepath(addr_buf, 0) > parlen) {
               mg_strlcpy(addr_buf + MG_MAX(0, parlen - 8), h, 8 + 1);
-			}
+            }
             goto copy_partial2dst;
           }
           goto replacement_done;
 
 copy_partial2dst:
-		  // addr_buf[] is guaranteed to be filled when we get here
-		  powerscrub_filepath(addr_buf, 0);
-		  abuflen = (int)strlen(addr_buf);
-		  if (parlen <= 0)
-			parlen = abuflen;
-		  assert(len > 0);
-		  if (parlen > len)
-			parlen = len;
-		  // take the right-most part when we must clip: determine the offset
-		  if (abuflen > parlen)
-			abufoffset = abuflen - parlen;
-		  else
-			abufoffset = 0;
-		  d += mg_strlcpy(d, addr_buf + abufoffset, parlen + 1);
+          // addr_buf[] is guaranteed to be filled when we get here
+          powerscrub_filepath(addr_buf, 0);
+          abuflen = (int)strlen(addr_buf);
+          if (parlen <= 0)
+            parlen = abuflen;
+          assert(len > 0);
+          if (parlen > len)
+            parlen = len;
+          // take the right-most part when we must clip: determine the offset
+          if (abuflen > parlen)
+            abufoffset = abuflen - parlen;
+          else
+            abufoffset = 0;
+          d += mg_strlcpy(d, addr_buf + abufoffset, parlen + 1);
 replacement_done:
           // and the %[?] macros ALWAYS produce at least ONE character output in the template,
           // otherwise you get screwed up paths with, f.e. 'a/%[Q]/b' --> 'a//b':
@@ -1183,6 +1263,48 @@ char * mg_strdup(const char *str) {
   return mg_strndup(str, strlen(str));
 }
 
+const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
+{
+    if (haysize < needlesize || !haystack || !needle)
+        return NULL;
+    haysize -= needlesize - 1;
+    while (haysize > 0)
+    {
+        const char *p = memchr(haystack, needle[0], haysize);
+        if (!p)
+            return NULL;
+        // as we fixed haysize we can now simply check if the needle is here:
+        if (!memcmp(p, needle, needlesize))
+            return p;
+        // be blunt; no BM-like speedup for this search...
+        p++;
+        haysize -= p - haystack;
+        haystack = p;
+    }
+    return NULL;
+}
+
+// Find location of case-insensitive needle string in haystack string.
+// Return NULL if needle wasn't found.
+const char *mg_stristr(const char *haystack, const char *needle)
+{
+	int nc;
+	size_t needlesize;
+
+	if (!haystack || !needle || !*haystack || !*needle)
+        return NULL;
+	needlesize = strlen(needle);
+
+	for (nc = lowercase(needle); *haystack; haystack++)
+    {
+        int hc = lowercase(haystack);
+        if (hc == nc && !mg_strncasecmp(needle + 1, haystack + 1, needlesize - 1))
+            return haystack;
+        // be blunt; no BM-like speedup for this search...
+    }
+    return NULL;
+}
+
 // Like snprintf(), but never returns negative value, or a value
 // that is larger than a supplied buffer.
 // Thanks to Adam Zeldis to pointing snprintf()-caused vulnerability
@@ -1392,19 +1514,19 @@ static char *skip(char **buf, const char *delimiters) {
 
 
 // Return HTTP header value, or NULL if not found.
-static const char *get_header(const struct mg_request_info *ri,
+static const char *get_header(const struct mg_header *headers, int num_headers,
                               const char *name) {
   int i;
 
-  for (i = 0; i < ri->num_headers; i++)
-    if (!mg_strcasecmp(name, ri->http_headers[i].name))
-      return ri->http_headers[i].value;
+  for (i = 0; i < num_headers; i++)
+    if (!mg_strcasecmp(name, headers[i].name))
+      return headers[i].value;
 
   return NULL;
 }
 
 const char *mg_get_header(const struct mg_connection *conn, const char *name) {
-  return get_header(&conn->request_info, name);
+  return get_header(conn->request_info.http_headers, conn->request_info.num_headers, name);
 }
 
 // A helper function for traversing a comma separated list of values.
@@ -1581,12 +1703,30 @@ static const char *suggest_connection_header(struct mg_connection *conn) {
   return rv ? "keep-alive" : "close";
 }
 
+static const char *mg_get_allowed_methods(struct mg_connection *conn) {
+  const char *allowed = get_conn_option(conn, ALLOWED_METHODS);
+  if (is_empty(allowed))
+    allowed = "GET,POST,HEAD,PUT,DELETE,OPTIONS";
+  return allowed;
+}
+
 // Return negative value on error; otherwise number of bytes saved by compacting.
+//
+// NOTE: we MAY also be storing the URI+QUERY strings in the TX buffer,
+//       which we can quickly detect inside here and then we take care to keep those
+//       strings intact as well, though these will be relocated, just like the
+//       tx_headers[] themselves.
+//       This is extremely useful for client-side mg_connect()-based HTTP connections
+//       as available in mongoose_ex. (See also: mg_write_http_request_head())
 static int compact_tx_headers(struct mg_connection *conn) {
-  char *scratch;
-  int i, n;
-  int space;
+  // C89 doesn't allow run-time dimensioned arrays so we use alloca() instead:
+  char *buf;
+  int i, n, l;
   struct mg_header hdrs[ARRAY_SIZE(conn->request_info.response_headers)];
+  int cache_uri_query_str_in_txbuf;
+  char *tx_buf;
+  char *d;
+  int space;
 
   if (!conn->buf_size) // mg_connect() creates connections without header buffer space
     return -1;
@@ -1594,34 +1734,84 @@ static int compact_tx_headers(struct mg_connection *conn) {
   if (!conn->tx_can_compact_hdrstore)
     return 0;
 
-  scratch = conn->buf + 2 * conn->buf_size;
+  tx_buf = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
+
+  buf = mg_malloca(conn->buf_size);
+  assert(buf);
+  if (!buf) goto fail_dramatically;
+
+  // detect whether the URI+QUERY are stored in the TX section:
+  cache_uri_query_str_in_txbuf = ((conn->request_info.uri >= tx_buf &&
+                                  conn->request_info.uri < tx_buf + conn->buf_size) ||
+								  (conn->tx_can_compact_hdrstore & 2));
+  d = buf;
   space = conn->buf_size;
 
-  memcpy(hdrs, conn->request_info.response_headers, sizeof(hdrs));
+  // when they are, copy them to the start of SCRATCH space if they aren't there already
+  if (cache_uri_query_str_in_txbuf) {
+    l = (int)mg_strlcpy(d, conn->request_info.uri, space) + 1;
+    conn->request_info.uri = tx_buf;
+    d += l;
+    tx_buf += l;
+    space -= l;
+    if (is_empty(conn->request_info.query_string)) {
+      conn->request_info.query_string = "";
+      l = 0;
+    } else if (space > 0) {
+      l = (int)mg_strlcpy(d, conn->request_info.query_string, space) + 1;
+    } else {
+      goto fail_dramatically;
+    }
+    conn->request_info.query_string = tx_buf;
+    d += l;
+    tx_buf += l;
+    space -= l;
+    if (space < 6)
+      goto fail_dramatically;
+    // remember offset:
+    cache_uri_query_str_in_txbuf = conn->buf_size - space;
+  }
 
+  // now perform the header compaction process:
   n = conn->request_info.num_response_headers;
   for (i = 0; i < n; i++) {
-    int l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].name, space);
+    l = (int)mg_strlcpy(d, conn->request_info.response_headers[i].name, space) + 1;
+    d[l] = conn->request_info.response_headers[i].name[l]; // copy 'edited/added' marker too!
     // calc new name+value pointers for when we're done with the compact cycle:
-    hdrs[i].name = scratch - conn->buf_size;
-    l += 2;
-    scratch += l;
+    hdrs[i].name = tx_buf;
+    l++;
+    d += l;
+    tx_buf += l;
     space -= l;
-    l = (int)mg_strlcpy(scratch, conn->request_info.response_headers[i].value, space);
-    hdrs[i].value = scratch - conn->buf_size;
+    if (space <= 2)
+      goto fail_dramatically;
+    l = (int)mg_strlcpy(d, conn->request_info.response_headers[i].value, space);
+    hdrs[i].value = tx_buf;
     l += 2;
-    scratch += l;
+    d += l;
+    tx_buf += l;
     space -= l;
+    if (space <= 2)
+      goto fail_dramatically;
   }
   conn->tx_can_compact_hdrstore = 0;
-  n = scratch - conn->buf - 2 * conn->buf_size;
-  i = conn->tx_headers_len - n;
-  conn->tx_headers_len = n;
+  n = conn->buf_size - space;
 
   memcpy(conn->request_info.response_headers, hdrs, sizeof(hdrs));
-  memcpy(conn->buf + conn->buf_size, conn->buf + 2 * conn->buf_size, conn->buf_size);
+  tx_buf = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
+  memcpy(tx_buf, buf, n);
 
-  return i;
+  l = conn->tx_headers_len - n;         // how many bytes did we 'gain' by compacting?
+  conn->tx_headers_len = n;
+  // delta can be negative when URI+query_string were pulled into the buffer space!
+  if (l < 0)
+	l = 0;
+  mg_freea(buf);
+  return l;
+
+fail_dramatically:
+  mg_freea(buf);
+  return -1;
 }
 
 int mg_remove_response_header(struct mg_connection *conn, const char *tag) {
@@ -1657,24 +1847,33 @@ int mg_remove_response_header(struct mg_connection *conn, const char *tag) {
       }
     }
     conn->request_info.num_response_headers = i;
-    conn->tx_can_compact_hdrstore = 1;
+    conn->tx_can_compact_hdrstore |= 1;
   }
   return found;
 }
 
 int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, ...) {
+  va_list ap;
+  int rv;
+
+  va_start(ap, value_fmt);
+  rv = mg_vadd_response_header(conn, force_add, tag, value_fmt, ap);
+  va_end(ap);
+  return rv;
+}
+
+int mg_vadd_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, va_list ap) {
   int i = -1;
   int n, space;
   char *dst;
   char *bufbase;
-  va_list ap;
 
   if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
     return -1;
   if (!value_fmt)
     value_fmt = "";
 
-  bufbase = conn->buf + conn->buf_size;
+  bufbase = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
   dst = bufbase + conn->tx_headers_len;
   space = conn->buf_size - conn->tx_headers_len;
 
@@ -1685,12 +1884,14 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
 
       if (!mg_strcasecmp(tag, key)) {
         // re-use the tag, ditch the value:
-        conn->tx_can_compact_hdrstore = 1;
+        conn->tx_can_compact_hdrstore |= 1;
+        (&bufbase[key - bufbase])[strlen(key) + 1] = '!'; // mark tag as edited/added
         break;
       }
     }
   }
   if (i < 0) { // this tag wasn't found: add it
+    force_add = 1;
     i = conn->request_info.num_response_headers;
     if (i >= (int)ARRAY_SIZE(conn->request_info.response_headers)) {
       mg_cry(conn, "%s: too many headers", __func__);
@@ -1709,6 +1910,18 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
       space = conn->buf_size - conn->tx_headers_len;
     }
     conn->request_info.response_headers[i].name = dst;
+	// To make sure that the optional compact routine
+	// in the next loop (write tag value) keeps this TAG,
+	// we need to make it a valid entry and account of it!
+	//
+	// To do so, we fake a NIL value for now, making the
+	// 'set value' loop below an UPDATE operation always.
+    conn->request_info.response_headers[i].value = dst + n; // point at the NUL sentinel
+    assert(i <= conn->request_info.num_response_headers);
+    if (i == conn->request_info.num_response_headers)
+      conn->request_info.num_response_headers++;
+
+    dst[n + 1] = '!'; // mark tag as edited/added
     n += 2; // include NUL+[?] sentinel in count
     conn->tx_headers_len += n;
     dst += n;
@@ -1717,9 +1930,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
 
   // now store the value:
   for(;;) {
-    va_start(ap, value_fmt);
     n = mg_vsnq0printf(conn, dst, space, value_fmt, ap);
-    va_end(ap);
     // n==0 is also possible when snprintf() fails dramatically (see notes in mg_snq0printf() et al)
     if (n + 4 < space && n > 0) // + NUL+[?]+[?]+[?]
       break;
@@ -1735,39 +1946,71 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     space = conn->buf_size - conn->tx_headers_len;
   }
   conn->request_info.response_headers[i].value = dst;
-  assert(i <= conn->request_info.num_response_headers);
-  if (i == conn->request_info.num_response_headers)
-    conn->request_info.num_response_headers++;
+  assert(i < conn->request_info.num_response_headers);
   n += 2; // include NUL+[?] sentinel in count
   conn->tx_headers_len += n;
-  dst += n;
-  space -= n;
+  //dst += n;
+  //space -= n;
 
   // now we know we still have two extra bytes free space; this is used in mg_write_http_response_head()
+
+  // check for special headers: Content-Length and 'Transfer-Encoding: chunked' are mutually exclusive
+  if (mg_strcasecmp("Content-Length", tag) == 0) {
+    mg_remove_response_header(conn, "Transfer-Encoding");
+  } else if (mg_strcasecmp("Transfer-Encoding", tag) == 0 &&
+             mg_stristr(dst, "chunked")) {
+    mg_remove_response_header(conn, "Content-Length");
+  }
   return 0;
 }
 
-int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
-  int i, n, rv;
+const char *mg_get_response_header(const struct mg_connection *conn, const char *tag) {
+  int i;
+
+  if (is_empty(tag) || !conn->buf_size) // mg_connect() creates connections without header buffer space
+    return NULL;
+
+  for (i = conn->request_info.num_response_headers; i-- > 0; ) {
+    const char *key = conn->request_info.response_headers[i].name;
+
+    if (!mg_strcasecmp(tag, key)) {
+      return conn->request_info.response_headers[i].value;
+    }
+  }
+  return NULL;
+}
+
+static int write_http_head(struct mg_connection *conn, FORMAT_STRING(const char *first_line_fmt), ...)
+#ifdef __GNUC__
+    __attribute__((format(printf, 2, 3)))
+#endif
+  ;
+
+// Return number of bytes sent; return 0 when nothing was done; -1 on error.
+static int write_http_head(struct mg_connection *conn, const char *first_line_fmt, ...) {
+  int i, n, rv, rv2, tx_len;
   char *buf;
+  const char *te_tag;
+  va_list ap;
 
   if (mg_have_headers_been_sent(conn))
     return 0;
 
+  va_start(ap, first_line_fmt);
+  rv = mg_vprintf(conn, first_line_fmt, ap);
+  va_end(ap);
+  if (rv <= 0)
+    return -1; // malformed first line or transmit failure.
+
   /*
   This code expects all headers to be stored in memory 'in order'.
 
-  This assumption holds when headers have been only been added, never
+  This assumption holds when headers have only been added, never
   removed or replaced, OR when compact_tx_headers() has run
   after the last replace/remove operation.
   */
   if (compact_tx_headers(conn) < 0)
     return -1;
-
-  if (status_code <= 0)
-    status_code = conn->request_info.status_code;
-  if (is_empty(status_text))
-    status_text = mg_get_response_code_text(conn->request_info.status_code);
 
   /*
   Once we are sure of the header order assumption, this becomes an
@@ -1775,14 +2018,14 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
   with ": " and "\r\n" respectively.
 
   Since the assumption above is now assured, we know that the very
-  first header starts at the beginning of the buffer!
+  first header starts at the beginning of the buffer, after the optionally
+  stored uri+query_string!
   */
-  buf = conn->buf + conn->buf_size;
-
   n = conn->request_info.num_response_headers;
   if (n) {
-    int rv2;
-
+    buf = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
+    assert(conn->request_info.response_headers[0].name >= conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ);
+    assert(conn->request_info.response_headers[0].name < conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ + conn->buf_size);
     conn->request_info.response_headers[0].value[-2] = ':';
     conn->request_info.response_headers[0].value[-1] = ' ';
     for (i = 1; i < n; i++) {
@@ -1795,14 +2038,14 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     }
     buf[conn->tx_headers_len - 2] = '\r';
     buf[conn->tx_headers_len - 1] = '\n';
-    assert(conn->tx_headers_len + 2 <= conn->buf_size);
+    assert(conn->tx_headers_len + 2 + (buf - conn->buf - conn->buf_size - CHUNK_HEADER_BUFSIZ) <= conn->buf_size);
     buf[conn->tx_headers_len] = '\r';
     buf[conn->tx_headers_len + 1] = '\n';
 
-    rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
-    rv2 = mg_write(conn, buf, conn->tx_headers_len + 2);
-    if (rv2 < 0)
-      rv = rv2;
+	tx_len = conn->tx_headers_len + 2 - (conn->request_info.response_headers[0].name - buf);
+    rv2 = mg_write(conn, conn->request_info.response_headers[0].name, tx_len);
+    if (rv2 != tx_len)
+      rv = -1;
     else
       rv += rv2;
 
@@ -1819,7 +2062,17 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     }
     buf[conn->tx_headers_len - 2] = 0;
   } else {
-    rv = mg_printf(conn, "HTTP/1.1 %d %s\r\n\r\n", status_code, status_text);
+    rv2 = mg_write(conn, "\r\n", 2);
+    if (rv2 != 2)
+      rv = -1;
+    else
+      rv += rv2;
+  }
+
+  // detect whether we're going to send in 'chunked' or 'full' mode:
+  te_tag = mg_get_response_header(conn, "Transfer-Encoding");
+  if (te_tag && mg_stristr(te_tag, "chunked")) {
+    mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_DATA);
   }
 
   mg_mark_end_of_header_transmission(conn);
@@ -1829,6 +2082,7 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
 
 int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
   const char *ka;
+  const char *cl;
 
   if (status_code <= 0)
     status_code = conn->request_info.status_code;
@@ -1838,11 +2092,17 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     status_text = mg_get_response_code_text(status_code);
 
   mg_set_response_code(conn, status_code);
-  // update/set the Connection: keep-alive header as we now know the Status Code:
+  // make sure must_close state and Connection: output are in sync
   ka = mg_get_response_header(conn, "Connection");
-  if (!ka || mg_strcasecmp(ka, "close")) {
-    if (mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)))
-	  return -1;
+  if (!conn->must_close) {
+	if (ka && mg_strcasecmp(ka, "close") == 0)
+	  conn->must_close = 1;
+  }
+  cl = suggest_connection_header(conn);
+  // update/set the Connection: keep-alive header as we now know the Status Code:
+  if (!ka || mg_strcasecmp(ka, cl)) {
+    if (mg_add_response_header(conn, 0, "Connection", cl))
+      return -1;
   }
 
   return write_http_head(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
@@ -1878,6 +2138,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 
   mg_set_response_code(conn, status);
   conn->request_info.status_custom_description = buf;
+
+  if (status == 405) {
+    mg_add_response_header(conn, 0, "Allow", mg_get_allowed_methods(conn));
+  }
 
   if (call_user(conn, MG_HTTP_ERROR) == NULL) {
     char *p;
@@ -1934,7 +2198,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           conn->client.write_error ||
           conn->client.read_error ||
           mg_produce_nested_page(conn, filename_vec.ptr, filename_vec.len)) {
-		if (!mg_have_headers_been_sent(conn)) {
+        if (!mg_have_headers_been_sent(conn)) {
           /* issue #229: Only include the content-length if there is a response body.
            Otherwise an incorrect Content-Type generates a warning in
            some browsers when a static file request returns a 304
@@ -1951,9 +2215,12 @@ static void vsend_http_error(struct mg_connection *conn, int status,
               conn->must_close = 1;
             }
           }
-		} else {
+          if (mg_flush(conn) != 0) {
+			conn->must_close = 1;
+		  }
+        } else {
           conn->must_close = 1;
-		}
+        }
       }
     } else if (mg_is_producing_nested_page(conn)) {
       // mark nested error anyhow
@@ -2694,6 +2961,54 @@ static void add_to_set(SOCKET fd, fd_set *set, int *max_fd) {
     }
 }
 
+
+#if !defined(NO_SSL)
+
+// Return !0 when the SSL I/O operation should be retried.
+// This can happen, for instance, when a renegotiation occurs,
+// which can happen at any time during SSL I/O.
+//
+// http://www.openssl.org/docs/ssl/SSL_get_error.html#
+// http://www.openssl.org/docs/ssl/SSL_read.html
+// http://www.openssl.org/docs/ssl/SSL_write.html
+static int ssl_renegotiation_ongoing(struct mg_connection *conn, int *ret) {
+	int rv;
+
+	  // renegotiation may occur at any time; facilitate this!
+	  rv = SSL_get_error(conn->ssl, *ret);
+	  switch (rv) {
+	  case SSL_ERROR_NONE:
+		return 0;
+	  case SSL_ERROR_ZERO_RETURN:
+		*ret = 0;
+		return 0;
+	  case SSL_ERROR_WANT_READ:
+		{
+		  char buf[256];
+		  (void)SSL_peek(conn->ssl, buf, sizeof(buf));
+		}
+	  case SSL_ERROR_WANT_WRITE:
+	  case SSL_ERROR_WANT_CONNECT:
+	  case SSL_ERROR_WANT_ACCEPT:
+	  case SSL_ERROR_WANT_X509_LOOKUP:
+		// retry the call with the exact same parameters:
+		*ret = 0;
+		return 1;
+	  case SSL_ERROR_SYSCALL:
+	  case SSL_ERROR_SSL:
+	  default:
+		if (*ret >= 0)
+		  *ret = -1;
+		return 0;
+	  }
+}
+
+#else
+
+#define ssl_renegotiation_ongoing(conn, ret)		0
+
+#endif
+
 // Write data to the IO channel - opened file descriptor, socket or SSL
 // descriptor. Return number of bytes written.
 static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
@@ -2708,8 +3023,12 @@ static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
     k = len - sent > INT_MAX ? INT_MAX : (int) (len - sent);
 
     if (conn && conn->ssl) {
-      n = SSL_write(conn->ssl, buf + sent, k);
+	  do {
+        n = SSL_write(conn->ssl, buf + sent, k);
+	  } while (ssl_renegotiation_ongoing(conn, &n));
       conn->client.write_error = (n < 0);
+      if (n == 0)
+        break;
     } else if (fp != NULL) {
       n = (int)fwrite(buf + sent, 1, (size_t)k, fp);
       if (ferror(fp))
@@ -2737,7 +3056,9 @@ static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
   int nread;
 
   if (conn && conn->ssl) {
-    nread = SSL_read(conn->ssl, buf, len);
+	do {
+      nread = SSL_read(conn->ssl, buf, len);
+	} while (ssl_renegotiation_ongoing(conn, &nread));
     conn->client.read_error = (nread < 0);
     // and reset the select() markers used by consume_socket() et al:
     conn->client.was_idle = 0;
@@ -2781,64 +3102,150 @@ static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
   return nread;
 }
 
-int mg_read(struct mg_connection *conn, void *buf, size_t len) {
+// forward declaration:
+static int read_and_parse_chunk_header(struct mg_connection *conn);
+
+static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int nonblocking) {
   int n, buffered_len, nread;
   const char *buffered;
 
   assert((conn->content_len == -1) ||
          conn->consumed_content <= conn->content_len);
-  DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
-               conn->content_len, conn->consumed_content));
+
   nread = 0;
-  if (conn->consumed_content < conn->content_len || conn->content_len == -1) {
+  while (len > 0 && (conn->consumed_content < conn->content_len || conn->content_len == -1)) {
     // Adjust number of bytes to read.
     int64_t to_read = (conn->content_len == -1 ? INT_MAX : conn->content_len - conn->consumed_content);
+	int already_read_len = conn->rx_buffer_read_len;
     if (to_read < (int64_t) len) {
       len = (size_t) to_read;
     }
 
     // How many bytes of data we have buffered in the request buffer?
     assert(conn->request_len >= 0);
-    buffered = conn->buf + conn->request_len + conn->consumed_content;
-    buffered_len = conn->data_len - conn->request_len;
+    buffered = conn->buf + conn->request_len + already_read_len;
+    buffered_len = conn->rx_buffer_loaded_len;
     assert(buffered_len >= 0);
 
     // Return buffered data back if we haven't done that yet.
-    if (conn->consumed_content < (int64_t) buffered_len) {
-      buffered_len -= (int) conn->consumed_content;
+    if (already_read_len < buffered_len) {
+      buffered_len -= already_read_len;
       if (len < (size_t) buffered_len) {
         buffered_len = (int)len;
       }
-      memcpy(buf, buffered, (size_t)buffered_len);
-      len -= buffered_len;
-      buf = (char *) buf + buffered_len;
-      conn->consumed_content += buffered_len;
-      nread = buffered_len;
     } else {
       buffered_len = 0;
     }
 
+	if (conn->rx_is_in_chunked_mode) {
+	  if (conn->rx_chunk_header_parsed == 0) {
+		int cl;
+		assert(conn->rx_remaining_chunksize == 0);
+		// nonblocking: check if any data is pending; only then do we fetch one more chunk header...
+		if (nread == 0 || mg_is_read_data_available(conn) == 1 || !nonblocking) {
+			cl = read_and_parse_chunk_header(conn);
+			if (conn->rx_remaining_chunksize == 0) {
+		      DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d", conn->rx_chunk_count, nread));
+			}
+			if (cl < 0)
+			  return cl;
+		}
+
+		if (conn->rx_remaining_chunksize == 0) {
+		  return nread;
+		}
+		continue; // it's easier to have another round figure it out, now that we have a new chunk
+	  }
+	  if (conn->rx_remaining_chunksize == 0) {
+		return nread;
+	  }
+	  if (buffered_len > conn->rx_remaining_chunksize)
+		buffered_len = conn->rx_remaining_chunksize;
+	}
+
+	if (buffered_len > 0) {
+	  // as user-defined chunk readers may read data into the connection buffer,
+	  // it CAN happen that buf == buffered. Otherwise, use memmove() instead
+	  // of memcpy() to be on the safe side.
+	  if (buf != buffered)
+		memmove(buf, buffered, (size_t)buffered_len);
+      len -= buffered_len;
+      buf = (char *) buf + buffered_len;
+      conn->rx_buffer_read_len += buffered_len;
+	  if (conn->rx_chunk_header_parsed < 2) {
+        conn->consumed_content += buffered_len;
+		conn->rx_remaining_chunksize -= buffered_len;
+		if (conn->rx_remaining_chunksize == 0) {
+		  // end of chunk data reached; mark the need for a fresh chunk:
+		  conn->rx_chunk_header_parsed = 0;
+		}
+	  }
+      nread += buffered_len;
+	}
+
     // We have returned all buffered data. Read new data from the remote socket.
     while (len > 0) {
       // act like pull() when we're not involved with fetching 'Content-Length'-defined HTTP content:
-      if (nread > 0 && conn->content_len == -1 && buffered_len == 0)
-        break;
-      buffered_len = 0;
-      n = pull(NULL, conn, (char *) buf, (int) len);
+      if (nread > 0 && nonblocking && conn->rx_buffer_read_len >= conn->rx_buffer_loaded_len) {
+	    return nread;
+	  }
+
+		if (conn->rx_is_in_chunked_mode) {
+		  if (conn->rx_chunk_header_parsed == 0 || conn->rx_buffer_read_len < conn->rx_buffer_loaded_len) {
+			// it's easier to have another round figure it out
+			// when we have to fetch a fresh chunk or
+			// when we have more buffered data pending
+			// (which implies there's more chunks waiting for us in the buffer)
+		    break;
+		  } else {
+			n = (int) len;
+			if (n > conn->rx_remaining_chunksize)
+			  n = conn->rx_remaining_chunksize;
+		    n = pull(NULL, conn, (char *) buf, n);
+		  }
+		} else {
+		  assert(conn->rx_buffer_read_len >= conn->rx_buffer_loaded_len);
+		  n = pull(NULL, conn, (char *) buf, (int) len);
+		}
+
       if (n < 0) {
         // always propagate the error
         return n;
       } else if (n == 0) {
-        break;
+		return nread; // no more data to be had
       }
       buf = (char *) buf + n;
-      conn->consumed_content += n;
+	  if (conn->rx_chunk_header_parsed < 2) {
+        conn->consumed_content += n;
+		conn->rx_remaining_chunksize -= n;
+		if (conn->rx_remaining_chunksize == 0) {
+		  // end of chunk data reached; mark the need for a fresh chunk:
+		  conn->rx_chunk_header_parsed = 0;
+		}
+	  }
       nread += n;
       len -= n;
     }
   }
-  DEBUG_TRACE(("%p nread: %d %" PRId64 " %" PRId64, buf, nread,
+  return nread;
+}
+
+int mg_read(struct mg_connection *conn, void *buf, size_t len) {
+  int nread;
+
+#if 0
+  DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
+#endif
+
+  nread = read_bytes(conn, buf, len, ((conn->content_len == -1) && !conn->rx_is_in_chunked_mode) ||
+									  conn->rx_chunk_header_parsed >= 2);
+
+#if 0
+  DEBUG_TRACE(("%p nread: %d %" PRId64 " %" PRId64, buf, nread,
+              conn->content_len, conn->consumed_content));
+#endif
+
   return nread;
 }
 
@@ -2858,15 +3265,105 @@ int mg_have_headers_been_sent(const struct mg_connection *conn) {
 }
 
 int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
-  int rv = (int) push(NULL, conn, (const char *) buf,
-                    (int64_t) len);
+  int rv;
+  const char *src = (const char *)buf;
+  int64_t txlen = (int64_t) len;
+
+  assert(len > 0);
+  if (conn->tx_is_in_chunked_mode) {
+    int64_t txlen_1;
+
+    // are we in header TX mode?
+    if (conn->tx_chunk_header_sent >= 2) {
+      // just send the data; don't count the bytes against any totals though!
+      return (int) push(NULL, conn, src, txlen);
+    }
+
+    // when the connection has been previously signaled as 'flushed', then you
+    // CANNOT SEND ANY MORE DATA, unless mongoose resets the connection to process
+    // another request (e.g. in HTTP keep-alive mode):
+    if (conn->tx_chunk_header_sent == 1 && conn->tx_remaining_chunksize == 0) {
+        mg_cry(conn, "%s: trying to send %d content data bytes beyond the END of a chunked transfer", __func__, (int)len);
+        assert(!"Should never get here; if you do, then your user I/O code is faulty!");
+        return -1;
+    }
+
+    // was the chunk size sent to the peer already?
+    if (conn->tx_chunk_header_sent == 0) {
+      // prep and transmit a 'chunk header' for the given size:
+      txlen_1 = txlen;
+      assert(conn->tx_remaining_chunksize == 0);
+      if (txlen_1 < conn->tx_next_chunksize)
+        txlen_1 = conn->tx_next_chunksize;
+      rv = mg_write_chunk_header(conn, txlen_1);
+      if (rv < 0)
+        return rv;
+      assert(conn->tx_chunk_header_sent == 1);
+      assert(conn->tx_remaining_chunksize > 0);
+      assert(conn->tx_next_chunksize == 0);
+
+      // mg_write_chunk_header() MAY have changed the tx_remaining_chunksize value
+    }
+    assert(conn->tx_remaining_chunksize > 0);
+    txlen_1 = txlen;
+    if (txlen_1 > conn->tx_remaining_chunksize)
+      txlen_1 = conn->tx_remaining_chunksize;
+    rv = (int) push(NULL, conn, src, txlen_1);
+    if (rv > 0) {
+      if (conn->num_bytes_sent < 0)
+        conn->num_bytes_sent -= rv; // count as header data
+      else
+        conn->num_bytes_sent += rv; // count as content data
+      src += rv;
+      txlen -= rv;
+      conn->tx_remaining_chunksize -= rv;
+    } else {
+      return rv;
+    }
+    // Was the entire blurb written to the socket?
+    // If not, exit for we're very probably using a non-blocking I/O socket then.
+    //
+    // Barring that, there are two scenarios left for us:
+    // a) We still have some data to send but don't have a chunk size spec.
+    //    (In which case we assume that the remaining data blurb is a complete chunk itself.)
+    // b) We've sent all the data we had and maybe have some space left in the current chunk.
+    //    (In which case we're happy campers, doing nothing at all.)
+    if (conn->tx_remaining_chunksize > 0) {
+      assert(txlen == 0);
+      return rv;
+    }
+    assert(conn->tx_remaining_chunksize == 0);
+    conn->tx_chunk_header_sent = 0; // signal the need for another chunk (+ header)
+    if (txlen == 0) {
+      return rv;
+    }
+    // prep and transmit a 'chunk header' for the remaining size:
+    txlen_1 = txlen;
+    if (txlen_1 < conn->tx_next_chunksize)
+      txlen_1 = conn->tx_next_chunksize;
+    rv = mg_write_chunk_header(conn, txlen_1);
+    if (rv < 0)
+      return rv;
+    assert(conn->tx_chunk_header_sent == 1);
+    assert(conn->tx_remaining_chunksize > 0);
+    assert(conn->tx_next_chunksize == 0);
+  }
+
+  rv = (int) push(NULL, conn, src, txlen);
   if (rv > 0) {
     if (conn->num_bytes_sent < 0)
       conn->num_bytes_sent -= rv; // count as header data
     else
       conn->num_bytes_sent += rv; // count as content data
+    src += rv;
+    conn->tx_remaining_chunksize -= rv; // when not in chunked mode, we don't care how far negative this value goes.
+    if (conn->tx_remaining_chunksize == 0) {
+      conn->tx_chunk_header_sent = 0; // signal the need for another chunk (+ header)
+    }
+  } else if (rv < 0) {
+    return rv;
   }
-  return rv;
+  return (src - (const char *)buf);
 }
 
 int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
@@ -2889,7 +3386,7 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
     if (buf) {
       rv = mg_write(conn, buf, (size_t)len);
       free(buf);
-      return (rv < 0 ? 0 : rv);
+      return (rv < len ? 0 : rv);
     } else {
       return 0;
     }
@@ -2945,17 +3442,26 @@ static size_t url_decode(const char *src, size_t src_len, char *dst,
 // It can be specified in query string, or in the POST data.
 // Return -1 if the variable not found, or length of the URLdecoded
 // value stored in dst[].
-// The dst[] buffer is always NUL-terminated, also when -1 is returned.
+// The dst[] buffer is always NUL-terminated whenever possible,
+// also when -1 is returned.
 int mg_get_var(const char *buf, size_t buf_len, const char *name,
-               char *dst, size_t dst_len) {
+               char *dst, size_t dst_len, int is_form_url_encoded) {
   const char *p, *e, *s;
   size_t name_len;
   int len;
 
+  if (dst == NULL || dst_len == 0)
+    return -2;
+  assert(dst);
+  assert(dst_len > 0);
+  dst[0] = '\0';
+  if (buf == NULL || name == NULL || buf_len == 0)
+    return -1;
   name_len = strlen(name);
+  if (buf_len == (size_t)-1)
+    buf_len = strlen(buf);
   e = buf + buf_len;
   len = -1;
-  dst[0] = '\0';
 
   // buf is "var1=val1&var2=val2...". Find variable first
   for (p = buf; p != NULL && p + name_len < e; p++) {
@@ -2974,7 +3480,7 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
 
       // Decode variable into destination buffer
       if ((size_t) (s - p) < dst_len) {
-        len = (int)url_decode(p, (size_t)(s - p), dst, dst_len, 1);
+        len = (int)url_decode(p, (size_t)(s - p), dst, dst_len, is_form_url_encoded);
       }
       break;
     }
@@ -3094,9 +3600,15 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
 #if !defined(NO_SSL)
 static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
-  return (conn->ssl = SSL_new(conn->ctx->ssl_ctx)) != NULL &&
-    SSL_set_fd(conn->ssl, conn->client.sock) == 1 &&
-    func(conn->ssl) == 1;
+  if ((conn->ssl = SSL_new(conn->ctx->ssl_ctx)) != NULL &&
+    SSL_set_fd(conn->ssl, conn->client.sock) == 1) {
+    int rv;
+	do {
+      rv = func(conn->ssl);
+	} while (ssl_renegotiation_ongoing(conn, &rv));
+	return (rv == 1);
+  }
+  return 0;
 }
 #else // NO_SSL
 #define sslize(conn, f)     0
@@ -3110,7 +3622,6 @@ static int get_request_len(const char *buf, int buflen) {
   const char *s, *e;
   int len = 0;
 
-  DEBUG_TRACE(("buf: %p, len: %d", buf, buflen));
   for (s = buf, e = s + buflen - 1; len <= 0 && s < e; s++)
     // Control characters are not allowed but >=128 is.
     if (!isprint(* (const unsigned char *) s) && *s != '\r' &&
@@ -3565,6 +4076,8 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   char *name, *value, *s;
   const char *auth_header;
 
+  (void) memset(ah, 0, sizeof(*ah));
+
   if ((auth_header = mg_get_header(conn, "Authorization")) == NULL ||
       mg_strncasecmp(auth_header, "Digest ", 7) != 0) {
     return 0;
@@ -3574,8 +4087,6 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   (void) mg_strlcpy(buf, auth_header + 7, buf_size);
 
   s = buf;
-  (void) memset(ah, 0, sizeof(*ah));
-
   // Parse authorization header
   for (;;) {
     // Gobble initial spaces
@@ -3624,36 +4135,84 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   return 1;
 }
 
-// Authorize against the opened passwords file. Return 1 if authorized.
+// Authorize against the opened passwords file or user callback.
+// (The user callback takes precedence.)
+//
+// Return 1 if authorized.
 static int authorize(struct mg_connection *conn, FILE *fp) {
   struct ah ah;
   char line[256], f_user[256], ha1[256], f_domain[256], buf[BUFSIZ];
   const char *auth_domain;
+  int rv;
 
-  if (!parse_auth_header(conn, buf, sizeof(buf), &ah)) {
-    return 0;
-  }
-
-  // Loop over passwords file
+  rv = parse_auth_header(conn, buf, sizeof(buf), &ah);
   auth_domain = get_conn_option(conn, AUTHENTICATION_DOMAIN);
-  while (fgets(line, sizeof(line), fp) != NULL) {
-    if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
-      continue;
-    }
 
-    if (*f_user && *f_domain &&
-        !strcmp(ah.user, f_user) &&
-        !strcmp(auth_domain, f_domain))
-      return check_password(
-            conn->request_info.request_method,
-            ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
-            ah.response);
+  ha1[0] = 0;
+  if (conn->ctx->user_functions.password_callback != NULL) {
+    int m = conn->ctx->user_functions.password_callback(conn,
+                    ah.user, auth_domain,
+                    ah.uri, ah.nonce,
+                    ah.nc, ah.cnonce,
+                    ah.qop, ah.response,
+                    ha1, sizeof(ha1));
+    if (m == 2)
+      return 1;
+    else if (m == 0)
+      return 0;
+    else if (m == 1)
+      fp = NULL; // just use the current ha1[] data
+    else if (m != 3) {
+      send_http_error(conn, 500, NULL, "");
+      return 0;
+    }
   }
 
+  if (fp != NULL) {
+    // When parse_auth_header() failed, abort the mission:
+    if (!rv)
+      return 0;
+
+    // Loop over passwords file
+    rv = 0;
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
+        continue;
+      }
+
+      if (*f_user &&
+          !strcmp(ah.user, f_user) &&
+          !strcmp(auth_domain, f_domain)) {
+        rv = 1;
+        break;
+      }
+    }
+    // no probable hit --> FAIL!
+    if (!rv)
+      return 0;
+  }
+  if (!ha1[0])
+    return 1;
+  return check_password(
+    conn->request_info.request_method,
+    ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
+    ah.response);
+}
+
+// Return 1 if request method is allowed, 0 otherwise.
+int check_allowed(struct mg_connection *conn) {
+  const char *request_method = conn->request_info.request_method;
+  const char *allowed_methods = mg_get_allowed_methods(conn);
+  struct vec v;
+
+  while ((allowed_methods = next_option(allowed_methods, &v, NULL)) != NULL) {
+    if (!memcmp(request_method, v.ptr, v.len))
+      return 1;
+  }
   return 0;
 }
 
-// Return 1 if request is authorized, 0 otherwise.
+// Return 1 if request is authorized.
 static int check_authorization(struct mg_connection *conn, const char *path) {
   FILE *fp;
   char fname[PATH_MAX];
@@ -3662,15 +4221,14 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   int authorized;
 
   fp = NULL;
-  authorized = 1;
 
   list = get_conn_option(conn, PROTECT_URI);
   while ((list = next_option(list, &uri_vec, &filename_vec)) != NULL) {
     if (!memcmp(conn->request_info.uri, uri_vec.ptr, uri_vec.len)) {
       (void) mg_snprintf(conn, fname, sizeof(fname), "%.*s",
-          (int)filename_vec.len, filename_vec.ptr);
+                         (int)filename_vec.len, filename_vec.ptr);
       if ((fp = mg_fopen(fname, "r")) == NULL) {
-        mg_cry(conn, "%s: cannot open %s: %s", __func__, fname, mg_strerror(ERRNO));
+        mg_cry(conn, "%s: cannot open authorization file %s: %s", __func__, fname, mg_strerror(ERRNO));
       }
       break;
     }
@@ -3679,9 +4237,8 @@ static int check_authorization(struct mg_connection *conn, const char *path) {
   if (fp == NULL) {
     fp = open_auth_file(conn, path);
   }
-
+  authorized = authorize(conn, fp);
   if (fp != NULL) {
-    authorized = authorize(conn, fp);
     (void) mg_fclose(fp);
   }
 
@@ -3702,17 +4259,22 @@ static void send_authorization_request(struct mg_connection *conn) {
   (void) mg_write_http_response_head(conn, 0, 0);
 }
 
+// Return 1 when authorized.
 static int is_authorized_for_put(struct mg_connection *conn) {
-  FILE *fp;
-  int ret = 0;
+  FILE *fp = NULL;
+  int ret;
   const char *pwd_filepath = get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE);
 
   if (!is_empty(pwd_filepath)) {
     fp = mg_fopen(pwd_filepath, "r");
-    if (fp != NULL) {
-      ret = authorize(conn, fp);
-      (void) mg_fclose(fp);
+    if (fp == NULL) {
+      mg_cry(conn, "%s: cannot open authorization file %s: %s", __func__, pwd_filepath, mg_strerror(ERRNO));
+      return 0;
     }
+  }
+  ret = authorize(conn, fp);
+  if (fp != NULL) {
+    (void) mg_fclose(fp);
   }
   return ret;
 }
@@ -3981,6 +4543,7 @@ static void handle_directory_request(struct mg_connection *conn,
   free(data.entries);
 
   mg_printf(conn, "</table></body></html>");
+  (void) mg_flush(conn);
 }
 
 // Write the content data to the log file, line by line.
@@ -4075,6 +4638,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
   return wlen;
 }
 
+// Return 1 on success.
 static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
   return sscanf(header, "bytes=%" SCNd64 "-%" SCNd64, a, b);
 }
@@ -4109,7 +4673,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   r1 = r2 = 0;
   hdr = mg_get_header(conn, "Range");
   if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
-    conn->request_info.status_code = 206;
+    mg_set_response_code(conn, 206);
     (void) fseeko(fp, (off_t) r1, SEEK_SET);
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
     mg_add_response_header(conn, 0, "Content-Range", "bytes "
@@ -4127,7 +4691,11 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
   mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
                          (unsigned long) stp->mtime, (unsigned long) stp->size);
-  mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
+  // 'text/...' mime types default to ISO-8859-1; make sure they use the more modern UTF-8 charset instead:
+  if (mime_vec.len > 5 && !memcmp("text/", mime_vec.ptr, 5))
+	mg_add_response_header(conn, 0, "Content-Type", "%.*s; charset=%s", (int) mime_vec.len, mime_vec.ptr, "utf-8");
+  else
+	mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int) mime_vec.len, mime_vec.ptr);
   mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
   //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
   mg_add_response_header(conn, 0, "Accept-Ranges", "bytes");
@@ -4139,6 +4707,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
     n = (send_file_data(conn, fp, cl) >= 0);
   }
   (void) mg_fclose(fp);
+  (void) mg_flush(conn);
   return (n > 0 ? 0 : -1);
 }
 
@@ -4155,17 +4724,19 @@ int mg_send_file(struct mg_connection *conn, const char *path) {
 
 // Parse HTTP headers from the given buffer, advance buffer to the point
 // where parsing stopped.
-static void parse_http_headers(char **buf, struct mg_request_info *ri) {
+//
+// Return the number of headers parsed.
+static int parse_http_headers(char **buf, struct mg_header *headers, int max_header_count) {
   int i;
 
-  ri->num_headers = 0;
-  for (i = 0; i < (int) ARRAY_SIZE(ri->http_headers); i++) {
-    ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
-    ri->http_headers[i].value = skip(buf, "\r\n");
-    if (ri->http_headers[i].name[0] == '\0')
+  for (i = 0; i < max_header_count; i++) {
+    headers[i].name = skip_quoted(buf, ":", " ", 0);
+    headers[i].value = skip(buf, "\r\n");
+    if (headers[i].name[0] == '\0') {
       break;
-    ri->num_headers = i + 1;
+	}
   }
+  return i;
 }
 
 static int is_valid_http_method(const char *method) {
@@ -4192,7 +4763,7 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
   if (is_valid_http_method(ri->request_method) &&
       strncmp(ri->http_version, "HTTP/", 5) == 0) {
     ri->http_version += 5;   // Skip "HTTP/"
-    parse_http_headers(&buf, ri);
+    ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
     status = 1;
   }
 
@@ -4221,6 +4792,210 @@ static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int buf
     return -1;
   }
   return request_len;
+}
+
+// Read enough bytes into the buffer to completely fetch a HTTP chunk header,
+// then decode it.
+// Return < 0 on error, >= 0 on success.
+static int read_and_parse_chunk_header(struct mg_connection *conn)
+{
+  // as the user may want to read a fully custom chunk header,
+  // call the user callback before commencing with the default treatment.
+  struct mg_context *ctx = conn->ctx;
+  int rv, pprv, n;
+  char *p;
+  char *exts, *e;
+  struct mg_header chunk_headers[64] = {0};
+  int hdr_count;
+  // ALWAYS shift when we've got a user-defined custom chunk header function
+  // and we're running out of buffer space; it's easier for the user code
+  // as ample bufsiz is guaranteed that way.
+  int do_shift = (ctx->user_functions.read_chunk_header &&
+				  conn->rx_chunk_buf_size - conn->rx_buffer_read_len < CHUNK_HEADER_BUFSIZ);
+
+  for (;;) {
+	char *buf = conn->buf + conn->request_len;
+	int bufsiz = conn->rx_chunk_buf_size;
+	int offset;
+
+	// when a bit of buffered data is still available, make sure it's in the right spot:
+	//
+	// Note: reduce the number of memmove()s for small chunks and largish buffers by only
+	//       shifting the data when there won't be enough space for the next chunk header.
+	//       We accomplish this by only shifting the data when we run out of buffer space.
+	n = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
+	if (n > 0 && do_shift && conn->rx_buffer_read_len > 0)
+	{
+		memmove(buf, buf + conn->rx_buffer_read_len, n);
+		conn->rx_buffer_read_len = 0;
+		conn->rx_buffer_loaded_len = n;
+	}
+	else if (n <= 0)
+	{
+		conn->rx_buffer_read_len = 0;
+		conn->rx_buffer_loaded_len = 0;
+	}
+
+	conn->rx_chunk_header_parsed = 2;
+	if (ctx->user_functions.read_chunk_header)
+	{
+		int usr_nread;
+
+		// memoize the conn->rx_buffer_read_len as that one will be damaged by any mg_read() in the user callback!
+		offset = conn->rx_buffer_read_len;
+		usr_nread = conn->rx_buffer_loaded_len - offset;
+		rv = ctx->user_functions.read_chunk_header(conn, buf, bufsiz, &usr_nread);
+		conn->rx_buffer_loaded_len = usr_nread + offset;
+		conn->rx_buffer_read_len = offset;
+
+		if (rv != 0)
+		{
+            // make sure we reset the state first and update the counters
+            if (conn->rx_chunk_header_parsed == 2)
+                conn->rx_chunk_header_parsed = 1;
+            if (rv >= 0)
+            {
+                conn->rx_chunk_count++;
+
+				// mark the chunk header data in the buffer as READ:
+				// assume no bytes beyond the header itself have been processed yet:
+				conn->rx_buffer_read_len += rv;
+            }
+            return rv;
+		}
+	}
+
+	// perform the default behaviour: read a HTTP chunk header:
+	assert(conn->rx_chunk_header_parsed == 2);
+
+	// shift the buffer to the 'active' part where the chunk header will reside:
+	offset = conn->rx_buffer_read_len;
+	buf += offset;
+	bufsiz -= offset;
+	conn->rx_buffer_loaded_len -= offset;
+	conn->rx_buffer_read_len = 0;
+
+	//rv = read_request(NULL, conn, buf, bufsiz, &conn->rx_buffer_loaded_len);
+	n = 1;
+	// make sure to skip the possible leading CRLF by blowing it away:
+	if (buf[0] == '\r' || buf[0] == '\n') {
+	  buf[0] = ' ';
+	  if (buf[1] == '\r' || buf[1] == '\n')
+	    buf[1] = ' ';
+	}
+	e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
+	while (conn->rx_buffer_loaded_len < bufsiz && e == NULL && n > 0) {
+	  n = pull(NULL, conn, buf + conn->rx_buffer_loaded_len, bufsiz - conn->rx_buffer_loaded_len);
+	  if (n > 0) {
+		conn->rx_buffer_loaded_len += n;
+		// make sure to skip the possible leading CRLF by blowing it away:
+		if (buf[0] == '\r' || buf[0] == '\n') {
+		  buf[0] = ' ';
+		  if (buf[1] == '\r' || buf[1] == '\n')
+			buf[1] = ' ';
+		}
+		e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
+	  }
+	}
+
+	if (n < 0) {
+	  // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
+	  conn->rx_buffer_loaded_len += offset;
+	  conn->rx_buffer_read_len += offset;
+	  return -1;
+	}
+	if (e == NULL) {
+	  conn->rx_buffer_loaded_len += offset;
+	  conn->rx_buffer_read_len += offset;
+	  // can we shift, or are we at our wits end?
+	  if (do_shift) {
+		return -1;	// invalid or overlarge chunk header
+	  }
+	  do_shift = 1;
+	  continue;
+	}
+	rv = e - buf + 1; // ~ request_len
+
+	conn->rx_chunk_header_parsed = 0;
+	// when nothing was read, that's an error right now!
+	if (rv < 2) {
+	  conn->rx_buffer_loaded_len += offset;
+      conn->rx_buffer_read_len += offset;
+	  return -1;
+	}
+
+	// read_request() calls pull() so we must account for the bytes read ourselves here.
+	// When the user callback reads the header, it will use mg_read() instead, which
+	// will do the accounting for us.
+	conn->rx_buffer_read_len += rv;
+
+	buf[rv - 1] = 0;	// turn chunk header into a C string for further processing
+	p = buf;
+	p += strspn(p, "\r\n \t");
+	// decode HEX length:
+	conn->rx_remaining_chunksize = strtoul(p, &p, 16);
+	// see if there's any extensions/headers in there:
+	p += strspn(p, " \t;");
+	exts = p;
+	p += strcspn(p, "\r\n");
+	*p = 0;
+
+	hdr_count = 0;
+	// load the trailing headers? (i.e. did we hit the terminating ZERO chunk?)
+	if (conn->rx_remaining_chunksize == 0)
+	{
+		int nread = conn->rx_buffer_loaded_len - rv;
+		int trail = read_request(NULL, conn, buf + rv, bufsiz - rv, &nread);
+
+		if (trail < 0) {
+		  // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
+		  return -1;
+		}
+		conn->rx_buffer_loaded_len = nread + rv;
+		assert(conn->rx_buffer_read_len == rv);
+		conn->rx_buffer_read_len += trail;
+
+		// did we overrun the buffer while fetching headers?
+		if (trail == 0 && nread == conn->rx_buffer_loaded_len - rv) {
+		  conn->rx_buffer_loaded_len += offset;
+		  conn->rx_buffer_read_len += offset;
+		  if (do_shift) {
+		    return -1;	// malformed end chunk header set
+		  }
+		  do_shift = 1;
+		  // restore the CRLF for the header itself, so we locate it again in the next round:
+		  *p = '\r';
+		  buf[rv - 1] = '\n';
+		  continue;
+		}
+
+		if (trail > 0) {
+			p = buf + rv;
+			p[trail - 1] = 0;
+			hdr_count = parse_http_headers(&p, chunk_headers, ARRAY_SIZE(chunk_headers));
+		}
+		rv += trail;
+	}
+
+    conn->rx_buffer_loaded_len += offset;
+    conn->rx_buffer_read_len += offset;
+
+	// call user callback:
+	pprv = 0;
+	conn->rx_chunk_header_parsed = 3;
+	if (ctx->user_functions.process_rx_chunk_header)
+	{
+		pprv = ctx->user_functions.process_rx_chunk_header(conn, conn->rx_remaining_chunksize, exts, chunk_headers, hdr_count);
+	}
+	conn->rx_chunk_header_parsed = 1;
+
+	if (pprv == 0)
+	{
+		conn->rx_chunk_count++;
+	}
+
+	return pprv < 0 ? pprv : rv;
+  }
 }
 
 // For given directory path, substitute it to valid index file.
@@ -4279,9 +5054,9 @@ static int is_not_modified(const struct mg_connection *conn,
 
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
                              struct mg_connection *dst_conn, int send_error_on_fail) {
-  const char *expect, *buffered;
+  const char *expect;
   char buf[DATA_COPY_BUFSIZ];
-  int to_read, nread, buffered_len, success = 0;
+  int to_read, nread, success = 0;
 
   expect = mg_get_header(conn, "Expect");
   assert(fp != NULL);
@@ -4307,30 +5082,15 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
       assert(mg_have_headers_been_sent(conn) == 0);
     }
 
-    buffered = conn->buf + conn->request_len;
-    buffered_len = conn->data_len - conn->request_len;
-    assert(buffered_len >= 0);
-    assert(conn->consumed_content == 0);
-
-    if (buffered_len > 0) {
-      if ((int64_t) buffered_len > conn->content_len && conn->content_len >= 0) {
-        buffered_len = (int) conn->content_len;
-      }
-      if (buffered_len &&
-          push(fp, dst_conn, buffered, (int64_t) buffered_len) != buffered_len)
-        goto failure;
-      conn->consumed_content += buffered_len;
-    }
-
     nread = 0;
     while (conn->consumed_content < conn->content_len || conn->content_len == -1) {
       int nwrite;
 
       to_read = sizeof(buf);
-      if ((int64_t) to_read > conn->content_len - conn->consumed_content && conn->content_len >= 0) {
+      if (conn->content_len >= 0 && (int64_t) to_read > conn->content_len - conn->consumed_content) {
         to_read = (int) (conn->content_len - conn->consumed_content);
       }
-      nread = pull(NULL, conn, buf, to_read);
+      nread = mg_read(conn, buf, to_read);
       if (nread <= 0)
         break;
       nwrite = push(fp, dst_conn, buf, nread);
@@ -4338,7 +5098,6 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
         nread = -1;
         break;
       }
-      conn->consumed_content += nread;
     }
 
     if (conn->consumed_content == conn->content_len || conn->content_len == -1) {
@@ -4571,7 +5330,8 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   int headers_len, data_len, i, fd_stdin[2], fd_stdout[2], fd_stderr[2];
   const char *status, *connection_status, *content_type;
   char buf[HTTP_HEADERS_BUFSIZ], *pbuf, dir[PATH_MAX], *p, *e;
-  struct mg_request_info ri = {0};
+  struct mg_header cgi_headers[64];
+  int cgi_header_count;
   struct cgi_env_block blk;
   FILE *in, *out, *err;
   pid_t pid;
@@ -4658,10 +5418,18 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
   pbuf = buf;
   buf[headers_len - 1] = '\0';
-  parse_http_headers(&pbuf, &ri);
+  cgi_header_count = parse_http_headers(&pbuf, cgi_headers, ARRAY_SIZE(cgi_headers));
+
+  // the CGI app might send the data to us in chunked mode too!
+  status = get_header(cgi_headers, cgi_header_count, "Transfer-Encoding");
+  if (status && mg_stristr(status, "chunked")) {
+    send_http_error(conn, 500, NULL,
+                    "Mongoose does not support Chunked Transfer Mode from the CGI application");
+    goto done;
+  }
 
   // Make up and send the status line
-  if ((status = get_header(&ri, "Status")) != NULL) {
+  if ((status = get_header(cgi_headers, cgi_header_count, "Status")) != NULL) {
     char * chknum = NULL;
     int response_code = (int)strtol(status, &chknum, 10);
     if (chknum != NULL)
@@ -4671,17 +5439,17 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     if (!is_legal_response_code(response_code)) {
       send_http_error(conn, 500, NULL,
             "CGI program sent malformed HTTP Status header: [%s]",
-            get_header(&ri, "Status"));
+            get_header(cgi_headers, cgi_header_count, "Status"));
       goto done;
     }
     if (response_code != mg_set_response_code(conn, response_code))
       status = NULL;
-  } else if (get_header(&ri, "Location") != NULL) {
+  } else if (get_header(cgi_headers, cgi_header_count, "Location") != NULL) {
     mg_set_response_code(conn, 302);
   } else {
     mg_set_response_code(conn, 200);
   }
-  if ((connection_status = get_header(&ri, "Connection")) != NULL) {
+  if ((connection_status = get_header(cgi_headers, cgi_header_count, "Connection")) != NULL) {
     // fix: keep-alive (storing connection_status is a performance bonus)
     if (mg_strcasecmp(connection_status, "keep-alive")) {
       conn->must_close = 1;
@@ -4689,13 +5457,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
 
   // Send headers
-  for (i = 0; i < ri.num_headers; i++) {
-    mg_add_response_header(conn, 0, ri.http_headers[i].name, "%s", ri.http_headers[i].value);
+  for (i = 0; i < cgi_header_count; i++) {
+    mg_add_response_header(conn, 0, cgi_headers[i].name, "%s", cgi_headers[i].value);
   }
 
   // See if there's any data in the 'err' channel and when there is,
   // discard any Content-Length header as it'll be invalid anyway.
-  content_type = get_header(&ri, "Content-Type");
+  content_type = get_header(cgi_headers, cgi_header_count, "Content-Type");
   is_text_out = 0;
   if (content_type)
     is_text_out = !mg_strncasecmp(content_type, "text/plain", 10) +
@@ -4710,21 +5478,30 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
       if (strcmp(conn->request_info.http_version, "1.1") >= 0)
         mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
       else {
-		// HTTP/1.0:
+        // HTTP/1.0:
         mg_remove_response_header(conn, "Content-Length");
         conn->must_close = 1;
-	  }
+      }
     } else if (i < 0) {
       send_http_error(conn, 500, NULL,
             "CGI program clobbered stderr: %s",
             mg_strerror(ERRNO));
       goto done;
     }
+  } else {
+    // Serve all CGI output in 'chunked' mode; it's easier that way.
+    // Note that the 'Transfer-Encoding' header add op automatically
+    // removes any lingering 'Content-Length' header in the set for
+    // those are mutually exclusive. mg_add_response_header() takes
+    // care of that, so no worries.
+    if (strcmp(conn->request_info.http_version, "1.1") >= 0)
+      mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+    else // HTTP/1.0:
+      conn->must_close = 1;
   }
-  // and always send the Connection: header:
-  if (get_header(&ri, "Connection") == NULL) {
-    mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
-  }
+  // and always send the (up-to-date) Connection: header:
+  // this call overwrites any previous value, intentionally.
+  mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn));
   mg_write_http_response_head(conn, 0, status);
 
   if (is_text_out && i > 0) {
@@ -4756,10 +5533,13 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   }
 
   // Send chunk of data that may have been read after the headers
-  (void) mg_write(conn, buf + headers_len, data_len - headers_len);
+  if (data_len > headers_len)
+    (void)mg_write(conn, buf + headers_len, data_len - headers_len);
 
   // Read the rest of CGI output and send to the client
   (void)send_file_data(conn, out, INT64_MAX);
+
+  (void)mg_flush(conn);
 
 done:
   if (pid != (pid_t) -1) {
@@ -4855,7 +5635,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
     range = mg_get_header(conn, "Content-Range");
     r1 = r2 = 0;
     if (range != NULL && parse_range_header(range, &r1, &r2) > 0) {
-      conn->request_info.status_code = 206;
+      mg_set_response_code(conn, 206);
       // TODO(lsm): handle seek error
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
     }
@@ -4879,14 +5659,14 @@ static char *extract_quoted_value(char *str)
   rv = str;
   if (*str != '"') {
     // no quotes around VVV are accepted, but then VVV can't contain whitespace either!
-	str += strcspn(str, " \t\r\n\"");
+    str += strcspn(str, " \t\r\n\"");
   } else {
-	rv++;
-	str = strchr(str + 1, '"');
-	if (!str) {
-	  // erroneous format: no closing quote. Return NULL.
-	  return NULL;
-	}
+    rv++;
+    str = strchr(str + 1, '"');
+    if (!str) {
+      // erroneous format: no closing quote. Return NULL.
+      return NULL;
+    }
   }
   *str = 0;
   return rv;
@@ -4904,15 +5684,15 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
   tag += strspn(tag, " \t\r\n");
   if (!strncmp(tag, "virtual=", 8)) {
     // File name is relative to the webserver root
-	file_name = extract_quoted_value(tag + 8);
-	if (!file_name || !*file_name) goto faulty_tag_value;
+    file_name = extract_quoted_value(tag + 8);
+    if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s%c%s",
         get_conn_option(conn, DOCUMENT_ROOT), DIRSEP, file_name);
   } else if (!strncmp(tag, "file=", 5)) {
     // File name is relative to the webserver working directory
     // or it is absolute system path
     file_name = extract_quoted_value(tag + 5);
-	if (!file_name || !*file_name) goto faulty_tag_value;
+    if (!file_name || !*file_name) goto faulty_tag_value;
     (void) mg_snprintf(conn, path, sizeof(path), "%s", file_name);
   } else if ((file_name = extract_quoted_value(tag)) != NULL && *file_name) {
     // File name is relative to the current document
@@ -4924,7 +5704,7 @@ static int do_ssi_include(struct mg_connection *conn, const char *ssi,
         sizeof(path) - strlen(path), "%s", file_name);
   } else {
 faulty_tag_value:
-	mg_cry(conn, "Bad SSI #include: [%s] in SSI file [%s]", tag, ssi);
+    mg_cry(conn, "Bad SSI #include: [%s] in SSI file [%s]", tag, ssi);
     return 1;
   }
 
@@ -4976,27 +5756,6 @@ static int do_ssi_exec(struct mg_connection *conn, char *tag) {
 
 #endif // !NO_POPEN
 
-const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize)
-{
-    if (haysize < needlesize || !haystack || !needle)
-        return NULL;
-    haysize -= needlesize - 1;
-    while (haysize > 0)
-    {
-        const char *p = memchr(haystack, needle[0], haysize);
-        if (!p)
-            return NULL;
-        // as we fixed haysize we can now simply check if the needle is here:
-        if (!memcmp(p, needle, needlesize))
-            return p;
-        // be blunt; no BM-like speedup for this search...
-        p++;
-        haysize -= p - haystack;
-        haystack = p;
-    }
-    return NULL;
-}
-
 static int send_ssi_file(struct mg_connection *conn, const char *path,
                           FILE *fp, int include_level) {
   char buf[SSI_LINE_BUFSIZ];
@@ -5039,7 +5798,7 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
     for(;;) {
       const char *e;
       const char *s;
-	  int rv;
+      int rv;
       if (rlen < taglen) {
         if (b > buf) {
           memmove(buf, b, rlen);
@@ -5081,43 +5840,43 @@ static int send_ssi_file(struct mg_connection *conn, const char *path,
       s--;
       // skip whitespace:
       s += strspn(s, " \t\r\n");
-	  buf[e - buf] = 0;
-	  rv = call_user_ssi_command(conn, s, path, include_level);
-	  if (rv) {
-		if (rv < 0) {
-		  if (conn->request_info.status_code == 200)
-		    send_http_error(conn, 577, NULL, "%s: SSI tag processing failed (%s)", __func__, path);
-		  return rv;
-		}
-	  } else if (!strncmp(s, "include", 7)) {
-		s += 7;
-		s += strspn(s, " \t\r\n");
+      buf[e - buf] = 0;
+      rv = call_user_ssi_command(conn, s, path, include_level);
+      if (rv) {
+        if (rv < 0) {
+          if (conn->request_info.status_code == 200)
+            send_http_error(conn, 577, NULL, "%s: SSI tag processing failed (%s)", __func__, path);
+          return rv;
+        }
+      } else if (!strncmp(s, "include", 7)) {
+        s += 7;
+        s += strspn(s, " \t\r\n");
         if (do_ssi_include(conn, path, (char *)s, include_level) < 0)
-		  return -1;
+          return -1;
 #if !defined(NO_POPEN)
       } else if (!strncmp(s, "exec", 4)) {
-		s += 4;
-		s += strspn(s, " \t\r\n");
+        s += 4;
+        s += strspn(s, " \t\r\n");
         if (do_ssi_exec(conn, (char *)s))
           return -1;
 #endif // !NO_POPEN
 #if !defined(NO_CGI)
       } else if (!strncmp(s, "echo", 4)) {
         // http://www.ssi-developer.net/ssi/ssi-echo.shtml
-	    s += 4;
-		s += strspn(s, " \t\r\n");
+        s += 4;
+        s += strspn(s, " \t\r\n");
         if (strncmp("var=", s, 4)) {
           mg_cry(conn, "%s: invalid SSI echo command: \"%s\"", path, s);
-		} else {
+        } else {
           const char *ve;
           int idx;
           s += 4;
-		  s = extract_quoted_value((char *)s);
-		  ve = s + strlen(s);
+          s = extract_quoted_value((char *)s);
+          ve = s + strlen(s);
           if (ve == e || !*s) {
-			send_http_error(conn, 577, NULL, "%s: invalid SSI 'echo' command", __func__);
-		    return -1;
-		  }
+            send_http_error(conn, 577, NULL, "%s: invalid SSI 'echo' command", __func__);
+            return -1;
+          }
           *((char *)ve) = '=';
           // init 'blk' once, when we need it:
           if (!blk.conn) {
@@ -5184,6 +5943,7 @@ static void handle_ssi_file_request(struct mg_connection *conn,
     mg_write_http_response_head(conn, 200, 0);
     send_ssi_file(conn, path, fp, 0);
     (void) mg_fclose(fp);
+    (void) mg_flush(conn);
   }
 }
 
@@ -5191,7 +5951,7 @@ static void send_options(struct mg_connection *conn) {
   if (mg_is_producing_nested_page(conn))
     return;
   //mg_set_response_code(conn, 200); -- not needed any longer
-  mg_add_response_header(conn, 0, "Allow", "GET, POST, HEAD, CONNECT, PUT, DELETE, OPTIONS");
+  mg_add_response_header(conn, 0, "Allow", mg_get_allowed_methods(conn));
   mg_add_response_header(conn, 0, "DAV", "1");
 
   mg_write_http_response_head(conn, 200, 0);
@@ -5259,6 +6019,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   }
 
   mg_printf(conn, "%s\n", "</d:multistatus>");
+  (void) mg_flush(conn);
 }
 
 // This is the heart of the Mongoose's logic.
@@ -5281,7 +6042,10 @@ static void handle_request(struct mg_connection *conn) {
   ri->phys_path = path;
 
   DEBUG_TRACE(("%s", ri->uri));
-  if (!check_authorization(conn, path)) {
+
+  if (!check_allowed(conn)) {
+    send_http_error(conn, 405, NULL, "You cannot %s to this server", conn->request_info.request_method);
+  } else if (check_authorization(conn, path) != 1) {
     send_authorization_request(conn);
   } else if (call_user(conn, MG_NEW_REQUEST) != NULL) {
     // Do nothing, callback has served the request
@@ -5308,9 +6072,8 @@ static void handle_request(struct mg_connection *conn) {
   } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
     send_http_error(conn, 404, NULL, "DocumentRoot has not been properly configured.");
   } else if ((!strcmp(ri->request_method, "PUT") ||
-        !strcmp(ri->request_method, "DELETE")) &&
-      (is_empty(get_conn_option(conn, PUT_DELETE_PASSWORDS_FILE)) ||
-       !is_authorized_for_put(conn))) {
+              !strcmp(ri->request_method, "DELETE")) &&
+             is_authorized_for_put(conn) != 1) {
     send_authorization_request(conn);
   } else if (!strcmp(ri->request_method, "PUT")) {
     put_file(conn, path);
@@ -5329,7 +6092,7 @@ static void handle_request(struct mg_connection *conn) {
       mg_write_http_response_head(conn, 0, 0);
     } else {
       send_http_error(conn, 500, "%s: failed to set Status Code", __func__);
-	}
+    }
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
@@ -5419,9 +6182,9 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
     }
 
     handle_request(conn);  // may increment nested_err_or_pagereq_count when failing internally!
-	// did we actually write a response? If not, make sure we report it as a fail to complete:
-	if (!mg_have_headers_been_sent(conn))
-	  conn->nested_err_or_pagereq_count = 2;
+    // did we actually write a response? If not, make sure we report it as a fail to complete:
+    if (!mg_have_headers_been_sent(conn))
+      conn->nested_err_or_pagereq_count = 2;
 
     // reset original values, but keep the latest HTTP response code:
     // that one will have been 'upgraded' with the latest (graver) errors
@@ -6052,12 +6815,15 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
 
   // Reset request info attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port, local_ip, local_port
-  ri->phys_path = NULL;
-  ri->remote_user = NULL;
+  if (ri->remote_user != NULL) {
+	free((void *) ri->remote_user);
+	ri->remote_user = NULL;
+  }
   ri->request_method = NULL;
   ri->query_string = NULL;
   ri->uri = NULL;
   ri->http_version = NULL;
+  ri->phys_path = NULL;
   ri->path_info = NULL;
   ri->num_headers = 0;
   ri->num_response_headers = 0;
@@ -6071,6 +6837,15 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   ri->log_dstfile = NULL;
   ri->log_timestamp = 0;
 
+  // compensate for the reset of conn->request_len: keep the buffered data accessible
+  if (conn->request_len > 0 && conn->rx_buffer_loaded_len > conn->rx_buffer_read_len) {
+	conn->rx_buffer_loaded_len += conn->request_len;
+	conn->rx_buffer_read_len += conn->request_len;
+  } else {
+	conn->rx_buffer_loaded_len = 0;
+	conn->rx_buffer_read_len = 0;
+  }
+
   conn->num_bytes_sent = -1;
   conn->consumed_content = 0;
   conn->content_len = -1;
@@ -6079,6 +6854,19 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
   conn->nested_err_or_pagereq_count = 0;
   conn->tx_can_compact_hdrstore = 0;
   conn->tx_headers_len = 0;
+
+  // reset all chunked-transfer related datums as those are per-request:
+  conn->tx_is_in_chunked_mode = 0;
+  conn->rx_is_in_chunked_mode = 0;
+  conn->tx_chunk_header_sent = 0;
+  conn->rx_chunk_header_parsed = 0;
+  conn->tx_chunk_count = 0;
+  conn->tx_remaining_chunksize = 0;
+  conn->tx_next_chunksize = 0;
+  conn->rx_chunk_count = 0;
+  conn->rx_remaining_chunksize = 0;
+  conn->rx_chunk_buf_size = 0;
+  //conn->rx_buffer_loaded_len = 0;
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
@@ -6227,6 +7015,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
 }
 
 static void close_connection(struct mg_connection *conn) {
+  (void) mg_flush(conn);       // shut down chunked transfers 'cleanly', if possible
   if (conn->ssl) {
     // see http://www.openssl.org/docs/ssl/SSL_set_shutdown.html#NOTES
     // and http://www.openssl.org/docs/ssl/SSL_shutdown.html
@@ -6242,6 +7031,7 @@ static void close_connection(struct mg_connection *conn) {
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
   int n;
+  char buf[BUFSIZ];
 
   // make sure we fetch all content (and discard it), if we
   // haven't done so already (f.e.: event callback handler might've
@@ -6251,18 +7041,11 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
   // as mg_read() will return 0 as soon as the entire content of the
   // current request has been read, we can simply check for that:
   do {
-    char buf[BUFSIZ];
     n = mg_read(conn, buf, sizeof(buf));
   } while (n > 0 && conn->ctx->stop_flag == 0);
   // when an error occurred, we must close the connection
   if (n < 0) {
     conn->must_close = 1;
-  } else if (conn->data_len > conn->request_len + conn->consumed_content) {
-    int remaining = conn->data_len - conn->request_len - (int)conn->consumed_content;
-    memmove(conn->buf, conn->buf + conn->data_len + remaining, remaining);
-    conn->data_len = remaining;
-  } else {
-    conn->data_len = 0;
   }
 }
 
@@ -6283,30 +7066,53 @@ static int process_new_connection(struct mg_connection *conn) {
   const char *cl;
 
   do {
+    int data_len;
+
     if (conn->request_info.seq_no > 0) {
       DEBUG_TRACE(("************************** round: %d! *******************", conn->request_info.seq_no + 1));
     }
     reset_per_request_attributes(conn);
+
+	// when a bit of buffered data is still available, make sure it's in the right spot:
+	data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
+	if (data_len > 0)
+	{
+		memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
+	}
+	else
+	{
+		data_len = 0;
+	}
+
     conn->request_len = read_request(NULL, conn,
                                      conn->buf, conn->buf_size,
-                                     &conn->data_len);
-    assert(conn->data_len >= conn->request_len);
+                                     &data_len);
+    assert(data_len >= conn->request_len);
     conn->request_info.seq_no++;
-    if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
-      send_http_error(conn, 413, NULL, "client sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes",
-                      (unsigned int)conn->buf_size);
-      return -1;
-    }
     if (conn->request_len <= 0) {
+      if (conn->request_len == 0 && data_len == conn->buf_size) {
+        send_http_error(conn, 413, NULL, "%s: client sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes",
+                        __func__, (unsigned int)conn->buf_size);
+        return -1;
+      }
       // In case we didn't receive ANY data, we don't mess with the connection any further
       // by trying to send any error response data, so we tag the connection as done for that:
-      if (conn->data_len == 0) {
+      if (data_len == 0) {
         mg_mark_end_of_header_transmission(conn);
       }
+	  // when persistent connection was closed, we simply exit,
+	  // IFF at least 1 request has been serviced already:
+      if (conn->request_len == 0 && data_len == 0 && conn->request_info.seq_no > 1) {
+		// NOT an error! Just quit!
+        return -1;
+      }
       // don't mind we cannot send the 5xx response code, as long as we log the issue at least...
-      send_http_error(conn, 580, NULL, "%s", mg_strerror(ERRNO));
+      send_http_error(conn, 579, NULL, "%s: no data received or socket/network error: %s", __func__, mg_strerror(ERRNO));
       return -1;  // Remote end closed the connection or malformed request
     }
+	conn->rx_chunk_buf_size = conn->buf_size + CHUNK_HEADER_BUFSIZ - conn->request_len;
+	conn->rx_buffer_loaded_len = data_len - conn->request_len;
+	conn->rx_buffer_read_len = 0;
 
     // Nul-terminate the request cause parse_http_request() is C-string based
     conn->buf[conn->request_len - 1] = '\0';
@@ -6315,7 +7121,7 @@ static int process_new_connection(struct mg_connection *conn) {
       // Do not put garbage in the access log, just send it back to the client
       conn->must_close = 1;
       send_http_error(conn, 400, NULL,
-          "Cannot parse HTTP request: [%.*s]", conn->data_len, conn->buf);
+          "Cannot parse HTTP request: [%.*s]", data_len, conn->buf);
     } else if (strcmp(ri->http_version, "1.0") &&
                strcmp(ri->http_version, "1.1")) {
       // Request seems valid, but HTTP version is strange
@@ -6324,10 +7130,50 @@ static int process_new_connection(struct mg_connection *conn) {
       log_access(conn);
     } else {
       // Request is valid, handle it
-      cl = get_header(ri, "Content-Length");
-      conn->content_len = (cl == NULL ? -1 : strtoll(cl, NULL, 10));
-      conn->birth_time = time(NULL);
+      cl = get_header(ri->http_headers, ri->num_headers, "Transfer-Encoding");
+      assert(conn->content_len == -1);
+      if (cl && mg_stristr(cl, "chunked")) {
+        mg_set_rx_mode(conn, MG_IOMODE_CHUNKED_DATA);
+      } else {
+        char *chknum = NULL;
+		assert(!conn->rx_is_in_chunked_mode);
+        cl = get_header(ri->http_headers, ri->num_headers, "Content-Length");
+		if (cl != NULL)
+          conn->content_len = strtoll(cl, &chknum, 10);
+        if (chknum != NULL)
+          chknum += strspn(chknum, " ");
+        if (!is_empty(chknum))
+          return 400; // Cannot parse HTTP request header
+		if (conn->content_len == -1) {
+			// this is a bit of a tough case: we may be HTTP/1.0, in which case
+			// case we gobble everything, assuming one request per connection,
+			// but when we're HTTP/1.1, this MAY be either a request without
+			// content OR a chunked transfer request.
+			// The heuristic we apply here is to gobble all when we're
+			// okay re Connection: keep-alive.
+			// The chunked transfer case resolves itself, as long as we make sure
+			// to keep content_len == -1 then.
+			const char *http_version = ri->http_version;
+			const char *header = get_header(ri->http_headers, ri->num_headers, "Connection");
+
+			if (!conn->must_close &&
+                !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
+				(header == NULL ?
+                 (http_version && !strcmp(http_version, "1.1")) :
+                 !mg_strcasecmp(header, "keep-alive"))) {
+			  conn->content_len = 0;
+			}
+		}
+      }
+      conn->last_active_time = conn->birth_time = time(NULL);
       handle_request(conn);
+      // always make sure that chunked I/O, etc. is completed before we go and process the next request.
+      if (mg_flush(conn) > 0) {
+		// chunked transfer was not completed; complain and close the connection forcibly.
+		send_http_error(conn, 579, NULL,
+			"%s: chunked transfer was not completed (%" PRId64 " bytes remain)",
+			__func__, mg_get_tx_remaining_chunk_size(conn));
+	  }
       call_user(conn, MG_REQUEST_COMPLETE);
       log_access(conn);
       discard_current_request_from_buffer(conn);
@@ -6336,13 +7182,13 @@ static int process_new_connection(struct mg_connection *conn) {
       free((void *) ri->remote_user);
       ri->remote_user = NULL;
     }
-    if (!should_keep_alive(conn))
-      return 1;
     if (conn->ctx->stop_flag != 0)
       return -1;
+    if (!should_keep_alive(conn))
+      return 1;
     // check whether the connection is still active, i.e. whether it has any
-    // more request data pending:
-  } while (conn->data_len > 0);
+    // more request data pending...
+  } while (conn->rx_buffer_read_len < conn->rx_buffer_loaded_len);
   return 0;
 }
 
@@ -6385,7 +7231,7 @@ static int pull_testset_from_idle_queue(struct mg_context *ctx, int n)
         return p;
       }
       arr[p].client.was_idle = 0;
-      arr[p].client.has_read_data = 0;
+      assert(arr[p].client.has_read_data == 0);
       p = arr[p].next;
     } while (--n > 0 && p != idle_test_set);
     // decouple set from idle queue:
@@ -6530,6 +7376,7 @@ static int pop_node_from_idle_queue(struct mg_context *ctx, int node, struct mg_
   conn->ssl = arr->ssl;
   conn->client = arr->client;
   conn->birth_time = arr->birth_time;
+  conn->last_active_time = arr->last_active_time;
 
   // remove node from any cyclic linked list out there:
   if (arr->next == node)
@@ -6577,9 +7424,11 @@ static int push_conn_onto_idle_queue(struct mg_context *ctx, struct mg_connectio
   arr->ssl = conn->ssl;
   arr->client = conn->client;
   arr->birth_time = conn->birth_time;
+  arr->last_active_time = conn->last_active_time = time(NULL);
+
   // make sure to clear the 'has_read_data' when it would be in an unknown state before
   if (!arr->client.was_idle)
-	arr->client.has_read_data = 0;
+    arr->client.has_read_data = 0;
   arr->client.was_idle = 1;
 
   // add element at the end of the queue:
@@ -6658,37 +7507,37 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         {
           // while setting up the FD_SET, also check for idle-timed-out sockets and mark 'em:
           if (arr[p].client.max_idle_seconds > 0 &&
-              arr[p].birth_time + arr[p].client.max_idle_seconds <= now)
+              arr[p].last_active_time + arr[p].client.max_idle_seconds <= now)
             arr[p].client.idle_time_expired = 1;
 
           add_to_set(arr[p].client.sock, &fdr, &max_fh);
           p = arr[p].next;
         } while (p != idle_test_set);
         /*
-		 Do NOT wait in the select(), just check if anybody has anything for us or not.
+         Do NOT wait in the select(), just check if anybody has anything for us or not.
 
-		 Unless, that is, when we're checking the _last_ chunk of pending handles: if
-		 none of those deliver anything 'read ready' either, we know _none_ of them
-		 have anything useful for us right now and as the sq_full is still (correctly!)
-		 triggered, we just need to wait until there's some read data ready somewhere.
-		 Meanwhile, we don't want this loop to load the CPU @ 100% for this particular
-		 'everybody is silent now' scenario, so we add a wee bit of a delay here, just
-		 very small, so that us not seeing anything happening in this last series doesn't
-		 delay anything pending _now_ in the former chunks if the _very large_ (> FD_SETSIZE)
-		 connection queue we might have.
-		 If the connection queue is <= FD_SETSIZE elements large, then we might think
-		 we're safe with any delay as long as it's in select() here, as select() will
-		 be watching _all_ our queued connections then, but there can still be new
-		 connections incoming, getting queued and possibly with data ready, without us
-		 knowing yet -- we're outside the mutex-ed zone here!
+         Unless, that is, when we're checking the _last_ chunk of pending handles: if
+         none of those deliver anything 'read ready' either, we know _none_ of them
+         have anything useful for us right now and as the sq_full is still (correctly!)
+         triggered, we just need to wait until there's some read data ready somewhere.
+         Meanwhile, we don't want this loop to load the CPU @ 100% for this particular
+         'everybody is silent now' scenario, so we add a wee bit of a delay here, just
+         very small, so that us not seeing anything happening in this last series doesn't
+         delay anything pending _now_ in the former chunks if the _very large_ (> FD_SETSIZE)
+         connection queue we might have.
+         If the connection queue is <= FD_SETSIZE elements large, then we might think
+         we're safe with any delay as long as it's in select() here, as select() will
+         be watching _all_ our queued connections then, but there can still be new
+         connections incoming, getting queued and possibly with data ready, without us
+         knowing yet -- we're outside the mutex-ed zone here!
 
-		 'head' is a thread-safe copy of the ctx->sq_head after extracting the current
-		 series from the connection queue; remember that it's not up-to-date as it
-		 represents the state of affairs while we were in the mutexed zone: the situation
-		 may have changed by now, so we MUST keep our select() delay as low as possible
-		 here to balance between CPU load reduction in 'everybody is silent' mode while
-		 ensuring swift reponse to new incoming connections with data available in them.
-		*/
+         'head' is a thread-safe copy of the ctx->sq_head after extracting the current
+         series from the connection queue; remember that it's not up-to-date as it
+         represents the state of affairs while we were in the mutexed zone: the situation
+         may have changed by now, so we MUST keep our select() delay as low as possible
+         here to balance between CPU load reduction in 'everybody is silent' mode while
+         ensuring swift reponse to new incoming connections with data available in them.
+        */
         if (head >= 0) {
           tv.tv_sec = 0;
           tv.tv_usec = 0;
@@ -6785,8 +7634,8 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
     while (ctx->stop_flag == 0) {
       struct timespec tv = {0};
 
-	  // While we wait here, one or more queued connections may receive data,
-	  // which should be processed ASAP, so we shouldn't wait long then:
+      // While we wait here, one or more queued connections may receive data,
+      // which should be processed ASAP, so we shouldn't wait long then:
       if (ctx->sq_head >= 0) {
         tv.tv_sec = MG_SELECT_TIMEOUT_MSECS_TINY / 1000;
         tv.tv_nsec = MG_SELECT_TIMEOUT_MSECS_TINY * 1000000;
@@ -6811,7 +7660,7 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
   int rv = 0;
 
   // this timestamp is important as it is used to check the keep alive timeout (socket::max_idle_seconds) too!
-  conn->birth_time = time(NULL);
+  conn->last_active_time = conn->birth_time = time(NULL);
 
   (void) pthread_mutex_lock(&ctx->mutex);
 
@@ -6848,11 +7697,12 @@ static void worker_thread(struct mg_context *ctx) {
     mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
     goto fail_dramatically;
   }
-  conn = (struct mg_connection *) calloc(1, sizeof(*conn) + buf_size * 3); /* RX headers, TX headers, scratch space */
+  conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     goto fail_dramatically;
   }
+  memset(conn, 0, sizeof(conn[0]));
   conn->client.sock = INVALID_SOCKET;
 
   // Call consume_socket() even when ctx->stop_flag > 0, to let it signal
@@ -6891,7 +7741,7 @@ static void worker_thread(struct mg_context *ctx) {
 
       if (!conn->client.is_ssl ||
           (conn->client.is_ssl && sslize(conn, SSL_accept))) {
-        reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+        //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
         doing_fine = 1;
         conn->is_inited = 1;
         call_user(conn, MG_INIT_CLIENT_CONN);
@@ -6910,7 +7760,7 @@ static void worker_thread(struct mg_context *ctx) {
 
     if (!doing_fine) {
       DEBUG_TRACE(("%s: closing connection", __func__));
-      reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+      //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_EXIT_CLIENT_CONN);
       close_connection(conn);
       // Clear everything in conn to ensure no value makes it into the next connection/session.
@@ -6925,7 +7775,7 @@ static void worker_thread(struct mg_context *ctx) {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
         mg_cry(conn, "%s: closing active connection %s because server is shutting down",
                __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
-        reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+        //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
         call_user(conn, MG_EXIT_CLIENT_CONN);
         close_connection(conn);
         break;
@@ -6937,7 +7787,7 @@ static void worker_thread(struct mg_context *ctx) {
     char src_addr[SOCKADDR_NTOA_BUFSIZE];
     mg_cry(conn, "%s: closing keep-alive connection %s because server is shutting down",
            __func__, sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa));
-    reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
+    //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
     call_user(conn, MG_EXIT_CLIENT_CONN);
     close_connection(conn);
   }
@@ -7449,5 +8299,320 @@ int mg_get_stop_flag(struct mg_context *ctx) {
 
 void mg_signal_stop(struct mg_context *ctx) {
   ctx->stop_flag = 1;
+}
+
+
+void mg_set_tx_mode(struct mg_connection *conn, mg_iomode_t mode)
+{
+    if (conn)
+    {
+        conn->tx_is_in_chunked_mode = (mode >= MG_IOMODE_CHUNKED_DATA);
+        conn->tx_remaining_chunksize = 0;
+        conn->tx_next_chunksize = 0;
+        conn->tx_chunk_header_sent = 0;
+        conn->tx_chunk_count = 0;
+    }
+}
+
+mg_iomode_t mg_get_tx_mode(struct mg_connection *conn)
+{
+    if (conn)
+    {
+        return conn->tx_is_in_chunked_mode ?
+                conn->tx_chunk_header_sent >= 2 ?
+                  MG_IOMODE_CHUNKED_HEADER :
+                  MG_IOMODE_CHUNKED_DATA :
+                MG_IOMODE_STANDARD;
+    }
+    return MG_IOMODE_UNKNOWN;
+}
+
+int mg_get_tx_chunk_no(struct mg_connection *conn)
+{
+    if (conn && conn->tx_is_in_chunked_mode)
+    {
+        return conn->tx_chunk_count;
+    }
+    return -1;
+}
+
+int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn)
+{
+    if (conn && conn->tx_is_in_chunked_mode)
+    {
+        return conn->tx_remaining_chunksize;
+    }
+    return -1;
+}
+
+int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size)
+{
+    if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
+    {
+        // chunk_size == 0 POSSIBLY marks the end of chunked transmission:
+        // out of mg_write()), mg_flush() and mg_close(), the first one called
+        // will determine the exact behaviour:
+        // when mg_flush() or mg_close() are next, they will write the final
+        // chunk header (sentinel) then, while mg_write() would
+        // 'expand' the chunk size to the number of data bytes sent through
+        // the mg_write() call.
+        // This process flow is designed to facilitate simple user code like
+        //
+        //   mg_set_tx_next_chunk_size(conn, 0);
+        //   // oh! forgot to write something!
+        //   mg_write/mg_printf(conn, "bla bla"); -- one more chunk, size = 7
+        //   mg_set_tx_next_chunk_size(conn, 0);
+        //   // this time it's End All, Good All:
+        //   mg_flush(conn, 0);  -- we want to persist the connection, so we don't mg_close() here instead.
+        //
+        conn->tx_next_chunksize = chunk_size;
+        return (conn->tx_remaining_chunksize > 0);
+    }
+    return -1;
+}
+
+
+int mg_flush(struct mg_connection *conn)
+{
+    if (conn)
+    {
+        // nothing to do unless we're in TX chunked mode
+        // and chunk_size == 0 while the chunk header hasn't been
+        // sent yet. This marks the end of a chunked transmission.
+        if (conn->tx_is_in_chunked_mode)
+        {
+            if (conn->tx_chunk_header_sent == 0 &&
+                conn->tx_remaining_chunksize == 0)
+            {
+                // prep and transmit a SENTINEL 'chunk header'
+                return mg_write_chunk_header(conn, 0);
+            }
+            return !(conn->tx_chunk_header_sent == 1 &&
+                     conn->tx_remaining_chunksize == 0);
+        }
+        return 0;
+    }
+    return -1;
+}
+
+
+
+void mg_set_rx_mode(struct mg_connection *conn, mg_iomode_t mode)
+{
+    if (conn)
+    {
+        conn->rx_is_in_chunked_mode = (mode >= MG_IOMODE_CHUNKED_DATA);
+        conn->rx_remaining_chunksize = 0;
+        conn->rx_chunk_count = 0;
+    }
+}
+
+mg_iomode_t mg_get_rx_mode(struct mg_connection *conn)
+{
+    if (conn)
+    {
+        return conn->rx_is_in_chunked_mode ? MG_IOMODE_CHUNKED_DATA : MG_IOMODE_STANDARD;
+    }
+    return MG_IOMODE_UNKNOWN;
+}
+
+int mg_get_rx_chunk_no(struct mg_connection *conn)
+{
+    if (conn && conn->rx_is_in_chunked_mode)
+    {
+        return conn->rx_chunk_count;
+    }
+    return -1;
+}
+
+int64_t mg_get_rx_remaining_chunk_size(struct mg_connection *conn)
+{
+    if (conn && conn->rx_is_in_chunked_mode)
+    {
+        return conn->rx_remaining_chunksize;
+    }
+    return -1;
+}
+
+int mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size)
+{
+    if (conn && conn->rx_is_in_chunked_mode && chunk_size >= 0)
+    {
+        if (conn->rx_remaining_chunksize > 0)
+        {
+            return 1;
+        }
+        // chunk_size == 0 marks end of chunked transmission: the next
+        // mg_read() should fetch and parse the sentinel chunk header then.
+        conn->rx_remaining_chunksize = chunk_size;
+        conn->rx_chunk_header_parsed = 1;
+        return 0;
+    }
+    return -1;
+}
+
+int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size)
+{
+    if (!conn->buf_size) // mg_connect() creates connections without header buffer space
+        return -1;
+
+    if (conn && conn->tx_is_in_chunked_mode && chunk_size >= 0)
+    {
+        char buf[CHUNK_HEADER_BUFSIZ];
+        char *d;
+
+        // report special error code when calling us repeatedly or in re-entrant fashion:
+        if (conn->tx_chunk_header_sent != 0)
+            return 1 + conn->tx_chunk_header_sent;
+
+        // reset the 'next chunk size' first thing, so that the user callback MAY update it for the NEXT chunk:
+        conn->tx_next_chunksize = 0;
+
+        // switch to 'header TX mode' to cajole mg_write() et al into writing straight through.
+        conn->tx_chunk_header_sent = 2;
+
+        // No matter which protocol the user callback will be doing, we'll prep the buffer for the
+        // first bit of a HTTP/1.1 chunk header; it's low cost and that way the callback can write
+        // any HTTP/1.1 header extensions directly to our write buffer when it wants to do that.
+        d = buf;
+
+        // HTTP/1.1 chunking it is. Four scenarios to account for:
+        // 1) initial chunk (~ dump hex size + extras, CRLF and go: data)
+        // 2) subsequent chunks (~ write final CRLF, then as (1))
+        // 3) sentinel ('zero') chunk (~ write final CRLF, then write 0 + extras, trailer, last CRLF and we're done)
+        // 4) sentinel ('zero') chunk which is also the very first chunk: no data at all. (~ like (3) but without the CRLF)
+        //
+        // --> write CRLF when we're terminating a previous chunk:
+        if (conn->tx_chunk_count > 0)
+        {
+            *d++ = 13;
+            *d++ = 10;
+        }
+        // write basic chunk header plus header extension prefix all at once:
+        d += mg_snq0printf(conn, d, sizeof(buf) - 3, "%" PRIx64 ";", chunk_size);
+
+        // user callback anyone?
+        *d = 0;
+        if (conn->ctx->user_functions.write_chunk_header != NULL)
+        {
+            int rv = conn->ctx->user_functions.write_chunk_header(conn, chunk_size, buf, sizeof(buf) - 4, d);
+            // do we fall back to the default (HTTP 1.1 chunking) or are we done?
+            if (rv != 0)
+            {
+                // make sure we reset the state first and update the counters
+                if (conn->tx_chunk_header_sent == 2)
+                    conn->tx_chunk_header_sent = 1;
+                if (rv >= 0)
+                {
+                    conn->tx_chunk_count++;
+					rv = 0;
+                }
+                return rv;
+            }
+
+			// do we need to write chunk extensions? If so, then they were produced by the user callback,
+			// otherwise we wind back to a basic chunk header, as HTTP/1.1 chunked transfer it is when we get here.
+			if (!*d)
+			{
+				// undo that ';' up there
+				--d;
+			}
+			else
+			{
+				d += strlen(d);
+			}
+        }
+
+        *d++ = 13;
+        *d++ = 10;
+        // if we're writing the sentinel chunk, we should dump all changed/added headers in the 'trailer':
+        if (chunk_size == 0)
+        {
+            int n = conn->request_info.num_response_headers;
+            int i;
+            char *o_d = d;
+
+            for (i = 0; i < n; i++)
+            {
+                struct mg_header *h = conn->request_info.response_headers + i;
+
+                // Was this tag edited/added after we had all headers written in the HTTP response header?
+                // If yes, dump it in the trailer block!
+                if (h->name[strlen(h->name) + 1] == '!')
+                {
+                    d += mg_snq0printf(conn, d, sizeof(buf) - (d - buf), "%s: %s\r\n", h->name, h->value);
+                }
+            }
+            if (d + 2 >= buf + sizeof(buf))
+            {
+                mg_cry(conn, "%s: buffer overflow while writing sentinel chunk trailer; ignoring all headers", __func__);
+                d = o_d;
+            }
+            // and the final CRLF after the (possibly empty) trailer:
+            *d++ = 13;
+            *d++ = 10;
+        }
+
+        assert(conn->tx_chunk_header_sent == 2);
+        if ((d - buf) != mg_write(conn, buf, (d - buf)))
+        {
+            // make sure we reset the state first
+            if (conn->tx_chunk_header_sent == 2)
+                conn->tx_chunk_header_sent = 1;
+            return -1;
+        }
+        // make sure we reset the state first and update the counters
+        if (conn->tx_chunk_header_sent == 2)
+            conn->tx_chunk_header_sent = 1;
+        conn->tx_chunk_count++;
+        conn->tx_remaining_chunksize = chunk_size;
+        return 0;
+    }
+    return -1;
+}
+
+int mg_is_read_data_available(struct mg_connection *conn)
+{
+    if (conn)
+    {
+        // do we already know whether there's incoming data pending?
+        if (conn->client.was_idle && conn->client.has_read_data)
+        {
+            return +1;
+        }
+        else if (conn->ssl)
+		{
+			char buf[16];
+			int l = SSL_peek(conn->ssl, buf, sizeof(buf));
+			int rv = ssl_renegotiation_ongoing(conn, &l);
+			if (l > 0 || (l == 0 && rv == 0) /* session termination signaled */)
+			{
+                conn->client.was_idle = 1;
+                conn->client.has_read_data = 1;
+                return +1;
+			}
+		}
+		else
+        {
+            int sn;
+		    struct timeval tv = {0};
+            fd_set fdr;
+            int max_fh = 0;
+            FD_ZERO(&fdr);
+            add_to_set(conn->client.sock, &fdr, &max_fh);
+            // waste no time on this check...
+			//tv.tv_sec = 0;
+			//tv.tv_usec = MG_SELECT_TIMEOUT_MSECS * 1000;
+            sn = select(max_fh + 1, &fdr, NULL, NULL, &tv);
+            if (sn > 0)
+            {
+                assert(FD_ISSET(conn->client.sock, &fdr));
+                conn->client.was_idle = 1;
+                conn->client.has_read_data = 1;
+                return +1;
+            }
+        }
+    }
+    return 0;
 }
 

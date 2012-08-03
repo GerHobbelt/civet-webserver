@@ -38,6 +38,7 @@ static void test_get_var(struct mg_connection *conn) {
   const char *cl;
   int var_len;
   const struct mg_request_info *ri = mg_get_request_info(conn);
+  int is_form_enc = 0;
 
   mg_printf(conn, "%s", standard_reply);
   mg_mark_end_of_header_transmission(conn);
@@ -58,13 +59,15 @@ static void test_get_var(struct mg_connection *conn) {
     } else {
       mg_read(conn, buf, buf_len);
     }
+	is_form_enc = 1;
   } else if (ri->query_string != NULL) {
     buf_len = strlen(ri->query_string);
     buf = malloc(buf_len + 1);
     strcpy(buf, ri->query_string);
+	is_form_enc = 0;
   }
   var = malloc(buf_len + 1);
-  var_len = mg_get_var(buf, buf_len, "my_var", var, buf_len + 1);
+  var_len = mg_get_var(buf, buf_len, "my_var", var, buf_len + 1, is_form_enc);
   mg_printf(conn, "Value: [%s]\n", var);
   mg_printf(conn, "Value size: [%d]\n", var_len);
   free(buf);

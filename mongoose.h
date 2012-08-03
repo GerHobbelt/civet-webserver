@@ -41,6 +41,13 @@ struct mg_ip_address {
   } ip_addr;
 };
 
+// A HTTP header: 
+//   Name: <value>
+struct mg_header {
+  char *name;                    // HTTP header name
+  char *value;                   // HTTP header value
+};
+
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
@@ -65,10 +72,7 @@ struct mg_request_info {
   int is_ssl;                      // 1 if SSL-ed, 0 if not
   int seq_no;                      // number of request served for this connection (1..N; can only be >1 for kept-alive connections)
   int num_headers;                 // Number of headers
-  struct mg_header {
-    char *name;                    // HTTP header name
-    char *value;                   // HTTP header value
-  } http_headers[64];              // Maximum 64 request headers
+  struct mg_header http_headers[64];  // Maximum 64 request headers
   int num_response_headers;        // Number of response headers
   struct mg_header response_headers[64];  // Headers to be sent with HTTP response. Provided by user.
 };
@@ -136,6 +140,154 @@ typedef void * (WINCDECL *mg_thread_func_t)(void *);
 //   Mongoose proceeds with request handling as if nothing happened.
 typedef void * (*mg_callback_t)(enum mg_event event,
                                 struct mg_connection *conn);
+
+// Prototype for the user-defined function. Mongoose calls this function
+// each time it needs a password in order to perform Digest Authentication
+// of the received request.
+//
+// Parameters:
+//   conn:              the connection which processes the HTTP request.
+//   username:          the username for which a password is needed.
+//   auth_domain:       the authorization domain for which a password is needed (isn't necessarily equal to the 'Host:' request header)
+//   uri, nonce, nc, cnonce, qop, reponse:
+//                      the elements decoded from the 'Authorization:' HTTP header;
+//                      NULL when that header was not present or wasn't of the 'Digest' type.
+//   hash:              the buffer where user should store the requested password hash.
+//                      The usual way to construct the hash would be to call
+//                          mg_md5(hash, username, ":", auth_domain, ":", password, NULL);
+//   hash_bufsize:      size of the buffer pointed by the 'hash' parameter.
+//
+// Return:
+//   3 - perform authorization using the default file-based approach
+//   2 - bypass authorization and handle request (authorization PASS)
+//   1 - perform authorization using the produced hash
+//   0 - don't authorize and send 401 (authorization FAIL)
+//   anything else - fail the authorization, send a 5xx response code
+//
+// Notes:
+//   You can access the user data through the mg_get_user_data() and mg_get_context()
+//   API functions.
+typedef int (*mg_password_callback_t)(struct mg_connection *conn,
+                                      const char *username,
+                                      const char *auth_domain,
+                                      const char *uri,
+                                      const char *nonce,
+                                      const char *nc,
+                                      const char *cnonce,
+                                      const char *qop,
+                                      const char *response,
+                                      char hash[],
+                                      size_t hash_bufsize);
+
+// Prototype for the user-defined function. Mongoose calls this function
+// each time it receives a part of the request body from the network.
+//
+// In order to deduce if the whole body has been received, accumulate value of 'len_buff'
+// parameter and compare it to the value of the Content-Length header
+// (request_info->content_len).
+//
+// If this callback is provided by the user, the body will be not stored into the file
+// system / socket.
+//
+// Parameters:
+//   conn:          the connection which processes the HTTP request.
+//   len_buff:      number of bytes in the buffer.
+//   buff:          buffer where the received part of body or whole body is stored.
+//
+// Returns:
+//   The number of successfully processed bytes.
+//   Should be equal to len_buff. Otherwise body receiving will be interrupted
+//   and error response will be sent to the remote peer.
+typedef int (*mg_write_callback_t)(struct mg_connection *conn,
+                                   const char *buf,
+                                   size_t bufsize);
+
+// Prototype for the user-defined function. Mongoose calls this function
+// each time it sends part of the content body while processing the GET request.
+//
+// This callback is called at least twice per request. The first time in order
+// to get full length of the body to be sent and it's mime type (see
+// 'content_length' and 'mime' parameters).
+// The second and subsequent times to obtain another part of the body to be sent.
+// The function is not called anymore when all content_length bytes have been sent,
+// or if an error occurred during sending.
+//
+// If this callback is provided by the user, the files or dynamic generated content
+// will be not be sent.
+//
+// Parameters:
+//   conn:          the connection which processes the HTTP request.
+//   len_buff:      length of buffer where user has to store body or part of it.
+//   buff:          buffer where part of the body to be sent is stored.
+//                  Will be NULL to signal this is the initial call to obtain
+//                  the Content-Length info from the user.
+//   content_length:the full length of the body. Can be NULL.
+//   mime:          the mime type to be used as a value for the Content-Type
+//                  header. Can be NULL.
+//
+// Returns:
+//   The number of bytes stored into the buffer.
+//   If zero or negative, sending will be stopped and the connection will be closed.
+typedef int (*mg_read_callback_t)(struct mg_connection *conn,
+                                  char    *buf,
+                                  size_t  bufsize,
+                                  size_t  *content_length,
+                                  char*   *mime);
+
+// Invoked when a HTTP chunk header is being written. 
+// The user may choose to either write an entirely custom chunk header, using the
+// provided buffer and mg_write(), and return 1, or append any optional HTTP chunk
+// extensions as a C string, starting at chunk_extenions, and return 0.
+//
+// chunk_extensions points into the dstbuf buffer space; hence the space available
+// for chunk extensions (plus terminating NUL C string sentinel) equals 
+//   dstbuf_size - (chunk_extensions - dstbuf)
+//
+// Return:
+// 1   on success when a custom chunk header has been written,
+// 0   when the default behaviour should be assumed, where the HTTP chunk header 
+//     should be written, with or without added chunk extensions,
+// < 0 on error.
+typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions);
+
+// Invoked when a HTTP chunk header is being read.
+// The user may choose to either read an entirely custom chunk header, using the
+// provided buffer and mg_read(), and return the header length, or have mongoose read the HTTP
+// chunk header, and return 0.
+//
+// The user MUST call mg_set_rx_chunk_size() before returning when reading a custom
+// chunk header.
+//
+// In order to facilitate reading fully custom chunk headers (e.g. WebSockets),
+// this callback is invoked at the start of the chunk read process.
+// When the user simply returns 0 then, mongoose will proceed with the default 
+// behaviour and invoke the process_rx_chunk_header callback once the complete 
+// HTTP chunk header has been loaded into the buffer.
+// 
+// '*dstbuf_fill' is the number of valid bytes already present in the buffer,
+// and should contain the total number of bytes loaded into dstbuf[] when done. 
+//
+// Return:
+// > 0 on success when a custom chunk header has been read,
+// 0   when the default behaviour should be assumed where the HTTP chunk header 
+//     should be read, with or without added chunk extensions,
+// < 0 on error.
+typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, size_t dstbuf_size, int *dstbuf_fill);
+
+// Invoked when a HTTP chunk header has been read and parsed.
+//
+// Note that any HTTP chunk headers, if present, are NOT available via the mg_get_header() API;
+// the user must decode and store them herself when they are presented here.
+// Be aware that chunk_headers points to data in a temporary buffer and thus any chunk_headers[] data
+// will be only valid for the duration of this call.
+//
+// The chunk_extensions buffer is NUL-terminated like a regular C string and may be 
+// modified by the user; this data is discarded by mongoose after this call.
+//
+// Return:
+// 0   on success,
+// < 0 on error.
+typedef int (*mg_process_rx_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions, struct mg_header *chunk_headers, int header_count);
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
@@ -207,6 +359,14 @@ typedef struct mg_user_class_t {
   mg_option_get_callback_t    user_option_get;    // User-defined callback function which delivers the value for the given option
 
   mg_ssi_command_callback_t   user_ssi_command;   // User-defined SSI command callback function
+
+  mg_password_callback_t      password_callback;  // Requests password required to complete Digest Authentication
+  mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
+  mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
+
+  mg_write_chunk_header_t       write_chunk_header;
+  mg_read_chunk_header_t		read_chunk_header;
+  mg_process_rx_chunk_header_t  process_rx_chunk_header;
 } mg_user_class_t;
 
 
@@ -394,6 +554,133 @@ int mg_send_file(struct mg_connection *conn, const char *path);
 // Read data from the remote end, return number of bytes read.
 int mg_read(struct mg_connection *, void *buf, size_t len);
 
+// Return non-zero when data is pending for reading on this connection.
+//
+// Note: This is a non-blocking, very low cost operation which should be
+//       used together with mg_read() and its descendents (e.g.
+//       mg_read_http_response()) in client-side connections at least.
+//       See also the test/unit_test.c::test_chunked_transfer().
+int mg_is_read_data_available(struct mg_connection *conn);
+
+
+typedef enum mg_iomode_t {
+  MG_IOMODE_UNKNOWN = -1,
+
+  // mg_read() will read up to connection::content_len bytes of content data from an mongoose
+  // HTTP request connection; mg_read() will read an unlimited (2^63) number of bytes
+  // from any other connection (mg_socketpair(), mg_connect())
+  // mg_write() will write an unlimited number of bytes to any connection, HTTP or other.
+  //
+  // NOTE: this has always been the 'standard' behaviour of Mongoose's mg_read/mg_write.
+  MG_IOMODE_STANDARD = 0,
+
+  // mg_read() will read content data bytes until either Mongoose itself or the user callback
+  // reports they encountered the End-Of-File header/zero-length chunk. When this mode is
+  // set, mg_read() expects to read at least one 'chunk header', which MAY be the End-Of-File
+  // header.
+  // mg_write() will write keep score about the number of bytes written in the 'current' chunk
+  // and generate a 'chunk header' when it runs out. After setting this mode, we start with
+  // 'zero bytes left', i.e. the need to write a 'chunk header' immediately. Call
+  // mg_set_tx_next_chunk_size() to set a known 'chunk size' or let mg_write() do this automatically
+  // for you, in which case mg_write() will generate a 'chunk header' fitting each individual
+  // mg_write() invocation. (I.e.: every mg_write() call will be a header+content dump then.)
+  //
+  // Note: Use this mode for 'chunked' transfer protocols, such as HTTP Transfer-Encoding:chunked
+  //       or WebSockets.
+  MG_IOMODE_CHUNKED_DATA,
+
+  // mg_read() and mg_write() read and write to the socket without any restriction, nor do they
+  // account for the bytes written in this mode. This mode is ONLY RECOGNIZED AS VALID when set
+  // inside the chunk header encode+write/read+decode user callbacks and is switched back to
+  // MG_IOMODE_CHUNKED_DATA automatically when exiting the callback. Anywhere else, this mode
+  // is considered identical to having specified MG_IOMODE_CHUNKED_DATA and acts accordingly.
+  //
+  // Note: this mode is also automatically set by Mongoose when the aforementioned user callbacks
+  //       are invoked, so you don't need to do anything to switch between both chunk modes. This
+  //       mode is provided as a convenience detection mechanism when you share code between
+  //       different user callbacks and need to know the internal state: mg_get_tx_mode() / mg_get_rx_mode()
+  //       will tell you. This mode is also made available so you may create specialized custom
+  //       behaviour in the chunk header processing user callbacks; mg_read/mg_write are re-entrant.
+  MG_IOMODE_CHUNKED_HEADER,
+} mg_iomode_t;
+
+// Configure the connection's transmit mode.
+//
+// Use MG_IOMODE_CHUNKED mode for any transmit protocol which needs to transmit data
+// in segments which are delineated by special header blobs, e.g. HTTP 'chunked transfer'
+// mode or WebSockets.
+//
+// Note: when setting the mode to MG_IOMODE_CHUNKED, then the 'transmitted chunk count'
+//       will be reset to zero(0) and the next mg_write() (or function call using mg_write()
+//       under the hood) will also transmit the first chunk header.
+void mg_set_tx_mode(struct mg_connection *conn, mg_iomode_t mode);
+
+// Get the configured transmit mode for this connection.
+mg_iomode_t mg_get_tx_mode(struct mg_connection *conn);
+
+// Get the chunk number currently being transmitted (starting at zero(0)).
+int mg_get_tx_chunk_no(struct mg_connection *conn);
+
+// Get the amount of bytes left in the current chunk slot.
+int64_t mg_get_tx_remaining_chunk_size(struct mg_connection *conn);
+
+// Set the amount of bytes for the new chunk slot.
+//
+// This function will return a negative value on error, 0 when the current chunk slot
+// has been completely consumed (mg_get_tx_remaining_chunk_size() --> 0) or +1 when
+// the current chunk hasn't been sent completely yet; in the latter case the specified
+// chunk_size is stored for future use and you can override this chunk size as long as
+// the current chunk hasn't completed yet.
+int mg_set_tx_next_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+
+// Configure the connection's receive mode.
+//
+// Use MG_IOMODE_CHUNKED mode for any receiver protocol which expects data to arrive
+// in segments which are delineated by special header blobs, e.g. HTTP 'chunked transfer'
+// mode or WebSockets.
+//
+// Note: when setting the mode to MG_IOMODE_CHUNKED, then the 'received chunk count'
+//       will be reset to zero(0) and the next mg_read() (or function call using mg_read()
+//       under the hood) is expected to receive and process the first chunk header, before
+//       if will receive any further content data.
+void mg_set_rx_mode(struct mg_connection *conn, mg_iomode_t mode);
+
+// Get the configured receive mode for this connection.
+mg_iomode_t mg_get_rx_mode(struct mg_connection *conn);
+
+// Get the chunk number currently being received (starting at zero(0)).
+int mg_get_rx_chunk_no(struct mg_connection *conn);
+
+// Get the amount of bytes left in the current chunk slot.
+int64_t mg_get_rx_remaining_chunk_size(struct mg_connection *conn);
+
+// Set the amount of bytes for the new chunk slot.
+//
+// Note that this function assumes that the current chunk slot is empty.
+// This function will return a non-zero value when this assumption is not held and the
+// function will otherwise be a no-op, i.e. the new chunk size will NOT have been set.
+//
+// Note: this function is offered as a means to help implement additional protocols
+//       on top of the current HTTP connections (e.g. WebSockets).
+int mg_set_rx_chunk_size(struct mg_connection *conn, int64_t chunk_size);
+
+
+// Flush any lingering content data to the socket.
+//
+// Return 0 on success.
+int mg_flush(struct mg_connection *conn);
+
+// Set up and transmit a chunk header for the given chunk size.
+//
+// When chunk_size == 0, a SENTINEL chunk header will be transmitted.
+//
+// Return 0 on success.
+//
+// Note: a side-effect of this call is that the 'remaining chunk size' will be
+//       set to the specified 'chunk_size' and the 'chunk number' will be
+//       incremented by one(1).
+int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size);
+
 
 // Get the value of particular HTTP header.
 //
@@ -406,21 +693,29 @@ const char *mg_get_header(const struct mg_connection *, const char *name);
 // Get a value of particular form variable.
 //
 // Parameters:
-//   data: pointer to form-uri-encoded buffer. This could be either POST data,
-//         or request_info.query_string.
-//   data_len: length of the encoded data.
-//   var_name: variable name to decode from the buffer
-//   buf: destination buffer for the decoded variable
-//   buf_len: length of the destination buffer
+//   data:      pointer to form-uri-encoded buffer. This could be either
+//              POST data, or request_info.query_string.
+//   data_len:  length of the encoded data.
+//   var_name:  variable name to decode from the buffer
+//   buf:       destination buffer for the decoded variable
+//   buf_len:   length of the destination buffer
+//   is_form_url_encoded:
+//              1 if the 'data' buffer is form-url-encoded, 0 otherwise,
+//              i.e. when the 'data' buffer is URI encoded, e.g. a query string.
+//
+// Note: form-url-encoded data differs from URI encoding in a way that it
+//       uses '+' as character for space, see RFC 1866 section 8.2.1
+//       http://ftp.ics.uci.edu/pub/ietf/html/rfc1866.txt
 //
 // Return:
 //   On success, length of the decoded variable.
 //   On error, -1 (variable not found, or destination buffer is too small).
+//   On error, -2 (destination buffer NULL or zero length).
 //
-// Destination buffer is guaranteed to be '\0' - terminated. In case of
-// failure, dst[0] == '\0'.
-int mg_get_var(const char *data, size_t data_len,
-               const char *var_name, char *buf, size_t buf_len);
+// Destination buffer is guaranteed to be '\0'-terminated whenever possible.
+// In case of failure, dst[0] == '\0'.
+int mg_get_var(const char *data, size_t data_len, const char *var_name,
+               char *buf, size_t buf_len, int is_form_url_encoded);
 
 // Fetch value of certain cookie variable into the destination buffer.
 //
@@ -461,6 +756,7 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
     __attribute__((format(printf, 4, 5)))
 #endif
 ;
+int mg_vadd_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, va_list ap);
 
 // Remove the specified response header, if available.
 //
@@ -468,6 +764,13 @@ int mg_add_response_header(struct mg_connection *conn, int force_add, const char
 //
 // Return number of occurrences removed (zero or more) on success, negative value on error.
 int mg_remove_response_header(struct mg_connection *conn, const char *tag);
+
+// Get the value of particular HTTP response header, if available.
+//
+// When multiple entries of the tag are found, only the first occurrence is returned.
+//
+// If the requested tag is not present, NULL is returned.
+const char *mg_get_response_header(const struct mg_connection *conn, const char *tag);
 
 // Handle custom error pages, i.e. nested page requests.
 // request_info struct will contain info about the original
@@ -529,6 +832,10 @@ int mg_strcasecmp(const char *s1, const char *s2);
 // find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which
 // aren't available on most platforms.
 const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize);
+
+// Find location of case-insensitive needle string in haystack string.
+// Return NULL if needle wasn't found.
+const char *mg_stristr(const char *haystack, const char *needle);
 
 // Allocate space for a copy of the given string on the heap.
 // The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).
