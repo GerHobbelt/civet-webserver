@@ -235,12 +235,13 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
     mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
   } else if ((newconn = (struct mg_connection *)
-      calloc(1, sizeof(*newconn) + http_io_buf_size * 3 /* RX headers, TX headers, scratch space */
-            )) == NULL) {
+      calloc(1, sizeof(*newconn) + (http_io_buf_size
+				? http_io_buf_size * 2 + CHUNK_HEADER_BUFSIZ /* RX headers, TX headers, RX chunked scratch space */
+				: 0))) == NULL) {
     mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
     closesocket(sock);
   } else {
-    newconn->birth_time = time(NULL);
+    newconn->last_active_time = newconn->birth_time = time(NULL);
     newconn->ctx = conn->ctx;
     newconn->client.sock = sock;
     // by default, a client-side connection is assumed to be an arbitrary client,
@@ -249,14 +250,16 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
       newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
       //newconn->consumed_content = 0;
       newconn->content_len = -1;
-      //newconn->request_len = newconn->data_len = 0;
+      //newconn->request_len = 0;
       //newconn->must_close = 0;
+	  //newconn->rx_chunk_buf_size = 0;
     } else {
       newconn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
       //newconn->consumed_content = 0;
       newconn->content_len = -1;
       newconn->buf = (char *)(newconn + 1);
-      newconn->buf_size = http_io_buf_size;
+	  newconn->buf_size = http_io_buf_size;
+	  newconn->rx_chunk_buf_size = CHUNK_HEADER_BUFSIZ;
     }
     for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
       if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
@@ -350,6 +353,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
   const char *uri;
   const char *q;
   const char *q_str;
+  char uribuf[SSI_LINE_BUFSIZ];
 
   if (!conn || !conn->buf_size)
     return -1;
@@ -368,26 +372,19 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
   if (!is_empty(request_path_and_query)) {
     va_list ap;
     int rv;
-    char *d;
-    char *scratch;
-    int space;
-
-    // see the note above the write_http_read() implementation: we MAY use the scratch buffer here.
-    scratch = conn->buf + 2 * conn->buf_size;
-    space = conn->buf_size;
+	char *d;
 
     va_start(ap, request_path_and_query);
-    rv = mg_vsnq0printf(conn, scratch, space, request_path_and_query, ap);
+    rv = mg_vsnq0printf(conn, uribuf, sizeof(uribuf), request_path_and_query, ap);
     va_end(ap);
 
-    if (rv == 0) {
+    if (rv <= 0) {
       mg_cry(conn, "%s: failed to produce the request line for format string [%s]", __func__, request_path_and_query);
       return -1;
     }
-    space -= rv;
     // check overflow, i.e. whether we hit the edge in scratch space
-    if (space <= 1) {
-      mg_cry(conn, "%s: scratch buffer overflow while constructing the request line [%.*s(...)]", __func__, 200, scratch);
+    if (rv >= sizeof(uribuf) - 2 || rv > conn->buf_size - 5) {
+      mg_cry(conn, "%s: scratch buffer overflow while constructing the request line [%.*s(...)]", __func__, (int)MG_MIN(200, sizeof(uribuf)), uribuf);
       return -1;
     }
 
@@ -400,11 +397,12 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
     //          counting on that knowledge here to both keep the copying to a minimum
     //          and assure that the URI + QUERY strings don't get damaged during the
     //          compaction process there!
-    uri = conn->request_info.uri = d = scratch;
+    uri = conn->request_info.uri = d = uribuf;
     d += strcspn(d, "?");
-    *d++ = 0;
+	if (*d)
+	  *d++ = 0;
     q_str = conn->request_info.query_string = d;
-    conn->tx_can_compact_hdrstore = 1;  // always trigger a compact cycle!
+    conn->tx_can_compact_hdrstore |= 2;  // always trigger a compact cycle, where uri+q are pulled into the tx buffer space for persistence!
   } else {
     if (is_empty(conn->request_info.uri)) {
       mg_cry(conn, "%s: request URI is nil", __func__);
@@ -429,30 +427,47 @@ int mg_read_http_response(struct mg_connection *conn) {
   struct mg_request_info *ri;
   const char *status_code;
   char * chknum;
+  int data_len;
 
   if (!conn || !conn->buf_size)
     return -1;
 
+  assert(conn->content_len == -1);
   ri = &conn->request_info;
   ri->num_headers = 0;
+
+	// when a bit of buffered data is still available, make sure it's in the right spot:
+	data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
+	if (data_len > 0)
+	{
+		memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
+	}
+	else
+	{
+		data_len = 0;
+	}
+
   conn->request_len = read_request(NULL, conn,
                                    conn->buf, conn->buf_size,
-                                   &conn->data_len);
-  assert(conn->data_len >= conn->request_len);
+                                   &data_len);
+  assert(data_len >= conn->request_len);
   ri->seq_no++;
-  if (conn->request_len == 0 && conn->data_len == conn->buf_size) {
-    mg_cry(conn, "%f: peer sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes: [.*s]",
-                      (unsigned int)conn->buf_size, MG_MIN(200, conn->data_len), conn->buf);
+  if (conn->request_len == 0 && data_len == conn->buf_size) {
+    mg_cry(conn, "%f: peer sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes: [%.*s]",
+                      (unsigned int)conn->buf_size, MG_MIN(200, data_len), conn->buf);
     return 413;
   }
   if (conn->request_len <= 0) {
     // In case we didn't receive ANY data, we don't mess with the connection any further
     // by trying to send any more data, so we tag the connection as done for that:
-    if (conn->data_len == 0) {
+    if (data_len == 0) {
       mg_mark_end_of_header_transmission(conn);
     }
     return -2; // Remote end closed the connection or sent malformed response
   }
+  conn->rx_chunk_buf_size = conn->buf_size + CHUNK_HEADER_BUFSIZ - conn->request_len;
+  conn->rx_buffer_loaded_len = data_len - conn->request_len;
+  conn->rx_buffer_read_len = 0;
 
   // Nul-terminate the request 'cause parse_http_request() is C-string based
   conn->buf[conn->request_len - 1] = 0;
@@ -477,7 +492,7 @@ int mg_read_http_response(struct mg_connection *conn) {
 
   if (strncmp(ri->http_version, "HTTP/", 5) == 0) {
     ri->http_version += 5;   // Skip "HTTP/"
-    parse_http_headers(&buf, ri);
+    ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
   } else {
     return -4; // Cannot parse HTTP response
   }
@@ -487,52 +502,46 @@ int mg_read_http_response(struct mg_connection *conn) {
     return -5;
   } else {
     // Response is valid, handle the basics.
-    const char *cl = get_header(ri, "Transfer-Encoding");
-    if (cl && strstr("chunked", cl)) {
+    const char *cl = get_header(ri->http_headers, ri->num_headers, "Transfer-Encoding");
+    assert(conn->content_len == -1);
+    if (cl && mg_stristr(cl, "chunked")) {
       assert(conn->content_len == -1);
       mg_set_rx_mode(conn, MG_IOMODE_CHUNKED_DATA);
     } else {
-      cl = get_header(ri, "Content-Length");
+	  assert(!conn->rx_is_in_chunked_mode);
+      cl = get_header(ri->http_headers, ri->num_headers, "Content-Length");
       chknum = NULL;
-      conn->content_len = (cl == NULL ? -1 : strtoll(cl, &chknum, 10));
+	  if (cl != NULL)
+        conn->content_len = strtoll(cl, &chknum, 10);
       if (chknum != NULL)
         chknum += strspn(chknum, " ");
       if (!is_empty(chknum))
         return -6; // Cannot parse HTTP response
+
+	  if (conn->content_len == -1) {
+		// this is a bit of a tough case: we may be HTTP/1.0, in which case
+		// case we gobble everything, assuming one request per connection,
+		// but when we're HTTP/1.1, this MAY be either a request without
+		// content OR a chunked transfer request.
+		// The heuristic we apply here is to gobble all when we're 
+		// okay re Connection: keep-alive.
+		// The chunked transfer case resolves itself, as long as we make sure
+		// to keep content_len == -1 then.
+		const char *http_version = ri->http_version;
+		const char *header = get_header(ri->http_headers, ri->num_headers, "Connection");
+
+		if (!conn->must_close &&
+            !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
+			(header == NULL ?
+             (http_version && !strcmp(http_version, "1.1")) :
+             !mg_strcasecmp(header, "keep-alive"))) {
+		  conn->content_len = 0;
+		}
+	  }
     }
-    conn->birth_time = time(NULL);
+    conn->last_active_time = conn->birth_time = time(NULL);
     return 0;
   }
-}
-
-int mg_is_read_data_available(struct mg_connection *conn)
-{
-    if (conn)
-    {
-        // do we already know whether there's incoming data pending?
-        if (conn->client.was_idle && conn->client.has_read_data)
-        {
-            return +1;
-        }
-        else
-        {
-            int sn;
-            fd_set fdr;
-            int max_fh = 0;
-            FD_ZERO(&fdr);
-            add_to_set(conn->client.sock, &fdr, &max_fh);
-            // waste no time on this check...
-            sn = select(max_fh + 1, &fdr, NULL, NULL, NULL);
-            if (sn > 0)
-            {
-                assert(FD_ISSET(conn->client.sock, &fdr));
-                conn->client.was_idle = 1;
-                conn->client.has_read_data = 1;
-                return +1;
-            }
-        }
-    }
-    return 0;
 }
 
 
@@ -713,7 +722,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                 {
                     struct mg_connection *newconn = conns[i];
 
-                    newconn->birth_time = time(NULL);
+                    newconn->last_active_time = newconn->birth_time = time(NULL);
                     newconn->ctx = ctx;
                     newconn->client.sock = socks[i];
                     // by default, a client-side connection is assumed to be an arbitrary client,
@@ -721,7 +730,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
                     //newconn->consumed_content = 0;
                     newconn->content_len = -1;
-                    //newconn->request_len = newconn->data_len = 0;
+                    //newconn->request_len = 0;
                     newconn->client.rsa.u.sin.sin_family = AF_INET;
                     newconn->client.rsa.u.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
                     newconn->client.rsa.u.sin.sin_port = 0;

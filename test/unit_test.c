@@ -1,5 +1,8 @@
 #include "mongoose_ex.c"
 
+#include <math.h>
+
+
 #define FATAL(str, line) do {                                               \
   printf("Fail on line %d: [%s]\n", line, str);                             \
   mg_signal_stop(ctx);														\
@@ -23,6 +26,14 @@
         /* abort(); */                                                      \
       }                                                                     \
     } while (0)
+
+
+static void test_MSVC_fix() {
+  // when no assert fired in mg_freea(), we're good to go (see mongoose.c: crtdbg.h + malloc.h don't mesh 100% in MSVC2010)
+  void *buf = mg_malloca(BUFSIZ);
+  assert(buf);
+  mg_freea(buf);
+}
 
 static void test_parse_http_request() {
   struct mg_context ctx_fake = {0};
@@ -432,7 +443,7 @@ static void test_header_processing()
     ASSERT(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
     buf[rv] = 0;
     p = buf;
-    parse_http_headers(&p, &c.request_info);
+    c.request_info.num_headers = parse_http_headers(&p, c.request_info.http_headers, ARRAY_SIZE(c.request_info.http_headers));
     ASSERT(p > buf);
     ASSERT(*p == 0);
     ASSERT(c.request_info.num_headers == 11);
@@ -481,6 +492,259 @@ static void test_header_processing()
     rv = mg_get_headers(values, 64, &c, "CONTENT-TYPE");
     ASSERT(values[0]);
     ASSERT(rv == 1);
+}
+
+
+
+static void test_response_header_rw() {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+  struct mg_connection *conn;
+  int rv;
+  char *p;
+  int i;
+  double tag_add_idx, tag_rm_idx, tag_upd_idx;
+  struct mg_header *hdr;
+
+  const int bufsiz = 1380;
+
+  conn = calloc(1, sizeof(*conn) + bufsiz * 2 + CHUNK_HEADER_BUFSIZ);
+  ASSERT(conn != NULL);
+  conn->ctx = ctx;
+  conn->buf_size = bufsiz;
+  conn->buf = (char *)(conn + 1);
+
+  // add and remove a series of response headers:
+  tag_add_idx = tag_rm_idx = tag_upd_idx = 0.0;
+  for (i = 9 * 19; i > 0; i--)
+  {
+	char tagname[256];
+	int old_hdrlen = conn->tx_headers_len;
+
+	// add, update or delete?
+	switch (i % 9)
+	{
+	default:
+		tag_add_idx += 1.1;
+		mg_snq0printf(conn, tagname, sizeof(tagname), "tag_name_%.0f", tag_add_idx);
+		rv = mg_add_response_header(conn, 0, tagname, "V:%d", i);
+		ASSERT(rv == 0);
+		break;
+
+	case 4:
+		tag_rm_idx += 5.5;
+	case 2:
+		tag_rm_idx += 1.5;
+		mg_snq0printf(conn, tagname, sizeof(tagname), "tag_name_%.0f", fmod(tag_rm_idx, tag_add_idx));
+		rv = mg_remove_response_header(conn, tagname);
+		ASSERT(rv >= 0);
+		mg_snq0printf(conn, tagname, sizeof(tagname), "tag_name_%.0f", fmod(tag_rm_idx + 7, tag_add_idx));
+		rv = mg_remove_response_header(conn, tagname);
+		ASSERT(rv >= 0);
+		break;
+
+	case 3:
+		tag_upd_idx += 2;
+	case 1:
+		tag_upd_idx += 39;
+		tag_upd_idx = fmod(tag_upd_idx, tag_add_idx);
+		// update tag
+		mg_snq0printf(conn, tagname, sizeof(tagname), "tag_name_%.0f", tag_upd_idx);
+		rv = mg_add_response_header(conn, 0, tagname, "V:UPDATE:%d", i);
+		ASSERT(rv == 0);
+		break;
+	}
+
+	// detect whether a significant 'compact' action took place:
+	if (conn->tx_headers_len < old_hdrlen)
+	{
+		ASSERT(i == 82 || i == 37 || i == 15 || i == 6 || i == 3);
+	}
+  }
+
+  // verify the result
+  ASSERT(conn->request_info.num_response_headers == 61);
+
+  // add headers to the very limit:
+	rv = mg_add_response_header(conn, 0, "lim_1", "V:%d", --i);
+	ASSERT(rv == 0);
+	rv = mg_add_response_header(conn, 0, "lim_2", "V:%d", --i);
+	ASSERT(rv == 0);
+	rv = mg_add_response_header(conn, 0, "lim_3", "V:%d", --i);
+	ASSERT(rv == 0);
+    compact_tx_headers(conn);
+	rv = mg_add_response_header(conn, 0, "lim_4", "V:%d", --i);
+	ASSERT(rv == -1);
+  ASSERT(conn->request_info.num_response_headers == 64);
+
+	hdr = conn->request_info.response_headers;
+
+	ASSERT_STREQ(hdr[0].name, "tag_name_4");
+	ASSERT_STREQ(hdr[0].value, "V:UPDATE:145");
+	ASSERT_STREQ(hdr[1].name, "tag_name_3");
+	ASSERT_STREQ(hdr[1].value, "V:UPDATE:46");
+	ASSERT_STREQ(hdr[2].name, "tag_name_7");
+	ASSERT_STREQ(hdr[2].value, "V:162");
+	ASSERT_STREQ(hdr[3].name, "tag_name_11");
+	ASSERT_STREQ(hdr[3].value, "V:158");
+	ASSERT_STREQ(hdr[4].name, "tag_name_0");
+	ASSERT_STREQ(hdr[4].value, "V:UPDATE:55");
+	ASSERT_STREQ(hdr[5].name, "tag_name_6");
+	ASSERT_STREQ(hdr[5].value, "V:UPDATE:154");
+	ASSERT_STREQ(hdr[6].name, "tag_name_14");
+	ASSERT_STREQ(hdr[6].value, "V:UPDATE:147");
+	ASSERT_STREQ(hdr[7].name, "tag_name_1");
+	ASSERT_STREQ(hdr[7].value, "V:UPDATE:37");
+	ASSERT_STREQ(hdr[8].name, "tag_name_15");
+	ASSERT_STREQ(hdr[8].value, "V:UPDATE:93");
+	ASSERT_STREQ(hdr[9].name, "tag_name_23");
+	ASSERT_STREQ(hdr[9].value, "V:UPDATE:120");
+	ASSERT_STREQ(hdr[10].name, "tag_name_29");
+	ASSERT_STREQ(hdr[10].value, "V:UPDATE:102");
+	ASSERT_STREQ(hdr[11].name, "tag_name_24");
+	ASSERT_STREQ(hdr[11].value, "V:UPDATE:1");
+	ASSERT_STREQ(hdr[12].name, "tag_name_5");
+	ASSERT_STREQ(hdr[12].value, "V:UPDATE:91");
+	ASSERT_STREQ(hdr[13].name, "tag_name_30");
+	ASSERT_STREQ(hdr[13].value, "V:UPDATE:82");
+	ASSERT_STREQ(hdr[14].name, "tag_name_59");
+	ASSERT_STREQ(hdr[14].value, "V:78");
+	ASSERT_STREQ(hdr[15].name, "tag_name_10");
+	ASSERT_STREQ(hdr[15].value, "V:UPDATE:75");
+	ASSERT_STREQ(hdr[16].name, "tag_name_62");
+	ASSERT_STREQ(hdr[16].value, "V:72");
+	ASSERT_STREQ(hdr[17].name, "tag_name_65");
+	ASSERT_STREQ(hdr[17].value, "V:69");
+	ASSERT_STREQ(hdr[18].name, "tag_name_66");
+	ASSERT_STREQ(hdr[18].value, "V:68");
+	ASSERT_STREQ(hdr[19].name, "tag_name_67");
+	ASSERT_STREQ(hdr[19].value, "V:UPDATE:19");
+	ASSERT_STREQ(hdr[20].name, "tag_name_68");
+	ASSERT_STREQ(hdr[20].value, "V:62");
+	ASSERT_STREQ(hdr[21].name, "tag_name_69");
+	ASSERT_STREQ(hdr[21].value, "V:61");
+	ASSERT_STREQ(hdr[22].name, "tag_name_70");
+	ASSERT_STREQ(hdr[22].value, "V:60");
+	ASSERT_STREQ(hdr[23].name, "tag_name_72");
+	ASSERT_STREQ(hdr[23].value, "V:59");
+	ASSERT_STREQ(hdr[24].name, "tag_name_33");
+	ASSERT_STREQ(hdr[24].value, "V:UPDATE:57");
+	ASSERT_STREQ(hdr[25].name, "tag_name_73");
+	ASSERT_STREQ(hdr[25].value, "V:54");
+	ASSERT_STREQ(hdr[26].name, "tag_name_74");
+	ASSERT_STREQ(hdr[26].value, "V:53");
+	ASSERT_STREQ(hdr[27].name, "tag_name_75");
+	ASSERT_STREQ(hdr[27].value, "V:52");
+	ASSERT_STREQ(hdr[28].name, "tag_name_76");
+	ASSERT_STREQ(hdr[28].value, "V:51");
+	ASSERT_STREQ(hdr[29].name, "tag_name_77");
+	ASSERT_STREQ(hdr[29].value, "V:50");
+	ASSERT_STREQ(hdr[30].name, "tag_name_41");
+	ASSERT_STREQ(hdr[30].value, "V:UPDATE:48");
+	ASSERT_STREQ(hdr[31].name, "tag_name_78");
+	ASSERT_STREQ(hdr[31].value, "V:45");
+	ASSERT_STREQ(hdr[32].name, "tag_name_79");
+	ASSERT_STREQ(hdr[32].value, "V:44");
+	ASSERT_STREQ(hdr[33].name, "tag_name_80");
+	ASSERT_STREQ(hdr[33].value, "V:43");
+	ASSERT_STREQ(hdr[34].name, "tag_name_81");
+	ASSERT_STREQ(hdr[34].value, "V:UPDATE:28");
+	ASSERT_STREQ(hdr[35].name, "tag_name_82");
+	ASSERT_STREQ(hdr[35].value, "V:41");
+	ASSERT_STREQ(hdr[36].name, "tag_name_44");
+	ASSERT_STREQ(hdr[36].value, "V:UPDATE:39");
+	ASSERT_STREQ(hdr[37].name, "tag_name_84");
+	ASSERT_STREQ(hdr[37].value, "V:36");
+	ASSERT_STREQ(hdr[38].name, "tag_name_85");
+	ASSERT_STREQ(hdr[38].value, "V:35");
+	ASSERT_STREQ(hdr[39].name, "tag_name_86");
+	ASSERT_STREQ(hdr[39].value, "V:34");
+	ASSERT_STREQ(hdr[40].name, "tag_name_87");
+	ASSERT_STREQ(hdr[40].value, "V:33");
+	ASSERT_STREQ(hdr[41].name, "tag_name_88");
+	ASSERT_STREQ(hdr[41].value, "V:32");
+	ASSERT_STREQ(hdr[42].name, "tag_name_42");
+	ASSERT_STREQ(hdr[42].value, "V:UPDATE:30");
+	ASSERT_STREQ(hdr[43].name, "tag_name_89");
+	ASSERT_STREQ(hdr[43].value, "V:UPDATE:3");
+	ASSERT_STREQ(hdr[44].name, "tag_name_90");
+	ASSERT_STREQ(hdr[44].value, "V:26");
+	ASSERT_STREQ(hdr[45].name, "tag_name_91");
+	ASSERT_STREQ(hdr[45].value, "V:25");
+	ASSERT_STREQ(hdr[46].name, "tag_name_92");
+	ASSERT_STREQ(hdr[46].value, "V:24");
+	ASSERT_STREQ(hdr[47].name, "tag_name_93");
+	ASSERT_STREQ(hdr[47].value, "V:23");
+	ASSERT_STREQ(hdr[48].name, "tag_name_28");
+	ASSERT_STREQ(hdr[48].value, "V:UPDATE:21");
+	ASSERT_STREQ(hdr[49].name, "tag_name_95");
+	ASSERT_STREQ(hdr[49].value, "V:18");
+	ASSERT_STREQ(hdr[50].name, "tag_name_96");
+	ASSERT_STREQ(hdr[50].value, "V:17");
+	ASSERT_STREQ(hdr[51].name, "tag_name_97");
+	ASSERT_STREQ(hdr[51].value, "V:16");
+	ASSERT_STREQ(hdr[52].name, "tag_name_98");
+	ASSERT_STREQ(hdr[52].value, "V:15");
+	ASSERT_STREQ(hdr[53].name, "tag_name_99");
+	ASSERT_STREQ(hdr[53].value, "V:14");
+	ASSERT_STREQ(hdr[54].name, "tag_name_9");
+	ASSERT_STREQ(hdr[54].value, "V:UPDATE:12");
+	ASSERT_STREQ(hdr[55].name, "tag_name_48");
+	ASSERT_STREQ(hdr[55].value, "V:UPDATE:10");
+	ASSERT_STREQ(hdr[56].name, "tag_name_100");
+	ASSERT_STREQ(hdr[56].value, "V:9");
+	ASSERT_STREQ(hdr[57].name, "tag_name_101");
+	ASSERT_STREQ(hdr[57].value, "V:8");
+	ASSERT_STREQ(hdr[58].name, "tag_name_102");
+	ASSERT_STREQ(hdr[58].value, "V:7");
+	ASSERT_STREQ(hdr[59].name, "tag_name_103");
+	ASSERT_STREQ(hdr[59].value, "V:6");
+	ASSERT_STREQ(hdr[60].name, "tag_name_104");
+	ASSERT_STREQ(hdr[60].value, "V:5");
+	ASSERT_STREQ(hdr[61].name, "lim_1");
+	ASSERT_STREQ(hdr[61].value, "V:-1");
+	ASSERT_STREQ(hdr[62].name, "lim_2");
+	ASSERT_STREQ(hdr[62].value, "V:-2");
+	ASSERT_STREQ(hdr[63].name, "lim_3");
+	ASSERT_STREQ(hdr[63].value, "V:-3");
+
+
+  // now set the request URI / query strings and cache those via header compact:
+	ASSERT(0 == mg_cleanup_after_request(conn));
+
+	rv = mg_add_response_header(conn, 0, "tag_1", "V:%d", --i);
+	ASSERT(rv == 0);
+	rv = mg_add_response_header(conn, 0, "tag_2", "V:%d", --i);
+	ASSERT(rv == 0);
+	rv = mg_add_response_header(conn, 0, "tag_3", "V:%d", --i);
+	ASSERT(rv == 0);
+	ASSERT(conn->tx_can_compact_hdrstore == 0);
+
+	rv = mg_add_response_header(conn, 0, "tag_1", "V:blubber blab bloo ~ %d", --i);
+	ASSERT(rv == 0);
+	ASSERT(conn->request_info.num_response_headers == 3);
+	ASSERT(conn->tx_can_compact_hdrstore == 1);
+	ASSERT(conn->tx_headers_len == 65);
+
+	conn->request_info.uri = "/oh-boy";
+	conn->request_info.query_string = "what=shall&I=do.now";
+	conn->tx_can_compact_hdrstore |= 2;
+	rv = compact_tx_headers(conn);
+	ASSERT(rv >= 0);
+	ASSERT(conn->tx_headers_len == 87);
+	ASSERT(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ == conn->request_info.uri);
+	ASSERT_STREQ(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ, "/oh-boy");
+	ASSERT(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ + 8 == conn->request_info.query_string);
+	ASSERT_STREQ(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ + 8, "what=shall&I=do.now");
+
+	hdr = conn->request_info.response_headers;
+
+	ASSERT_STREQ(hdr[0].name, "tag_1");
+	ASSERT_STREQ(hdr[0].value, "V:blubber blab bloo ~ -8");
+	ASSERT_STREQ(hdr[1].name, "tag_2");
+	ASSERT_STREQ(hdr[1].value, "V:-6");
+	ASSERT_STREQ(hdr[2].name, "tag_3");
+	ASSERT_STREQ(hdr[2].value, "V:-7");
 }
 
 
@@ -555,9 +819,9 @@ static void test_client_connect() {
     //
     // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
     rv = mg_read_http_response(g);
-    // google will spit back more tan 256-1 header bytes in its response, so we'll get a buffer overrun:
+    // google will spit back more than 256-1 header bytes in its response, so we'll get a buffer overrun:
     ASSERT(rv == 413);
-    ASSERT(g->data_len == 256);
+    ASSERT(g->request_len == 0);
     mg_close_connection(g);
 
 
@@ -587,8 +851,9 @@ static void test_client_connect() {
     //
     // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
     rv = mg_read_http_response(g);
-    // google will spit back more tan 256-1 header bytes in its response, so we'll get a buffer overrun:
     ASSERT(rv == 0);
+    ASSERT(g->request_len > 0);
+    ASSERT(g->request_len < 2048);
     ASSERT_STREQ(mg_get_header(g, "Connection"), "close");
     ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), g, "Set-Cookie") > 0);
     cl = atoi(mg_get_header(g, "Content-Length"));
@@ -720,6 +985,13 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
   char content[1024];
   int content_length;
 
+  if (event == MG_IDLE_MASTER)
+	  return 0;
+
+  if (event == MG_INIT_CLIENT_CONN) {
+	  return "yes";
+  }
+
   if (event == MG_NEW_REQUEST &&
       strstr(request_info->uri, "/chunky")) {
 	int chunk_size;
@@ -764,6 +1036,8 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
               "the chunky page again.</p>\n");
 
 	do {
+	  DEBUG_TRACE(("test server callback: %s request servicing @ chunk size %d", request_info->uri, chunk_size));
+
 	  // because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
 	  mg_set_tx_next_chunk_size(conn, chunk_size);
 	  // you may call mg_set_tx_next_chunksize() as often as you like; it only takes effect when a new chunk is generated
@@ -798,6 +1072,8 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 	i = (int)mg_get_tx_remaining_chunk_size(conn);
 	mg_printf(conn, "%*s", i, "\n");
 
+	DEBUG_TRACE(("test server callback: %s request serviced", request_info->uri));
+
     return (void *)1;
   } else if (event == MG_NEW_REQUEST) {
     content_length = mg_snprintf(conn, content, sizeof(content),
@@ -822,16 +1098,30 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 }
 
 
-static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions_dstbuf, size_t chunk_extensions_dstbuf_size) {
+static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
   int c = mg_get_tx_chunk_no(conn);
 
   // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
   if ((c % 3) == 2) {
-	mg_snq0printf(conn, chunk_extensions_dstbuf, chunk_extensions_dstbuf_size, "mongoose-ext=oh-la-la-%d", c);
+	mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
   }
-  return 1; // run default handler; we were just here to add extensions...
+  return 0; // run default handler; we were just here to add extensions...
 }
 
+static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions, struct mg_header *chunk_headers, int header_count) {
+  int c = mg_get_rx_chunk_no(conn);
+  struct mg_context *ctx = mg_get_context(conn);
+
+  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
+  if ((c % 3) == 2) {
+	ASSERT(chunk_extensions != NULL);
+	ASSERT(0 == strncmp(chunk_extensions, "mongoose-ext=oh-la-la-", 22));
+  } else {
+	ASSERT(chunk_extensions != NULL);
+	ASSERT(*chunk_extensions == 0);
+  }
+  return 0;  // run default handler; we were just here to add extensions...
+}
 
 int test_chunked_transfer(void) {
   struct mg_context *ctx;
@@ -844,8 +1134,11 @@ int test_chunked_transfer(void) {
   char buf[4096];
   int rv;
   int prospect_chunk_size;
+  int runs;
 
   ucb.write_chunk_header = chunky_write_chunk_header;
+  ucb.process_rx_chunk_header = chunky_process_rx_chunk_header;
+
     ctx = mg_start(&ucb, options);
     if (!ctx)
       return -1;
@@ -853,8 +1146,11 @@ int test_chunked_transfer(void) {
     printf("Restartable server started on ports %s.\n",
            mg_get_option(ctx, "listening_ports"));
 
-	// open client connection to server and GET and POST chunked content
+  for (runs = 16; runs > 0; runs--) {
 
+	DEBUG_TRACE(("######### RUN: %d #############", runs));
+
+	// open client connection to server and GET and POST chunked content
     conn = mg_connect_to_host(ctx, "localhost", 8080, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(conn);
 
@@ -874,6 +1170,8 @@ int test_chunked_transfer(void) {
 		//
 		// but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
 		rv = mg_read_http_response(conn);
+		if (rv == -2)
+			break;
 		ASSERT(rv == 0);
 		ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
 		ASSERT(mg_get_request_info(conn));
@@ -901,6 +1199,9 @@ int test_chunked_transfer(void) {
 		ASSERT(0 == mg_cleanup_after_request(conn));
 	}
 
+	if (rv == -2)
+		continue;
+
 
 	// now do the same for POST requests: send chunked, receive another chunked stream:
 	for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
@@ -913,8 +1214,8 @@ int test_chunked_transfer(void) {
 		mg_add_tx_header(conn, 0, "Connection", "keep-alive");
 		mg_add_response_header(conn, 0, "Content-Type", "text/plain");
 		mg_add_response_header(conn, 0, "Transfer-Encoding", "%s", "chunked"); // '%s'? Just foolin' with ya. 'chunked' mode must be detected AFTER printf-formatting has been applied to value.
-		rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chun_size=%d", 10, 128);
-		ASSERT(rv == 170);
+		rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
+		ASSERT(rv >= 143);
 
 		//----------------------------------------------------------------------------------------
 		// WARNING:
@@ -940,7 +1241,7 @@ int test_chunked_transfer(void) {
 
 		rx_state = 0;
 		rcv_amount = 0;
-		// now send our data, CHUNKED. We're using 'auto chunking' here: each printf() will be a separate chunk.
+		// now send our data, CHUNKED. When the initial chunk size runs out, we'll be using 'auto chunking' here.
 		for (chunk_size = 1; chunk_size <= 2048; chunk_size *= 2)
 		{
 			// we set the chunk sizes explicitly for every chunk:
@@ -956,13 +1257,13 @@ int test_chunked_transfer(void) {
 			mg_printf(conn, 
 					"We're looking at chunk #%d here, (size?: %d) remaining: %d \n\n",
 					c, chunk_size, i);
-			// for small chunk sizes, we'll have fallen back to 'auto chunking' around now:
+			// for small chunk sizes, we'll have fallen back to 'auto chunking' around now: mg_get_tx_remaining_chunk_size(conn) --> 0
 			i = (int)mg_get_tx_remaining_chunk_size(conn);
 			c = mg_get_tx_chunk_no(conn);
 			mg_printf(conn, 
 					"chunk #%5d \n"
-					"padding: [*s] \n",
-				c, chunk_size, i, - MG_MAX(1, chunk_size - 30), "xxx");
+					"padding: [%*s] \n",
+				c, - MG_MAX(1, i - 30), "xxx");
 
 			if (mg_is_read_data_available(conn))
 			{
@@ -982,6 +1283,8 @@ int test_chunked_transfer(void) {
 					// leading whitespace will be ignored:
 					ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
 					ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+					ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
+					ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
 
 					rx_state++;
 					break;
@@ -1001,20 +1304,64 @@ int test_chunked_transfer(void) {
 		}
 		
 		// make sure we mark the chunked transmission as finished!
-		mg_flush(conn);
+		rv = mg_flush(conn);
+		if (rv > 0)
+		{
+			// the pending chunk hasn't been completely filled yet, which is an error.
+			// Make sure we send the bytes we promised we'd send...
+			i = (int)mg_get_tx_remaining_chunk_size(conn);
+			c = mg_get_tx_chunk_no(conn);
+
+			mg_printf(conn, 
+					"chunk #%5d \n"
+					"padding: [%*s] \n",
+				c, - MG_MAX(1, chunk_size - 30), "xxx");
+			i = (int)mg_get_tx_remaining_chunk_size(conn);
+			if (i > 0) 
+				mg_printf(conn, "%*s", i, "Z");
+			rv = mg_flush(conn);
+			ASSERT(rv == 0);
+		}
 		// signal request phase done:
 		//mg_shutdown(g, SHUT_WR);
 
 
 		// and now fetch the remaining content:
-		for (;;) {
-		  rv = mg_read(conn, buf, sizeof(buf));
+		do {
+			switch (rx_state)
+			{
+			case 0:
+				rv = mg_read_http_response(conn);
+				ASSERT(rv == 0);
+				ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
+				ASSERT(mg_get_request_info(conn));
+				ASSERT(mg_get_request_info(conn)->status_code == 200);
+				ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
+				ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
+				// leading whitespace will be ignored:
+				ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+				ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
+				ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
+				ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
 
-		  ASSERT(rv >= 0);
-		  rcv_amount += rv;
-		}
+				rv = 1;
+				rx_state++;
+				break;
+
+			case 1:
+				rv = mg_read(conn, buf, sizeof(buf));
+
+				ASSERT(rv >= 0);
+				rcv_amount += rv;
+				break;
+
+			default:
+				ASSERT(!"should never get here");
+				break;
+			}
+		} while (rv > 0);
 		ASSERT(rv == 0);
-		ASSERT(rcv_amount > 0);
+		ASSERT(rcv_amount >= 0);
 
 		// as we've got a kept-alive connection, we can send another request!
 		ASSERT(0 == mg_cleanup_after_request(conn));
@@ -1024,6 +1371,7 @@ int test_chunked_transfer(void) {
     mg_close_connection(conn);
     //free(g);
 
+	}
 
 	// now stop the server: done testing
     mg_stop(ctx);
@@ -1046,6 +1394,8 @@ int main(void) {
 #endif
 #endif
 
+  test_MSVC_fix();
+
   test_match_prefix();
   test_remove_double_dots();
   test_IPaddr_parsing();
@@ -1053,6 +1403,7 @@ int main(void) {
   test_header_processing();
   test_should_keep_alive();
   test_parse_http_request();
+  test_response_header_rw();
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
   {

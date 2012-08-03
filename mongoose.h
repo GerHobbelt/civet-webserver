@@ -41,6 +41,13 @@ struct mg_ip_address {
   } ip_addr;
 };
 
+// A HTTP header: 
+//   Name: <value>
+struct mg_header {
+  char *name;                    // HTTP header name
+  char *value;                   // HTTP header value
+};
+
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
@@ -65,10 +72,7 @@ struct mg_request_info {
   int is_ssl;                      // 1 if SSL-ed, 0 if not
   int seq_no;                      // number of request served for this connection (1..N; can only be >1 for kept-alive connections)
   int num_headers;                 // Number of headers
-  struct mg_header {
-    char *name;                    // HTTP header name
-    char *value;                   // HTTP header value
-  } http_headers[64];              // Maximum 64 request headers
+  struct mg_header http_headers[64];  // Maximum 64 request headers
   int num_response_headers;        // Number of response headers
   struct mg_header response_headers[64];  // Headers to be sent with HTTP response. Provided by user.
 };
@@ -230,10 +234,60 @@ typedef int (*mg_read_callback_t)(struct mg_connection *conn,
                                   size_t  *content_length,
                                   char*   *mime);
 
-// Return 0 on success,
-// < 0 on error,
-// 1 when the default handler should be invoked instead
-typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions_dstbuf, size_t chunk_extensions_dstbuf_size);
+// Invoked when a HTTP chunk header is being written. 
+// The user may choose to either write an entirely custom chunk header, using the
+// provided buffer and mg_write(), and return 1, or append any optional HTTP chunk
+// extensions as a C string, starting at chunk_extenions, and return 0.
+//
+// chunk_extensions points into the dstbuf buffer space; hence the space available
+// for chunk extensions (plus terminating NUL C string sentinel) equals 
+//   dstbuf_size - (chunk_extensions - dstbuf)
+//
+// Return:
+// 1   on success when a custom chunk header has been written,
+// 0   when the default behaviour should be assumed, where the HTTP chunk header 
+//     should be written, with or without added chunk extensions,
+// < 0 on error.
+typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions);
+
+// Invoked when a HTTP chunk header is being read.
+// The user may choose to either read an entirely custom chunk header, using the
+// provided buffer and mg_read(), and return the header length, or have mongoose read the HTTP
+// chunk header, and return 0.
+//
+// The user MUST call mg_set_rx_chunk_size() before returning when reading a custom
+// chunk header.
+//
+// In order to facilitate reading fully custom chunk headers (e.g. WebSockets),
+// this callback is invoked at the start of the chunk read process.
+// When the user simply returns 0 then, mongoose will proceed with the default 
+// behaviour and invoke the process_rx_chunk_header callback once the complete 
+// HTTP chunk header has been loaded into the buffer.
+// 
+// '*dstbuf_fill' is the number of valid bytes already present in the buffer,
+// and should contain the total number of bytes loaded into dstbuf[] when done. 
+//
+// Return:
+// > 0 on success when a custom chunk header has been read,
+// 0   when the default behaviour should be assumed where the HTTP chunk header 
+//     should be read, with or without added chunk extensions,
+// < 0 on error.
+typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, size_t dstbuf_size, int *dstbuf_fill);
+
+// Invoked when a HTTP chunk header has been read and parsed.
+//
+// Note that any HTTP chunk headers, if present, are NOT available via the mg_get_header() API;
+// the user must decode and store them herself when they are presented here.
+// Be aware that chunk_headers points to data in a temporary buffer and thus any chunk_headers[] data
+// will be only valid for the duration of this call.
+//
+// The chunk_extensions buffer is NUL-terminated like a regular C string and may be 
+// modified by the user; this data is discarded by mongoose after this call.
+//
+// Return:
+// 0   on success,
+// < 0 on error.
+typedef int (*mg_process_rx_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions, struct mg_header *chunk_headers, int header_count);
 
 
 // Prototype for the user-defined option decoder/processing function. Mongoose
@@ -310,7 +364,9 @@ typedef struct mg_user_class_t {
   mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
   mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
-  mg_write_chunk_header_t     write_chunk_header;
+  mg_write_chunk_header_t       write_chunk_header;
+  mg_read_chunk_header_t		read_chunk_header;
+  mg_process_rx_chunk_header_t  process_rx_chunk_header;
 } mg_user_class_t;
 
 
@@ -497,6 +553,14 @@ int mg_send_file(struct mg_connection *conn, const char *path);
 
 // Read data from the remote end, return number of bytes read.
 int mg_read(struct mg_connection *, void *buf, size_t len);
+
+// Return non-zero when data is pending for reading on this connection.
+//
+// Note: This is a non-blocking, very low cost operation which should be
+//       used together with mg_read() and its descendents (e.g.
+//       mg_read_http_response()) in client-side connections at least.
+//       See also the test/unit_test.c::test_chunked_transfer().
+int mg_is_read_data_available(struct mg_connection *conn);
 
 
 typedef enum mg_iomode_t {
@@ -768,6 +832,10 @@ int mg_strcasecmp(const char *s1, const char *s2);
 // find needle in haystack. Useful as a simile of strnstr() and equivalent of memmem(), which
 // aren't available on most platforms.
 const char *mg_memfind(const char *haystack, size_t haysize, const char *needle, size_t needlesize);
+
+// Find location of case-insensitive needle string in haystack string.
+// Return NULL if needle wasn't found.
+const char *mg_stristr(const char *haystack, const char *needle);
 
 // Allocate space for a copy of the given string on the heap.
 // The allocated copy will have space for at most 'len' characters (excluding the NUL sentinel).
