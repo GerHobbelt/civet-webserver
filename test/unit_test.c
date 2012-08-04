@@ -24,7 +24,7 @@
                "inp:\"%s\" != ref:\"%s\"\n",                                \
                __LINE__, str1, str2);                                       \
         mg_signal_stop(ctx);                                                \
-        /* abort(); */                                                      \
+        abort();                                                            \
       }                                                                     \
     } while (0)
 
@@ -518,7 +518,6 @@ static void test_response_header_rw() {
   struct mg_context *ctx = &ctx_fake;
   struct mg_connection *conn;
   int rv;
-  char *p;
   int i;
   double tag_add_idx, tag_rm_idx, tag_upd_idx;
   struct mg_header *hdr;
@@ -774,7 +773,7 @@ static void test_client_connect() {
   char buf[512];
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
-  struct mg_connection *g;
+  struct mg_connection *conn;
   struct mg_request_info *ri;
   int rv;
   const char *cookies[16];
@@ -782,170 +781,328 @@ static void test_client_connect() {
 
   printf("=== TEST: %s ===\n", __func__);
 
-  g = mg_connect_to_host(ctx, "example.com", 80, MG_CONNECT_BASIC);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "example.com", 80, MG_CONNECT_BASIC);
+  ASSERT(conn);
 
-  rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
+  rv = mg_printf(conn, "GET / HTTP/1.0\r\n\r\n");
   ASSERT(rv == 18);
-  mg_shutdown(g, SHUT_WR);
-  rv = mg_read(g, buf, sizeof(buf));
+  mg_shutdown(conn, SHUT_WR);
+  rv = mg_read(conn, buf, sizeof(buf));
   ASSERT(rv > 0);
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
 
 
-  g = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_USE_SSL);
-  ASSERT(!g);
-  g = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_BASIC);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_USE_SSL);
+  ASSERT(!conn);
+  conn = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_BASIC);
+  ASSERT(conn);
 
-  rv = mg_printf(g, "GET / HTTP/1.0\r\n\r\n");
+  rv = mg_printf(conn, "GET / HTTP/1.0\r\n\r\n");
   ASSERT(rv == 18);
-  mg_shutdown(g, SHUT_WR);
-  rv = mg_read(g, buf, sizeof(buf));
+  mg_shutdown(conn, SHUT_WR);
+  rv = mg_read(conn, buf, sizeof(buf));
   ASSERT(rv > 0);
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
 
 
   // now with HTTP header support:
   ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(!g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(!conn);
 
   // all options are empty
   ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
   // so we should set them up, just like one would've got when calling mg_start():
   ctx->config[MAX_REQUEST_SIZE] = "256";
 
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
 
-  ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
-  ASSERT(0 == mg_add_tx_header(g, 0, "Connection", "close"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "close"));
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(g);
+  ri = mg_get_request_info(conn);
   ri->http_version = "1.1";
   ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
   ri->request_method = "GET";
   ri->uri = "/search";
 
-  rv = mg_write_http_request_head(g, NULL, NULL);
+  rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(rv == 153);
   // signal request phase done:
-  mg_shutdown(g, SHUT_WR);
+  mg_shutdown(conn, SHUT_WR);
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(g);
+  rv = mg_read_http_response(conn);
   // google will spit back more than 256-1 header bytes in its response, so we'll get a buffer overrun:
   ASSERT(rv == 413);
-  ASSERT(g->request_len == 0);
-  mg_close_connection(g);
+  ASSERT(conn->request_len == 0);
+  mg_close_connection(conn);
 
 
 
   // retry with a suitably large buffer:
   ctx->config[MAX_REQUEST_SIZE] = "2048";
 
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
 
-  ASSERT(0 == mg_add_tx_header(g, 0, "Host", "www.google.com"));
-  ASSERT(0 == mg_add_tx_header(g, 0, "Connection", "close"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "close"));
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(g);
+  ri = mg_get_request_info(conn);
   ri->http_version = "1.1";
   ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
   ri->request_method = "GET";
   ri->uri = "/search";
 
-  rv = mg_write_http_request_head(g, NULL, NULL);
+  rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(rv == 153);
   // signal request phase done:
-  mg_shutdown(g, SHUT_WR);
+  mg_shutdown(conn, SHUT_WR);
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(g);
+  rv = mg_read_http_response(conn);
   ASSERT(rv == 0);
-  ASSERT(g->request_len > 0);
-  ASSERT(g->request_len < 2048);
-  ASSERT_STREQ(mg_get_header(g, "Connection"), "close");
-  ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), g, "Set-Cookie") > 0);
-  cl = atoi(mg_get_header(g, "Content-Length"));
+  ASSERT(conn->request_len > 0);
+  ASSERT(conn->request_len < 2048);
+  ASSERT_STREQ(mg_get_header(conn, "Connection"), "close");
+  ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Set-Cookie") > 0);
+  cl = atoi(mg_get_header(conn, "Content-Length"));
   ASSERT(cl > 0);
 
   // and now fetch the content:
-  rv = mg_read(g, buf, sizeof(buf));
+  rv = mg_read(conn, buf, sizeof(buf));
   ASSERT(rv > 0);
   ASSERT(rv == cl);
-  ASSERT(mg_get_request_info(g));
-  ASSERT(mg_get_request_info(g)->status_code == 302 /* Moved */ );
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 302 /* Moved */ );
 
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
 
 
 
   // now with _full_ HTTP header support:
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
 
-  mg_add_tx_header(g, 0, "Host", "www.google.com");
-  mg_add_tx_header(g, 0, "Connection", "close");
+  mg_add_tx_header(conn, 0, "Host", "www.google.com");
+  mg_add_tx_header(conn, 0, "Connection", "close");
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  rv = mg_write_http_request_head(g, "GET", "%s?%s", "/search", "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
+  rv = mg_write_http_request_head(conn, "GET", "%s?%s", "/search", "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
   ASSERT(rv == 153);
   // signal request phase done:
-  mg_shutdown(g, SHUT_WR);
+  mg_shutdown(conn, SHUT_WR);
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(g);
+  rv = mg_read_http_response(conn);
   ASSERT(rv == 0);
-  cl = atoi(mg_get_header(g, "Content-Length"));
+  cl = atoi(mg_get_header(conn, "Content-Length"));
   ASSERT(cl > 0);
-  ASSERT(mg_get_request_info(g));
-  ASSERT(mg_get_request_info(g)->status_code == 302 /* Moved */ );
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 302 /* Moved */ );
 
   // and now fetch the content:
-  rv = mg_read(g, buf, sizeof(buf));
+  rv = mg_read(conn, buf, sizeof(buf));
   ASSERT(rv > 0);
   ASSERT(rv == cl);
 
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
+
+
+
+  // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
+
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "keep-alive"));
+  // set up the request the rude way: directly patch the request_info struct. Nasty!
+  //
+  // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+  ri = mg_get_request_info(conn);
+  ri->http_version = "1.1";
+  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri->request_method = "GET";
+  ri->uri = "/search";
+
+  rv = mg_write_http_request_head(conn, NULL, NULL);
+  ASSERT(mg_get_tx_header(conn, "Content-Length") == NULL);
+  ASSERT_STREQ(mg_get_tx_header(conn, "Transfer-Encoding"), "chunked");
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_HEADER);
+  ASSERT(mg_get_tx_chunk_no(conn) == 0);
+  ASSERT(rv == 181);
+  // signal request phase done:
+  mg_shutdown(conn, SHUT_WR);
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
+  ASSERT(mg_get_tx_chunk_no(conn) == 1);
+
+  // now try to write past the EOF! This should fire off an error message.
+  rv = mg_printf(conn, "bugger!");
+  ASSERT(rv == 0);
+
+  // fetch response, blocking I/O:
+  //
+  // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+  rv = mg_read_http_response(conn);
+  ASSERT(rv == 0);
+  ASSERT(conn->request_len > 0);
+  ASSERT(conn->request_len < 2048);
+  ASSERT_STREQ(mg_get_header(conn, "Connection"), "close");
+  ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Set-Cookie") > 0);
+  cl = atoi(mg_get_header(conn, "Content-Length"));
+  ASSERT(cl > 0);
+
+  // and now fetch the content:
+  rv = mg_read(conn, buf, sizeof(buf));
+  ASSERT(rv > 0);
+  ASSERT(rv == cl);
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 302 /* Moved */ );
+
+  mg_close_connection(conn);
+  //free(conn);
+
+
+
+  // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
+
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "keep-alive"));
+  
+  // explicitly set chunked mode; the header writing logic should catch up:
+  mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_DATA);
+
+  // set up the request the rude way: directly patch the request_info struct. Nasty!
+  //
+  // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+  ri = mg_get_request_info(conn);
+  ri->http_version = "1.1";
+  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri->request_method = "GET";
+  ri->uri = "/search";
+
+  rv = mg_write_http_request_head(conn, NULL, NULL);
+  ASSERT(mg_get_tx_header(conn, "Content-Length") == NULL);
+  ASSERT_STREQ(mg_get_tx_header(conn, "Transfer-Encoding"), "chunked");
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_HEADER);
+  ASSERT(mg_get_tx_chunk_no(conn) == 0);
+  ASSERT(rv == 181);
+  // signal request phase done:
+  mg_shutdown(conn, SHUT_WR);
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
+  ASSERT(mg_get_tx_chunk_no(conn) == 1);
+  // fetch response, blocking I/O:
+  //
+  // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+  rv = mg_read_http_response(conn);
+  ASSERT(rv == 0);
+  ASSERT(conn->request_len > 0);
+  ASSERT(conn->request_len < 2048);
+  ASSERT_STREQ(mg_get_header(conn, "Connection"), "close");
+  ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Set-Cookie") > 0);
+  cl = atoi(mg_get_header(conn, "Content-Length"));
+  ASSERT(cl > 0);
+
+  // and now fetch the content:
+  rv = mg_read(conn, buf, sizeof(buf));
+  ASSERT(rv > 0);
+  ASSERT(rv == cl);
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 302 /* Moved */ );
+
+  mg_close_connection(conn);
+  //free(conn);
+
+
+
+  // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
+
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "keep-alive"));
+  // now with explicitly set content length: no chunked I/O!
+  ASSERT(0 == mg_add_tx_header(conn, 0, "Content-Length", "%d", 0));
+  // set up the request the rude way: directly patch the request_info struct. Nasty!
+  //
+  // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
+  ri = mg_get_request_info(conn);
+  ri->http_version = "1.1";
+  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri->request_method = "GET";
+  ri->uri = "/search";
+
+  rv = mg_write_http_request_head(conn, NULL, NULL);
+  ASSERT(mg_get_tx_header(conn, "Transfer-Encoding") == NULL);
+  ASSERT_STREQ(mg_get_tx_header(conn, "Content-Length"), "0");
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_STANDARD);
+  ASSERT(mg_get_tx_chunk_no(conn) == -1);
+  ASSERT(rv == 172);
+  // signal request phase done:
+  mg_shutdown(conn, SHUT_WR);
+  ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_STANDARD);
+  ASSERT(mg_get_tx_chunk_no(conn) == -1);
+  // fetch response, blocking I/O:
+  //
+  // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+  rv = mg_read_http_response(conn);
+  ASSERT(rv == 0);
+  ASSERT(conn->request_len > 0);
+  ASSERT(conn->request_len < 2048);
+  ASSERT_STREQ(mg_get_header(conn, "Connection"), "close");
+  ASSERT(mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Set-Cookie") > 0);
+  cl = atoi(mg_get_header(conn, "Content-Length"));
+  ASSERT(cl > 0);
+
+  // and now fetch the content:
+  rv = mg_read(conn, buf, sizeof(buf));
+  ASSERT(rv > 0);
+  ASSERT(rv == cl);
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 302 /* Moved */ );
+
+  mg_close_connection(conn);
+  //free(conn);
 
 
 
   // check the new google search page at /cse
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
 
   // http://www.google.com/cse?q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i
-  mg_add_tx_header(g, 0, "Host", "www.google.com");
-  mg_add_tx_header(g, 0, "Connection", "close");
-  rv = mg_write_http_request_head(g, "GET", "%s%s%s", "/cse", "?q=mongoose", "&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
+  mg_add_tx_header(conn, 0, "Host", "www.google.com");
+  mg_add_tx_header(conn, 0, "Connection", "close");
+  rv = mg_write_http_request_head(conn, "GET", "%s%s%s", "/cse", "?q=mongoose", "&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i");
   ASSERT(rv == 150);
   // signal request phase done:
-  mg_shutdown(g, SHUT_WR);
+  mg_shutdown(conn, SHUT_WR);
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(g);
+  rv = mg_read_http_response(conn);
   ASSERT(rv == 0);
-  ASSERT(mg_get_request_info(g));
-  ASSERT(mg_get_request_info(g)->status_code == 404); // funny thing: google doesn't like this; sends a 404; see next for a 'valid' eqv. request: note the '&amp;' vs '&' down there
-  ASSERT_STREQ(mg_get_request_info(g)->http_version, "1.1");
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 404); // funny thing: google doesn't like this; sends a 404; see next for a 'valid' eqv. request: note the '&amp;' vs '&' down there
+  ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
 
   // and now fetch the content:
   for (;;) {
-    int r = mg_read(g, buf, sizeof(buf));
+    int r = mg_read(conn, buf, sizeof(buf));
 
     if (r > 0)
       rv += r;
@@ -955,35 +1112,35 @@ static void test_client_connect() {
   ASSERT(rv > 0);
   //ASSERT(rv == cl);
 
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
 
 
 
   // again: check the new google search page at /cse
-  g = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(g);
+  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
 
   // http://www.google.com/cse?q=mongoose&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i
-  mg_add_tx_header(g, 0, "Host", "www.google.com");
-  mg_add_tx_header(g, 0, "Connection", "close");
-  rv = mg_write_http_request_head(g, "GET", "%s%s%s", "/cse", "?q=mongoose", "&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i");
+  mg_add_tx_header(conn, 0, "Host", "www.google.com");
+  mg_add_tx_header(conn, 0, "Connection", "close");
+  rv = mg_write_http_request_head(conn, "GET", "%s%s%s", "/cse", "?q=mongoose", "&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i");
   ASSERT(rv == 170);
   // signal request phase done:
-  mg_shutdown(g, SHUT_WR);
+  mg_shutdown(conn, SHUT_WR);
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(g);
+  rv = mg_read_http_response(conn);
   ASSERT(rv == 0);
-  ASSERT(NULL == mg_get_header(g, "Content-Length")); // google doesn't send a Content-Length with this one
-  ASSERT(mg_get_request_info(g));
-  ASSERT(mg_get_request_info(g)->status_code == 200);
-  ASSERT_STREQ(mg_get_request_info(g)->http_version, "1.1");
+  ASSERT(NULL == mg_get_header(conn, "Content-Length")); // google doesn't send a Content-Length with this one
+  ASSERT(mg_get_request_info(conn));
+  ASSERT(mg_get_request_info(conn)->status_code == 200);
+  ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
 
   // and now fetch the content:
   for (;;) {
-    int r = mg_read(g, buf, sizeof(buf));
+    int r = mg_read(conn, buf, sizeof(buf));
 
     if (r > 0)
       rv += r;
@@ -993,8 +1150,8 @@ static void test_client_connect() {
   ASSERT(rv > 0);
   //ASSERT(rv == cl);
 
-  mg_close_connection(g);
-  //free(g);
+  mg_close_connection(conn);
+  //free(conn);
 }
 
 
@@ -1064,6 +1221,9 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     mg_add_response_header(conn, 0, "Content-Length", "1234"); // fake; should be removed by the next one:
     // mongoose auto-detects TE when you set the proper header and use mg_write_http_response_head()
     mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked");
+	ASSERT(mg_get_response_header(conn, "Content-Length") == NULL);
+	ASSERT_STREQ(mg_get_response_header(conn, "Transfer-Encoding"), "chunked");
+
     mg_add_response_header(conn, 0, "Content-Type", "text/html");
     ASSERT_STREQ(mg_suggest_connection_header(conn), "close");  // mongoose plays it safe as long as it doesn't know the Status Code yet!
     mg_set_response_code(conn, 200);
@@ -1071,9 +1231,12 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
 
     // leading whitespace will be ignored:
-    mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millenium Hand and Shrimp");
+    mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millennium Hand and Shrimp");
 
-    ASSERT(149 == mg_write_http_response_head(conn, 0, NULL));
+	i = mg_write_http_response_head(conn, 0, NULL);
+    ASSERT(145 == i);
+	ASSERT(mg_get_response_header(conn, "Content-Length") == NULL);
+	ASSERT_STREQ(mg_get_response_header(conn, "Transfer-Encoding"), "chunked");
 
     // because we wish to test RX chunked reception, we set the chunk sizes explicitly for every chunk:
     mg_set_tx_next_chunk_size(conn, chunk_size);
@@ -1234,15 +1397,17 @@ int test_chunked_transfer(void) {
       mg_add_tx_header(conn, 0, "Connection", "keep-alive");
       rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
       ASSERT(rv >= 88);
+      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       pthread_spin_lock(&chunky_request_spinlock);
       chunky_request_counters.requests_sent++;
       pthread_spin_unlock(&chunky_request_spinlock);
 
       // this one is optional here as we didn't send any data:
+	  // (It is mandatory though when you're transmitting in chunked transfer mode!)
       mg_flush(conn);
       // signal request phase done:
-      //mg_shutdown(g, SHUT_WR);
+      //mg_shutdown(conn, SHUT_WR);
 
       // fetch response, blocking I/O:
       //
@@ -1257,7 +1422,7 @@ int test_chunked_transfer(void) {
       ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
       ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
       // leading whitespace will be ignored:
-      ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+      ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millennium Hand and Shrimp");
       ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
 
       // and now fetch the content:
@@ -1301,6 +1466,7 @@ int test_chunked_transfer(void) {
       mg_add_response_header(conn, 0, "Transfer-Encoding", "%s", "chunked"); // '%s'? Just foolin' with ya. 'chunked' mode must be detected AFTER printf-formatting has been applied to value.
       rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
       ASSERT(rv >= 143);
+      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       pthread_spin_lock(&chunky_request_spinlock);
       chunky_request_counters.requests_sent++;
@@ -1370,7 +1536,7 @@ int test_chunked_transfer(void) {
             ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
             ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
             // leading whitespace will be ignored:
-            ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+            ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millennium Hand and Shrimp");
             ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
             ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
             ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
@@ -1412,7 +1578,7 @@ int test_chunked_transfer(void) {
         ASSERT(rv == 0);
       }
       // signal request phase done:
-      //mg_shutdown(g, SHUT_WR);
+      //mg_shutdown(conn, SHUT_WR);
 
 
       // and now fetch the remaining content:
@@ -1428,7 +1594,7 @@ int test_chunked_transfer(void) {
           ASSERT_STREQ(mg_get_request_info(conn)->http_version, "1.1");
           ASSERT_STREQ(mg_get_header(conn, "Content-Type"), "text/html");
           // leading whitespace will be ignored:
-          ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millenium Hand and Shrimp");
+          ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millennium Hand and Shrimp");
           ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
           ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
           ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
@@ -1463,7 +1629,7 @@ int test_chunked_transfer(void) {
 
     mg_close_connection(conn);
     conn = NULL;
-    //free(g);
+    //free(conn);
   }
 
   // allow all threads / connections on the server side to clean up by themselves:

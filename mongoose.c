@@ -473,6 +473,7 @@ struct mg_context {
 struct mg_connection {
   unsigned must_close: 1;               // 1 if connection must be closed
   unsigned is_inited: 1;                // 1 when the connection been completely set up (SSL, local and remote peer info, ...)
+  unsigned is_client_conn: 2;           // 0 when the connection is a server-side connection (responding to requests); 1: client connection (sending requests); 2: peer-to-peer connection (non-HTTP)
   unsigned abort_when_server_stops: 1;  // 1 when the connection should be dropped/fail when the server is being stopped (ctx->stop_flag)
   unsigned tx_is_in_chunked_mode: 1;    // 1 when transmission through the connection must be chunked (segmented)
   unsigned rx_is_in_chunked_mode: 1;    // 1 when reception through the connection is chunked (segmented)
@@ -1668,28 +1669,45 @@ int mg_set_response_code(struct mg_connection *conn, int status) {
 // set up, for example if request parsing failed.
 static int should_keep_alive(struct mg_connection *conn) {
   const char *http_version = conn->request_info.http_version;
-  const char *header = mg_get_header(conn, "Connection");
+  if (conn->is_client_conn) {
+    const char *header = mg_get_tx_header(conn, "Connection");
 
-  DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
-               (int)conn->must_close,
-               (int)conn->request_info.status_code,
-               (int)is_legal_response_code(conn->request_info.status_code),
-               get_conn_option(conn, ENABLE_KEEP_ALIVE),
-               header, http_version,
-               mg_get_stop_flag(conn->ctx)));
+    DEBUG_TRACE(("CLIENT: must_close: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+                 (int)conn->must_close,
+                 get_conn_option(conn, ENABLE_KEEP_ALIVE),
+                 header, http_version,
+                 mg_get_stop_flag(conn->ctx)));
 
-  return (!conn->must_close &&
-          conn->request_info.status_code != 401 &&
-          // only okay persistence when we see legal response codes;
-          // anything else means we're foobarred ourselves already,
-          // so it's time to close and let them retry.
-          conn->request_info.status_code < 500 &&
-          is_legal_response_code(conn->request_info.status_code) &&
-          !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
-          (header == NULL ?
-           (http_version && !strcmp(http_version, "1.1")) :
-           !mg_strcasecmp(header, "keep-alive")) &&
-          conn->ctx->stop_flag == 0);
+    return (!conn->must_close &&
+            !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
+            (header == NULL ?
+             (http_version && !strcmp(http_version, "1.1")) :
+             !mg_strcasecmp(header, "keep-alive")) &&
+            conn->ctx->stop_flag == 0);
+  } else {
+    const char *header = mg_get_header(conn, "Connection");
+
+    DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+                 (int)conn->must_close,
+                 (int)conn->request_info.status_code,
+                 (int)is_legal_response_code(conn->request_info.status_code),
+                 get_conn_option(conn, ENABLE_KEEP_ALIVE),
+                 header, http_version,
+                 mg_get_stop_flag(conn->ctx)));
+
+    return (!conn->must_close &&
+            conn->request_info.status_code != 401 &&
+            // only okay persistence when we see legal response codes;
+            // anything else means we're foobarred ourselves already,
+            // so it's time to close and let them retry.
+            conn->request_info.status_code < 500 &&
+            is_legal_response_code(conn->request_info.status_code) &&
+            !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
+            (header == NULL ?
+             (http_version && !strcmp(http_version, "1.1")) :
+             !mg_strcasecmp(header, "keep-alive")) &&
+            conn->ctx->stop_flag == 0);
+  }
 }
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
@@ -1986,7 +2004,11 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   int i, n, rv, rv2, tx_len;
   char *buf;
   const char *te_tag;
+  const char *cl_tag;
+  const char *ka_tag;
+  const char *cls;
   va_list ap;
+  const char *http_version = conn->request_info.http_version;
 
   if (mg_have_headers_been_sent(conn))
     return 0;
@@ -1996,6 +2018,62 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   va_end(ap);
   if (rv <= 0)
     return -1; // malformed first line or transmit failure.
+
+  assert(!is_empty(http_version));
+
+  // make sure must_close state and Connection: output are in sync
+  ka_tag = mg_get_response_header(conn, "Connection");
+  if (!conn->must_close) {
+    if (ka_tag && mg_strcasecmp(ka_tag, "close") == 0)
+      conn->must_close = 1;
+  }
+  cls = suggest_connection_header(conn);
+  // update/set the Connection: keep-alive header as we now know the Status Code:
+  if (!ka_tag || mg_strcasecmp(ka_tag, cls)) {
+    if (mg_add_response_header(conn, 0, "Connection", cls))
+      return -1;
+  }
+
+  // detect whether we're going to send in 'chunked' or 'full' mode:
+  // check for the appropriate headers 
+  // or whether the user already set the chunked mode explicitly.
+  //
+  // Content-Length ALWAYS wins over chunked transfer mode.
+  //
+  // When you transmit in HTTP/1.1 and didn't specify the Content-Length
+  // header, then chunked transfer mode will be assumed implicitly.
+  te_tag = mg_get_response_header(conn, "Transfer-Encoding");
+  cl_tag = mg_get_response_header(conn, "Content-Length");
+  if (!is_empty(cl_tag)) {
+	assert(is_empty(te_tag)); // mg_add_response_header() must've taken care of this before
+	mg_set_tx_mode(conn, MG_IOMODE_STANDARD);
+  } else if (strcmp(http_version, "1.1") >= 0) {
+	// there's no absolute need to set 'chunked' transfer mode when 
+	// we're closing the connection after this request (so you'd get 
+	// HTTP/1.0 alike GET requests then); we do this to allow basic
+	// GET requests to be sent to non-fully HTTP/1.1 compliant servers,
+	// e.g. other (older or 'vanilla') mongoose servers, without them
+	// barfing a hairball over the chunked headers -- when they don't 
+	// cope with the Transfer-Encoding header (e.g. older/vanilla mongoose).
+	//
+	// This is a KNOWN DEVIATION from the strict interpretation of 
+	// the HTTP/1.1 spec. It is harmless.
+	if (conn->tx_is_in_chunked_mode || !conn->must_close ||
+		mg_strcasecmp(conn->request_info.request_method, "GET")) {
+	  if (is_empty(te_tag)) {
+	    if (mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked"))
+		  return -1;
+	  }
+	  if (!conn->tx_is_in_chunked_mode) {
+	    mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_HEADER);
+	  }
+	}
+  } else if (!conn->must_close) {
+	// HTTP/1.0, but not marked as a 'closing' connection yet!
+	conn->must_close = 1;
+	if (mg_add_response_header(conn, 0, "Connection", "close"))
+	  return -1;
+  }
 
   /*
   This code expects all headers to be stored in memory 'in order'.
@@ -2064,20 +2142,16 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
       rv += rv2;
   }
 
-  // detect whether we're going to send in 'chunked' or 'full' mode:
-  te_tag = mg_get_response_header(conn, "Transfer-Encoding");
-  if (te_tag && mg_stristr(te_tag, "chunked")) {
-    mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_DATA);
-  }
-
   mg_mark_end_of_header_transmission(conn);
 
   return rv;
 }
 
 int mg_write_http_response_head(struct mg_connection *conn, int status_code, const char *status_text) {
-  const char *ka;
-  const char *cl;
+  const char *http_version = conn->request_info.http_version;
+
+  if (is_empty(http_version))
+    http_version = conn->request_info.http_version = "1.1";
 
   if (status_code <= 0)
     status_code = conn->request_info.status_code;
@@ -2087,20 +2161,8 @@ int mg_write_http_response_head(struct mg_connection *conn, int status_code, con
     status_text = mg_get_response_code_text(status_code);
 
   mg_set_response_code(conn, status_code);
-  // make sure must_close state and Connection: output are in sync
-  ka = mg_get_response_header(conn, "Connection");
-  if (!conn->must_close) {
-  if (ka && mg_strcasecmp(ka, "close") == 0)
-    conn->must_close = 1;
-  }
-  cl = suggest_connection_header(conn);
-  // update/set the Connection: keep-alive header as we now know the Status Code:
-  if (!ka || mg_strcasecmp(ka, cl)) {
-    if (mg_add_response_header(conn, 0, "Connection", cl))
-      return -1;
-  }
 
-  return write_http_head(conn, "HTTP/1.1 %d %s\r\n", status_code, status_text);
+  return write_http_head(conn, "HTTP/%s %d %s\r\n", http_version, status_code, status_text);
 }
 
 /*
@@ -3265,7 +3327,8 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   int64_t txlen = (int64_t) len;
 
   assert(len > 0);
-  if (conn->tx_is_in_chunked_mode) {
+  // chunked I/O only applies to data I/O, NOT to (HTTP) header I/O:
+  if (conn->tx_is_in_chunked_mode && conn->num_bytes_sent >= 0) {
     int64_t txlen_1;
 
     // are we in header TX mode?
@@ -3279,7 +3342,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
     // another request (e.g. in HTTP keep-alive mode):
     if (conn->tx_chunk_header_sent == 1 && conn->tx_remaining_chunksize == 0) {
       mg_cry(conn, "%s: trying to send %d content data bytes beyond the END of a chunked transfer", __func__, (int)len);
-      assert(!"Should never get here; if you do, then your user I/O code is faulty!");
+      DEBUG_TRACE(("Should never get here; if you do, then your user I/O code is faulty!"));
       return -1;
     }
 
@@ -3305,10 +3368,8 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
       txlen_1 = conn->tx_remaining_chunksize;
     rv = (int) push(NULL, conn, src, txlen_1);
     if (rv > 0) {
-      if (conn->num_bytes_sent < 0)
-        conn->num_bytes_sent -= rv; // count as header data
-      else
-        conn->num_bytes_sent += rv; // count as content data
+      assert(conn->num_bytes_sent >= 0);
+      conn->num_bytes_sent += rv; // count as content data
       src += rv;
       txlen -= rv;
       conn->tx_remaining_chunksize -= rv;
@@ -3346,15 +3407,16 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
 
   rv = (int) push(NULL, conn, src, txlen);
   if (rv > 0) {
-    if (conn->num_bytes_sent < 0)
+    if (conn->num_bytes_sent < 0) {
       conn->num_bytes_sent -= rv; // count as header data
-    else
+	} else {
       conn->num_bytes_sent += rv; // count as content data
+      conn->tx_remaining_chunksize -= rv; // when not in chunked mode, we don't care how far negative this value goes.
+      if (conn->tx_remaining_chunksize == 0) {
+        conn->tx_chunk_header_sent = 0; // signal the need for another chunk (+ header)
+      }
+	}
     src += rv;
-    conn->tx_remaining_chunksize -= rv; // when not in chunked mode, we don't care how far negative this value goes.
-    if (conn->tx_remaining_chunksize == 0) {
-      conn->tx_chunk_header_sent = 0; // signal the need for another chunk (+ header)
-    }
   } else if (rv < 0) {
     return rv;
   }
@@ -8248,7 +8310,7 @@ void mg_set_tx_mode(struct mg_connection *conn, mg_iomode_t mode) {
 mg_iomode_t mg_get_tx_mode(struct mg_connection *conn) {
   if (conn) {
     return conn->tx_is_in_chunked_mode ?
-            conn->tx_chunk_header_sent >= 2 ?
+            conn->tx_chunk_header_sent != 1 ?
               MG_IOMODE_CHUNKED_HEADER :
               MG_IOMODE_CHUNKED_DATA :
             MG_IOMODE_STANDARD;
@@ -8326,7 +8388,11 @@ void mg_set_rx_mode(struct mg_connection *conn, mg_iomode_t mode) {
 
 mg_iomode_t mg_get_rx_mode(struct mg_connection *conn) {
   if (conn) {
-    return conn->rx_is_in_chunked_mode ? MG_IOMODE_CHUNKED_DATA : MG_IOMODE_STANDARD;
+	return conn->rx_is_in_chunked_mode ?
+			conn->rx_chunk_header_parsed != 1 ?
+			  MG_IOMODE_CHUNKED_HEADER :
+			  MG_IOMODE_CHUNKED_DATA :
+		    MG_IOMODE_STANDARD;
   }
   return MG_IOMODE_UNKNOWN;
 }

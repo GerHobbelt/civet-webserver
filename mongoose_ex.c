@@ -52,7 +52,7 @@ int mg_shutdown(struct mg_connection *conn, int how)
 {
     if (conn && conn->client.sock != INVALID_SOCKET)
     {
-        // make sure to properly terminate a chunked/segmented transfer wefore we shut down the write side!
+        // make sure to properly terminate a chunked/segmented transfer before we shut down the write side!
         if (how & SHUT_WR)
         {
             mg_flush(conn);
@@ -242,6 +242,7 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
     closesocket(sock);
   } else {
     newconn->last_active_time = newconn->birth_time = time(NULL);
+	newconn->is_client_conn = 1;
     newconn->ctx = conn->ctx;
     newconn->client.sock = sock;
     // by default, a client-side connection is assumed to be an arbitrary client,
@@ -372,7 +373,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
   if (!is_empty(request_path_and_query)) {
     va_list ap;
     int rv;
-  char *d;
+    char *d;
 
     va_start(ap, request_path_and_query);
     rv = mg_vsnq0printf(conn, uribuf, sizeof(uribuf), request_path_and_query, ap);
@@ -723,6 +724,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     struct mg_connection *newconn = conns[i];
 
                     newconn->last_active_time = newconn->birth_time = time(NULL);
+					newconn->is_client_conn = 2;
                     newconn->ctx = ctx;
                     newconn->client.sock = socks[i];
                     // by default, a client-side connection is assumed to be an arbitrary client,

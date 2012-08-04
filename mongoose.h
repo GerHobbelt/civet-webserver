@@ -277,7 +277,7 @@ typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, 
 // Invoked when a HTTP chunk header has been read and parsed.
 //
 // Note that any HTTP chunk headers, if present, are NOT available via the mg_get_header() API;
-// the user must decode and store them herself when they are presented here.
+// the user must store them herself when they are presented here via 'chunk_headers'.
 // Be aware that chunk_headers points to data in a temporary buffer and thus any chunk_headers[] data
 // will be only valid for the duration of this call.
 //
@@ -574,11 +574,11 @@ typedef enum mg_iomode_t {
   // NOTE: this has always been the 'standard' behaviour of Mongoose's mg_read/mg_write.
   MG_IOMODE_STANDARD = 0,
 
-  // mg_read() will read content data bytes until either Mongoose itself or the user callback
+  // mg_read() will read content data bytes until either Mongoose itself or the user chunk callback
   // reports they encountered the End-Of-File header/zero-length chunk. When this mode is
   // set, mg_read() expects to read at least one 'chunk header', which MAY be the End-Of-File
   // header.
-  // mg_write() will write keep score about the number of bytes written in the 'current' chunk
+  // mg_write() will keep score about the number of bytes written in the 'current' chunk
   // and generate a 'chunk header' when it runs out. After setting this mode, we start with
   // 'zero bytes left', i.e. the need to write a 'chunk header' immediately. Call
   // mg_set_tx_next_chunk_size() to set a known 'chunk size' or let mg_write() do this automatically
@@ -590,17 +590,14 @@ typedef enum mg_iomode_t {
   MG_IOMODE_CHUNKED_DATA,
 
   // mg_read() and mg_write() read and write to the socket without any restriction, nor do they
-  // account for the bytes written in this mode. This mode is ONLY RECOGNIZED AS VALID when set
-  // inside the chunk header encode+write/read+decode user callbacks and is switched back to
-  // MG_IOMODE_CHUNKED_DATA automatically when exiting the callback. Anywhere else, this mode
-  // is considered identical to having specified MG_IOMODE_CHUNKED_DATA and acts accordingly.
+  // account for the bytes written in this mode. This mode may be returned by the functions
+  // mg_get_tx_mode() / mg_get_rx_mode() to inform the user whether mongoose is currently 
+  // expecting to transmit/receive a chunk header or data, respectively.
+  // Used anywhere else, this mode is considered identical to having specified 
+  // MG_IOMODE_CHUNKED_DATA and acts accordingly.
   //
-  // Note: this mode is also automatically set by Mongoose when the aforementioned user callbacks
-  //       are invoked, so you don't need to do anything to switch between both chunk modes. This
-  //       mode is provided as a convenience detection mechanism when you share code between
-  //       different user callbacks and need to know the internal state: mg_get_tx_mode() / mg_get_rx_mode()
-  //       will tell you. This mode is also made available so you may create specialized custom
-  //       behaviour in the chunk header processing user callbacks; mg_read/mg_write are re-entrant.
+  // Note: This mode is provided as a convenience detection mechanism when you share code between
+  //       different user callbacks and need to know the internal state.
   MG_IOMODE_CHUNKED_HEADER,
 } mg_iomode_t;
 
