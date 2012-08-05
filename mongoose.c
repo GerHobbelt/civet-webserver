@@ -1672,11 +1672,13 @@ static int should_keep_alive(struct mg_connection *conn) {
   if (conn->is_client_conn) {
     const char *header = mg_get_tx_header(conn, "Connection");
 
+#if 0
     DEBUG_TRACE(("CLIENT: must_close: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
                  (int)conn->must_close,
                  get_conn_option(conn, ENABLE_KEEP_ALIVE),
                  header, http_version,
                  mg_get_stop_flag(conn->ctx)));
+#endif
 
     return (!conn->must_close &&
             !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
@@ -1687,13 +1689,15 @@ static int should_keep_alive(struct mg_connection *conn) {
   } else {
     const char *header = mg_get_header(conn, "Connection");
 
-    DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+#if 0
+	DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
                  (int)conn->must_close,
                  (int)conn->request_info.status_code,
                  (int)is_legal_response_code(conn->request_info.status_code),
                  get_conn_option(conn, ENABLE_KEEP_ALIVE),
                  header, http_version,
                  mg_get_stop_flag(conn->ctx)));
+#endif
 
     return (!conn->must_close &&
             conn->request_info.status_code != 401 &&
@@ -1712,7 +1716,9 @@ static int should_keep_alive(struct mg_connection *conn) {
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
   int rv = should_keep_alive(conn);
+#if 0
   DEBUG_TRACE(("suggest_connection_header() --> %s", rv ? "keep-alive" : "close"));
+#endif
   return rv ? "keep-alive" : "close";
 }
 
@@ -4903,8 +4909,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
 
       if (rv != 0) {
         // make sure we reset the state first and update the counters
-        if (conn->rx_chunk_header_parsed == 2)
-          conn->rx_chunk_header_parsed = 1;
+        conn->rx_chunk_header_parsed = 1;
         if (rv >= 0) {
           conn->rx_chunk_count++;
 
@@ -4975,11 +4980,6 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
       return -1;
     }
 
-    // read_request() calls pull() so we must account for the bytes read ourselves here.
-    // When the user callback reads the header, it will use mg_read() instead, which
-    // will do the accounting for us.
-    conn->rx_buffer_read_len += rv;
-
     buf[rv - 1] = 0;  // turn chunk header into a C string for further processing
     p = buf;
     p += strspn(p, "\r\n \t");
@@ -4988,44 +4988,61 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
     // see if there's any extensions/headers in there:
     p += strspn(p, " \t;");
     exts = p;
-    p += strcspn(p, "\r\n");
-    *p = 0;
 
     hdr_count = 0;
     // load the trailing headers? (i.e. did we hit the terminating ZERO chunk?)
     if (conn->rx_remaining_chunksize == 0) {
-      int nread = conn->rx_buffer_loaded_len - rv;
-      int trail = read_request(NULL, conn, buf + rv, bufsiz - rv, &nread);
+      int nread = conn->rx_buffer_loaded_len;
+	  int trail;
+
+	  // restore the CRLF for the header itself, so read_request()'ll work.
+	  // Also we need to do this in case we need to locate it again in the next round,
+	  // when the currently remaining buffer space turns out to be too small for the 
+	  // new chunk header.
+      buf[rv - 1] = '\n';
+
+	  // read_request() expects a double CRLF as sentinel; allow it to revisit the chunk-size head
+	  // so as to always provide this double CRLF for the last-chunk, cf. RFC2616, sec 3.6.1
+      trail = read_request(NULL, conn, buf, bufsiz, &nread); 
 
       if (trail < 0) {
         // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
         return -1;
       }
-      conn->rx_buffer_loaded_len = nread + rv;
-      assert(conn->rx_buffer_read_len == rv);
-      conn->rx_buffer_read_len += trail;
+      conn->rx_buffer_loaded_len = nread;
+      assert(conn->rx_buffer_read_len == 0);
+      conn->rx_buffer_read_len = trail;
 
       // did we overrun the buffer while fetching headers?
-      if (trail == 0 && nread == conn->rx_buffer_loaded_len - rv) {
+      if (trail == 0 && nread == conn->rx_buffer_loaded_len) {
         conn->rx_buffer_loaded_len += offset;
         conn->rx_buffer_read_len += offset;
         if (do_shift) {
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
-        // restore the CRLF for the header itself, so we locate it again in the next round:
-        *p = '\r';
-        buf[rv - 1] = '\n';
         continue;
       }
 
-      if (trail > 0) {
-        p = buf + rv;
-        p[trail - 1] = 0;
-        hdr_count = parse_http_headers(&p, chunk_headers, ARRAY_SIZE(chunk_headers));
-      }
-      rv += trail;
-    }
+	  // extract the (optional) chunk extensions, then parse the (optional) headers
+	  p += strcspn(p, "\r\n");
+	  *p++ = 0;
+      buf[trail - 1] = 0;
+	  p += strspn(p, "\r\n");
+      hdr_count = parse_http_headers(&p, chunk_headers, ARRAY_SIZE(chunk_headers));
+
+	  rv = trail;
+    } else {
+	  // read_request() calls pull() so we must account for the bytes read ourselves here.
+	  // When the user callback reads the header, it will use mg_read() instead, which
+	  // will do the accounting for us.
+      assert(conn->rx_buffer_read_len == 0);
+	  conn->rx_buffer_read_len = rv;
+
+	  // extract the (optional) check extensions
+      p += strcspn(p, "\r\n");
+      *p = 0;
+	}
 
     conn->rx_buffer_loaded_len += offset;
     conn->rx_buffer_read_len += offset;

@@ -1234,7 +1234,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     mg_add_response_header(conn, 0, "X-Mongoose-UnitTester", "%s%s", "   ", "Millennium Hand and Shrimp");
 
 	i = mg_write_http_response_head(conn, 0, NULL);
-    ASSERT(145 == i);
+    ASSERT(150 == i);
 	ASSERT(mg_get_response_header(conn, "Content-Length") == NULL);
 	ASSERT_STREQ(mg_get_response_header(conn, "Transfer-Encoding"), "chunked");
 
@@ -1260,6 +1260,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 
       // any header added/changed AFTER the HEAD was written will be appended to the tail chunk
       mg_add_response_header(conn, 0, "X-Mongoose-Chunky", "Alter-%d-of-%d", i, c);
+      mg_add_response_header(conn, 0, "X-Mongoose-ChunkSizeTest", "%d", chunk_size);
 
       mg_printf(conn,
                 "\n<pre>\n chunk #%d / %d, (size?: %d) remaining: %d \n</pre>\n"
@@ -1345,6 +1346,121 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
     ASSERT(chunk_extensions != NULL);
     ASSERT(*chunk_extensions == 0);
   }
+
+  // test the parsed chunk trailers
+  if (chunk_size == 0) {
+	if (conn->is_client_conn) {
+	  int req_no, subreq_no;
+	  char nbuf[20];
+
+      pthread_spin_lock(&chunky_request_spinlock);
+	  req_no = chunky_request_counters.requests_sent;
+      pthread_spin_unlock(&chunky_request_spinlock);
+	  subreq_no = req_no - 1;
+	  subreq_no %= 8;
+
+	  ASSERT(header_count == 3);
+	  ASSERT_STREQ(chunk_headers[0].name, "X-Mongoose-UnitTester");
+	  ASSERT_STREQ(chunk_headers[0].value, "Buggerit!");
+	  ASSERT_STREQ(chunk_headers[1].name, "X-Mongoose-Chunky");
+	  //ASSERT_STREQ(chunk_headers[1].value, "Alter-0-of-10");
+	  ASSERT_STREQ(chunk_headers[2].name, "X-Mongoose-ChunkSizeTest");
+	  mg_snq0printf(conn, nbuf, sizeof(nbuf), "%d", (1 << subreq_no) * 16);
+	  ASSERT_STREQ(chunk_headers[2].value, nbuf); // 16, 32, ...
+	  switch (subreq_no) {
+	  default:
+	    ASSERT_STREQ(chunk_headers[1].value, "Alter-0-of-10");
+		break;
+
+	  case 4:
+	    ASSERT_STREQ(chunk_headers[1].value, "Alter-208-of-10");
+		break;
+
+	  case 5:
+	    ASSERT_STREQ(chunk_headers[1].value, "Alter-510-of-10");
+		break;
+
+	  case 6:
+	    ASSERT_STREQ(chunk_headers[1].value, "Alter-910-of-10");
+		break;
+
+	  case 7:
+	    ASSERT_STREQ(chunk_headers[1].value, "Alter-2002-of-10");
+		break;
+	  }
+	} else {
+	  int resp_no, subresp_no, get_w_hdr_no, run_no;
+	  char nbuf[20];
+
+      pthread_spin_lock(&chunky_request_spinlock);
+      resp_no = chunky_request_counters.responses_sent;
+      pthread_spin_unlock(&chunky_request_spinlock);
+	  subresp_no = resp_no - 1;
+	  subresp_no %= 16;
+	  get_w_hdr_no = resp_no;
+	  get_w_hdr_no %= 5;
+	  run_no = resp_no - 1;
+	  run_no /= 16;
+
+	  if (subresp_no < 8) {
+		if (get_w_hdr_no != 3) {
+	      ASSERT(header_count == 0);
+		} else {
+	      ASSERT(header_count == 1);
+	      ASSERT_STREQ(chunk_headers[0].name, "X-Mongoose-Chunky-CLIENT");
+		  switch (subresp_no) {
+ 	      default:
+	        ASSERT(!"Should never get here");
+		    break;
+
+	      case 0:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 16", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 1:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 32", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 2:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 64", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 3:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 128", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 4:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 256", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 5:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 512", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 6:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "118, %d, 1024", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+
+	      case 7:
+			mg_snq0printf(conn, nbuf, sizeof(nbuf), "118, %d, 2048", 16 - run_no);
+	        ASSERT_STREQ(chunk_headers[0].value, nbuf);
+		    break;
+		  }
+		}
+	  } else {
+	    ASSERT(header_count == 1);
+	    ASSERT_STREQ(chunk_headers[0].name, "X-Mongoose-Chunky-CLIENT");
+	    ASSERT_STREQ(chunk_headers[0].value, "Alter-3-of-18, 2048");
+	  }
+	}
+  }
   return 0;  // run default handler; we were just here to add extensions...
 }
 
@@ -1393,6 +1509,7 @@ int test_chunked_transfer(void) {
 
     for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
     {
+	  int add_chunkend_header = 0;
       mg_add_tx_header(conn, 0, "Host", "localhost");
       mg_add_tx_header(conn, 0, "Connection", "keep-alive");
       rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
@@ -1401,7 +1518,12 @@ int test_chunked_transfer(void) {
 
       pthread_spin_lock(&chunky_request_spinlock);
       chunky_request_counters.requests_sent++;
+	  add_chunkend_header = (chunky_request_counters.requests_sent % 5 == 3);
       pthread_spin_unlock(&chunky_request_spinlock);
+
+	  if (add_chunkend_header) {
+        mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "%d, %d, %d", rv, runs, prospect_chunk_size);
+	  }
 
       // this one is optional here as we didn't send any data:
 	  // (It is mandatory though when you're transmitting in chunked transfer mode!)
@@ -1506,8 +1628,8 @@ int test_chunked_transfer(void) {
         i = (int)mg_get_tx_remaining_chunk_size(conn);
         c = mg_get_tx_chunk_no(conn);
 
-          // any header added/changed AFTER the HEAD was written will be appended to the tail chunk
-        mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "Alter-%d-of-%d", i, c);
+        // any header added/changed AFTER the HEAD was written will be appended to the tail chunk
+        mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "Alter-%d-of-%d, %d", i, c, chunk_size);
 
         mg_printf(conn,
                   "We're looking at chunk #%d here, (size?: %d) remaining: %d \n\n",
@@ -1539,7 +1661,7 @@ int test_chunked_transfer(void) {
             ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millennium Hand and Shrimp");
             ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
             ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
-            ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
+            ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_HEADER);
 
             rx_state++;
             break;
@@ -1597,7 +1719,7 @@ int test_chunked_transfer(void) {
           ASSERT_STREQ(mg_get_header(conn, "X-Mongoose-UnitTester"), "Millennium Hand and Shrimp");
           ASSERT_STREQ(mg_get_header(conn, "Connection"), "keep-alive");
           ASSERT_STREQ(mg_get_header(conn, "Transfer-Encoding"), "chunked");
-          ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_DATA);
+          ASSERT(mg_get_rx_mode(conn) == MG_IOMODE_CHUNKED_HEADER);
 
           rv = 1;
           rx_state++;
@@ -1653,8 +1775,8 @@ int test_chunked_transfer(void) {
   ASSERT(chunky_request_counters.requests_processed == 256);
   ASSERT(chunky_request_counters.responses_sent == 256);
   ASSERT(chunky_request_counters.responses_processed == 256);
-  ASSERT(chunky_request_counters.chunks_sent == 5984);
-  ASSERT(chunky_request_counters.chunks_processed == 5984);
+  ASSERT(chunky_request_counters.chunks_sent == 6112);
+  ASSERT(chunky_request_counters.chunks_processed == 6112);
   ASSERT(chunky_request_counters.connections_closed_due_to_server_stop == 0);
 
   printf("Server terminating now.\n");
