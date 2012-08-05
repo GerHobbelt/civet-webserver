@@ -242,7 +242,7 @@ struct mg_connection *mg_connect(struct mg_connection *conn,
     closesocket(sock);
   } else {
     newconn->last_active_time = newconn->birth_time = time(NULL);
-	newconn->is_client_conn = 1;
+    newconn->is_client_conn = 1;
     newconn->ctx = conn->ctx;
     newconn->client.sock = sock;
     // by default, a client-side connection is assumed to be an arbitrary client,
@@ -724,7 +724,7 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
                     struct mg_connection *newconn = conns[i];
 
                     newconn->last_active_time = newconn->birth_time = time(NULL);
-					newconn->is_client_conn = 2;
+                    newconn->is_client_conn = 2;
                     newconn->ctx = ctx;
                     newconn->client.sock = socks[i];
                     // by default, a client-side connection is assumed to be an arbitrary client,

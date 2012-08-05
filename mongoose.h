@@ -591,9 +591,9 @@ typedef enum mg_iomode_t {
 
   // mg_read() and mg_write() read and write to the socket without any restriction, nor do they
   // account for the bytes written in this mode. This mode may be returned by the functions
-  // mg_get_tx_mode() / mg_get_rx_mode() to inform the user whether mongoose is currently 
+  // mg_get_tx_mode() / mg_get_rx_mode() to inform the user whether mongoose is currently
   // expecting to transmit/receive a chunk header or data, respectively.
-  // Used anywhere else, this mode is considered identical to having specified 
+  // Used anywhere else, this mode is considered identical to having specified
   // MG_IOMODE_CHUNKED_DATA and acts accordingly.
   //
   // Note: This mode is provided as a convenience detection mechanism when you share code between

@@ -1690,7 +1690,7 @@ static int should_keep_alive(struct mg_connection *conn) {
     const char *header = mg_get_header(conn, "Connection");
 
 #if 0
-	DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+    DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
                  (int)conn->must_close,
                  (int)conn->request_info.status_code,
                  (int)is_legal_response_code(conn->request_info.status_code),
@@ -2041,7 +2041,7 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   }
 
   // detect whether we're going to send in 'chunked' or 'full' mode:
-  // check for the appropriate headers 
+  // check for the appropriate headers
   // or whether the user already set the chunked mode explicitly.
   //
   // Content-Length ALWAYS wins over chunked transfer mode.
@@ -2051,34 +2051,34 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   te_tag = mg_get_response_header(conn, "Transfer-Encoding");
   cl_tag = mg_get_response_header(conn, "Content-Length");
   if (!is_empty(cl_tag)) {
-	assert(is_empty(te_tag)); // mg_add_response_header() must've taken care of this before
-	mg_set_tx_mode(conn, MG_IOMODE_STANDARD);
+    assert(is_empty(te_tag)); // mg_add_response_header() must've taken care of this before
+    mg_set_tx_mode(conn, MG_IOMODE_STANDARD);
   } else if (strcmp(http_version, "1.1") >= 0) {
-	// there's no absolute need to set 'chunked' transfer mode when 
-	// we're closing the connection after this request (so you'd get 
-	// HTTP/1.0 alike GET requests then); we do this to allow basic
-	// GET requests to be sent to non-fully HTTP/1.1 compliant servers,
-	// e.g. other (older or 'vanilla') mongoose servers, without them
-	// barfing a hairball over the chunked headers -- when they don't 
-	// cope with the Transfer-Encoding header (e.g. older/vanilla mongoose).
-	//
-	// This is a KNOWN DEVIATION from the strict interpretation of 
-	// the HTTP/1.1 spec. It is harmless.
-	if (conn->tx_is_in_chunked_mode || !conn->must_close ||
-		mg_strcasecmp(conn->request_info.request_method, "GET")) {
-	  if (is_empty(te_tag)) {
-	    if (mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked"))
-		  return -1;
-	  }
-	  if (!conn->tx_is_in_chunked_mode) {
-	    mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_HEADER);
-	  }
-	}
+    // there's no absolute need to set 'chunked' transfer mode when
+    // we're closing the connection after this request (so you'd get
+    // HTTP/1.0 alike GET requests then); we do this to allow basic
+    // GET requests to be sent to non-fully HTTP/1.1 compliant servers,
+    // e.g. other (older or 'vanilla') mongoose servers, without them
+    // barfing a hairball over the chunked headers -- when they don't
+    // cope with the Transfer-Encoding header (e.g. older/vanilla mongoose).
+    //
+    // This is a KNOWN DEVIATION from the strict interpretation of
+    // the HTTP/1.1 spec. It is harmless.
+    if (conn->tx_is_in_chunked_mode || !conn->must_close ||
+        mg_strcasecmp(conn->request_info.request_method, "GET")) {
+      if (is_empty(te_tag)) {
+        if (mg_add_response_header(conn, 0, "Transfer-Encoding", "chunked"))
+          return -1;
+      }
+      if (!conn->tx_is_in_chunked_mode) {
+        mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_HEADER);
+      }
+    }
   } else if (!conn->must_close) {
-	// HTTP/1.0, but not marked as a 'closing' connection yet!
-	conn->must_close = 1;
-	if (mg_add_response_header(conn, 0, "Connection", "close"))
-	  return -1;
+    // HTTP/1.0, but not marked as a 'closing' connection yet!
+    conn->must_close = 1;
+    if (mg_add_response_header(conn, 0, "Connection", "close"))
+      return -1;
   }
 
   /*
@@ -3415,13 +3415,13 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   if (rv > 0) {
     if (conn->num_bytes_sent < 0) {
       conn->num_bytes_sent -= rv; // count as header data
-	} else {
+    } else {
       conn->num_bytes_sent += rv; // count as content data
       conn->tx_remaining_chunksize -= rv; // when not in chunked mode, we don't care how far negative this value goes.
       if (conn->tx_remaining_chunksize == 0) {
         conn->tx_chunk_header_sent = 0; // signal the need for another chunk (+ header)
       }
-	}
+    }
     src += rv;
   } else if (rv < 0) {
     return rv;
@@ -4993,17 +4993,17 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
     // load the trailing headers? (i.e. did we hit the terminating ZERO chunk?)
     if (conn->rx_remaining_chunksize == 0) {
       int nread = conn->rx_buffer_loaded_len;
-	  int trail;
+      int trail;
 
-	  // restore the CRLF for the header itself, so read_request()'ll work.
-	  // Also we need to do this in case we need to locate it again in the next round,
-	  // when the currently remaining buffer space turns out to be too small for the 
-	  // new chunk header.
+      // restore the CRLF for the header itself, so read_request()'ll work.
+      // Also we need to do this in case we need to locate it again in the next round,
+      // when the currently remaining buffer space turns out to be too small for the
+      // new chunk header.
       buf[rv - 1] = '\n';
 
-	  // read_request() expects a double CRLF as sentinel; allow it to revisit the chunk-size head
-	  // so as to always provide this double CRLF for the last-chunk, cf. RFC2616, sec 3.6.1
-      trail = read_request(NULL, conn, buf, bufsiz, &nread); 
+      // read_request() expects a double CRLF as sentinel; allow it to revisit the chunk-size head
+      // so as to always provide this double CRLF for the last-chunk, cf. RFC2616, sec 3.6.1
+      trail = read_request(NULL, conn, buf, bufsiz, &nread);
 
       if (trail < 0) {
         // recv() error -> propagate error; do not process a b0rked-with-very-high-probability request
@@ -5024,25 +5024,25 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         continue;
       }
 
-	  // extract the (optional) chunk extensions, then parse the (optional) headers
-	  p += strcspn(p, "\r\n");
-	  *p++ = 0;
+      // extract the (optional) chunk extensions, then parse the (optional) headers
+      p += strcspn(p, "\r\n");
+      *p++ = 0;
       buf[trail - 1] = 0;
-	  p += strspn(p, "\r\n");
+      p += strspn(p, "\r\n");
       hdr_count = parse_http_headers(&p, chunk_headers, ARRAY_SIZE(chunk_headers));
 
-	  rv = trail;
+      rv = trail;
     } else {
-	  // read_request() calls pull() so we must account for the bytes read ourselves here.
-	  // When the user callback reads the header, it will use mg_read() instead, which
-	  // will do the accounting for us.
+      // read_request() calls pull() so we must account for the bytes read ourselves here.
+      // When the user callback reads the header, it will use mg_read() instead, which
+      // will do the accounting for us.
       assert(conn->rx_buffer_read_len == 0);
-	  conn->rx_buffer_read_len = rv;
+      conn->rx_buffer_read_len = rv;
 
-	  // extract the (optional) check extensions
+      // extract the (optional) check extensions
       p += strcspn(p, "\r\n");
       *p = 0;
-	}
+    }
 
     conn->rx_buffer_loaded_len += offset;
     conn->rx_buffer_read_len += offset;
@@ -8405,11 +8405,11 @@ void mg_set_rx_mode(struct mg_connection *conn, mg_iomode_t mode) {
 
 mg_iomode_t mg_get_rx_mode(struct mg_connection *conn) {
   if (conn) {
-	return conn->rx_is_in_chunked_mode ?
-			conn->rx_chunk_header_parsed != 1 ?
-			  MG_IOMODE_CHUNKED_HEADER :
-			  MG_IOMODE_CHUNKED_DATA :
-		    MG_IOMODE_STANDARD;
+    return conn->rx_is_in_chunked_mode ?
+            conn->rx_chunk_header_parsed != 1 ?
+              MG_IOMODE_CHUNKED_HEADER :
+              MG_IOMODE_CHUNKED_DATA :
+            MG_IOMODE_STANDARD;
   }
   return MG_IOMODE_UNKNOWN;
 }
