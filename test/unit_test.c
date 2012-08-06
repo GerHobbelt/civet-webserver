@@ -1290,7 +1290,7 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     chunky_request_counters.responses_sent++;
     pthread_spin_unlock(&chunky_request_spinlock);
 
-    DEBUG_TRACE(("test server callback: %s request serviced", request_info->uri));
+    //DEBUG_TRACE(("test server callback: %s request serviced", request_info->uri));
 
     return (void *)1;
   } else if (event == MG_NEW_REQUEST) {
@@ -1317,16 +1317,95 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 
 
 static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
-  int c = mg_get_tx_chunk_no(conn);
+  struct mg_context *ctx = mg_get_context(conn); 
 
-  pthread_spin_lock(&chunky_request_spinlock);
-  chunky_request_counters.chunks_sent++;
-  pthread_spin_unlock(&chunky_request_spinlock);
+  if (chunk_size == 0 && !conn->is_client_conn) {
+	// This section is a special hack to force mongoose into the buffer overflow
+	// edge condition, where mongoose MUST decide to 'shift' the buffered data
+	// in order to load a full chunk header:
+	// to accomplish this, our test code must DISABLE mongoose mg_write()
+	// intelligence as we need to construct a single send() by hand to guarantee
+	// that the other test thread (main loop) will pull() in this series of
+	// chunks (headers + data) all at once: that is the only way to ensure that
+	// the main thread MAY run into this buffer overflow edge condition in a
+	// predictible fashion.
 
-  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
-  if ((c % 3) == 2) {
-    mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
+	// are we in a state where connexpects to send a chunk header?
+    ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_HEADER); 
+	// HACK:
+	// make mg_write() think we're writing a chunk header. 
+	// In actual fact, we're sending a whole bunch of 'em + data!
+    ASSERT(conn->tx_chunk_header_sent == 2); 
+
+	// construct a chunk header + data series large enough to flood the read/pull() buffer.
+	if (01)
+	{
+		int flood_bufsiz = conn->buf_size * 4;
+		char *flood_buf = (char *)malloc(flood_bufsiz + 512);
+		int todo;
+		int sn;
+		char *p = flood_buf;
+		int c = mg_get_tx_chunk_no(conn);
+
+		ASSERT(flood_buf);
+		for (todo = flood_bufsiz; ; )
+		{
+			// produce a semi-chaotic chunk size to maximize the chance to hit both edge cases:
+			// 1) buffer overflow --> do_shift=1 for a regular chunk
+			// 2) buffer overflow during tail (0-length) chunk header parsing --> do_shift=1 for the tail chunk
+			//
+			// Particularly #2 is EXTREMELY hard to hit, but it does happen and that code path
+			// MAY contain bugs (it did before ;-) ); this code, together with the multiple runs
+			// and sequenced requests has been created to maximally exercise the mongoose chunk I/O.
+			int chunk_len = 36;
+
+			pthread_spin_lock(&chunky_request_spinlock);
+	        chunk_len += (chunky_request_counters.requests_sent * 10001 + c) % 11;
+		    pthread_spin_unlock(&chunky_request_spinlock);
+
+			if (todo < chunk_len)
+				break;
+
+			sn = mg_snq0printf(conn, p, todo + 512, 
+					((c % 3) == 2 ? 
+					 "\r\n%x;mongoose-ext=oh-la-la-XXX;\r\ntodo=%7u %*s" : 
+					 "\r\n%x\r\ntodo=%7u %*s"),
+					chunk_len, 
+					todo,
+					chunk_len - 6 - 7, "B0rk?");
+			ASSERT(sn > chunk_len);
+			todo -= sn;
+			p += sn;
+			c++;
+		  
+			pthread_spin_lock(&chunky_request_spinlock);
+		    chunky_request_counters.chunks_sent++;
+		    pthread_spin_unlock(&chunky_request_spinlock);
+		}
+		sn = mg_write(conn, flood_buf, p - flood_buf);
+		ASSERT(sn == p - flood_buf);
+		free(flood_buf);
+
+		conn->tx_chunk_count = c;
+	}
+	//conn->tx_chunk_header_sent = 0; 
+	//conn->tx_remaining_chunksize = 0; 
   }
+
+  // the regular test code, which adds chunk extensions to /some/ chunks:
+  {
+	  int c = mg_get_tx_chunk_no(conn);
+
+	  pthread_spin_lock(&chunky_request_spinlock);
+	  chunky_request_counters.chunks_sent++;
+	  pthread_spin_unlock(&chunky_request_spinlock);
+
+	  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
+	  if ((c % 3) == 2) {
+		mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
+	  }
+  }
+
   return 0; // run default handler; we were just here to add extensions...
 }
 
@@ -1338,7 +1417,7 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
   chunky_request_counters.chunks_processed++;
   pthread_spin_unlock(&chunky_request_spinlock);
 
-  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
+  // check the custom chunk extensions, to make sure the decoder can cope as well!
   if ((c % 3) == 2) {
     ASSERT(chunk_extensions != NULL);
     ASSERT(0 == strncmp(chunk_extensions, "mongoose-ext=oh-la-la-", 22));
@@ -1466,7 +1545,17 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
 
 int test_chunked_transfer(void) {
   struct mg_context *ctx;
-  const char *options[] = {"listening_ports", "32156", NULL};
+  /*
+  The test server MUST run with 1 (ONE) thread, as the test code use a global chunk counter
+  to assist in creating predictable, yet semi-random, chunk sizes.
+
+  When running this code with multiple threads, the chunk counter will be updated by two
+  threads when one connection shuts down while the other is established and used, producing
+  fully unpredictable results.
+
+  Using 1 client thread serializes the test process.
+  */
+  const char *options[] = {"listening_ports", "32156", "num_threads", "1", NULL};
   struct mg_user_class_t ucb = {
     NULL,
     chunky_server_callback
@@ -1759,7 +1848,7 @@ int test_chunked_transfer(void) {
   {
     const char *lv = mg_get_option(ctx, "socket_linger_timeout");
     int linger_timeout = atoi(lv ? lv : "1") * 1000;
-    mg_sleep(MG_SELECT_TIMEOUT_MSECS * 2 + linger_timeout);
+    mg_sleep(MG_SELECT_TIMEOUT_MSECS * 4 + linger_timeout);
   }
 
   // now stop the server: done testing
@@ -1775,8 +1864,8 @@ int test_chunked_transfer(void) {
   ASSERT(chunky_request_counters.requests_processed == 256);
   ASSERT(chunky_request_counters.responses_sent == 256);
   ASSERT(chunky_request_counters.responses_processed == 256);
-  ASSERT(chunky_request_counters.chunks_sent == 6112);
-  ASSERT(chunky_request_counters.chunks_processed == 6112);
+  ASSERT(chunky_request_counters.chunks_sent >= 229737);
+  ASSERT(chunky_request_counters.chunks_processed == chunky_request_counters.chunks_sent);
   ASSERT(chunky_request_counters.connections_closed_due_to_server_stop == 0);
 
   printf("Server terminating now.\n");

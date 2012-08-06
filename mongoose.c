@@ -3208,7 +3208,7 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
         if (nread == 0 || mg_is_read_data_available(conn) == 1 || !nonblocking) {
           cl = read_and_parse_chunk_header(conn);
           if (conn->rx_remaining_chunksize == 0) {
-              DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d", conn->rx_chunk_count, nread));
+              //DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d", conn->rx_chunk_count, nread));
           }
           if (cl < 0)
             return cl;
@@ -3656,7 +3656,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
-  DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
+  //DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
 
   return stat_result;
 }
@@ -4933,24 +4933,36 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
 
     //rv = read_request(NULL, conn, buf, bufsiz, &conn->rx_buffer_loaded_len);
     n = 1;
-    // make sure to skip the possible leading CRLF by blowing it away:
-    if (buf[0] == '\r' || buf[0] == '\n') {
-      buf[0] = ' ';
+    // make sure to skip the possible leading CRLF by blowing it away
+	//
+	// WARNING: 
+	// also blow it entirely away when it was already partly blasted in the previous
+	// round in this outer loop when the buffer space was overflowing and hence data
+	// has been shifted (do_shift = 1): this can happen right smack in the middle
+	// of a CRLF pair, so we MUST regard them as independent.
+	// (This cuts into our flexiblity to tolerate non-complaint peers, who don't send
+	//  CRLF but LF-only. Alas. Let them b0rk.)
+	if (conn->rx_buffer_loaded_len >= 2) {
+      if (buf[0] == '\r' || buf[0] == '\n')
+        buf[0] = ' ';
       if (buf[1] == '\r' || buf[1] == '\n')
         buf[1] = ' ';
-    }
-    e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
+      e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
+	} else {
+	  e = NULL;
+	}
     while (conn->rx_buffer_loaded_len < bufsiz && e == NULL && n > 0) {
       n = pull(NULL, conn, buf + conn->rx_buffer_loaded_len, bufsiz - conn->rx_buffer_loaded_len);
       if (n > 0) {
         conn->rx_buffer_loaded_len += n;
         // make sure to skip the possible leading CRLF by blowing it away:
-        if (buf[0] == '\r' || buf[0] == '\n') {
-          buf[0] = ' ';
+	    if (conn->rx_buffer_loaded_len >= 2) {
+          if (buf[0] == '\r' || buf[0] == '\n')
+            buf[0] = ' ';
           if (buf[1] == '\r' || buf[1] == '\n')
             buf[1] = ' ';
+          e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
         }
-        e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
       }
     }
 
@@ -4968,6 +4980,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         return -1;  // invalid or overlarge chunk header
       }
       do_shift = 1;
+	  DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
       continue;
     }
     rv = e - buf + 1; // ~ request_len
@@ -4979,6 +4992,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
       conn->rx_buffer_read_len += offset;
       return -1;
     }
+	assert(buf[1] != ' ' ? rv > 2 : 1);
 
     buf[rv - 1] = 0;  // turn chunk header into a C string for further processing
     p = buf;
@@ -5021,6 +5035,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
+	    DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
 
@@ -6105,7 +6120,7 @@ static void handle_request(struct mg_connection *conn) {
   stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
   ri->phys_path = path;
 
-  DEBUG_TRACE(("%s", ri->uri));
+  //DEBUG_TRACE(("%s", ri->uri));
 
   if (!check_allowed(conn)) {
     send_http_error(conn, 405, NULL, "You cannot %s to this server", conn->request_info.request_method);
@@ -7131,7 +7146,7 @@ static int process_new_connection(struct mg_connection *conn) {
     int data_len;
 
     if (conn->request_info.seq_no > 0) {
-      DEBUG_TRACE(("************************** round: %d! *******************", conn->request_info.seq_no + 1));
+      //DEBUG_TRACE(("************************** round: %d! *******************", conn->request_info.seq_no + 1));
     }
     reset_per_request_attributes(conn);
 
@@ -7618,7 +7633,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         }
         (void) pthread_mutex_unlock(&ctx->mutex);
 
-        DEBUG_TRACE(("grabbed socket %d, going busy", conn->client.sock));
+        //DEBUG_TRACE(("grabbed socket %d, going busy", conn->client.sock));
         return 1;
       } else {
         (void) pthread_mutex_lock(&ctx->mutex);
@@ -7684,7 +7699,7 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
       (void) pthread_cond_wait(&ctx->sq_empty, &ctx->mutex);
     } else if (full >= 0) {
       rv = 1;
-      DEBUG_TRACE(("queued socket %d", conn->client.sock));
+      //DEBUG_TRACE(("queued socket %d", conn->client.sock));
     }
   }
 
@@ -7762,7 +7777,7 @@ static void worker_thread(struct mg_context *ctx) {
         mg_cry(conn, "%s: socket %d failed to initialize completely: %s", __func__, (int)conn->client.sock, mg_strerror(ERRNO));
       }
     } else if (doing_fine) {
-      DEBUG_TRACE(("%s: revived kept-alive socket %d", __func__, (int)conn->client.sock));
+      //DEBUG_TRACE(("%s: revived kept-alive socket %d", __func__, (int)conn->client.sock));
     } else {
       DEBUG_TRACE(("%s: closing expired connection socket %d", __func__, (int)conn->client.sock));
     }
@@ -7783,7 +7798,7 @@ static void worker_thread(struct mg_context *ctx) {
     } else {
       // The simplest way is to push the current connection onto the queue, and then
       // let consume_socket() [and its internal select() logic] cope with it.
-      DEBUG_TRACE(("%s: pushing MAYBE-IDLE connection back onto the queue", __func__));
+      //DEBUG_TRACE(("%s: pushing MAYBE-IDLE connection back onto the queue", __func__));
       if (!produce_socket(ctx, conn)) {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
         mg_cry(conn, "%s: closing active connection %s because server is shutting down",
@@ -7859,7 +7874,7 @@ static int accept_new_connection(const struct socket *listener,
       struct mg_connection dummy_conn = {0};
 
       // Put accepted socket structure into the queue
-      DEBUG_TRACE(("accepted socket %d", accepted.sock));
+      //DEBUG_TRACE(("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
       dummy_conn.client = accepted;
       if (!produce_socket(ctx, &dummy_conn)) {
