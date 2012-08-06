@@ -1315,7 +1315,6 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
   }
 }
 
-static int gcl = 0;
 
 static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
   struct mg_context *ctx = mg_get_context(conn); 
@@ -1358,7 +1357,7 @@ static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_s
 			// Particularly #2 is EXTREMELY hard to hit, but it does happen and that code path
 			// MAY contain bugs (it did before ;-) ); this code, together with the multiple runs
 			// and sequenced requests has been created to maximally exercise the mongoose chunk I/O.
-			int chunk_len = gcl /* gcl #1 */;
+			int chunk_len = 31 /* gcl #1 */;
 
 			pthread_spin_lock(&chunky_request_spinlock);
 	        chunk_len += (chunky_request_counters.requests_sent * (256 - 18 + 24 /* gcl #2 */) + c) % 11;
@@ -1846,7 +1845,6 @@ int test_chunked_transfer(void) {
 
   // allow all threads / connections on the server side to clean up by themselves:
   // wait for the linger timeout to trigger for any laggard.
-  if (0)
   {
     const char *lv = mg_get_option(ctx, "socket_linger_timeout");
     int linger_timeout = atoi(lv ? lv : "1") * 1000;
@@ -1866,9 +1864,9 @@ int test_chunked_transfer(void) {
   ASSERT(chunky_request_counters.requests_processed == 256);
   ASSERT(chunky_request_counters.responses_sent == 256);
   ASSERT(chunky_request_counters.responses_processed == 256);
-  ASSERT(chunky_request_counters.chunks_sent >= 209);
+  ASSERT(chunky_request_counters.chunks_sent >= 229737);
   ASSERT(chunky_request_counters.chunks_processed == chunky_request_counters.chunks_sent);
-  ASSERT(chunky_request_counters.connections_closed_due_to_server_stop >= 0);
+  ASSERT(chunky_request_counters.connections_closed_due_to_server_stop == 0);
 
   printf("Server terminating now.\n");
   return 0;
@@ -1905,30 +1903,7 @@ int main(void) {
 #endif // _WIN32
 
   test_client_connect();
-  {
-	  int gcl_best = 0;
-	  int gcl_tbest = 0;
-	  int hitc = 0;
-	  int hittc = 0;
-	  for (gcl = 18; ; gcl += 1) {
-			pthread_spin_lock(&chunky_request_spinlock);
-	        chunky_request_counters.requests_sent = 0;
-		    pthread_spin_unlock(&chunky_request_spinlock);
-		shift_hit = 0;
-		shift_tail_hit = 0;
-		test_chunked_transfer();
-		if (shift_hit > hitc) {
-			hitc = shift_hit;
-			gcl_best = gcl;
-		}
-		if (shift_tail_hit > hittc) {
-			hittc = shift_tail_hit;
-			gcl_tbest = gcl;
-		}
-		printf("#######---------------------------------------- BEST GCL: %d / %d ~ %d / %d", gcl_best, gcl_tbest, hitc, hittc);
-		fflush(stdout);
-	  }
-  }
+  test_chunked_transfer();
 
   printf("\nAll tests have completed successfully.\n"
          "(Some error log messages may be visible. No worries, that's perfectly all right!)\n");

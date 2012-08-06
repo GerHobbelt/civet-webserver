@@ -4857,9 +4857,6 @@ static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int buf
   return request_len;
 }
 
-static int shift_hit = 0;
-static int shift_tail_hit = 0;
-
 // Read enough bytes into the buffer to completely fetch a HTTP chunk header,
 // then decode it.
 // Return < 0 on error, >= 0 on success.
@@ -4983,7 +4980,6 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         return -1;  // invalid or overlarge chunk header
       }
       do_shift = 1;
-	  shift_hit++;
 	  //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
       continue;
     }
@@ -5039,7 +5035,6 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
-		shift_tail_hit++;
 	    DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
