@@ -4857,6 +4857,9 @@ static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int buf
   return request_len;
 }
 
+static int shift_hit = 0;
+static int shift_tail_hit = 0;
+
 // Read enough bytes into the buffer to completely fetch a HTTP chunk header,
 // then decode it.
 // Return < 0 on error, >= 0 on success.
@@ -4980,6 +4983,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         return -1;  // invalid or overlarge chunk header
       }
       do_shift = 1;
+	  shift_hit++;
 	  //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
       continue;
     }
@@ -5035,6 +5039,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
+		shift_tail_hit++;
 	    DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
@@ -7026,7 +7031,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       conn->client.has_read_data = 1;
       // only fetch RX data when there actually is some:
       n = pull(NULL, conn, buf, sizeof(buf));
-      DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
+      //DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
       w = 0;
       if (n < 0) {
         linger_timeout = 0;
@@ -7081,7 +7086,7 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   linger.l_onoff = (linger_timeout > 0 && (conn->ctx->stop_flag == 0 || !abort_when_server_stops));
   linger.l_linger = (linger_timeout + 999) / 1000; // round up
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
-  DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
+  //DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
 
   if (linger.l_onoff)
     (void) __DisconnectEx(sock, 0, 0, 0);
@@ -7787,7 +7792,7 @@ static void worker_thread(struct mg_context *ctx) {
     }
 
     if (!doing_fine) {
-      DEBUG_TRACE(("%s: closing connection", __func__));
+      //DEBUG_TRACE(("%s: closing connection", __func__));
       //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_EXIT_CLIENT_CONN);
       close_connection(conn);
