@@ -121,8 +121,6 @@ enum mg_event {
                             // to speak.
 };
 
-typedef void * (WINCDECL *mg_thread_func_t)(void *);
-
 // Prototype for the user-defined function. Mongoose calls this function
 // on every MG_* event.
 //
@@ -472,7 +470,7 @@ int mg_modify_passwords_file(const char *passwords_file_name,
 
 // Return mg_request_info structure associated with the request.
 // Always succeeds.
-const struct mg_request_info *mg_get_request_info(struct mg_connection *);
+struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
 
 
 // Send data to the client.
@@ -800,12 +798,32 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 int mg_is_producing_nested_page(struct mg_connection *conn);
 
 
-// Connect to the remote web server.
+
+// bitwise OR-able constants for mg_connect_to_host(..., flags):
+typedef enum mg_connect_flags_t {
+	// nothing special; the default
+	MG_CONNECT_BASIC = 0,
+	// set up and use a SSL encrypted connection
+	MG_CONNECT_USE_SSL = 0x0001,
+	// tell Mongoose we're going to connect to a HTTP server; this allows us
+	// the usage of the built-in HTTP specific features such as mg_get_header(), etc.
+	//
+	// Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
+	//       rather inappropriately, as they are geared towards server-side use, a
+	//       set of more sensible rx/tx aliases is provided in this header, such as
+	//       mg_add_tx_header().
+	//
+	//       Also note that HTTP I/O connections allocate buffer space from the heap,
+	//       so their memory footprint is quite a bit larger than for non-HTTP I/O
+	//       sockets.
+	MG_CONNECT_HTTP_IO = 0x0002
+} mg_connect_flags_t;
+
+// Connect to the remote host / web server: set up an outgoing client connection, connect to the given host/port.
 // Return:
 //   On success, valid pointer to the new connection
 //   On error, NULL
-struct mg_connection *mg_connect(struct mg_context *ctx,
-                                 const char *host, int port, int use_ssl);
+struct mg_connection *mg_connect(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags);
 
 
 // Close the connection opened by mg_connect().
@@ -826,10 +844,10 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
                char *buf, size_t buf_len, struct mg_request_info *request_info);
 
 
+typedef void * (WINCDECL *mg_thread_func_t)(void *);
 // Convenience function -- create detached thread.
 // Return: 0 on success, non-0 on error.
-typedef void * (*mg_thread_func_t)(void *);
-int mg_start_thread(mg_thread_func_t f, void *p);
+int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param);
 
 
 // Return builtin mime type for the given file name.
@@ -1019,8 +1037,6 @@ struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx);
 
 // Obtain the mongoose context definition for the given connection.
 struct mg_context *mg_get_context(struct mg_connection *conn);
-
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn);
 
 
 // Return the current 'stop_flag' state value for the given thread context.

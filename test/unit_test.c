@@ -47,27 +47,50 @@ static void test_parse_http_request() {
   char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
   char req4[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\nbaz\r\n\r\n";
+  // as parse_http_request() will be fed NUL-terminated string which can have the terminating double CRLF damaged:
+  char req5[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\n\r";
+  char req6[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\n";
+  char req7[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r";
+  char req8[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar";
+  char *req5_8[4];
+  int i;
+
+  req5_8[0] = req5;
+  req5_8[1] = req6;
+  req5_8[2] = req7;
+  req5_8[3] = req8;
 
   printf("=== TEST: %s ===\n", __func__);
 
-  ASSERT(parse_http_request(req1, sizeof(req1), &ri) == sizeof(req1) - 1);
+  ASSERT(parse_http_request(req1, &ri) == 0);
   ASSERT_STREQ(ri.http_version, "1.1");
   ASSERT(ri.num_headers == 0);
 
-  ASSERT(parse_http_request(req2, sizeof(req2), &ri) == -1);
-  ASSERT(parse_http_request(req3, sizeof(req3), &ri) == -1);
+  ASSERT(parse_http_request(req2, &ri) == -1);
+  ASSERT(parse_http_request(req3, &ri) == -1);
 
   // TODO(lsm): Fix this. Header value may span multiple lines.
-  ASSERT(parse_http_request(req4, sizeof(req4), &ri) == sizeof(req4) - 1);
+  ASSERT(parse_http_request(req4, &ri) == 0);
   ASSERT(ri.num_headers == 3);
-  ASSERT(strcmp(ri.http_headers[0].name, "A") == 0);
-  ASSERT(strcmp(ri.http_headers[0].value, "foo bar") == 0);
-  ASSERT(strcmp(ri.http_headers[1].name, "B") == 0);
-  ASSERT(strcmp(ri.http_headers[1].value, "bar") == 0);
-  ASSERT(strcmp(ri.http_headers[2].name, "baz\r\n\r") == 0);
-  ASSERT(strcmp(ri.http_headers[2].value, "") == 0);
+  ASSERT_STREQ(ri.http_headers[0].name, "A");
+  ASSERT_STREQ(ri.http_headers[0].value, "foo bar");
+  ASSERT_STREQ(ri.http_headers[1].name, "B");
+  ASSERT_STREQ(ri.http_headers[1].value, "bar");
+  ASSERT_STREQ(ri.http_headers[2].name, "baz\r\n\r");
+  ASSERT_STREQ(ri.http_headers[2].value, "");
 
-  // TODO(lsm): add more tests.
+  for (i = 0; i < ARRAY_SIZE(req5_8); i++) {
+	ASSERT(parse_http_request(req5_8[i], &ri) == 0);
+	ASSERT(ri.num_headers == 2);
+	ASSERT_STREQ(ri.http_headers[0].name, "A");
+	ASSERT_STREQ(ri.http_headers[0].value, "foo bar");
+	ASSERT_STREQ(ri.http_headers[1].name, "B");
+	ASSERT_STREQ(ri.http_headers[1].value, "bar");
+	ASSERT_STREQ(ri.http_version, "1.1");
+	ASSERT_STREQ(ri.uri, "/");
+	ASSERT_STREQ(ri.query_string, "");
+	ASSERT_STREQ(ri.request_method, "GET");
+  }
 }
 
 static void test_should_keep_alive(void) {
@@ -83,7 +106,7 @@ static void test_should_keep_alive(void) {
 
   memset(&conn, 0, sizeof(conn));
   conn.ctx = ctx;
-  parse_http_request(req1, sizeof(req1), &conn.request_info);
+  ASSERT(parse_http_request(req1, &conn.request_info) == 0);
   conn.request_info.status_code = 200;
 
   ctx->config[ENABLE_KEEP_ALIVE] = "no";
@@ -96,13 +119,13 @@ static void test_should_keep_alive(void) {
   ASSERT(should_keep_alive(&conn) == 0);
 
   conn.must_close = 0;
-  parse_http_request(req2, sizeof(req2), &conn.request_info);
+  ASSERT(parse_http_request(req2, &conn.request_info) == 0);
   ASSERT(should_keep_alive(&conn) == 0);
 
-  parse_http_request(req3, sizeof(req3), &conn.request_info);
+  ASSERT(parse_http_request(req3, &conn.request_info) == 0);
   ASSERT(should_keep_alive(&conn) == 0);
 
-  parse_http_request(req4, sizeof(req4), &conn.request_info);
+  ASSERT(parse_http_request(req4, &conn.request_info) == 0);
   ASSERT(should_keep_alive(&conn) == 1);
 
   conn.request_info.status_code = 401;
@@ -180,14 +203,16 @@ static void test_remove_double_dots() {
 }
 
 static const char *fetch_data = "hello world!\n";
-static void *event_handler(enum mg_event event,
+static void *fetch_callback(enum mg_event event,
                            struct mg_connection *conn) {
   const struct mg_request_info *request_info = mg_get_request_info(conn);
   if (event == MG_NEW_REQUEST && !strcmp(request_info->uri, "/data")) {
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Length: %d\r\n"
-              "Content-Type: text/plain\r\n\r\n"
-              "%s", (int) strlen(fetch_data), fetch_data);
+              "Content-Type: text/plain\r\n\r\n",
+			  (int) strlen(fetch_data));
+	mg_mark_end_of_header_transmission(conn);
+	mg_printf(conn, "%s", fetch_data);
     return "";
   } else if (event == MG_EVENT_LOG) {
     printf("%s\n", request_info->log_message);
@@ -209,8 +234,12 @@ static void test_mg_fetch(void) {
   const char *tmp_file = "temporary_file_name_for_unit_test.txt";
   struct mgstat st;
   FILE *fp;
+  struct mg_user_class_t ucb = {
+    NULL,
+	fetch_callback
+  };
 
-  ASSERT((ctx = mg_start(event_handler, NULL, options)) != NULL);
+  ASSERT((ctx = mg_start(&ucb, options)) != NULL);
 
   // Failed fetch, pass invalid URL
   ASSERT(mg_fetch(ctx, "localhost", tmp_file, buf, sizeof(buf), &ri) == NULL);
@@ -228,9 +257,9 @@ static void test_mg_fetch(void) {
   ASSERT((fp = mg_fetch(ctx, "http://localhost:33796/data",
                         tmp_file, buf, sizeof(buf), &ri)) != NULL);
   ASSERT(ri.num_headers == 2);
-  ASSERT(!strcmp(ri.request_method, "HTTP/1.1"));
-  ASSERT(!strcmp(ri.uri, "200"));
-  ASSERT(!strcmp(ri.http_version, "OK"));
+  ASSERT_STREQ(ri.request_method, "HTTP/1.1");
+  ASSERT_STREQ(ri.uri, "200");
+  ASSERT_STREQ(ri.http_version, "OK");
   ASSERT((length = ftell(fp)) == (int) strlen(fetch_data));
   fseek(fp, 0, SEEK_SET);
   ASSERT(fread(buf2, 1, length, fp) == (size_t) length);
@@ -242,7 +271,7 @@ static void test_mg_fetch(void) {
                         tmp_file, buf, sizeof(buf), &ri)) != NULL);
   ASSERT(mg_stat("mongoose.c", &st) == 0);
   ASSERT(st.size == ftell(fp));
-  ASSERT(!strcmp(ri.request_method, "HTTP/1.1"));
+  ASSERT_STREQ(ri.request_method, "HTTP/1.1");
 
   remove(tmp_file);
   mg_stop(ctx);
@@ -857,7 +886,7 @@ static void test_client_connect() {
 
   printf("=== TEST: %s ===\n", __func__);
 
-  conn = mg_connect_to_host(ctx, "example.com", 80, MG_CONNECT_BASIC);
+  conn = mg_connect(ctx, "example.com", 80, MG_CONNECT_BASIC);
   ASSERT(conn);
 
   rv = mg_printf(conn, "GET / HTTP/1.0\r\n\r\n");
@@ -869,9 +898,9 @@ static void test_client_connect() {
   //free(conn);
 
 
-  conn = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_USE_SSL);
+  conn = mg_connect(ctx, "google.com", 80, MG_CONNECT_USE_SSL);
   ASSERT(!conn);
-  conn = mg_connect_to_host(ctx, "google.com", 80, MG_CONNECT_BASIC);
+  conn = mg_connect(ctx, "google.com", 80, MG_CONNECT_BASIC);
   ASSERT(conn);
 
   rv = mg_printf(conn, "GET / HTTP/1.0\r\n\r\n");
@@ -885,7 +914,7 @@ static void test_client_connect() {
 
   // now with HTTP header support:
   ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(!conn);
 
   // all options are empty
@@ -893,7 +922,7 @@ static void test_client_connect() {
   // so we should set them up, just like one would've got when calling mg_start():
   ctx->config[MAX_REQUEST_SIZE] = "256";
 
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
@@ -925,7 +954,7 @@ static void test_client_connect() {
   // retry with a suitably large buffer:
   ctx->config[MAX_REQUEST_SIZE] = "2048";
 
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
@@ -968,7 +997,7 @@ static void test_client_connect() {
 
 
   // now with _full_ HTTP header support:
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   mg_add_tx_header(conn, 0, "Host", "www.google.com");
@@ -999,7 +1028,7 @@ static void test_client_connect() {
 
 
   // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
@@ -1053,7 +1082,7 @@ static void test_client_connect() {
 
 
   // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
@@ -1106,7 +1135,7 @@ static void test_client_connect() {
 
 
   // check whether the built-in Content-Length vs. Chunked I/O TX logic fires correctly:
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
@@ -1157,7 +1186,7 @@ static void test_client_connect() {
 
 
   // check the new google search page at /cse
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   // http://www.google.com/cse?q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i
@@ -1194,7 +1223,7 @@ static void test_client_connect() {
 
 
   // again: check the new google search page at /cse
-  conn = mg_connect_to_host(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
   // http://www.google.com/cse?q=mongoose&amp;num=5&amp;client=google-csbe&amp;ie=utf8&amp;oe=utf8&amp;cx=00255077836266642015:u-scht7a-8i
@@ -1665,7 +1694,7 @@ int test_chunked_transfer(void) {
     DEBUG_TRACE(("######### RUN: %d #############", runs));
 
     // open client connection to server and GET and POST chunked content
-    conn = mg_connect_to_host(ctx, "localhost", 32156, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
+    conn = mg_connect(ctx, "localhost", 32156, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
     ASSERT(conn);
     rv = 0;
 
@@ -1971,7 +2000,6 @@ int main(void) {
   test_header_processing();
   test_should_keep_alive();
   test_parse_http_request();
-  test_mg_fetch();
   test_response_header_rw();
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
@@ -1982,6 +2010,7 @@ int main(void) {
 #endif // _WIN32
 
   test_client_connect();
+  test_mg_fetch();
   {
 	  int gcl_best[3] = {0};
 	  int gcl_tbest[3] = {0};

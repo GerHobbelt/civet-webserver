@@ -204,130 +204,6 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
     return 0;
 }
 
-struct mg_connection *mg_connect(struct mg_connection *conn,
-                                 const char *host, int port, mg_connect_flags_t flags) {
-  struct mg_connection *newconn = NULL;
-  SOCKET sock;
-  struct addrinfo *result = NULL;
-  struct addrinfo *ptr;
-  struct addrinfo hints = {0};
-  int http_io_buf_size;
-
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = IPPROTO_TCP;
-
-  assert(conn);
-  assert(conn->ctx);
-  if (flags & MG_CONNECT_HTTP_IO) {
-    http_io_buf_size = atoi(get_conn_option(conn, MAX_REQUEST_SIZE));
-    if (http_io_buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
-      mg_cry(conn, "%s: Invalid MAX_REQUEST_SIZE setting: %d", __func__, http_io_buf_size);
-      return NULL;
-    }
-  } else {
-    http_io_buf_size = 0;
-  }
-  if (conn->ctx->ssl_ctx == NULL && (flags & MG_CONNECT_USE_SSL)) {
-    mg_cry(conn, "%s: SSL is not initialized", __func__);
-  } else if (getaddrinfo(host, NULL, &hints, &result)) {
-    mg_cry(conn, "%s: getaddrinfo(%s): %s", __func__, host, mg_strerror(ERRNO));
-  } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-    mg_cry(conn, "%s: socket: %s", __func__, mg_strerror(ERRNO));
-  } else if ((newconn = (struct mg_connection *)
-      calloc(1, sizeof(*newconn) + (http_io_buf_size
-        ? http_io_buf_size * 2 + CHUNK_HEADER_BUFSIZ /* RX headers, TX headers, RX chunked scratch space */
-        : 0))) == NULL) {
-    mg_cry(conn, "%s: calloc: %s", __func__, mg_strerror(ERRNO));
-    closesocket(sock);
-  } else {
-    newconn->last_active_time = newconn->birth_time = time(NULL);
-    newconn->is_client_conn = 1;
-    newconn->ctx = conn->ctx;
-    newconn->client.sock = sock;
-    // by default, a client-side connection is assumed to be an arbitrary client,
-    // not necessarily a HTTP client:
-    if (!http_io_buf_size) {
-      newconn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
-      //newconn->consumed_content = 0;
-      newconn->content_len = -1;
-      //newconn->request_len = 0;
-      //newconn->must_close = 0;
-      //newconn->rx_chunk_buf_size = 0;
-    } else {
-      newconn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
-      //newconn->consumed_content = 0;
-      newconn->content_len = -1;
-      newconn->buf = (char *)(newconn + 1);
-      newconn->buf_size = http_io_buf_size;
-      newconn->rx_chunk_buf_size = CHUNK_HEADER_BUFSIZ;
-    }
-    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-      if (ptr->ai_socktype != SOCK_STREAM || ptr->ai_protocol != IPPROTO_TCP)
-        continue;
-      switch (ptr->ai_family) {
-      default:
-        continue;
-
-      case AF_INET:
-        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin);
-        newconn->client.rsa.u.sin = * (struct sockaddr_in *)ptr->ai_addr;
-        newconn->client.rsa.u.sin.sin_family = AF_INET;
-        newconn->client.rsa.u.sin.sin_port = htons((uint16_t) port);
-        break;
-
-#if defined(USE_IPV6)
-      case AF_INET6:
-        newconn->client.rsa.len = sizeof(newconn->client.rsa.u.sin6);
-        newconn->client.rsa.u.sin6 = * (struct sockaddr_in6 *)ptr->ai_addr;
-        newconn->client.rsa.u.sin6.sin6_family = AF_INET6;
-        newconn->client.rsa.u.sin6.sin6_port = htons((uint16_t) port);
-        break;
-#endif
-      }
-      break;
-    }
-    if (!ptr) {
-      mg_cry(conn, "%s: getaddrinfo(%s): no TCP/IP v4/6 support found", __func__, host);
-      closesocket(sock);
-    }
-    else if (connect(sock, &newconn->client.rsa.u.sa, newconn->client.rsa.len) != 0) {
-      mg_cry(conn, "%s: connect(%s:%d): %s", __func__, host, port,
-             mg_strerror(ERRNO));
-      closesocket(sock);
-    } else {
-      newconn->client.lsa.len = newconn->client.rsa.len;
-      if (0 != getsockname(sock, &newconn->client.lsa.u.sa, &newconn->client.lsa.len)) {
-        mg_cry(conn, "%s: getsockname: %s", __func__, mg_strerror(ERRNO));
-        newconn->client.lsa.len = 0;
-      }
-      if ((flags & MG_CONNECT_USE_SSL) && !sslize(newconn, SSL_connect)) {
-        mg_cry(conn, "%s: sslize(%s:%d): cannot establish SSL connection", __func__, host, port);
-        closesocket(sock);
-      } else {
-        if (result) freeaddrinfo(result);
-        return newconn;
-      }
-    }
-  }
-
-  if (result) freeaddrinfo(result);
-  if (newconn) free(newconn);
-  return NULL;
-}
-
-struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags)
-{
-    struct mg_connection *conn = fc(ctx);
-
-    return mg_connect(conn, host, port, flags);
-}
-
-void mg_close_connection(struct mg_connection *conn)
-{
-    close_connection(conn);
-    free(conn);
-}
 
 int mg_cleanup_after_request(struct mg_connection *conn)
 {
@@ -470,7 +346,7 @@ int mg_read_http_response(struct mg_connection *conn) {
   conn->rx_buffer_loaded_len = data_len - conn->request_len;
   conn->rx_buffer_read_len = 0;
 
-  // Nul-terminate the request 'cause parse_http_request() is C-string based
+  // NUL-terminate the request 'cause parse_http_headers() is C-string based
   conn->buf[conn->request_len - 1] = 0;
 
   buf = conn->buf;
@@ -584,19 +460,6 @@ int mg_get_lasterror(void)
 }
 
 
-
-int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
-{
-    int rv = start_thread(ctx, func, param);
-    if (rv == 0)
-    {
-        // count this thread too so the master_thread will wait for this one to end as well when we stop.
-        (void) pthread_mutex_lock(&ctx->mutex);
-        ctx->num_threads++;
-        (void) pthread_mutex_unlock(&ctx->mutex);
-    }
-    return rv;
-}
 
 void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
 {

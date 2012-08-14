@@ -392,7 +392,7 @@ static int is_authorized(struct mg_connection *conn) {
   struct session *session;
   char valid_id[33];
   int authorized = 0;
-  struct mg_request_info *ri = mg_get_request_info(conn);
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   // Always authorize accesses to login page and to authorize URI
   if (!strcmp(ri->uri, login_url) ||
@@ -434,15 +434,15 @@ static void *event_handler(enum mg_event event,
 
   if (event == MG_NEW_REQUEST) {
     if (!request_info->is_ssl) {
-      redirect_to_ssl(conn, request_info);
-    } else if (!is_authorized(conn, request_info)) {
-      redirect_to_login(conn, request_info);
+      redirect_to_ssl(conn);
+    } else if (!is_authorized(conn)) {
+      redirect_to_login(conn);
     } else if (strcmp(request_info->uri, authorize_url) == 0) {
-      authorize(conn, request_info);
+      authorize(conn);
     } else if (strcmp(request_info->uri, "/ajax/get_messages") == 0) {
-      ajax_get_messages(conn, request_info);
+      ajax_get_messages(conn);
     } else if (strcmp(request_info->uri, "/ajax/send_message") == 0) {
-      ajax_send_message(conn, request_info);
+      ajax_send_message(conn);
     } else {
       // No suitable handler found, mark as not processed. Mongoose will
       // try to serve the request.

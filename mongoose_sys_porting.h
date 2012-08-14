@@ -463,7 +463,7 @@ We also check whether someone else has gone before us setting up these C99 defin
 #define vsnprintf _vsnprintf
 #define mg_sleep(x) Sleep(x)
 
-#define pipe(x) _pipe(x, BUFSIZ, _O_BINARY | _O_NOINHERIT)
+#define pipe(x) _pipe(x, MG_BUF_LEN, _O_BINARY | _O_NOINHERIT)
 #define popen(x, y) _popen(x, y)
 #define pclose(x) _pclose(x)
 
@@ -646,6 +646,7 @@ typedef int SOCKET;
 #endif
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#define MG_BUF_LEN        8192
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
 #define MG_MIN(a, b)      ((a) <= (b) ? (a) : (b))
 

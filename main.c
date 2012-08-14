@@ -223,7 +223,7 @@ static void init_server_name(void) {
 
 
 static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) {
-  struct mg_request_info *request_info = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
 
   if (event == MG_INIT0)
   {
@@ -274,14 +274,11 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
 
-      request_info->status_code = 200;
-      (void) mg_printf(conn,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Content-Type: image/x-icon\r\n"
-                       "Cache-Control: no-cache\r\n"
-                       "Content-Length: %u\r\n"
-                       "Connection: close\r\n\r\n", (unsigned int)len);
-      mg_mark_end_of_header_transmission(conn);
+      mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
+      mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
+	  //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
+	  mg_write_http_response_head(conn, 200, NULL);
 
       if ((int)len != mg_write(conn, data, len))
       {

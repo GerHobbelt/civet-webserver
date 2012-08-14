@@ -89,33 +89,6 @@ void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 // Same as FD_ISSET but now for mongoose sockets (struct socket)
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
-// bitwise OR-able constants for mg_connect_to_host(..., flags):
-typedef enum mg_connect_flags_t {
-  // nothing special; the default
-  MG_CONNECT_BASIC = 0,
-  // set up and use a SSL encrypted connection
-  MG_CONNECT_USE_SSL = 0x0001,
-  // tell Mongoose we're going to connect to a HTTP server; this allows us
-  // the usage of the built-in HTTP specific features such as mg_get_header(), etc.
-  //
-  // Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
-  //       rather inappropriately, as they are geared towards server-side use, a
-  //       set of more sensible rx/tx aliases is provided in this header, such as
-  //       mg_add_tx_header().
-  //
-  //       Also note that HTTP I/O connections allocate buffer space from the heap,
-  //       so their memory footprint is quite a bit larger than for non-HTTP I/O
-  //       sockets.
-  MG_CONNECT_HTTP_IO = 0x0002
-} mg_connect_flags_t;
-
-// set up an outgoing client connection: connect to the given host/port
-struct mg_connection *mg_connect_to_host(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags);
-
-// identical to mg_connect_to_host(); CTX is obtained from the 'conn' parameter
-// so you don't need to call mg_get_context():
-struct mg_connection *mg_connect(struct mg_connection *conn, const char *host, int port, mg_connect_flags_t flags);
-
 
 // The set of mg_connect savvy API aliases:
 #define mg_add_tx_header            mg_add_response_header
@@ -154,10 +127,6 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 
 int mg_get_lasterror(void);
 
-
-
-
-int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param);
 
 // Signal master that we're done and exiting
 void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx);

@@ -5,7 +5,7 @@ static void *callback(enum mg_event event,
                       struct mg_connection *conn) {
   if (event == MG_NEW_REQUEST) {
     char content[1024];
-    struct mg_request_info *request_info = mg_get_request_info(conn);
+    const struct mg_request_info *request_info = mg_get_request_info(conn);
     int content_length = mg_snprintf(conn, content, sizeof(content),
                                   "Hello from mongoose! Remote port: %d",
                                   request_info->remote_port);
