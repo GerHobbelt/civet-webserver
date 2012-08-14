@@ -4863,11 +4863,12 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
   ri->request_method = skip(&buf, " ");
   ri->uri = skip(&buf, " ");
   ri->http_version = skip(&buf, "\r\n");
-  ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
+  ri->num_headers = 0;
 
   if (is_valid_http_method(ri->request_method) &&
       !strncmp(ri->http_version, "HTTP/", 5)) {
     ri->http_version += 5;   // Skip "HTTP/"
+    ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
   } else {
     return -1;
   }
@@ -5179,7 +5180,7 @@ static int substitute_index_file(struct mg_connection *conn, char *path,
 // Return True if we should reply 304 Not Modified.
 static int is_not_modified(const struct mg_connection *conn,
                            const struct mgstat *stp) {
-  char etag[40];
+  char etag[64];
   const char *ims = mg_get_header(conn, "If-Modified-Since");
   const char *inm = mg_get_header(conn, "If-None-Match");
   construct_etag(etag, sizeof(etag), stp);
