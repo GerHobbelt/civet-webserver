@@ -1745,7 +1745,7 @@ static const char *mg_get_allowed_methods(struct mg_connection *conn) {
 //       strings intact as well, though these will be relocated, just like the
 //       tx_headers[] themselves.
 //       This is extremely useful for client-side mg_connect()-based HTTP connections
-//       as available in mongoose_ex. (See also: mg_write_http_request_head())
+//       as available in mongoose. (See also: mg_write_http_request_head())
 static int compact_tx_headers(struct mg_connection *conn) {
   // C89 doesn't allow run-time dimensioned arrays so we use alloca() instead:
   char *buf;
@@ -4695,6 +4695,7 @@ static int64_t send_data_to_log(struct mg_connection *conn, FILE *fp, int64_t le
   }
   return rlen;
 }
+
 // Send len bytes from the opened file to the client.
 //
 // 'len' may be larger than the amount of data actually available
@@ -4873,11 +4874,6 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
     return -1;
   }
   return 0;
-}
-
-static int parse_http_response(char *buf, int len, struct mg_request_info *ri) {
-  int result = parse_http_message(buf, len, ri);
-  return result > 0 && !strncmp(ri->request_method, "HTTP/", 5) ? result : -1;
 }
 
 // Keep reading the input (either opened file descriptor fd, or socket sock,
@@ -7169,6 +7165,17 @@ void mg_close_connection(struct mg_connection *conn) {
   free(conn);
 }
 
+int mg_shutdown(struct mg_connection *conn, int how) {
+  if (conn && conn->client.sock != INVALID_SOCKET) {
+    // make sure to properly terminate a chunked/segmented transfer before we shut down the write side!
+    if (how & SHUT_WR) {
+      mg_flush(conn);
+    }
+    return shutdown(conn->client.sock, how);
+  }
+  return -1;
+}
+
 struct mg_connection *mg_connect(struct mg_context *ctx,
                                  const char *host, int port, mg_connect_flags_t flags) {
   struct mg_connection *newconn = NULL;
@@ -7280,56 +7287,302 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
   return NULL;
 }
 
-FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
-               char *buf, size_t buf_len, struct mg_request_info *ri) {
-  struct mg_connection *newconn;
-  int n, req_length, data_length, port;
+int mg_cleanup_after_request(struct mg_connection *conn) {
+  if (conn) {
+    reset_per_request_attributes(conn);
+    if (!conn->buf_size) {
+      conn->num_bytes_sent = 0; // = -1; would mean we're expecting (HTTP) headers first
+      conn->content_len = -1;
+    } else {
+      conn->num_bytes_sent = -1; // means we're expecting (HTTP) headers first
+      conn->content_len = -1;
+    }
+    return 0;
+  }
+  return -1;
+}
+
+int mg_write_http_request_head(struct mg_connection *conn, const char *request_method, const char *request_path_and_query, ...) {
+  const char *http_version;
+  const char *uri;
+  const char *q;
+  const char *q_str;
+  char uribuf[SSI_LINE_BUFSIZ];
+
+  if (!conn || !conn->buf_size)
+    return -1;
+
+  assert(conn->buf);
+  if (is_empty(request_method))
+    request_method = conn->request_info.request_method;
+  else
+    conn->request_info.request_method = request_method;
+
+  if (is_empty(conn->request_info.http_version))
+    conn->request_info.http_version = "1.1";
+  http_version = conn->request_info.http_version;
+
+  // construct the request line from the arguments / request_info?
+  if (!is_empty(request_path_and_query)) {
+    va_list ap;
+    int rv;
+    char *d;
+
+    va_start(ap, request_path_and_query);
+    rv = mg_vsnq0printf(conn, uribuf, sizeof(uribuf), request_path_and_query, ap);
+    va_end(ap);
+
+    if (rv <= 0) {
+      mg_cry(conn, "%s: failed to produce the request line for format string [%s]", __func__, request_path_and_query);
+      return -1;
+    }
+    // check overflow, i.e. whether we hit the edge in scratch space
+    if (rv >= sizeof(uribuf) - 2 || rv > conn->buf_size - 5) {
+      mg_cry(conn, "%s: scratch buffer overflow while constructing the request line [%.*s(...)]", __func__, (int)MG_MIN(200, sizeof(uribuf)), uribuf);
+      return -1;
+    }
+
+    // re-arrange the TX headers buffer so that uri and query part fit in there too
+    // so we can persist them beyond this call in a fashion similar to the server-side
+    // mongoose code which stores the uri+query in the RX buffer together with
+    // the headers there.
+    //
+    // WARNING: we happen to know EXACTLY how compact_tx_headers() behaves and we're
+    //          counting on that knowledge here to both keep the copying to a minimum
+    //          and assure that the URI + QUERY strings don't get damaged during the
+    //          compaction process there!
+    uri = conn->request_info.uri = d = uribuf;
+    d += strcspn(d, "?");
+    if (*d)
+      *d++ = 0;
+    q_str = conn->request_info.query_string = d;
+    conn->tx_can_compact_hdrstore |= 2;  // always trigger a compact cycle, where uri+q are pulled into the tx buffer space for persistence!
+  } else {
+    if (is_empty(conn->request_info.uri)) {
+      mg_cry(conn, "%s: request URI is nil", __func__);
+      return -1;
+    }
+
+    uri = conn->request_info.uri;
+    q_str = conn->request_info.query_string;
+    if (q_str == NULL)
+      q_str = "";
+  }
+  if (!is_empty(q_str))
+    q = "?";
+  else
+    q = "";
+
+  return write_http_head(conn, "%s %s%s%s HTTP/%s\r\n", request_method, uri, q, q_str, http_version);
+}
+
+int mg_read_http_response(struct mg_connection *conn) {
+  char *buf;
+  struct mg_request_info *ri;
+  const char *status_code;
+  char * chknum;
+  int data_len;
+
+  if (!conn || !conn->buf_size)
+    return -1;
+
+  assert(conn->content_len == -1);
+  ri = &conn->request_info;
+  ri->num_headers = 0;
+
+  // when a bit of buffered data is still available, make sure it's in the right spot:
+  data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
+  if (data_len > 0)
+  {
+    memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
+  }
+  else
+  {
+    data_len = 0;
+  }
+
+  conn->request_len = read_request(NULL, conn,
+                                   conn->buf, conn->buf_size,
+                                   &data_len);
+  assert(data_len >= conn->request_len);
+  ri->seq_no++;
+  if (conn->request_len == 0 && data_len == conn->buf_size) {
+    mg_cry(conn, "%s: peer sent malformed HTTP headers or HTTP headers take up more than %u buffer bytes: [%.*s]",
+                 __func__, (unsigned int)conn->buf_size, MG_MIN(200, data_len), conn->buf);
+    return 413;
+  }
+  if (conn->request_len <= 0) {
+    // In case we didn't receive ANY data, we don't mess with the connection any further
+    // by trying to send any more data, so we tag the connection as done for that:
+    if (data_len == 0) {
+      mg_mark_end_of_header_transmission(conn);
+    }
+    return -2; // Remote end closed the connection or sent malformed response
+  }
+  conn->rx_chunk_buf_size = conn->buf_size + CHUNK_HEADER_BUFSIZ - conn->request_len;
+  conn->rx_buffer_loaded_len = data_len - conn->request_len;
+  conn->rx_buffer_read_len = 0;
+
+  // NUL-terminate the request 'cause parse_http_headers() is C-string based
+  conn->buf[conn->request_len - 1] = 0;
+
+  buf = conn->buf;
+
+  // RFC says that all initial whitespace should be ignored
+  while (*buf != 0 && isspace(* (unsigned char *) buf)) {
+    buf++;
+  }
+
+  ri->http_version = skip(&buf, " ");
+  status_code = skip(&buf, " ");
+  ri->status_custom_description = skip(&buf, "\r\n");
+
+  chknum = NULL;
+  ri->status_code = (status_code == NULL ? -1 : (int)strtol(status_code, &chknum, 10));
+  if (chknum != NULL)
+    chknum += strspn(chknum, " ");
+  if (!is_empty(chknum))
+    return -3; // Cannot parse HTTP response
+
+  if (strncmp(ri->http_version, "HTTP/", 5) == 0) {
+    ri->http_version += 5;   // Skip "HTTP/"
+    ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
+  } else {
+    return -4; // Cannot parse HTTP response
+  }
+  if (strcmp(ri->http_version, "1.0") &&
+      strcmp(ri->http_version, "1.1")) {
+    // Response seems valid, but HTTP version is strange
+    return -5;
+  } else {
+    // Response is valid, handle the basics.
+    const char *cl = get_header(ri->http_headers, ri->num_headers, "Transfer-Encoding");
+    assert(conn->content_len == -1);
+    if (cl && mg_stristr(cl, "chunked")) {
+      assert(conn->content_len == -1);
+      mg_set_rx_mode(conn, MG_IOMODE_CHUNKED_DATA);
+    } else {
+      assert(!conn->rx_is_in_chunked_mode);
+      cl = get_header(ri->http_headers, ri->num_headers, "Content-Length");
+      chknum = NULL;
+      if (cl != NULL)
+        conn->content_len = strtoll(cl, &chknum, 10);
+      if (chknum != NULL)
+        chknum += strspn(chknum, " ");
+      if (!is_empty(chknum))
+        return -6; // Cannot parse HTTP response
+
+      if (conn->content_len == -1) {
+        // this is a bit of a tough case: we may be HTTP/1.0, in which case
+        // case we gobble everything, assuming one request per connection,
+        // but when we're HTTP/1.1, this MAY be either a request without
+        // content OR a chunked transfer request.
+        // The heuristic we apply here is to gobble all when we're
+        // okay re Connection: keep-alive.
+        // The chunked transfer case resolves itself, as long as we make sure
+        // to keep content_len == -1 then.
+        const char *http_version = ri->http_version;
+        const char *header = get_header(ri->http_headers, ri->num_headers, "Connection");
+
+        if (!conn->must_close &&
+            !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
+            (header == NULL ?
+             (http_version && !strcmp(http_version, "1.1")) :
+             !mg_strcasecmp(header, "keep-alive"))) {
+          conn->content_len = 0;
+        }
+      }
+    }
+    conn->last_active_time = conn->birth_time = time(NULL);
+    return 0;
+  }
+}
+
+FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct mg_connection **conn_ref) {
+  struct mg_connection *conn = NULL;
+  int n, nread, nwrite, port, is_ssl, is_persistent_conn, rv;
   char host[1025], proto[10], buf2[MG_BUF_LEN];
   FILE *fp = NULL;
 
   if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) == 3) {
+	is_ssl = (mg_strcasecmp(proto, "https") == 0);
   } else if (sscanf(url, "%9[htps]://%1024[^/]/%n", proto, host, &n) == 2) {
-    port = mg_strcasecmp(proto, "https") == 0 ? 443 : 80;
+	is_ssl = (mg_strcasecmp(proto, "https") == 0);
+    port = (is_ssl ? 443 : 80);
   } else {
     mg_cry(fc(ctx), "%s: invalid URL: [%s]", __func__, url);
     return NULL;
   }
 
-  if ((newconn = mg_connect(ctx, host, port,
-                            !strcmp(proto, "https"))) == NULL) {
+  if (conn_ref) {
+	conn = *conn_ref;
+	is_persistent_conn = (conn != NULL);
+  } else {
+	is_persistent_conn = 0;
+  }
+  if (conn == NULL &&
+	  (conn = mg_connect(ctx, host, port, (is_ssl ? MG_CONNECT_USE_SSL : 0) | MG_CONNECT_HTTP_IO)) == NULL) {
     mg_cry(fc(ctx), "%s: mg_connect(%s): %s", __func__, url, mg_strerror(ERRNO));
   } else {
-    mg_printf(newconn, "GET /%s HTTP/1.0\r\nHost: %s\r\n\r\n", url + n, host);
-    data_length = 0;
-    req_length = read_request(NULL, newconn, buf, buf_len, &data_length);
-    if (req_length <= 0) {
-      mg_cry(fc(ctx), "%s(%s): invalid HTTP reply", __func__, url);
-    } else if (parse_http_response(buf, req_length, ri) <= 0) {
-      mg_cry(fc(ctx), "%s(%s): cannot parse HTTP headers", __func__, url);
-    } else if ((fp = fopen(path, "w+b")) == NULL) {
-      mg_cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, mg_strerror(ERRNO));
-    } else {
-      // Write chunk of data that may be in the user's buffer
-      data_length -= req_length;
-      if (data_length > 0 &&
-        fwrite(buf + req_length, 1, data_length, fp) != (size_t) data_length) {
-        mg_cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, mg_strerror(ERRNO));
-        fclose(fp);
-        fp = NULL;
-      }
-      // Read the rest of the response and write it to the file. Do not use
-      // mg_read() cause we didn't set newconn->content_len properly.
-      while (fp && (data_length = pull(NULL, newconn,
-                                       buf2, sizeof(buf2))) > 0) {
-        if (fwrite(buf2, 1, data_length, fp) != (size_t) data_length) {
-          mg_cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, strerror(ERRNO));
-          fclose(fp);
-          fp = NULL;
-          break;
-        }
-      }
-    }
-    mg_close_connection(newconn);
+    mg_add_tx_header(conn, 0, "Host", host);
+    //mg_add_tx_header(conn, 0, "Connection", "close");
+	if (!is_persistent_conn) {
+	  conn->must_close = 1;
+	} else {
+      mg_add_tx_header(conn, 0, "Content-Length", "0");
+	}
+
+    rv = mg_write_http_request_head(conn, "GET", "%s", url + n);
+    if (rv <= 0) {
+      mg_cry(fc(ctx), "%s(%s): failed to send the HTTP request", __func__, url);
+	} else {
+	  assert(!strcmp(conn->request_info.http_version, "1.1"));
+
+      // signal request phase done:
+	  if (!is_persistent_conn)
+        mg_shutdown(conn, SHUT_WR);
+    
+	  // fetch response, blocking I/O:
+      //
+      // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
+      rv = mg_read_http_response(conn);
+      if (rv < 0) {
+        mg_cry(fc(ctx), "%s(%s): invalid HTTP reply or invalid HTTP response headers, error code %d", __func__, url, rv);
+	  } else if ((fp = fopen(path, "w+b")) == NULL) {
+        mg_cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, mg_strerror(ERRNO));
+      } else {
+        // Read all response data and store in the file:
+		do {
+		  nread = mg_read(conn, buf2, sizeof(buf2));
+		  if (nread <= 0) {
+            mg_cry(fc(ctx), "%s(%s): failed to read data, connection may have been closed prematurely by the server: %s", __func__, url, mg_strerror(ERRNO));
+			break;
+		  }
+		  nwrite = push(fp, NULL, buf2, nread);
+		  if (nwrite != nread) {
+			nread = -1;
+            mg_cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, mg_strerror(ERRNO));
+			break;
+		  }
+		} while (nread > 0);
+
+		if (nread < 0) {
+		  fclose(fp);
+		  fp = NULL;
+
+		  // make sure corrupt file doesn't remain
+		  mg_remove(path);
+		}
+	  }
+	}
+    if (!conn_ref) {
+      mg_close_connection(conn);
+	  conn = NULL;
+	}
+  }
+
+  if (conn_ref) {
+	*conn_ref = conn;
   }
 
   return fp;

@@ -227,10 +227,11 @@ static void test_mg_fetch(void) {
     "listening_ports", "33796",
     NULL,
   };
-  char buf[2000], buf2[2000];
+  char buf2[2000];
   int length;
   struct mg_context *ctx;
-  struct mg_request_info ri;
+  struct mg_connection *conn = NULL;
+  struct mg_request_info *ri;
   const char *tmp_file = "temporary_file_name_for_unit_test.txt";
   struct mgstat st;
   FILE *fp;
@@ -242,38 +243,60 @@ static void test_mg_fetch(void) {
   ASSERT((ctx = mg_start(&ucb, options)) != NULL);
 
   // Failed fetch, pass invalid URL
-  ASSERT(mg_fetch(ctx, "localhost", tmp_file, buf, sizeof(buf), &ri) == NULL);
+  ASSERT(mg_fetch(ctx, "localhost", tmp_file, NULL) == NULL);
   ASSERT(mg_fetch(ctx, "localhost:33796", tmp_file,
-                  buf, sizeof(buf), &ri) == NULL);
+                  &conn) == NULL);
+  ASSERT(conn == NULL);
   ASSERT(mg_fetch(ctx, "http://$$$.$$$", tmp_file,
-                  buf, sizeof(buf), &ri) == NULL);
+                  &conn) == NULL);
+  ASSERT(conn == NULL);
 
   // Failed fetch, pass invalid file name
   ASSERT(mg_fetch(ctx, "http://localhost:33796/data",
                   "/this/file/must/not/exist/ever",
-                  buf, sizeof(buf), &ri) == NULL);
+                  &conn) == NULL);
+  ASSERT(conn == NULL);
 
   // Successful fetch
-  ASSERT((fp = mg_fetch(ctx, "http://localhost:33796/data",
-                        tmp_file, buf, sizeof(buf), &ri)) != NULL);
-  ASSERT(ri.num_headers == 2);
-  ASSERT_STREQ(ri.request_method, "HTTP/1.1");
-  ASSERT_STREQ(ri.uri, "200");
-  ASSERT_STREQ(ri.http_version, "OK");
+  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, NULL);
+  ASSERT(fp != NULL);
+
+  // Successful fetch, keeping the connection but NOT keep-alive!
+  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, &conn);
+  ASSERT(fp != NULL);
+  ASSERT(conn != NULL);
+  ri = mg_get_request_info(conn);
+  ASSERT(ri->num_headers == 2);
+  ASSERT_STREQ(ri->request_method, "GET");
+  ASSERT_STREQ(ri->http_version, "1.1");
+  ASSERT_STREQ(ri->uri, "/data");
+  ASSERT(ri->status_code == 200);
+  ASSERT_STREQ(ri->status_custom_description, "OK");
   ASSERT((length = ftell(fp)) == (int) strlen(fetch_data));
   fseek(fp, 0, SEEK_SET);
   ASSERT(fread(buf2, 1, length, fp) == (size_t) length);
   ASSERT(memcmp(buf2, fetch_data, length) == 0);
   fclose(fp);
+  mg_close_connection(conn);
+  conn = NULL;
 
   // Fetch big file, mongoose.c
-  ASSERT((fp = mg_fetch(ctx, "http://localhost:33796/mongoose.c",
-                        tmp_file, buf, sizeof(buf), &ri)) != NULL);
+  fp = mg_fetch(ctx, "http://localhost:33796/mongoose.c", tmp_file, &conn);
+  ASSERT(fp != NULL);
+  ASSERT(conn != NULL);
+  ri = mg_get_request_info(conn);
   ASSERT(mg_stat("mongoose.c", &st) == 0);
   ASSERT(st.size == ftell(fp));
-  ASSERT_STREQ(ri.request_method, "HTTP/1.1");
+  ASSERT_STREQ(ri->request_method, "GET");
+  ASSERT_STREQ(ri->http_version, "1.1");
+  ASSERT_STREQ(ri->uri, "/data");
+  ASSERT(ri->status_code == 200);
+  ASSERT_STREQ(ri->status_custom_description, "OK");
+  fclose(fp);
+  mg_close_connection(conn);
+  conn = NULL;
 
-  remove(tmp_file);
+  mg_remove(tmp_file);
   mg_stop(ctx);
 }
 

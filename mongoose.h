@@ -825,23 +825,71 @@ typedef enum mg_connect_flags_t {
 //   On error, NULL
 struct mg_connection *mg_connect(struct mg_context *ctx, const char *host, int port, mg_connect_flags_t flags);
 
+// Prepare a kept-alive connection for transmitting another request.
+//
+// Use with client-side connections such as the ones created using mg_connect() when
+// sending multiple requests over this HTTP keep-alive connection.
+//
+// Return 0 on success.
+int mg_cleanup_after_request(struct mg_connection *conn);
 
-// Close the connection opened by mg_connect().
+// Write the request head (request + headers) to the client connection.
+//
+// Return number of header bytes sent; return 0 when nothing was done; -1 on error.
+int mg_write_http_request_head(struct mg_connection *conn, const char *request_method, const char *request_path_and_query, ...);
+
+// shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
+int mg_shutdown(struct mg_connection *conn, int how);
+
+// Close the connection opened by mg_connect() or one side of mg_socketpair().
 void mg_close_connection(struct mg_connection *conn);
+
+// Read & parse an HTTP response, fill in the mg_request_info structure.
+//
+// Return 0 on success.
+int mg_read_http_response(struct mg_connection *conn);
 
 
 // Download given URL to a given file.
 //   url: URL to download
 //   path: file name where to save the data
-//   request_info: pointer to a structure that will hold parsed reply headers
-//   buf, bul_len: a buffer for the reply headers
+//   conn_ref: (optional, in/out) reference to a connection pointer.
+//             1) May be NULL, which means that the connection will be established 
+//                and closed inside mg_fetch().
+//             2) When the referenced connection pointer is NULL, it will be set 
+//                to point to the created connection, when it was successfully 
+//                established.
+//                The caller is responsible for calling mg_close_connection(). 
+//                When created by mg_fetch(), the connection cannot be reused 
+//                for a second request (fetch): it is only provided so that the 
+//                caller may access the still valid request and response info 
+//                contained in its request_info struct.
+//             3) When the connection is non-NULL, then mg_fetch() will assume 
+//                this is a 'persistent' connection and adjust its behaviour
+//                accordingly.
+//                Again, the caller is responsible for calling 
+//                mg_close_connection(), even when an error occurred inside 
+//                mg_fetch().
+//                Before reusing the connection for a subsequent request, the 
+//                caller must invoke mg_cleanup_after_request().
 // Return:
 //   On error, NULL
 //   On success, opened file stream to the downloaded contents. The stream
-//   is positioned to the end of the file. It is a user responsibility
-//   to fclose() opened file stream.
+//   is positioned at the end of the file. It is the user's responsibility
+//   to fclose() the opened file stream.
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
-               char *buf, size_t buf_len, struct mg_request_info *request_info);
+               struct mg_connection **conn_ref);
+
+
+// The set of mg_connect savvy API aliases:
+#define mg_add_tx_header            mg_add_response_header
+#define mg_vadd_tx_header           mg_vadd_response_header
+#define mg_remove_tx_header         mg_remove_response_header
+#define mg_get_tx_header            mg_get_response_header
+
+#define mg_get_rx_header            mg_get_header
+#define mg_get_rx_headers           mg_get_headers
+
 
 
 typedef void * (WINCDECL *mg_thread_func_t)(void *);

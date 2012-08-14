@@ -77,9 +77,6 @@ int mg_set_socket_timeout(struct mg_connection *conn, int seconds);
 // set socket to non-blocking mode.
 int mg_set_non_blocking_mode(struct mg_connection *conn, int on);
 
-// shutdown (half-close) a socket: how == SHUT_RW / SHUT_RD / SHUT_RDWR
-int mg_shutdown(struct mg_connection *conn, int how);
-
 int mg_setsockopt(struct mg_connection *conn, int level, int optname, const void *optval, size_t optlen);
 int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optval, size_t *optlen_ref);
 
@@ -90,34 +87,8 @@ void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
 
-// The set of mg_connect savvy API aliases:
-#define mg_add_tx_header            mg_add_response_header
-#define mg_vadd_tx_header           mg_vadd_response_header
-#define mg_remove_tx_header         mg_remove_response_header
-#define mg_get_tx_header            mg_get_response_header
-
-#define mg_get_rx_header            mg_get_header
-#define mg_get_rx_headers           mg_get_headers
-
-
-// Read & parse an HTTP response, fill in the mg_request_info structure.
-//
-// Return 0 on success.
-int mg_read_http_response(struct mg_connection *conn);
-
-
 // create a socket pair over local loopback. Used for inter-thread communications.
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
-
-void mg_close_connection(struct mg_connection *conn);
-
-// Prepare an kept-alive connection for transmitting another request.
-//
-// Use with client-side connections such as the ones created using mg_connect() when
-// sending multiple requests over this HTTP keep-alive connection.
-//
-// Return 0 on success.
-int mg_cleanup_after_request(struct mg_connection *conn);
 
 
 void mg_cry4ctx(struct mg_context *ctx, const char *fmt, ...);
