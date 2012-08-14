@@ -802,16 +802,21 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
                                  const char *host, int port, int use_ssl);
 
 
+// Close the connection opened by mg_connect().
+void mg_close_connection(struct mg_connection *conn);
+
+
 // Download given URL to a given file.
 //   url: URL to download
 //   path: file name where to save the data
 //   request_info: pointer to a structure that will hold parsed reply headers
+//   buf, bul_len: a buffer for the reply headers
 // Return:
 //   On success, opened file stream to the downloaded contents. The stream
 //   is positioned to the end of the file.
 //   On error, NULL
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
-               struct mg_request_info *request_info);
+               char *buf, size_t buf_len, struct mg_request_info *request_info);
 
 
 // Convenience function -- create detached thread.

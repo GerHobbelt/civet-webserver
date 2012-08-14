@@ -235,6 +235,7 @@ extern int SSL_set_fd(SSL *, int);
 extern SSL *SSL_new(SSL_CTX *);
 extern SSL_CTX *SSL_CTX_new(SSL_METHOD *);
 extern SSL_METHOD *SSLv23_server_method(void);
+extern SSL_METHOD *SSLv23_client_method(void);
 extern int SSL_library_init(void);
 extern void SSL_load_error_strings(void);
 extern int SSL_CTX_use_PrivateKey_file(SSL_CTX *, const char *, int);
@@ -277,6 +278,7 @@ struct ssl_func {
 #define SSL_load_error_strings (* (void (*)(void)) ssl_sw[17].ptr)
 #define SSL_CTX_use_certificate_chain_file \
   (* (int (*)(SSL_CTX *, const char *)) ssl_sw[18].ptr)
+#define SSLv23_client_method (* (SSL_METHOD * (*)(void)) ssl_sw[19].ptr)
 
 #define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
 #define CRYPTO_set_locking_callback \
@@ -310,6 +312,7 @@ static struct ssl_func ssl_sw[] = {
   {"SSL_CTX_free",                          NULL},
   {"SSL_load_error_strings",                NULL},
   {"SSL_CTX_use_certificate_chain_file",    NULL},
+  {"SSLv23_client_method",                  NULL},
   {NULL,                                    NULL}
 };
 
@@ -453,6 +456,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
 struct mg_context {
   volatile int stop_flag;               // Should we stop event loop
   SSL_CTX *ssl_ctx;                     // SSL context
+  SSL_CTX *client_ssl_ctx;              // Client SSL context
   char *config[NUM_OPTIONS];            // Mongoose configuration parameters
   struct mg_user_class_t user_functions; // user-defined callbacks and data
 
@@ -3657,7 +3661,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 }
 
 #if !defined(NO_SSL)
-static int sslize(struct mg_connection *conn, int (*func)(SSL *)) {
+static int sslize(struct mg_connection *conn, SSL_CTX *s, int (*func)(SSL *)) {
   if ((conn->ssl = SSL_new(conn->ctx->ssl_ctx)) != NULL &&
     SSL_set_fd(conn->ssl, conn->client.sock) == 1) {
     int rv;
@@ -6554,7 +6558,8 @@ static int set_ports_option(struct mg_context *ctx) {
       mg_cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
              __func__, (int)vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|p]");
       success = 0;
-    } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
+    } else if (so.is_ssl &&
+               (ctx->ssl_ctx == NULL || ctx->config[SSL_CERTIFICATE] == NULL)) {
       mg_cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
       success = 0;
     } else {
@@ -6820,7 +6825,6 @@ static int load_dll(struct mg_context *ctx, const char *dll_name,
 
 // Dynamically load SSL library. Set up ctx->ssl_ctx pointer.
 static int set_ssl_option(struct mg_context *ctx) {
-  SSL_CTX *CTX;
   int i, size;
   const char *pem = get_option(ctx, SSL_CERTIFICATE);
   const char *chain = get_option(ctx, SSL_CHAIN_FILE);
@@ -6840,24 +6844,28 @@ static int set_ssl_option(struct mg_context *ctx) {
   SSL_library_init();
   SSL_load_error_strings();
 
-  if ((CTX = SSL_CTX_new(SSLv23_server_method())) == NULL) {
+  if ((ctx->client_ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL) {
     mg_cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
-  } else {
-    call_user_over_ctx(ctx, CTX, MG_INIT_SSL);
   }
 
-  if (CTX != NULL && SSL_CTX_use_certificate_file(CTX, pem,
-                                                  SSL_FILETYPE_PEM) == 0) {
+  if ((ctx->ssl_ctx = SSL_CTX_new(SSLv23_server_method())) == NULL) {
+    mg_cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
+  } else {
+    call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT_SSL);
+  }
+
+  if (ctx->ssl_ctx != NULL && !is_empty(pem) &&
+      SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert file %s: %s", __func__, pem, ssl_error());
     return 0;
-  } else if (CTX != NULL && SSL_CTX_use_PrivateKey_file(CTX, pem,
-                                                        SSL_FILETYPE_PEM) == 0) {
+  }
+  if (ctx->ssl_ctx != NULL && !is_empty(pem) &&
+      SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open private key file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
-
-  if (CTX != NULL && !is_empty(chain) &&
-      SSL_CTX_use_certificate_chain_file(CTX, chain) == 0) {
+  if (ctx->ssl_ctx != NULL && !is_empty(chain) &&
+      SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, chain) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, chain, ssl_error());
     return 0;
   }
@@ -6876,9 +6884,6 @@ static int set_ssl_option(struct mg_context *ctx) {
 
   CRYPTO_set_locking_callback(&ssl_locking_callback);
   CRYPTO_set_id_callback(&ssl_id_callback);
-
-  // Done with everything. Save the context.
-  ctx->ssl_ctx = CTX;
 
   return 1;
 }
@@ -7125,6 +7130,11 @@ static void close_connection(struct mg_connection *conn) {
   close_socket_gracefully(conn);
 }
 
+void mg_close_connection(struct mg_connection *conn) {
+  close_connection(conn);
+  free(conn);
+}
+
 struct mg_connection *mg_connect(struct mg_context *ctx,
                                  const char *host, int port, int use_ssl) {
   struct mg_connection *newconn = NULL;
@@ -7132,7 +7142,7 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
   struct hostent *he;
   int sock;
 
-  if (ctx->ssl_ctx == NULL && use_ssl) {
+  if (ctx->client_ssl_ctx == NULL && use_ssl) {
     cry(fc(ctx), "%s: SSL is not initialized", __func__);
   } else if ((he = gethostbyname(host)) == NULL) {
     cry(fc(ctx), "%s: gethostbyname(%s): %s", __func__, host, strerror(ERRNO));
@@ -7151,11 +7161,12 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
       cry(fc(ctx), "%s: calloc: %s", __func__, strerror(ERRNO));
       closesocket(sock);
     } else {
+      newconn->ctx = ctx;
       newconn->client.sock = sock;
       newconn->client.rsa.sin = sin;
       newconn->client.is_ssl = use_ssl;
       if (use_ssl) {
-        sslize(newconn, SSL_connect);
+        sslize(newconn, ctx->client_ssl_ctx, SSL_connect);
       }
     }
   }
@@ -7164,22 +7175,28 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
 }
 
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
-               struct mg_request_info *ri) {
+               char *buf, size_t buf_len, struct mg_request_info *ri) {
   struct mg_connection *newconn;
-  int n, req_length, data_length = 0, port = 80;
-  char host[1025], proto[10], buf[16384];
+  int n, req_length, data_length, port;
+  char host[1025], proto[10], buf2[BUFSIZ];
   FILE *fp = NULL;
 
-  if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) != 3 &&
-      sscanf(url, "%9[htps]://%1024[^/]/%n", proto, host, &n) != 2) {
+  if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) == 3) {
+  } else if (sscanf(url, "%9[htps]://%1024[^/]/%n", proto, host, &n) == 2) {
+    port = mg_strcasecmp(proto, "https") == 0 ? 443 : 80;
+  } else {
     cry(fc(ctx), "%s: invalid URL: [%s]", __func__, url);
-  } else if ((newconn = mg_connect(ctx, host, port,
-                                   !strcmp(proto, "https"))) == NULL) {
+    return NULL;
+  }
+
+  if ((newconn = mg_connect(ctx, host, port,
+                            !strcmp(proto, "https"))) == NULL) {
     cry(fc(ctx), "%s: mg_connect(%s): %s", __func__, url, strerror(ERRNO));
   } else {
     mg_printf(newconn, "GET /%s HTTP/1.0\r\n\r\n", url + n);
+    data_length = 0;
     req_length = read_request(NULL, newconn->client.sock,
-                              newconn->ssl, buf, sizeof(buf), &data_length);
+                              newconn->ssl, buf, buf_len, &data_length);
     if (req_length <= 0) {
       cry(fc(ctx), "%s(%s): invalid HTTP reply", __func__, url);
     } else if (parse_http_response(buf, req_length, ri) <= 0) {
@@ -7188,24 +7205,28 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
       cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, strerror(ERRNO));
     } else {
       data_length -= req_length;
-      memmove(buf, buf + req_length, data_length);
-      do {
-        if (fwrite(buf, 1, data_length, fp) != (size_t) data_length) {
+      // Write chunk of data that may be in the user's buffer
+      if (data_length > 0 &&
+        fwrite(buf + req_length, 1, data_length, fp) != (size_t) data_length) {
+        cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, strerror(ERRNO));
+        fclose(fp);
+        fp = NULL;
+      }
+      // Read the rest of the response and write it to the file
+      while (fp && (data_length = mg_read(newconn, buf2, sizeof(buf2))) > 0) {
+        if (fwrite(buf2, 1, data_length, fp) != (size_t) data_length) {
+          cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, strerror(ERRNO));
           fclose(fp);
           fp = NULL;
           break;
         }
-        data_length = mg_read(newconn, buf, sizeof(buf));
-      } while (data_length > 0);
+      }
     }
-    close_connection(newconn);
-    free(newconn);
+    mg_close_connection(newconn);
   }
 
   return fp;
 }
-
-
 
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
   int n;
@@ -7869,7 +7890,7 @@ static void worker_thread(struct mg_context *ctx) {
       get_socket_ip_address(&conn->request_info.local_ip, &conn->client.lsa);
 
       if (!conn->client.is_ssl ||
-          (conn->client.is_ssl && sslize(conn, SSL_accept))) {
+        (conn->client.is_ssl && sslize(conn, conn->ctx->ssl_ctx, SSL_accept))) {
         //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
         doing_fine = 1;
         conn->is_inited = 1;
@@ -8149,6 +8170,9 @@ static void free_context(struct mg_context *ctx) {
   // Deallocate SSL context
   if (ctx->ssl_ctx != NULL) {
     SSL_CTX_free(ctx->ssl_ctx);
+  }
+  if (ctx->client_ssl_ctx != NULL) {
+    SSL_CTX_free(ctx->client_ssl_ctx);
   }
 #ifndef NO_SSL
   if (ssl_mutexes != NULL) {
