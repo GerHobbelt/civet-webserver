@@ -469,6 +469,12 @@ int mg_modify_passwords_file(const char *passwords_file_name,
                              const char *user,
                              const char *password);
 
+
+// Return mg_request_info structure associated with the request.
+// Always succeeds.
+const struct mg_request_info *mg_get_request_info(struct mg_connection *);
+
+
 // Send data to the client.
 //
 // Return the number of bytes written; 0 when the connection has been closed.
@@ -812,9 +818,10 @@ void mg_close_connection(struct mg_connection *conn);
 //   request_info: pointer to a structure that will hold parsed reply headers
 //   buf, bul_len: a buffer for the reply headers
 // Return:
-//   On success, opened file stream to the downloaded contents. The stream
-//   is positioned to the end of the file.
 //   On error, NULL
+//   On success, opened file stream to the downloaded contents. The stream
+//   is positioned to the end of the file. It is a user responsibility
+//   to fclose() opened file stream.
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
                char *buf, size_t buf_len, struct mg_request_info *request_info);
 
@@ -823,6 +830,11 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
 // Return: 0 on success, non-0 on error.
 typedef void * (*mg_thread_func_t)(void *);
 int mg_start_thread(mg_thread_func_t f, void *p);
+
+
+// Return builtin mime type for the given file name.
+// For unrecognized extensions, "text/plain" is returned.
+const char *mg_get_builtin_mime_type(const char *file_name);
 
 
 // Return Mongoose version.

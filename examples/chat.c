@@ -429,20 +429,20 @@ static void redirect_to_ssl(struct mg_connection *conn) {
 
 static void *event_handler(enum mg_event event,
                            struct mg_connection *conn) {
-  const struct mg_request_info *ri = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
   void *processed = "yes";
 
   if (event == MG_NEW_REQUEST) {
-    if (!ri->is_ssl) {
-      redirect_to_ssl(conn);
-    } else if (!is_authorized(conn)) {
-      redirect_to_login(conn);
-    } else if (strcmp(ri->uri, authorize_url) == 0) {
-      authorize(conn);
-    } else if (strcmp(ri->uri, "/ajax/get_messages") == 0) {
-      ajax_get_messages(conn);
-    } else if (strcmp(ri->uri, "/ajax/send_message") == 0) {
-      ajax_send_message(conn);
+    if (!request_info->is_ssl) {
+      redirect_to_ssl(conn, request_info);
+    } else if (!is_authorized(conn, request_info)) {
+      redirect_to_login(conn, request_info);
+    } else if (strcmp(request_info->uri, authorize_url) == 0) {
+      authorize(conn, request_info);
+    } else if (strcmp(request_info->uri, "/ajax/get_messages") == 0) {
+      ajax_get_messages(conn, request_info);
+    } else if (strcmp(request_info->uri, "/ajax/send_message") == 0) {
+      ajax_send_message(conn, request_info);
     } else {
       // No suitable handler found, mark as not processed. Mongoose will
       // try to serve the request.

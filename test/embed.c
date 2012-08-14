@@ -169,13 +169,13 @@ static const struct test_config {
 
 static void *callback(enum mg_event event,
                       struct mg_connection *conn) {
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
   int i;
-  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   for (i = 0; test_config[i].uri != NULL; i++) {
     if (event == test_config[i].event &&
         (event == MG_HTTP_ERROR ||
-         !strcmp(ri->uri, test_config[i].uri))) {
+         !strcmp(request_info->uri, test_config[i].uri))) {
       test_config[i].func(conn);
       return "processed";
     }

@@ -417,7 +417,8 @@ typedef enum {
   GLOBAL_PASSWORDS_FILE, INDEX_FILES,
   ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
   EXTRA_MIME_TYPES, LISTENING_PORTS,
-  DOCUMENT_ROOT, SSL_CERTIFICATE, NUM_THREADS, RUN_AS_USER, REWRITE,
+  DOCUMENT_ROOT, SSL_CERTIFICATE, 
+  NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES,
   NUM_OPTIONS
 } mg_option_index_t;
 
@@ -450,6 +451,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "t", "num_threads",                   "10",
   "u", "run_as_user",                   NULL,
   "w", "url_rewrite_patterns",          NULL,
+  "x", "hide_files_patterns",           NULL,
   NULL, NULL, NULL
 };
 
@@ -1207,10 +1209,12 @@ void mg_vcry(struct mg_connection *conn, const char *fmt, va_list args) {
   (void)mg_vwrite2log(conn, NULL, timestamp, NULL, fmt, args);
 }
 
-
-
 const char *mg_version(void) {
   return MONGOOSE_VERSION;
+}
+
+const struct mg_request_info *mg_get_request_info(struct mg_connection *conn) {
+  return &conn->request_info;
 }
 
 size_t mg_strlcpy(register char *dst, register const char *src, size_t n) {
@@ -2943,7 +2947,6 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
       fd_stdout = -1;
       fd_stderr = -1;
 
-      // Execute CGI program. No need to lock: new process
       interp = get_conn_option(conn, CGI_INTERPRETER);
       if (is_empty(interp)) {
         (void) execle(prog, prog, NULL, envp);
@@ -3773,13 +3776,13 @@ static const struct {
   {".shtml",    6, "text/html",                      9},
   {".css",      4, "text/css",                       8},
   {".js",       3, "application/x-javascript",      24},
-  {".txt",      4, "text/plain",                    10},
   {".ico",      4, "image/x-icon",                  12},
   {".gif",      4, "image/gif",                      9},
   {".jpg",      4, "image/jpeg",                    10},
   {".jpeg",     5, "image/jpeg",                    10},
   {".png",      4, "image/png",                      9},
   {".svg",      4, "image/svg+xml",                 13},
+  {".txt",      4, "text/plain",                    10},
   {".torrent",  8, "application/x-bittorrent",      24},
   {".wav",      4, "audio/x-wav",                   11},
   {".mp3",      4, "audio/x-mp3",                   11},
@@ -3787,6 +3790,7 @@ static const struct {
   {".m3u",      4, "audio/x-mpegurl",               15},
   {".ram",      4, "audio/x-pn-realaudio",          20},
   {".xml",      4, "text/xml",                       8},
+  {".json",     5, "text/json",                      9},
   {".xslt",     5, "application/xml",               15},
   {".ra",       3, "audio/x-pn-realaudio",          20},
   {".doc",      4, "application/msword",            19},
@@ -3802,6 +3806,7 @@ static const struct {
   {".pdf",      4, "application/pdf",               15},
   {".swf",      4, "application/x-shockwave-flash", 29},
   {".mpg",      4, "video/mpeg",                    10},
+  {".webm",     5, "video/webm",                    10},
   {".mpeg",     5, "video/mpeg",                    10},
   {".mp4",      4, "video/mp4",                      9},
   {".m4v",      4, "video/x-m4v",                   11},
@@ -3811,13 +3816,30 @@ static const struct {
   {NULL,        0, NULL,                             0}
 };
 
+const char *mg_get_builtin_mime_type(const char *path) {
+  const char *ext;
+  size_t i, path_len;
+
+  path_len = strlen(path);
+
+  for (i = 0; builtin_mime_types[i].extension != NULL; i++) {
+    ext = path + (path_len - builtin_mime_types[i].ext_len);
+    if (path_len > builtin_mime_types[i].ext_len &&
+        mg_strcasecmp(ext, builtin_mime_types[i].extension) == 0) {
+      return builtin_mime_types[i].mime_type;
+    }
+  }
+
+  return "text/plain";
+}
+
 // Look at the "path" extension and figure what mime type it has.
 // Store mime type in the vector.
 static void get_mime_type(struct mg_context *ctx, const char *path,
                           struct vec *vec) {
   struct vec ext_vec, mime_vec;
   const char *list, *ext;
-  size_t i, path_len;
+  size_t path_len;
 
   path_len = strlen(path);
 
@@ -3833,20 +3855,8 @@ static void get_mime_type(struct mg_context *ctx, const char *path,
     }
   }
 
-  // Now scan built-in mime types
-  for (i = 0; builtin_mime_types[i].extension != NULL; i++) {
-    ext = path + (path_len - builtin_mime_types[i].ext_len);
-    if (path_len > builtin_mime_types[i].ext_len &&
-        mg_strcasecmp(ext, builtin_mime_types[i].extension) == 0) {
-      vec->ptr = builtin_mime_types[i].mime_type;
-      vec->len = builtin_mime_types[i].mime_type_len;
-      return;
-    }
-  }
-
-  // Nothing found. Fall back to "text/plain"
-  vec->ptr = "text/plain";
-  vec->len = 10;
+  vec->ptr = mg_get_builtin_mime_type(path);
+  vec->len = strlen(vec->ptr);
 }
 
 #ifndef HAVE_MD5
@@ -4203,7 +4213,7 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
 // Return 1 if authorized.
 static int authorize(struct mg_connection *conn, FILE *fp) {
   struct ah ah;
-  char line[256], f_user[256], ha1[256], f_domain[256], buf[BUFSIZ];
+  char line[256], f_user[256], ha1[256], f_domain[256], buf[MG_BUF_LEN];
   const char *auth_domain;
   int rv;
 
@@ -4491,6 +4501,13 @@ static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
   return query_string[1] == 'd' ? -cmp_result : cmp_result;
 }
 
+static int must_hide_file(struct mg_connection *conn, const char *path) {
+  const char *pw_pattern = "**" PASSWORDS_FILE_NAME "$";
+  const char *pattern = conn->ctx->config[HIDE_FILES];
+  return match_prefix(pw_pattern, strlen(pw_pattern), path) > 0 ||
+    (pattern != NULL && match_prefix(pattern, strlen(pattern), path) > 0);
+}
+
 static int scan_directory(struct mg_connection *conn, const char *dir,
                           void *data, void (*cb)(struct de *, void *)) {
   char path[PATH_MAX];
@@ -4504,11 +4521,12 @@ static int scan_directory(struct mg_connection *conn, const char *dir,
     de.conn = conn;
 
     while ((dp = readdir(dirp)) != NULL) {
-      // Do not show current dir and passwords file
+      // Do not show current dir and hidden files
       if (!strcmp(dp->d_name, ".") ||
           !strcmp(dp->d_name, "..") ||
-          !strcmp(dp->d_name, PASSWORDS_FILE_NAME))
+          must_hide_file(conn, dp->d_name)) {
         continue;
+      }
 
       mg_snprintf(conn, path, sizeof(path), "%s%c%s", dir, DIRSEP, dp->d_name);
 
@@ -4709,10 +4727,18 @@ static void gmt_time_string(char *buf, size_t buf_len, const time_t *t) {
   strftime(buf, buf_len, "%a, %d %b %Y %H:%M:%S GMT", gmtime(t));
 }
 
+static char *construct_etag(char *buf, size_t buf_len,
+                           const struct mgstat *stp) {
+  assert(buf_len > 1);
+  mg_snq0snprintf(fc(NULL), buf, buf_len, "\"%lx.%" PRId64 "\"",
+                  (unsigned long) stp->mtime, stp->size);
+  return buf;  
+}
+
 // return negative number on error; 0 on success
 static int handle_file_request(struct mg_connection *conn, const char *path,
                                 struct mgstat *stp) {
-  char date[64], lm[64];
+  char date[64], lm[64], etag[64];
   const char *hdr;
   time_t curtime = time(NULL);
   int64_t cl, r1, r2;
@@ -4736,7 +4762,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   hdr = mg_get_header(conn, "Range");
   if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
     mg_set_response_code(conn, 206);
-    (void) fseeko(fp, (off_t) r1, SEEK_SET);
+    (void) fseeko(fp, r1, SEEK_SET);
     cl = n == 2 ? r2 - r1 + 1: cl - r1;
     mg_add_response_header(conn, 0, "Content-Range", "bytes "
                            "%" PRId64 "-%"
@@ -4751,8 +4777,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
 
   mg_add_response_header(conn, 0, "Date", "%s", date);
   mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
-  mg_add_response_header(conn, 0, "Etag", "\"%lx.%lx\"",
-                         (unsigned long) stp->mtime, (unsigned long) stp->size);
+  mg_add_response_header(conn, 0, "Etag", "%s", construct_etag(etag, sizeof(etag), stp));
   // 'text/...' mime types default to ISO-8859-1; make sure they use the more modern UTF-8 charset instead:
   if (mime_vec.len > 5 && !memcmp("text/", mime_vec.ptr, 5))
     mg_add_response_header(conn, 0, "Content-Type", "%.*s; charset=%s", (int) mime_vec.len, mime_vec.ptr, "utf-8");
@@ -5151,8 +5176,12 @@ static int substitute_index_file(struct mg_connection *conn, char *path,
 // Return True if we should reply 304 Not Modified.
 static int is_not_modified(const struct mg_connection *conn,
                            const struct mgstat *stp) {
+  char etag[40];
   const char *ims = mg_get_header(conn, "If-Modified-Since");
-  return ims != NULL && stp->mtime <= parse_date_string(ims);
+  const char *inm = mg_get_header(conn, "If-None-Match");
+  construct_etag(etag, sizeof(etag), stp);
+  return (inm != NULL && !mg_strcasecmp(etag, inm)) ||
+    (ims != NULL && stp->mtime <= parse_date_string(ims));
 }
 
 static int forward_body_data(struct mg_connection *conn, FILE *fp,
@@ -5506,6 +5535,10 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
     mg_write2log(conn, NULL, time(NULL), "warning", "Failed to forward request content (body) to the CGI process: %s", mg_strerror(ERRNO));
   }
 
+  // Close so child gets an EOF.
+  fclose(in);
+  in = NULL;
+
   // Now read CGI reply into a buffer. We need to set correct
   // status code, thus we need to see all HTTP headers first.
   // Do not send anything back to client, until we buffer in all
@@ -5740,7 +5773,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
     if (range != NULL && parse_range_header(range, &r1, &r2) > 0) {
       mg_set_response_code(conn, 206);
       // TODO(lsm): handle seek error
-      (void) fseeko(fp, (off_t) r1, SEEK_SET);
+      (void) fseeko(fp, r1, SEEK_SET);
     }
     if (forward_body_data(conn, fp, NULL, 1)) {
       mg_write_http_response_head(conn, 0, 0);
@@ -6168,9 +6201,6 @@ static void handle_request(struct mg_connection *conn) {
 
   } else if (!strcmp(ri->request_method, "OPTIONS")) {
     send_options(conn);
-  } else if (strstr(path, PASSWORDS_FILE_NAME)) {
-    // Do not allow to view passwords files
-    send_http_error(conn, 403, NULL, "No peeking at the passwords file!");
   } else if (is_empty(get_conn_option(conn, DOCUMENT_ROOT))) {
     send_http_error(conn, 404, NULL, "DocumentRoot has not been properly configured.");
   } else if ((!strcmp(ri->request_method, "PUT") ||
@@ -6186,7 +6216,7 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 500, NULL, "remove(%s): %s", path,
                       mg_strerror(ERRNO));
     }
-  } else if (stat_result != 0) {
+  } else if (stat_result != 0 || must_hide_file(conn, path)) {
     send_http_error(conn, 404, NULL, "File not found: URI=%s, PATH=%s", ri->uri, path);
   } else if (st.is_directory && ri->uri[uri_len - 1] != '/') {
     if (301 == mg_set_response_code(conn, 301)) {
@@ -6971,7 +7001,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
-  char buf[BUFSIZ];
+  char buf[MG_BUF_LEN];
   struct linger linger;
   int n, w;
   int linger_timeout = atoi(get_conn_option(conn, SOCKET_LINGER_TIMEOUT)) * 1000;
@@ -7178,7 +7208,7 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
                char *buf, size_t buf_len, struct mg_request_info *ri) {
   struct mg_connection *newconn;
   int n, req_length, data_length, port;
-  char host[1025], proto[10], buf2[BUFSIZ];
+  char host[1025], proto[10], buf2[MG_BUF_LEN];
   FILE *fp = NULL;
 
   if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) == 3) {
@@ -7193,7 +7223,7 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
                             !strcmp(proto, "https"))) == NULL) {
     cry(fc(ctx), "%s: mg_connect(%s): %s", __func__, url, strerror(ERRNO));
   } else {
-    mg_printf(newconn, "GET /%s HTTP/1.0\r\n\r\n", url + n);
+    mg_printf(newconn, "GET /%s HTTP/1.0\r\nHost: %s\r\n\r\n", url + n, host);
     data_length = 0;
     req_length = read_request(NULL, newconn->client.sock,
                               newconn->ssl, buf, buf_len, &data_length);
@@ -7204,16 +7234,18 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
     } else if ((fp = fopen(path, "w+b")) == NULL) {
       cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, strerror(ERRNO));
     } else {
-      data_length -= req_length;
       // Write chunk of data that may be in the user's buffer
+      data_length -= req_length;
       if (data_length > 0 &&
         fwrite(buf + req_length, 1, data_length, fp) != (size_t) data_length) {
         cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, strerror(ERRNO));
         fclose(fp);
         fp = NULL;
       }
-      // Read the rest of the response and write it to the file
-      while (fp && (data_length = mg_read(newconn, buf2, sizeof(buf2))) > 0) {
+      // Read the rest of the response and write it to the file. Do not use
+      // mg_read() cause we didn't set newconn->content_len properly.
+      while (fp && (data_length = pull(NULL, newconn->client.sock, newconn->ssl,
+                                       buf2, sizeof(buf2))) > 0) {
         if (fwrite(buf2, 1, data_length, fp) != (size_t) data_length) {
           cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, strerror(ERRNO));
           fclose(fp);

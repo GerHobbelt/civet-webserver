@@ -222,7 +222,7 @@ static void init_server_name(void) {
 }
 
 
-static void *event_callback(enum mg_event event, struct mg_connection *conn) {
+static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_request_info *request_info = mg_get_request_info(conn);
 
   if (event == MG_INIT0)
@@ -326,7 +326,7 @@ static void start_mongoose(int argc, char *argv[]) {
   int i;
   struct mg_user_class_t userdef = {
       0,
-      &event_callback
+      &mongoose_callback
   };
 
   /* Edit passwords file if -A option is specified */
