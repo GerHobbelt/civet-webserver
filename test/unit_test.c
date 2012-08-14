@@ -46,6 +46,7 @@ static void test_parse_http_request() {
   char req1[] = "GET / HTTP/1.1\r\n\r\n";
   char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
+  char req4[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\nbaz\r\n\r\n";
 
   printf("=== TEST: %s ===\n", __func__);
 
@@ -59,6 +60,16 @@ static void test_parse_http_request() {
   ASSERT(parse_http_request(req3, &ri) == 1);
   ASSERT(ri.num_headers == 1);
   ASSERT_STREQ(ri.http_headers[0].name, "Bah\r\n");
+
+  // TODO(lsm): Fix this. Header value may span multiple lines.
+  ASSERT(parse_http_request(req4, &ri) == 1);
+  ASSERT(ri.num_headers == 3);
+  ASSERT(strcmp(ri.http_headers[0].name, "A") == 0);
+  ASSERT(strcmp(ri.http_headers[0].value, "foo bar") == 0);
+  ASSERT(strcmp(ri.http_headers[1].name, "B") == 0);
+  ASSERT(strcmp(ri.http_headers[1].value, "bar") == 0);
+  ASSERT(strcmp(ri.http_headers[2].name, "baz\r\n\r\n") == 0);
+  ASSERT(strcmp(ri.http_headers[2].value, "") == 0);
 
   // TODO(lsm): add more tests.
 }
