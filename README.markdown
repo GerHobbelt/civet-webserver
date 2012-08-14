@@ -111,6 +111,9 @@ OPTIONS
 	  "`-w /config=/etc,**.doc|**.rtf=/path/to/cgi-bin/handle_doc.cgi`" will serve all URLs that start with "`/config`" from the "`/etc`" directory, and call `handle_doc.cgi` script for `.doc` and `.rtf` file requests. 
 	  If some pattern matches, no further matching/substitution is performed (first matching pattern wins). Use full paths in substitutions. Default: ""
 
+*     `-x hide_files_patterns`
+      A prefix pattern for the files to hide. Files that match the pattern will not show up in directory listing and return 404 Not Found if requested. Default: ""
+
 EMBEDDING
 ---------
 
