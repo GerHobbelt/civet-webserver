@@ -2730,7 +2730,7 @@ static struct dirent *readdir(DIR *dir) {
 
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
-static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t f, void *p) {
+int mg_start_thread(mg_thread_func_t f, void *p) {
   return _beginthread((void (__cdecl *)(void *)) f, 0, p) == (uintptr_t)-1L ? -1 : 0;
 }
 
@@ -2894,22 +2894,16 @@ static void set_close_on_exec(int fd) {
   (void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
-static int start_thread(UNUSED_PARAMETER(struct mg_context *ctx), mg_thread_func_t func,
-                        void *param) {
+int mg_start_thread(mg_thread_func_t func, void *param) {
   pthread_t thread_id;
   pthread_attr_t attr;
-  int retval;
 
   (void) pthread_attr_init(&attr);
   (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
   // TODO(lsm): figure out why mongoose dies on Linux if next line is enabled
   // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
 
-  if ((retval = pthread_create(&thread_id, &attr, func, param)) != 0) {
-    mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(retval));
-  }
-
-  return retval;
+  return pthread_create(&thread_id, &attr, func, param);
 }
 
 #ifndef NO_CGI
@@ -4813,27 +4807,44 @@ static int is_valid_http_method(const char *method) {
 // Parse HTTP request, fill in mg_request_info structure.
 // This function modifies the buffer with HTTP request by nul-terminating
 // HTTP request components, header names and header values.
-static int parse_http_request(char *buf, struct mg_request_info *ri) {
-  int status = 0;
+static int parse_http_message(char *buf, int len, struct mg_request_info *ri) {
+  int request_length = get_request_len(buf, len);
+  if (request_length > 0) {
+    // Reset attributes. DO NOT TOUCH is_ssl, remote_ip, remote_port
+    ri->remote_user = ri->request_method = ri->uri = ri->http_version = NULL;
+    ri->num_headers = 0;
+    ri->status_code = -1;
 
-  // RFC says that all initial whitespace should be ignored
-  while (*buf != '\0' && isspace(* (unsigned char *) buf)) {
-    buf++;
+    buf[request_length - 1] = '\0';
+
+    // RFC says that all initial whitespace should be ignored
+    while (*buf != '\0' && isspace(* (unsigned char *) buf)) {
+      buf++;
+    }
+    ri->request_method = skip(&buf, " ");
+    ri->uri = skip(&buf, " ");
+    ri->http_version = skip(&buf, "\r\n");
+    parse_http_headers(&buf, ri);
   }
+  return request_length;
+}
 
-  ri->request_method = skip(&buf, " ");
-  ri->uri = skip(&buf, " ");
-  ri->http_version = skip(&buf, "\r\n");
-  ri->num_headers = 0;
-
-  if (is_valid_http_method(ri->request_method) &&
-      strncmp(ri->http_version, "HTTP/", 5) == 0) {
+static int parse_http_request(char *buf, int len, struct mg_request_info *ri) {
+  int result = parse_http_message(buf, len, ri);
+  if (result > 0 &&
+      is_valid_http_method(ri->request_method) &&
+      !strncmp(ri->http_version, "HTTP/", 5)) {
     ri->http_version += 5;   // Skip "HTTP/"
     ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
-    status = 1;
+  } else {
+    result = -1;
   }
+  return result;
+}
 
-  return status;
+static int parse_http_response(char *buf, int len, struct mg_request_info *ri) {
+  int result = parse_http_message(buf, len, ri);
+  return result > 0 && !strncmp(ri->request_method, "HTTP/", 5) ? result : -1;
 }
 
 // Keep reading the input (either opened file descriptor fd, or socket sock,
@@ -7114,6 +7125,88 @@ static void close_connection(struct mg_connection *conn) {
   close_socket_gracefully(conn);
 }
 
+struct mg_connection *mg_connect(struct mg_context *ctx,
+                                 const char *host, int port, int use_ssl) {
+  struct mg_connection *newconn = NULL;
+  struct sockaddr_in sin;
+  struct hostent *he;
+  int sock;
+
+  if (ctx->ssl_ctx == NULL && use_ssl) {
+    cry(fc(ctx), "%s: SSL is not initialized", __func__);
+  } else if ((he = gethostbyname(host)) == NULL) {
+    cry(fc(ctx), "%s: gethostbyname(%s): %s", __func__, host, strerror(ERRNO));
+  } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+    cry(fc(ctx), "%s: socket: %s", __func__, strerror(ERRNO));
+  } else {
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons((uint16_t) port);
+    sin.sin_addr = * (struct in_addr *) he->h_addr_list[0];
+    if (connect(sock, (struct sockaddr *) &sin, sizeof(sin)) != 0) {
+      cry(fc(ctx), "%s: connect(%s:%d): %s", __func__, host, port,
+          strerror(ERRNO));
+      closesocket(sock);
+    } else if ((newconn = (struct mg_connection *)
+                calloc(1, sizeof(*newconn))) == NULL) {
+      cry(fc(ctx), "%s: calloc: %s", __func__, strerror(ERRNO));
+      closesocket(sock);
+    } else {
+      newconn->client.sock = sock;
+      newconn->client.rsa.sin = sin;
+      newconn->client.is_ssl = use_ssl;
+      if (use_ssl) {
+        sslize(newconn, SSL_connect);
+      }
+    }
+  }
+
+  return newconn;
+}
+
+FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
+               struct mg_request_info *ri) {
+  struct mg_connection *newconn;
+  int n, req_length, data_length = 0, port = 80;
+  char host[1025], proto[10], buf[16384];
+  FILE *fp = NULL;
+
+  if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) != 3 &&
+      sscanf(url, "%9[htps]://%1024[^/]/%n", proto, host, &n) != 2) {
+    cry(fc(ctx), "%s: invalid URL: [%s]", __func__, url);
+  } else if ((newconn = mg_connect(ctx, host, port,
+                                   !strcmp(proto, "https"))) == NULL) {
+    cry(fc(ctx), "%s: mg_connect(%s): %s", __func__, url, strerror(ERRNO));
+  } else {
+    mg_printf(newconn, "GET /%s HTTP/1.0\r\n\r\n", url + n);
+    req_length = read_request(NULL, newconn->client.sock,
+                              newconn->ssl, buf, sizeof(buf), &data_length);
+    if (req_length <= 0) {
+      cry(fc(ctx), "%s(%s): invalid HTTP reply", __func__, url);
+    } else if (parse_http_response(buf, req_length, ri) <= 0) {
+      cry(fc(ctx), "%s(%s): cannot parse HTTP headers", __func__, url);
+    } else if ((fp = fopen(path, "w+b")) == NULL) {
+      cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, strerror(ERRNO));
+    } else {
+      data_length -= req_length;
+      memmove(buf, buf + req_length, data_length);
+      do {
+        if (fwrite(buf, 1, data_length, fp) != (size_t) data_length) {
+          fclose(fp);
+          fp = NULL;
+          break;
+        }
+        data_length = mg_read(newconn, buf, sizeof(buf));
+      } while (data_length > 0);
+    }
+    close_connection(newconn);
+    free(newconn);
+  }
+
+  return fp;
+}
+
+
+
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
   int n;
   char buf[BUFSIZ];
@@ -7198,8 +7291,8 @@ static int process_new_connection(struct mg_connection *conn) {
 
     // Nul-terminate the request cause parse_http_request() is C-string based
     conn->buf[conn->request_len - 1] = '\0';
-    if (!parse_http_request(conn->buf, ri)
-        || !is_valid_uri(ri->uri)) {
+    if (parse_http_request(conn->buf, conn->buf_size, ri) <= 0 ||
+        !is_valid_uri(ri->uri)) {
       // Do not put garbage in the access log, just send it back to the client
       conn->must_close = 1;
       send_http_error(conn, 400, NULL,
@@ -8215,7 +8308,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT0);
 
   // Start master (listening) thread
-  if (start_thread(ctx, (mg_thread_func_t) master_thread, ctx) != 0) {
+  if (mg_start_thread((mg_thread_func_t) master_thread, ctx) != 0) {
     mg_cry(fc(ctx), "Cannot start master thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
     free_context(ctx);
     return NULL;
@@ -8225,7 +8318,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   i = atoi(get_option(ctx, NUM_THREADS));
   if (i < 1) i = 1;
   for ( ; i > 0; i--) {
-    if (start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
+    if (mg_start_thread((mg_thread_func_t) worker_thread, ctx) != 0) {
       mg_cry(fc(ctx), "Cannot start worker thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
     } else {
       (void) pthread_mutex_lock(&ctx->mutex);

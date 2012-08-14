@@ -50,25 +50,21 @@ static void test_parse_http_request() {
 
   printf("=== TEST: %s ===\n", __func__);
 
-  ASSERT(parse_http_request(req1, &ri) == 1);
+  ASSERT(parse_http_request(req1, sizeof(req1), &ri) == sizeof(req1) - 1);
   ASSERT_STREQ(ri.http_version, "1.1");
   ASSERT(ri.num_headers == 0);
 
-  ASSERT(parse_http_request(req2, &ri) == 0);
-
-  // TODO(lsm): Fix this. Bah is not a valid header.
-  ASSERT(parse_http_request(req3, &ri) == 1);
-  ASSERT(ri.num_headers == 1);
-  ASSERT_STREQ(ri.http_headers[0].name, "Bah\r\n");
+  ASSERT(parse_http_request(req2, sizeof(req2), &ri) == -1);
+  ASSERT(parse_http_request(req3, sizeof(req3), &ri) == -1);
 
   // TODO(lsm): Fix this. Header value may span multiple lines.
-  ASSERT(parse_http_request(req4, &ri) == 1);
+  ASSERT(parse_http_request(req4, sizeof(req4), &ri) == sizeof(req4) - 1);
   ASSERT(ri.num_headers == 3);
   ASSERT(strcmp(ri.http_headers[0].name, "A") == 0);
   ASSERT(strcmp(ri.http_headers[0].value, "foo bar") == 0);
   ASSERT(strcmp(ri.http_headers[1].name, "B") == 0);
   ASSERT(strcmp(ri.http_headers[1].value, "bar") == 0);
-  ASSERT(strcmp(ri.http_headers[2].name, "baz\r\n\r\n") == 0);
+  ASSERT(strcmp(ri.http_headers[2].name, "baz\r\n\r") == 0);
   ASSERT(strcmp(ri.http_headers[2].value, "") == 0);
 
   // TODO(lsm): add more tests.
@@ -87,7 +83,7 @@ static void test_should_keep_alive(void) {
 
   memset(&conn, 0, sizeof(conn));
   conn.ctx = ctx;
-  parse_http_request(req1, &conn.request_info);
+  parse_http_request(req1, sizeof(req1), &conn.request_info);
   conn.request_info.status_code = 200;
 
   ctx->config[ENABLE_KEEP_ALIVE] = "no";
@@ -100,13 +96,13 @@ static void test_should_keep_alive(void) {
   ASSERT(should_keep_alive(&conn) == 0);
 
   conn.must_close = 0;
-  parse_http_request(req2, &conn.request_info);
+  parse_http_request(req2, sizeof(req2), &conn.request_info);
   ASSERT(should_keep_alive(&conn) == 0);
 
-  parse_http_request(req3, &conn.request_info);
+  parse_http_request(req3, sizeof(req3), &conn.request_info);
   ASSERT(should_keep_alive(&conn) == 0);
 
-  parse_http_request(req4, &conn.request_info);
+  parse_http_request(req4, sizeof(req4), &conn.request_info);
   ASSERT(should_keep_alive(&conn) == 1);
 
   conn.request_info.status_code = 401;
@@ -181,6 +177,58 @@ static void test_remove_double_dots() {
     remove_double_dots_and_double_slashes(data[i].before);
     ASSERT_STREQ(data[i].before, data[i].after);
   }
+}
+
+static const char *fetch_data = "hello world!\n";
+static void *event_handler(enum mg_event event,
+                           struct mg_connection *conn,
+                           const struct mg_request_info *request_info) {
+  if (event == MG_NEW_REQUEST && !strcmp(request_info->uri, "/data")) {
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+              "Content-Length: %d\r\n\r\n"
+              "%s", (int) strlen(fetch_data), fetch_data);
+    return "";
+  } else if (event == MG_EVENT_LOG) {
+    printf("%s\n", request_info->log_message);
+  }
+  
+  return NULL;
+}
+
+static void test_mg_fetch(void) {
+  static const char *options[] = {
+    "document_root", ".",
+    "listening_ports", "33796",
+    NULL,
+  };
+  char buf[1000];
+  int length;
+  struct mg_context *ctx;
+  struct mg_request_info ri;
+  const char *tmp_file = "temporary_file_name_for_unit_test.txt";
+  FILE *fp;
+
+  ASSERT((ctx = mg_start(event_handler, NULL, options)) != NULL);
+
+  // Failed fetch, pass invalid URL
+  ASSERT(mg_fetch(ctx, "localhost", tmp_file, &ri) == NULL);
+  ASSERT(mg_fetch(ctx, "localhost:33796", tmp_file, &ri) == NULL);
+  ASSERT(mg_fetch(ctx, "http://$$$.$$$", tmp_file, &ri) == NULL);
+
+  // Failed fetch, pass invalid file name
+  ASSERT(mg_fetch(ctx, "http://localhost:33796/data",
+                  "/this/file/must/not/exist/ever", &ri) == NULL);
+
+  // Successful fetch
+  ASSERT((fp = mg_fetch(ctx, "http://localhost:33796/data",
+                        tmp_file, &ri)) != NULL);
+  ASSERT((length = ftell(fp)) == (int) strlen(fetch_data));
+  fseek(fp, 0, SEEK_SET);
+  ASSERT(fread(buf, 1, length, fp) == length);
+  ASSERT(memcmp(buf, fetch_data, length) == 0);
+
+  remove(tmp_file);
+  mg_stop(ctx);
 }
 
 static void test_IPaddr_parsing() {
@@ -1906,6 +1954,7 @@ int main(void) {
   test_header_processing();
   test_should_keep_alive();
   test_parse_http_request();
+  test_mg_fetch();
   test_response_header_rw();
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)

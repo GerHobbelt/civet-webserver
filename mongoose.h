@@ -793,6 +793,33 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 // (mg_produce_nested_page()), so that we can adjust our behaviour.
 int mg_is_producing_nested_page(struct mg_connection *conn);
 
+
+// Connect to the remote web server.
+// Return:
+//   On success, valid pointer to the new connection
+//   On error, NULL
+struct mg_connection *mg_connect(struct mg_context *ctx,
+                                 const char *host, int port, int use_ssl);
+
+
+// Download given URL to a given file.
+//   url: URL to download
+//   path: file name where to save the data
+//   request_info: pointer to a structure that will hold parsed reply headers
+// Return:
+//   On success, opened file stream to the downloaded contents. The stream
+//   is positioned to the end of the file.
+//   On error, NULL
+FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
+               struct mg_request_info *request_info);
+
+
+// Convenience function -- create detached thread.
+// Return: 0 on success, non-0 on error.
+typedef void * (*mg_thread_func_t)(void *);
+int mg_start_thread(mg_thread_func_t f, void *p);
+
+
 // Return Mongoose version.
 const char *mg_version(void);
 
