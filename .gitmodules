@@ -7,3 +7,9 @@
 [submodule "pthread-win32"]
 	path = pthread-win32
 	url = git@github.com:GerHobbelt/pthread-win32.git
+[submodule "documentation/wiki"]
+	path = documentation/wiki
+	url = git@github.com:GerHobbelt/mongoose.wiki.git
+[submodule "documentation/wiki-vanilla"]
+	path = documentation/wiki-vanilla
+	url = git@github.com:GerHobbelt/mongoose-vanilla.wiki.git
