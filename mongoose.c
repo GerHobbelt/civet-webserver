@@ -412,12 +412,13 @@ typedef enum {
   CGI_EXTENSIONS,
   ALLOWED_METHODS,
   CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
-  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, SSI_MARKER, ERROR_FILE, ACCESS_LOG_FILE,
-  SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
-  GLOBAL_PASSWORDS_FILE, INDEX_FILES,
-  ENABLE_KEEP_ALIVE, KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT, ACCESS_CONTROL_LIST, MAX_REQUEST_SIZE,
-  EXTRA_MIME_TYPES, LISTENING_PORTS,
-  DOCUMENT_ROOT, SSL_CERTIFICATE,
+  MAX_REQUEST_SIZE, PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, 
+  SSI_MARKER, ERROR_FILE, 
+  ACCESS_LOG_FILE, SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
+  GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE,
+  KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT, 
+  ACCESS_CONTROL_LIST,
+  EXTRA_MIME_TYPES, LISTENING_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE,
   NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES,
   NUM_OPTIONS
 } mg_option_index_t;
@@ -428,6 +429,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "E", "cgi_environment",               NULL,
   "G", "put_delete_passwords_file",     NULL,
   "I", "cgi_interpreter",               NULL,
+  "M", "max_request_size",              "16384",
   "P", "protect_uri",                   NULL,
   "R", "authentication_domain",         "mydomain.com",
   "S", "ssi_pattern",                   "**.shtml$|**.shtm$",
@@ -443,7 +445,6 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "K", "keep_alive_timeout",            "5",
   "L", "socket_linger_timeout",         "5",
   "l", "access_control_list",           NULL,
-  "M", "max_request_size",              "16384",
   "m", "extra_mime_types",              NULL,
   "p", "listening_ports",               "8080",
   "r", "document_root",                 ".",
@@ -3132,6 +3133,28 @@ static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
   }
 
   return sent;
+}
+
+// This function is needed to prevent Mongoose to be stuck in a blocking
+// socket read when user requested exit. To do that, we sleep in select
+// with a timeout, and when returned, check the context for the stop flag.
+// If it is set, we return 0, and this means that we must not continue
+// reading, must give up and close the connection and exit serving thread.
+static int wait_until_socket_is_readable(struct mg_connection *conn) {
+  int result;
+  struct timeval tv;
+  fd_set set;
+  
+  do {
+    tv.tv_sec = 0;
+    tv.tv_usec = 300 * 1000;
+    FD_ZERO(&set);
+    FD_SET(conn->client.sock, &set);
+    result = select(conn->client.sock + 1, &set, NULL, NULL, &tv);
+  } while ((result == 0 || (result < 0 && ERRNO == EINTR)) &&
+           conn->ctx->stop_flag == 0);
+
+  return conn->ctx->stop_flag || result < 0 ? 0 : 1;
 }
 
 // Read from IO channel - opened file descriptor, socket, or SSL descriptor.
