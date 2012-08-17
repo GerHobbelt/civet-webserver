@@ -59,12 +59,13 @@ static void test_get_var(struct mg_connection *conn) {
     } else {
       mg_read(conn, buf, buf_len);
     }
-  is_form_enc = 1;
-  } else if (ri->query_string != NULL) {
+    is_form_enc = 1;
+  } else {
+    assert(ri->query_string != NULL); // query_string ~ "" when no query string was specified in the request
     buf_len = strlen(ri->query_string);
     buf = malloc(buf_len + 1);
     strcpy(buf, ri->query_string);
-  is_form_enc = 0;
+    is_form_enc = 0;
   }
   var = malloc(buf_len + 1);
   var_len = mg_get_var(buf, buf_len, "my_var", var, buf_len + 1, is_form_enc);
@@ -109,8 +110,8 @@ static void test_get_request_info(struct mg_connection *conn) {
               ri->http_headers[i].value);
   }
 
-  mg_printf(conn, "Query string: [%s]\n",
-            ri->query_string ? ri->query_string: "");
+  assert(ri->query_string != NULL); // query_string ~ "" when no query string was specified in the request
+  mg_printf(conn, "Query string: [%s]\n", ri->query_string);
   if (ri->remote_ip.is_ip6)
     mg_printf(conn, "Remote IP: [%x:%x:%x:%x:%x:%x:%x:%x]\n",
             ri->remote_ip.ip_addr.v6[0], ri->remote_ip.ip_addr.v6[1],

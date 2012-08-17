@@ -38,6 +38,8 @@
 #define SSI_LINE_BUFSIZ                 MG_MAX(MG_BUF_LEN, PATH_MAX)
 /* buffer size used to extract/decode/store a HTTP/1.1 'chunked transfer' header */
 #define CHUNK_HEADER_BUFSIZ             MG_MAX(MG_BUF_LEN, 80)
+/* buffer size for domain names, users and password hashes */
+#define USRDMNPWD_BUFSIZ                512
 
 
 // The maximum amount of data we're willing to dump in a single mg_cry() log call.
@@ -412,11 +414,11 @@ typedef enum {
   CGI_EXTENSIONS,
   ALLOWED_METHODS,
   CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
-  MAX_REQUEST_SIZE, PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS, 
-  SSI_MARKER, ERROR_FILE, 
+  MAX_REQUEST_SIZE, PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS,
+  SSI_MARKER, ERROR_FILE,
   ACCESS_LOG_FILE, SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE,
-  KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT, 
+  KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT,
   ACCESS_CONTROL_LIST,
   EXTRA_MIME_TYPES, LISTENING_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE,
   NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES,
@@ -1215,7 +1217,7 @@ const char *mg_version(void) {
 }
 
 struct mg_request_info *mg_get_request_info(struct mg_connection *conn) {
-	return conn ? &conn->request_info : NULL;
+  return conn ? &conn->request_info : NULL;
 }
 
 size_t mg_strlcpy(register char *dst, register const char *src, size_t n) {
@@ -1466,56 +1468,315 @@ int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen,
   return n;
 }
 
+// skip RFC2616 LWS: (SP | HT | line-continuation)
+static char *skip_lws(char *str) {
+  str += strspn(str, " \t");
+  for(;;) {
+    if (*str && strchr("\r\n", *str)) {
+      char *p = str + strspn(str, "\r\n");
+      if (*p && strchr(" \t", *p)) {
+        str = p + strspn(p, " \t");
+        continue;
+      }
+    }
+    break;
+  }
+  return str;
+}
+
+// skip LWS + n*CRLF, i.e. skip until end-of-line (where CRLF is NOT a line continuation)
+static char *skip_eolws(char *str) {
+  str = skip_lws(str);
+  str += strspn(str, "\r\n");
+  return str;
+}
+
+// cf. RFC2616 sec. 2.2
+static const char *rfc2616_token_charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~`!#$%^&*_-+'.|";
+
+// Return 0 on success, -1 on failure.
+int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
+  char *p, *te;
+
+  te = str;
+
+  // extract UNQUOTED field-value, where field-value is either a *single* quoted-string or a token cf. RFC2616 sec 2.2
+  if (*str != '"') {
+    // we're looking at a token
+    //
+    // make sure token is actually cf. RC2616 sec. 2.2:
+    p = str + strspn(str, rfc2616_token_charset);
+    if (end_ref) {
+      *end_ref = p;
+      *sentinel = *p;
+      *p = 0;
+    } else if (*p && skip_eolws(p)[0]) {
+      // when we can't tell caller where token ended, we must fail when input isn't a single token
+      return -1;
+    }
+
+    if (p > str && te != str)
+      memmove(te, str, p - str);
+    te[p - str] = 0;
+  } else {
+    // unquote the value; unescape \\-escaped characters
+    p = str + 1;
+    while (*p) {
+      if (*p == '"') {
+        break;
+      } else if (*p == '\\') {
+        // RFC2616 sec 2.2 says you can escape char NUL too, but we don't allow it, as it opens a floodgate of assault scenarios
+        if (p[1] <= 0 || p[1] >= 128)
+          return -1;
+        *p++;
+        *str++ = *p++;
+      } else if (*p >= ' ' && *p < 128) {
+        *str++ = *p++;
+      } else {
+        // MUST be escaped to be POSSIBLY legal inside quoted-string
+        return -1;
+      }
+    }
+    if (*p != '"')
+      return -1; // quoted-string not terminated correctly!
+    p++;
+    *str = 0;
+
+    if (end_ref) {
+      *end_ref = p;
+      *sentinel = *p;
+    } else if (*p && skip_eolws(p)[0]) {
+      // when we can't tell caller where quoted-string ended, we must fail when input isn't a single quoted-string
+      return -1;
+    }
+  }
+  return 0;
+}
+
+// Extract a token,value pair from the string buffer. (See mongoose.h for full doc)
+// Return 0 on success, -1 on failure.
+int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string) {
+  char *p, *te, *begin_word, *end_word;
+
+  if (token_ref) *token_ref = NULL;
+  if (*value_ref) *value_ref = NULL;
+
+  begin_word = *buf;
+  begin_word = skip_lws(begin_word);
+
+  // token [LWS] "=" [LWS] [quoted-string]
+  end_word = begin_word + strcspn(begin_word, "= \t\r\n");
+  if (end_word == begin_word)
+    return -1;
+  te = end_word;
+  end_word = skip_lws(end_word);
+
+  // now we should see the mandatory "="
+  if (*end_word != '=')
+    return -1;
+  *te = 0;
+  end_word++;
+
+  // make sure token is actually cf. RC2616 sec. 2.2:
+  p = begin_word + strspn(begin_word, rfc2616_token_charset);
+  if (*p)
+    return -1;
+  else if (token_ref)
+    *token_ref = begin_word;
+
+  end_word = skip_lws(end_word);
+  begin_word = end_word;
+
+  // do we have a OPTIONAL field-value?
+  // extract UNQUOTED field-value, where field-value is either a *single* quoted-string or a token cf. RFC2616 sec 2.2
+  if (*begin_word != '"' && !strchr(rfc2616_token_charset, *begin_word)) {
+    // no value specified; we're looking at either a separator, WS or a NUL (EOS)
+    if (value_ref) {
+      *value_ref = empty_string;
+    }
+    *sentinel = *end_word;
+  } else if (*begin_word != '"') {
+    if (value_ref)
+      *value_ref = begin_word;
+
+    // accept rfc2616_token_charset
+    end_word += strspn(begin_word, rfc2616_token_charset);
+    te = end_word;
+    end_word = skip_eolws(end_word);
+    *sentinel = *end_word;
+    *te = 0;
+  } else {
+    char sep;
+
+    *value_ref = p = begin_word;
+
+    // unquote the value; unescape \\-escaped characters
+    if (mg_unquote_header_value(p, &sep, &end_word) < 0)
+      return -1;
+    end_word = skip_eolws(end_word);
+    *sentinel = *end_word;
+  }
+
+  *buf = end_word;
+
+  return 0;
+}
+
+
+
+// Extract a HTTP header token + (optional) value cf. RFC2616 sec. 4.2 and sec. 2.2.
+// (See mongoose.h for full doc)
+// Return 0 on success, -1 on failure.
+int mg_extract_raw_http_header(char **buf, char **token_ref, char **value_ref) {
+  char *p, *te, *begin_word, *end_word;
+  enum {
+    RFC2616_TOKEN,
+    RFC2616_SEPARATOR,
+    RFC2616_QSTRING
+  } field_mode;
+  static const char *rfc2616_nonws_separator_charset = "@()={}[]:;\"<>,?/\\";
+
+  if (token_ref) *token_ref = NULL;
+  if (*value_ref) *value_ref = NULL;
+
+  begin_word = *buf;
+  // RFC2616: header = token LWS ":" LWS field-value CRLF
+  end_word = begin_word + strcspn(begin_word, ": \t\r\n");
+  if (end_word == begin_word)
+    return -1;
+  te = end_word;
+  end_word = skip_lws(end_word);
+
+  // now we should see the mandatory ":"
+  if (*end_word != ':')
+    return -1;
+  *te = 0;
+  end_word++;
+
+  // make sure token is actually cf. RC2616 sec. 2.2:
+  p = begin_word + strspn(begin_word, rfc2616_token_charset);
+  if (*p)
+    return -1;
+  else if (token_ref)
+    *token_ref = begin_word;
+
+  end_word = skip_lws(end_word);
+  begin_word = p = end_word;
+
+  // do we have an OPTIONAL field-value?
+  // extract RAW field-value: find the first CRLF which is not a line-continuation
+  while (*p && !strchr("\r\n", *p)) {
+    end_word = p + strcspn(p, " \t\r\n");
+    p = skip_lws(end_word);
+  }
+
+  p = skip_eolws(end_word);
+  *end_word = 0;
+  *buf = p;
+
+  // make sure field-value is actually cf. RC2616 sec. 2.2:
+  // convert any 'line continuation' to single SP space.
+  field_mode = RFC2616_TOKEN;
+  p = begin_word;
+  te++;
+  begin_word = te;
+
+  while (*p) {
+    int clen;
+
+    switch (field_mode) {
+    case RFC2616_TOKEN:
+      if (*p == '"') {
+        field_mode = RFC2616_QSTRING;
+        p++;
+        if (!*p)
+          return -1;
+        continue;
+      }
+      // accept rfc2616_token_charset and any separators; process LWS to single SP though
+      clen = strcspn(p, " \t\r\n");
+      if (clen)
+        memmove(begin_word, p, clen);
+      p += clen;
+      begin_word += clen;
+
+      if (!*p)
+        break;
+      field_mode = RFC2616_SEPARATOR;
+      continue;
+
+    case RFC2616_SEPARATOR:
+      clen = strspn(p, rfc2616_nonws_separator_charset);
+      if (clen)
+        memmove(begin_word, p, clen);
+      if (!clen) {
+        char *q = skip_lws(p);
+        if (q > p)
+          *begin_word++ = ' ';
+        else
+          // tokens (and quoted strings) MUST be separated by at least 1 separator
+          return -1;
+        p = q;
+      } else {
+        p += clen;
+        begin_word += clen;
+      }
+      field_mode = RFC2616_TOKEN;
+      continue;
+
+    case RFC2616_QSTRING:
+      *begin_word++ = '"';
+      while (*p) {
+        if (*p == '"') {
+          *begin_word++ = *p++;
+          field_mode = RFC2616_SEPARATOR;
+          break;
+        } else if (*p == '\\') {
+          if (p[1] < 0 || p[1] >= 128)
+            return -1;
+          *begin_word++ = *p++;
+          *begin_word++ = *p++;
+        } else if (*p >= ' ' && *p < 128) {
+          *begin_word++ = *p++;
+        } else if (*p == '\r' || *p == '\n') {
+          p = skip_lws(p);
+          *begin_word++ = ' ';
+        } else {
+          // MUST be escaped to be POSSIBLY legal inside quoted-string
+          return -1;
+        }
+      }
+      if (field_mode != RFC2616_SEPARATOR)
+        return -1; // quoted-string not terminated correctly!
+      continue;
+    }
+  }
+  *begin_word = 0;
+
+  if (value_ref) {
+    *value_ref = te;
+  }
+
+  return 0;
+}
+
 // Skip the characters until one of the delimiters characters found.
-// 0-terminate resulting word. Skip the delimiter and following whitespace if any.
+// 0-terminate resulting word. Skip the trailing delimiters if any.
 // Advance pointer to buffer to the next word. Return found 0-terminated word.
-// Delimiters can be quoted with quotechar.
-static char *skip_quoted(char **buf, const char *delimiters,
-                         const char *whitespace, char quotechar) {
-  char *p, *begin_word, *end_word, *end_whitespace;
+static char *skip(char **buf, const char *delimiters) {
+  char *begin_word, *end_word;
 
   begin_word = *buf;
   end_word = begin_word + strcspn(begin_word, delimiters);
 
-  // Check for quotechar
-  if (end_word > begin_word) {
-    p = end_word - 1;
-    while (*p == quotechar) {
-      // If there is anything beyond end_word, copy it
-      if (*end_word == '\0') {
-        *p = '\0';
-        break;
-      } else {
-        size_t end_off = strcspn(end_word + 1, delimiters);
-        memmove (p, end_word, end_off + 1);
-        p += end_off; // p must correspond to end_word - 1
-        end_word += end_off + 1;
-      }
-    }
-    for (p++; p < end_word; p++) {
-      *p = '\0';
-    }
-  }
-
   if (*end_word == '\0') {
     *buf = end_word;
   } else {
-    end_whitespace = end_word + 1 + strspn(end_word + 1, whitespace);
-
-    for (p = end_word; p < end_whitespace; p++) {
-      *p = '\0';
-    }
-
-    *buf = end_whitespace;
+    *end_word++ = 0;
+    *buf = end_word + strspn(end_word, delimiters);
   }
 
   return begin_word;
-}
-
-// Simplified version of skip_quoted without quote char
-// and whitespace == delimiters
-static char *skip(char **buf, const char *delimiters) {
-  return skip_quoted(buf, delimiters, delimiters, 0);
 }
 
 
@@ -2236,8 +2497,8 @@ static void vsend_http_error(struct mg_connection *conn, int status,
            (conn->request_info.http_version ? conn->request_info.http_version : "(unknown)"),
            (conn->request_info.request_method ? conn->request_info.request_method : "???"),
            (conn->request_info.uri ? conn->request_info.uri : "???"),
-           (conn->request_info.query_string ? "?" : ""),
-           (conn->request_info.query_string ? conn->request_info.query_string : ""),
+           (!is_empty(conn->request_info.query_string) ? "?" : ""),
+           (!is_empty(conn->request_info.query_string) ? conn->request_info.query_string : ""),
            (p ? p + 1 : ""));
 
     // Errors 1xx, 204 and 304 MUST NOT send a body
@@ -2739,17 +3000,15 @@ static struct dirent *readdir(DIR *dir) {
 
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
-int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
-{
-	int rv = _beginthread((void (__cdecl *)(void *)) func, 0, param) == (uintptr_t)-1L ? -1 : 0;
-	if (rv == 0)
-	{
-		// count this thread too so the master_thread will wait for this one to end as well when we stop.
-		(void) pthread_mutex_lock(&ctx->mutex);
-		ctx->num_threads++;
-		(void) pthread_mutex_unlock(&ctx->mutex);
-	}
-	return rv;
+int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param) {
+  int rv = _beginthread((void (__cdecl *)(void *)) func, 0, param) == (uintptr_t)-1L ? -1 : 0;
+  if (rv == 0) {
+    // count this thread too so the master_thread will wait for this one to end as well when we stop.
+    (void) pthread_mutex_lock(&ctx->mutex);
+    ctx->num_threads++;
+    (void) pthread_mutex_unlock(&ctx->mutex);
+  }
+  return rv;
 }
 
 static HANDLE dlopen(const char *dll_name, int flags) {
@@ -2912,26 +3171,24 @@ static void set_close_on_exec(int fd) {
   (void) fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
-int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param)
-{
-	int rv;
-	pthread_t thread_id;
-	pthread_attr_t attr;
+int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param) {
+  int rv;
+  pthread_t thread_id;
+  pthread_attr_t attr;
 
-	(void) pthread_attr_init(&attr);
-	(void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-	// TODO(lsm): figure out why mongoose dies on Linux if next line is enabled
-	// (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
+  (void) pthread_attr_init(&attr);
+  (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  // TODO(lsm): figure out why mongoose dies on Linux if next line is enabled
+  // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
 
-	rv = pthread_create(&thread_id, &attr, func, param);
-	if (rv == 0)
-	{
-		// count this thread too so the master_thread will wait for this one to end as well when we stop.
-		(void) pthread_mutex_lock(&ctx->mutex);
-		ctx->num_threads++;
-		(void) pthread_mutex_unlock(&ctx->mutex);
-	}
-	return rv;
+  rv = pthread_create(&thread_id, &attr, func, param);
+  if (rv == 0) {
+    // count this thread too so the master_thread will wait for this one to end as well when we stop.
+    (void) pthread_mutex_lock(&ctx->mutex);
+    ctx->num_threads++;
+    (void) pthread_mutex_unlock(&ctx->mutex);
+  }
+  return rv;
 }
 
 #ifndef NO_CGI
@@ -3144,7 +3401,7 @@ static int wait_until_socket_is_readable(struct mg_connection *conn) {
   int result;
   struct timeval tv;
   fd_set set;
-  
+
   do {
     tv.tv_sec = 0;
     tv.tv_usec = 300 * 1000;
@@ -3562,11 +3819,13 @@ int mg_get_var(const char *buf, size_t buf_len, const char *name,
   assert(dst);
   assert(dst_len > 0);
   dst[0] = '\0';
-  if (buf == NULL || name == NULL || buf_len == 0)
+  if (buf == NULL || name == NULL)
     return -1;
   name_len = strlen(name);
   if (buf_len == (size_t)-1)
     buf_len = strlen(buf);
+  if (buf_len == 0)
+    return -1;
   e = buf + buf_len;
   len = -1;
 
@@ -4180,11 +4439,12 @@ static FILE *open_auth_file(struct mg_connection *conn, const char *path) {
   return fp;
 }
 
-// Parsed Authorization header
+// Parsed RFC2617 Authorization request header cf. sec. 3.2.2
 struct ah {
-  char *user, *uri, *cnonce, *response, *qop, *nc, *nonce;
+  char *user, *uri, *cnonce, *response, *qop, *nc, *nonce, *opaque;
 };
 
+// Return 1 on success. ALWAYS initializes the 'ah' struct.
 static int parse_auth_header(struct mg_connection *conn, char *buf,
                              size_t buf_size, struct ah *ah) {
   char *name, *value, *s;
@@ -4202,25 +4462,22 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
 
   s = buf;
   // Parse authorization header
-  for (;;) {
+  while (*s) {
+    char sep;
+
     // Gobble initial spaces
-    while (isspace(* (unsigned char *) s)) {
-      s++;
-    }
-    name = skip_quoted(&s, "=", " ", 0);
-    // Value is either quote-delimited, or ends at first comma or space.
-    if (s[0] == '\"') {
-      s++;
-      value = skip_quoted(&s, "\"", " ", '\\');
-      if (s[0] == ',') {
-        s++;
-      }
-    } else {
-      value = skip_quoted(&s, ", ", " ", 0);  // IE uses commas, FF uses spaces
-    }
-    if (*name == '\0') {
-      break;
-    }
+    s = skip_lws(s);
+
+    if (mg_extract_token_qstring_value(&s, &sep, &name, &value, "") < 0)
+      return -1;
+    if (sep && !strchr(",; ", sep))
+      return -1;
+    // 's + !!sep' is important, because "a=b,c=d" type input will have
+    // NULled that ',' (but stored it in 'sep') and 's' would be
+    // pointing at that (inserted) NUL then, while sep==NUL indicates that
+    // the true end of the original string has been reached, and a
+    // simple 's+1' would have been disasterous then:
+    s += strspn(s + !!sep, ",; ");   // IE uses commas, FF uses spaces
 
     if (!strcmp(name, "username")) {
       ah->user = value;
@@ -4236,6 +4493,8 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
       ah->nc = value;
     } else if (!strcmp(name, "nonce")) {
       ah->nonce = value;
+    } else if (!strcmp(name, "opaque")) {
+      ah->opaque = value;
     }
   }
 
@@ -4249,13 +4508,16 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   return 1;
 }
 
+#define MG_STRINGIZE(v)  #v
+#define USRDMNPWD_BUFSIZ_STR    MG_STRINGIZE(USRDMNPWD_BUFSIZ)
+
 // Authorize against the opened passwords file or user callback.
 // (The user callback takes precedence.)
 //
 // Return 1 if authorized.
 static int authorize(struct mg_connection *conn, FILE *fp) {
   struct ah ah;
-  char line[256], f_user[256], ha1[256], f_domain[256], buf[MG_BUF_LEN];
+  char line[USRDMNPWD_BUFSIZ * 3 + 3], f_user[USRDMNPWD_BUFSIZ + 1], ha1[USRDMNPWD_BUFSIZ + 1], f_domain[USRDMNPWD_BUFSIZ + 1], buf[MG_BUF_LEN];
   const char *auth_domain;
   int rv;
 
@@ -4269,6 +4531,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
                     ah.uri, ah.nonce,
                     ah.nc, ah.cnonce,
                     ah.qop, ah.response,
+                    ah.opaque,
                     ha1, sizeof(ha1));
     if (m == 2)
       return 1;
@@ -4290,7 +4553,8 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
     // Loop over passwords file
     rv = 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
-      if (sscanf(line, "%[^:]:%[^:]:%s", f_user, f_domain, ha1) != 3) {
+      if (sscanf(line, "%" USRDMNPWD_BUFSIZ_STR "[^:]:%" USRDMNPWD_BUFSIZ_STR "[^:]:%" USRDMNPWD_BUFSIZ_STR "s",
+                 f_user, f_domain, ha1) != 3) {
         continue;
       }
 
@@ -4310,7 +4574,7 @@ static int authorize(struct mg_connection *conn, FILE *fp) {
   return check_password(
         conn->request_info.request_method,
         ha1, ah.uri, ah.nonce, ah.nc, ah.cnonce, ah.qop,
-        ah.response);
+        ah.response /* ah.opaque is unused */ );
 }
 
 // Return 1 if request method is allowed, 0 otherwise.
@@ -4396,7 +4660,7 @@ static int is_authorized_for_put(struct mg_connection *conn) {
 int mg_modify_passwords_file(const char *fname, const char *domain,
                              const char *user, const char *pass) {
   int found;
-  char line[512], u[512], d[512], ha1[33], tmp[PATH_MAX];
+  char line[USRDMNPWD_BUFSIZ * 3 + 3], u[USRDMNPWD_BUFSIZ + 1], d[USRDMNPWD_BUFSIZ + 1], ha1[33], tmp[PATH_MAX];
   FILE *fp, *fp2;
 
   found = 0;
@@ -4424,7 +4688,7 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
 
   // Copy the stuff to temporary file
   while (fgets(line, sizeof(line), fp) != NULL) {
-    if (sscanf(line, "%[^:]:%[^:]:%*s", u, d) != 2) {
+    if (sscanf(line, "%" USRDMNPWD_BUFSIZ_STR "[^:]:%" USRDMNPWD_BUFSIZ_STR "[^:]:%*s", u, d) != 2) {
       continue;
     }
 
@@ -4522,7 +4786,7 @@ static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
   const char *query_string = a->conn->request_info.query_string;
   int cmp_result = 0;
 
-  if (query_string == NULL) {
+  if (is_empty(query_string)) {
     query_string = "na";
   }
 
@@ -4627,8 +4891,8 @@ static void handle_directory_request(struct mg_connection *conn,
     return;
   }
 
-  sort_direction = conn->request_info.query_string != NULL &&
-        conn->request_info.query_string[1] == 'd' ? 'a' : 'd';
+  sort_direction = (!is_empty(conn->request_info.query_string) &&
+                    conn->request_info.query_string[1] == 'd') ? 'a' : 'd';
 
   //mg_set_response_code(conn, 200); -- not needed any longer
   //mg_add_response_header(conn, 0, "Connection", "%s", suggest_connection_header(conn)); -- not needed any longer
@@ -4855,17 +5119,19 @@ int mg_send_file(struct mg_connection *conn, const char *path) {
 // Parse HTTP headers from the given buffer, advance buffer to the point
 // where parsing stopped.
 //
-// Return the number of headers parsed.
+// Return the number of headers parsed, or -1 on parse error (invalid headers).
 static int parse_http_headers(char **buf, struct mg_header *headers, int max_header_count) {
+  char *p;
   int i;
 
-  for (i = 0; i < max_header_count; i++) {
-    headers[i].name = skip_quoted(buf, ":", " ", 0);
-    headers[i].value = skip(buf, "\r\n");
-    if (headers[i].name[0] == '\0') {
-      break;
-    }
+  for (i = 0; **buf && i < max_header_count; i++) {
+    if (mg_extract_raw_http_header(buf, &headers[i].name, &headers[i].value) < 0)
+      return -1;
   }
+  p = *buf;
+  p += strspn(p, "\r\n");
+  *buf = p;
+
   return i;
 }
 
@@ -4886,6 +5152,11 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
   }
   ri->request_method = skip(&buf, " ");
   ri->uri = skip(&buf, " ");
+  if ((ri->query_string = strchr(ri->uri, '?')) != NULL) {
+    *ri->query_string++ = '\0';
+  } else {
+    ri->query_string = "";
+  }
   ri->http_version = skip(&buf, "\r\n");
   ri->num_headers = 0;
 
@@ -4893,6 +5164,10 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
       !strncmp(ri->http_version, "HTTP/", 5)) {
     ri->http_version += 5;   // Skip "HTTP/"
     ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
+    if (ri->num_headers < 0) {
+      ri->num_headers = 0;
+      return -1;
+    }
   } else {
     return -1;
   }
@@ -5003,29 +5278,29 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
     //rv = read_request(NULL, conn, buf, bufsiz, &conn->rx_buffer_loaded_len);
     n = 1;
     // make sure to skip the possible leading CRLF by blowing it away
-	//
-	// WARNING:
-	// also blow it entirely away when it was already partly blasted in the previous
-	// round in this outer loop when the buffer space was overflowing and hence data
-	// has been shifted (do_shift = 1): this can happen right smack in the middle
-	// of a CRLF pair, so we MUST regard them as independent.
-	// (This cuts into our flexibility to tolerate non-complaint peers, who don't send
-	//  CRLF but LF-only. Alas. Let them b0rk.)
-	if (conn->rx_buffer_loaded_len >= 2) {
+    //
+    // WARNING:
+    // also blow it entirely away when it was already partly blasted in the previous
+    // round in this outer loop when the buffer space was overflowing and hence data
+    // has been shifted (do_shift = 1): this can happen right smack in the middle
+    // of a CRLF pair, so we MUST regard them as independent.
+    // (This cuts into our flexibility to tolerate non-complaint peers, who don't send
+    //  CRLF but LF-only. Alas. Let them b0rk.)
+    if (conn->rx_buffer_loaded_len >= 2) {
       if (buf[0] == '\r' || buf[0] == '\n')
         buf[0] = ' ';
       if (buf[1] == '\r' || buf[1] == '\n')
         buf[1] = ' ';
       e = memchr(buf, '\n', conn->rx_buffer_loaded_len);
-	} else {
-	  e = NULL;
-	}
+    } else {
+      e = NULL;
+    }
     while (conn->rx_buffer_loaded_len < bufsiz && e == NULL && n > 0) {
       n = pull(NULL, conn, buf + conn->rx_buffer_loaded_len, bufsiz - conn->rx_buffer_loaded_len);
       if (n > 0) {
         conn->rx_buffer_loaded_len += n;
         // make sure to skip the possible leading CRLF by blowing it away:
-	    if (conn->rx_buffer_loaded_len >= 2) {
+        if (conn->rx_buffer_loaded_len >= 2) {
           if (buf[0] == '\r' || buf[0] == '\n')
             buf[0] = ' ';
           if (buf[1] == '\r' || buf[1] == '\n')
@@ -5049,8 +5324,8 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         return -1;  // invalid or overlarge chunk header
       }
       do_shift = 1;
-	  shift_hit++;
-	  //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
+      shift_hit++;
+      //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
       continue;
     }
     rv = e - buf + 1; // ~ request_len
@@ -5062,7 +5337,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
       conn->rx_buffer_read_len += offset;
       return -1;
     }
-	assert(buf[1] != ' ' ? rv > 2 : 1);
+    assert(buf[1] != ' ' ? rv > 2 : 1);
 
     buf[rv - 1] = 0;  // turn chunk header into a C string for further processing
     p = buf;
@@ -5105,8 +5380,8 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
-		shift_tail_hit++;
-	    DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
+        shift_tail_hit++;
+        DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
 
@@ -5116,7 +5391,8 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
       buf[trail - 1] = 0;
       p += strspn(p, "\r\n");
       hdr_count = parse_http_headers(&p, chunk_headers, ARRAY_SIZE(chunk_headers));
-
+      if (hdr_count < 0)
+        return -2;
       rv = trail;
     } else {
       // read_request() calls pull() so we must account for the bytes read ourselves here.
@@ -5410,7 +5686,7 @@ static int prepare_cgi_environment(struct mg_connection *conn,
   if ((s = mg_get_header(conn, "Content-Type")) != NULL)
     addenv(blk, "CONTENT_TYPE=%s", s);
 
-  if (is_empty(conn->request_info.query_string))
+  if (!is_empty(conn->request_info.query_string))
     addenv(blk, "QUERY_STRING=%s", conn->request_info.query_string);
 
   if ((s = mg_get_header(conn, "Content-Length")) != NULL)
@@ -5578,6 +5854,10 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog) {
   pbuf = buf;
   buf[headers_len - 1] = '\0';
   cgi_header_count = parse_http_headers(&pbuf, cgi_headers, ARRAY_SIZE(cgi_headers));
+  if (cgi_header_count < 0) {
+    send_http_error(conn, 500, NULL, "CGI program sent malformed HTTP headers");
+    goto done;
+  }
 
   // the CGI app might send the data to us in chunked mode too!
   status = get_header(cgi_headers, cgi_header_count, "Transfer-Encoding");
@@ -6190,9 +6470,6 @@ static void handle_request(struct mg_connection *conn) {
   int stat_result, uri_len;
   struct mgstat st;
 
-  if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
-    *conn->request_info.query_string++ = '\0';
-  }
   uri_len = (int)strlen(ri->uri);
   url_decode(ri->uri, (size_t)uri_len, ri->uri, (size_t)(uri_len + 1), 0);
   remove_double_dots_and_double_slashes(ri->uri);
@@ -6322,6 +6599,11 @@ int mg_produce_nested_page(struct mg_connection *conn, const char *uri, size_t u
 
     conn->request_info.uri = expanded_uri;
     conn->request_info.request_method = "GET";
+    if ((conn->request_info.query_string = strchr(conn->request_info.uri, '?')) != NULL) {
+      *conn->request_info.query_string++ = '\0';
+    } else {
+      conn->request_info.query_string = "";
+    }
     conn->request_info.parent = &ri;
     // nuke any Content-Length or Transfer-Encoding header, to prevent the 'nested' handler
     // from incorrectly trying to (re)fetching the request content again.
@@ -6974,7 +7256,7 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
     ri->remote_user = NULL;
   }
   ri->request_method = NULL;
-  ri->query_string = NULL;
+  ri->query_string = "";
   ri->uri = NULL;
   ri->http_version = NULL;
   ri->phys_path = NULL;
@@ -7470,6 +7752,10 @@ int mg_read_http_response(struct mg_connection *conn) {
   if (strncmp(ri->http_version, "HTTP/", 5) == 0) {
     ri->http_version += 5;   // Skip "HTTP/"
     ri->num_headers = parse_http_headers(&buf, ri->http_headers, ARRAY_SIZE(ri->http_headers));
+    if (ri->num_headers < 0) {
+      ri->num_headers = 0;
+      return -7; // HTTP response contains invalid headers
+    }
   } else {
     return -4; // Cannot parse HTTP response
   }
@@ -7528,9 +7814,9 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
   FILE *fp = NULL;
 
   if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) == 3) {
-	is_ssl = (mg_strcasecmp(proto, "https") == 0);
+    is_ssl = (mg_strcasecmp(proto, "https") == 0);
   } else if (sscanf(url, "%9[htps]://%1024[^/]/%n", proto, host, &n) == 2) {
-	is_ssl = (mg_strcasecmp(proto, "https") == 0);
+    is_ssl = (mg_strcasecmp(proto, "https") == 0);
     port = (is_ssl ? 443 : 80);
   } else {
     mg_cry(fc(ctx), "%s: invalid URL: [%s]", __func__, url);
@@ -7538,74 +7824,74 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
   }
 
   if (conn_ref) {
-	conn = *conn_ref;
-	is_persistent_conn = (conn != NULL);
+    conn = *conn_ref;
+    is_persistent_conn = (conn != NULL);
   } else {
-	is_persistent_conn = 0;
+    is_persistent_conn = 0;
   }
   if (conn == NULL &&
-	  (conn = mg_connect(ctx, host, port, (is_ssl ? MG_CONNECT_USE_SSL : 0) | MG_CONNECT_HTTP_IO)) == NULL) {
+      (conn = mg_connect(ctx, host, port, (is_ssl ? MG_CONNECT_USE_SSL : 0) | MG_CONNECT_HTTP_IO)) == NULL) {
     mg_cry(fc(ctx), "%s: mg_connect(%s): %s", __func__, url, mg_strerror(ERRNO));
   } else {
     mg_add_tx_header(conn, 0, "Host", host);
     //mg_add_tx_header(conn, 0, "Connection", "close");
-	if (!is_persistent_conn) {
-	  conn->must_close = 1;
-	} else {
+    if (!is_persistent_conn) {
+      conn->must_close = 1;
+    } else {
       mg_add_tx_header(conn, 0, "Content-Length", "0");
-	}
+    }
 
     rv = mg_write_http_request_head(conn, "GET", "%s", url + n);
     if (rv <= 0) {
       mg_cry(fc(ctx), "%s(%s): failed to send the HTTP request", __func__, url);
-	} else {
-	  assert(!strcmp(conn->request_info.http_version, "1.1"));
+    } else {
+      assert(!strcmp(conn->request_info.http_version, "1.1"));
 
       // signal request phase done:
-	  if (!is_persistent_conn)
+      if (!is_persistent_conn)
         mg_shutdown(conn, SHUT_WR);
-    
-	  // fetch response, blocking I/O:
+
+      // fetch response, blocking I/O:
       //
       // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
       rv = mg_read_http_response(conn);
       if (rv < 0) {
         mg_cry(fc(ctx), "%s(%s): invalid HTTP reply or invalid HTTP response headers, error code %d", __func__, url, rv);
-	  } else if ((fp = fopen(path, "w+b")) == NULL) {
+      } else if ((fp = fopen(path, "w+b")) == NULL) {
         mg_cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, mg_strerror(ERRNO));
       } else {
         // Read all response data and store in the file:
-		do {
-		  nread = mg_read(conn, buf2, sizeof(buf2));
-		  if (nread <= 0) {
+        do {
+          nread = mg_read(conn, buf2, sizeof(buf2));
+          if (nread <= 0) {
             mg_cry(fc(ctx), "%s(%s): failed to read data, connection may have been closed prematurely by the server: %s", __func__, url, mg_strerror(ERRNO));
-			break;
-		  }
-		  nwrite = push(fp, NULL, buf2, nread);
-		  if (nwrite != nread) {
-			nread = -1;
+            break;
+          }
+          nwrite = push(fp, NULL, buf2, nread);
+          if (nwrite != nread) {
+            nread = -1;
             mg_cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, mg_strerror(ERRNO));
-			break;
-		  }
-		} while (nread > 0);
+            break;
+          }
+        } while (nread > 0);
 
-		if (nread < 0) {
-		  fclose(fp);
-		  fp = NULL;
+        if (nread < 0) {
+          fclose(fp);
+          fp = NULL;
 
-		  // make sure corrupt file doesn't remain
-		  mg_remove(path);
-		}
-	  }
-	}
+          // make sure corrupt file doesn't remain
+          mg_remove(path);
+        }
+      }
+    }
     if (!conn_ref) {
       mg_close_connection(conn);
-	  conn = NULL;
-	}
+      conn = NULL;
+    }
   }
 
   if (conn_ref) {
-	*conn_ref = conn;
+    *conn_ref = conn;
   }
 
   return fp;
@@ -7693,7 +7979,7 @@ static int process_new_connection(struct mg_connection *conn) {
     conn->rx_buffer_loaded_len = data_len - conn->request_len;
     conn->rx_buffer_read_len = 0;
 
-    // Nul-terminate the request cause parse_http_request() is C-string based
+    // NUL-terminate the request cause parse_http_request() is C-string based
     conn->buf[conn->request_len - 1] = '\0';
     if (parse_http_request(conn->buf, ri) ||
         !is_valid_uri(ri->uri)) {

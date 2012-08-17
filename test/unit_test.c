@@ -19,7 +19,7 @@
 
 #define ASSERT_STREQ(str1, str2)                                            \
     do {                                                                    \
-      if (strcmp(str1, str2)) {                                             \
+      if (!(str1) || !(str2) || strcmp(str1, str2)) {                       \
         printf("Fail on line %d: strings not matching: "                    \
                "inp:\"%s\" != ref:\"%s\"\n",                                \
                __LINE__, str1, str2);                                       \
@@ -46,7 +46,7 @@ static void test_parse_http_request() {
   char req1[] = "GET / HTTP/1.1\r\n\r\n";
   char req2[] = "BLAH / HTTP/1.1\r\n\r\n";
   char req3[] = "GET / HTTP/1.1\r\nBah\r\n";
-  char req4[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\nbaz\r\n\r\n";
+  char req4[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\n baz\r\n\r\n";
   // as parse_http_request() will be fed NUL-terminated string which can have the terminating double CRLF damaged:
   char req5[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\n\r";
   char req6[] = "GET / HTTP/1.1\r\nA: foo bar\r\nB: bar\r\n";
@@ -69,28 +69,625 @@ static void test_parse_http_request() {
   ASSERT(parse_http_request(req2, &ri) == -1);
   ASSERT(parse_http_request(req3, &ri) == -1);
 
-  // TODO(lsm): Fix this. Header value may span multiple lines.
+  // Header value may span multiple lines.
   ASSERT(parse_http_request(req4, &ri) == 0);
-  ASSERT(ri.num_headers == 3);
+  ASSERT(ri.num_headers == 2);
   ASSERT_STREQ(ri.http_headers[0].name, "A");
   ASSERT_STREQ(ri.http_headers[0].value, "foo bar");
   ASSERT_STREQ(ri.http_headers[1].name, "B");
-  ASSERT_STREQ(ri.http_headers[1].value, "bar");
-  ASSERT_STREQ(ri.http_headers[2].name, "baz\r\n\r");
-  ASSERT_STREQ(ri.http_headers[2].value, "");
+  ASSERT_STREQ(ri.http_headers[1].value, "bar baz"); // 'line continuation' cf. RFC2616 sec. 2.2: replaced by single SP space
 
   for (i = 0; i < ARRAY_SIZE(req5_8); i++) {
-	ASSERT(parse_http_request(req5_8[i], &ri) == 0);
-	ASSERT(ri.num_headers == 2);
-	ASSERT_STREQ(ri.http_headers[0].name, "A");
-	ASSERT_STREQ(ri.http_headers[0].value, "foo bar");
-	ASSERT_STREQ(ri.http_headers[1].name, "B");
-	ASSERT_STREQ(ri.http_headers[1].value, "bar");
-	ASSERT_STREQ(ri.http_version, "1.1");
-	ASSERT_STREQ(ri.uri, "/");
-	ASSERT_STREQ(ri.query_string, "");
-	ASSERT_STREQ(ri.request_method, "GET");
+    ASSERT(parse_http_request(req5_8[i], &ri) == 0);
+    ASSERT(ri.num_headers == 2);
+    ASSERT_STREQ(ri.http_headers[0].name, "A");
+    ASSERT_STREQ(ri.http_headers[0].value, "foo bar");
+    ASSERT_STREQ(ri.http_headers[1].name, "B");
+    ASSERT_STREQ(ri.http_headers[1].value, "bar");
+    ASSERT_STREQ(ri.http_version, "1.1");
+    ASSERT_STREQ(ri.uri, "/");
+    ASSERT_STREQ(ri.query_string, "");
+    ASSERT_STREQ(ri.request_method, "GET");
   }
+}
+
+static void test_http_hdr_value_unquoting(void) {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+
+  char *e;
+  char *buf;
+  char sep;
+  int rv;
+  int tt, n;
+
+  for (tt = 0; tt < 2; tt++) {
+    char tv1[] = "boo";
+    char tv2[] = "=boo";
+    char tv3[] = "x\r\n \r\n";
+    char tv4[] = "\"boo bongo \\\"bear\\\"\\\\\"\r\n";
+    char tv5[] = "\"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
+    char tv6[] = "a=b,c=d;e=f g=h";
+    char tv7[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
+    char tv8[] = "bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+    char tv9[] = "foo_min.1-2      \r\n\r";
+    char tv10[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+    // NOTE: CTL (\r\n etc.) chars are ALWAYS ILLEGAL as input to mg_unquote_header_value() as it expects its input
+    //       to come from mg_extract_raw_http_header() or equivalent processes which already converted LWS to SP.
+    char tv11[] = "\"bar\r\n bar2";
+    char tv12[] = "\"bar\\\r\\\n bar2\"";
+    char tv13[] = "$$foo##: \"bar \\\"bar2\\\"    \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar   da2\"\r\n \r\ncoo:\"car\"";
+    // erroneous cases:
+    char tv14[] = "\"no terminating quote";
+    char tv15[] = "\"escaped NUL is illegal, though RFC2616 sec. 2.2. says it isn't\\";
+    char tv16[] = "\"no terminating quote\\\\";
+    char tv17[] = "\"no terminating quote\\\"";
+    char tv18[] = "\"illegal char in string: \x80";
+    char tv19[] = "\"illegal char in string: \xFF";
+    char tv20[] = "illegal-char-in-token-\x80";
+    char tv21[] = "illegal-char-in-token-\xFF";
+    char tv22[] = "no-escapes-in-token-\\x";
+    char tv23[] = "illegal-char-in-token-\"";
+    char tv24[] = "sep-at-end-of-token-@";
+    char tv25[] = "sep-at-end-of-token[1]";
+    char tv26[] = "sep-at-end-of-token{1}";
+    char tv27[] = "sep-at-end-of-token(1)";
+    char tv28[] = "sep-at-end-of-token<1>";
+
+    char **end_ref = (tt ? &e : NULL);
+    char *sep_ref = (tt ? &sep : NULL);
+
+    buf = tv1;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == 0);
+    ASSERT_STREQ(buf, "boo");
+    if (end_ref) {
+      ASSERT(*end_ref == buf + 3);
+      ASSERT(sep == 0);
+      ASSERT(**end_ref == 0);
+    }
+
+    buf = tv2;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "");
+      ASSERT(*end_ref == buf);
+      ASSERT(sep == '=');
+      ASSERT(**end_ref == 0);
+
+      buf = *end_ref + !!sep;
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "boo");
+      ASSERT(sep == 0);
+      ASSERT(**end_ref == 0);
+    } else {
+      ASSERT(rv == -1);
+      ASSERT_STREQ(buf, "=boo");
+    }
+
+    buf = tv3;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == 0);
+    ASSERT_STREQ(buf, "x");
+    if (end_ref) {
+      ASSERT(*end_ref == buf + 1);
+      ASSERT(sep == '\r');
+
+      buf = *end_ref + !!sep;
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "");
+      ASSERT(sep == '\n');
+    }
+
+    buf = tv4;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == 0);
+    ASSERT_STREQ(buf, "boo bongo \"bear\"\\");
+    if (end_ref) {
+      ASSERT(sep == '\r');
+    }
+
+    buf = tv5;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "boo bongo \"bear\"\\");
+      ASSERT(sep == '\r');
+      ASSERT(**end_ref == '\r');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, "\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT_STREQ(buf, "bugger");
+      ASSERT(sep == 0);
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv6;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "a");
+      ASSERT(sep == '=');
+      ASSERT(**end_ref == 0);
+
+      for (n = 1; n < 8; n++) {
+        buf = *end_ref + !!sep;
+        rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+        ASSERT(rv == 0);
+        ASSERT(buf[0] == 'a' + n);
+        ASSERT(strlen(buf) == 1);
+        ASSERT(n % 2 == 0 ? sep == '=' : n == 7 ? sep == 0 : !!strchr(",; ", sep));
+      }
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv7;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "a");
+      ASSERT(sep == '=');
+      ASSERT(**end_ref == 0);
+
+      for (n = 1; n < 8; n++) {
+        buf = *end_ref + !!sep;
+        buf += strspn(buf, " \t\r\n");
+        rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+        ASSERT(rv == 0);
+        ASSERT(buf[0] == 'a' + n);
+        ASSERT(strlen(buf) == 1);
+        ASSERT(n % 2 == 0 ? sep == '=' : n == 7 ? sep == 0 : !!strchr(",; ", sep));
+      }
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    //char tv8[] = "bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+    buf = tv8;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "bar");
+      ASSERT(sep == '\r');
+      ASSERT(**end_ref == 0);
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "bar2");
+      ASSERT(sep == ' ');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "");
+      ASSERT(sep == ';');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "bar3");
+      ASSERT(sep == '\r');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "doo");
+      ASSERT(sep == ':');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "dar");
+      ASSERT(sep == '\r');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "da2");
+      ASSERT(sep == '\r');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "");
+      ASSERT(sep == 0);
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    //char tv9[] = "foo_min.1-2      \r\n\r";
+    buf = tv9;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == 0);
+    ASSERT_STREQ(buf, "foo_min.1-2");
+    if (end_ref) {
+      ASSERT(*end_ref == buf + 11);
+      ASSERT(sep == ' ');
+    }
+
+    //char tv10[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+    buf = tv10;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(*end_ref == buf + 11);
+      ASSERT(sep == ':');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "bar");
+      ASSERT(sep == '\r');
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    //char tv11[] = "\"bar\r\n bar2";
+    buf = tv11;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    //char tv12[] = "\"bar\\\r\\\n bar2\"";
+    buf = tv12;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == 0);
+    ASSERT_STREQ(buf, "bar\r\n bar2");
+    if (end_ref) {
+      ASSERT(sep == 0);
+      ASSERT(**end_ref == 0);
+    }
+
+    //char tv13[] = "$$foo##: \"bar \\\"bar2\\\"    \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar   da2\"\r\n \r\ncoo:\"car\"";
+    buf = tv13;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "$$foo##");
+      ASSERT(sep == ':');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "bar \"bar2\"     \\bar3 ");
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "");
+      ASSERT(sep == ',');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, ", \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, " bar4 ");
+      ASSERT(sep == ',');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "d");
+      ASSERT(sep == '=');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, " \t\r\n");
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "e");
+      ASSERT(sep == ',');
+
+      buf = *end_ref + !!sep;
+      buf += strspn(buf, "f=gdo: \t\r\n");  // skip f=g doo: string section
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "dar   da2");
+      ASSERT(sep == '\r');
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv14;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv15;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv16;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv17;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv18;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv19;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    ASSERT(rv == -1);
+
+    buf = tv20;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '\x80');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "illegal-char-in-token-");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv21;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '\xFF');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "illegal-char-in-token-");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv22;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '\\');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "no-escapes-in-token-");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv23;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '"');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "illegal-char-in-token-");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv24;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '@');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "sep-at-end-of-token-");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv25;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '[');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "sep-at-end-of-token");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv26;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '{');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "sep-at-end-of-token");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv27;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '(');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "sep-at-end-of-token");
+    } else {
+      ASSERT(rv == -1);
+    }
+
+    buf = tv28;
+    rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+    if (end_ref) {
+      ASSERT(rv == 0);
+      ASSERT(sep == '<');
+      ASSERT(**end_ref == 0);
+      ASSERT_STREQ(buf, "sep-at-end-of-token");
+
+      buf = *end_ref + !!sep;
+      rv = mg_unquote_header_value(buf, sep_ref, end_ref);
+      ASSERT(rv == 0);
+      ASSERT_STREQ(buf, "1");
+      ASSERT(sep == '>');
+      ASSERT(**end_ref == 0);
+    } else {
+      ASSERT(rv == -1);
+    }
+  }
+}
+
+static void test_token_value_extractor(void) {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+
+  char tv1[] = "bla=boo\r\n";
+  char tv2[] = "bla=boo\r\nbugger";
+  char tv3[] = " \tbla =\r\n   boo  \r\nbugger";
+  char tv4[] = " \tb-la.1 = \"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
+  char tv5[] = "a=b,c=d;e=f g=h";
+  char tv6[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
+
+  char hdrs1[] = "foo: bar\r\ndoo    :dar   \r\ncoo:car\r\n";
+  // now with 'line continuation'
+  char hdrs2[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+  // and quoted strings:
+  char hdrs3[] = "$$foo##: \"bar\r\n \\\"bar2\\\"   \r\n  \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar\r\n \r\n \r\n da2\"\r\n \r\ncoo:\"car\"";
+
+  char *value, *name, *e;
+  struct mg_header hdrs[64];
+  char *buf;
+  char sep;
+  int rv;
+
+  name = value = NULL;
+  buf = tv1;
+  e = buf + strlen(buf);
+  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+  ASSERT(rv == 0);
+  ASSERT_STREQ(name, "bla");
+  ASSERT_STREQ(value, "boo");
+  ASSERT(sep == 0);
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+
+  // implicitly tests mg_extract_raw_http_header():
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs1;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 3);
+  ASSERT_STREQ(hdrs[0].name, "foo");
+  ASSERT_STREQ(hdrs[0].value, "bar");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "dar");
+  ASSERT_STREQ(hdrs[2].name, "coo");
+  ASSERT_STREQ(hdrs[2].value, "car");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs2;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 2);
+  ASSERT_STREQ(hdrs[0].name, "foo_min.1-2");
+  ASSERT_STREQ(hdrs[0].value, "bar bar2 ; bar3");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "dar da2");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs3;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 3);
+  ASSERT_STREQ(hdrs[0].name, "$$foo##");
+  ASSERT_STREQ(hdrs[0].value, "\"bar \\\"bar2\\\"    \\ \\\\bar3 \" ,, ,, \" bar4 \",d=e,f=g");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "\"dar da2\"");
+  ASSERT_STREQ(hdrs[2].name, "coo");
+  ASSERT_STREQ(hdrs[2].value, "\"car\"");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+}
+
+static void test_http_header_extractor(void) {
+  struct mg_context ctx_fake = {0};
+  struct mg_context *ctx = &ctx_fake;
+
+  char tv1[] = "bla=boo\r\n";
+  char tv2[] = "bla=boo\r\nbugger";
+  char tv3[] = " \tbla =\r\n   boo  \r\nbugger";
+  char tv4[] = " \tb-la.1 = \"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
+  char tv5[] = "a=b,c=d;e=f g=h";
+  char tv6[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
+
+  char hdrs1[] = "foo: bar\r\ndoo    :dar   \r\ncoo:car\r\n";
+  // now with 'line continuation'
+  char hdrs2[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
+  // and quoted strings:
+  char hdrs3[] = "$$foo##: \"bar\r\n \\\"bar2\\\"   \r\n  \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar\r\n \r\n \r\n da2\"\r\n \r\ncoo:\"car\"";
+
+  char *value, *name, *e;
+  struct mg_header hdrs[64];
+  char *buf;
+  char sep;
+  int rv;
+
+  name = value = NULL;
+  buf = tv1;
+  e = buf + strlen(buf);
+  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+  ASSERT(rv == 0);
+  ASSERT_STREQ(name, "bla");
+  ASSERT_STREQ(value, "boo");
+  ASSERT(sep == 0);
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+
+  // implicitly tests mg_extract_raw_http_header():
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs1;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 3);
+  ASSERT_STREQ(hdrs[0].name, "foo");
+  ASSERT_STREQ(hdrs[0].value, "bar");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "dar");
+  ASSERT_STREQ(hdrs[2].name, "coo");
+  ASSERT_STREQ(hdrs[2].value, "car");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs2;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 2);
+  ASSERT_STREQ(hdrs[0].name, "foo_min.1-2");
+  ASSERT_STREQ(hdrs[0].value, "bar bar2 ; bar3");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "dar da2");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
+
+  memset(hdrs, 0, sizeof(hdrs));
+  buf = hdrs3;
+  e = buf + strlen(buf);
+  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
+  ASSERT(rv == 3);
+  ASSERT_STREQ(hdrs[0].name, "$$foo##");
+  ASSERT_STREQ(hdrs[0].value, "\"bar \\\"bar2\\\"    \\ \\\\bar3 \" ,, ,, \" bar4 \",d=e,f=g");
+  ASSERT_STREQ(hdrs[1].name, "doo");
+  ASSERT_STREQ(hdrs[1].value, "\"dar da2\"");
+  ASSERT_STREQ(hdrs[2].name, "coo");
+  ASSERT_STREQ(hdrs[2].value, "\"car\"");
+  ASSERT_STREQ(buf, "");
+  ASSERT(buf == e);
 }
 
 static void test_should_keep_alive(void) {
@@ -210,14 +807,14 @@ static void *fetch_callback(enum mg_event event,
     mg_printf(conn, "HTTP/1.1 200 OK\r\n"
               "Content-Length: %d\r\n"
               "Content-Type: text/plain\r\n\r\n",
-			  (int) strlen(fetch_data));
-	mg_mark_end_of_header_transmission(conn);
-	mg_printf(conn, "%s", fetch_data);
+              (int) strlen(fetch_data));
+    mg_mark_end_of_header_transmission(conn);
+    mg_printf(conn, "%s", fetch_data);
     return "";
   } else if (event == MG_EVENT_LOG) {
     printf("%s\n", request_info->log_message);
   }
-  
+
   return NULL;
 }
 
@@ -237,7 +834,7 @@ static void test_mg_fetch(void) {
   FILE *fp;
   struct mg_user_class_t ucb = {
     NULL,
-	fetch_callback
+    fetch_callback
   };
 
   ASSERT((ctx = mg_start(&ucb, options)) != NULL);
@@ -582,12 +1179,24 @@ static void test_header_processing()
   c.ctx = ctx;
 
   strcpy(buf, input);
-
   rv = get_request_len(buf, (int)strlen(buf));
   ASSERT(rv > 0 && rv < (int)strlen(buf));
   ASSERT(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
   buf[rv] = 0;
   p = buf;
+  // fail due to HTTP/xxx head not being skipped: that is not a header!
+  c.request_info.num_headers = parse_http_headers(&p, c.request_info.http_headers, ARRAY_SIZE(c.request_info.http_headers));
+  ASSERT(p == buf);
+  ASSERT(c.request_info.num_headers == -1);
+
+  strcpy(buf, input);
+  rv = get_request_len(buf, (int)strlen(buf));
+  ASSERT(rv > 0 && rv < (int)strlen(buf));
+  ASSERT(strstr(buf + rv, "<HTML><HEAD>") == buf + rv);
+  buf[rv] = 0;
+  p = buf;
+  p += strcspn(p, "\r\n");
+  p += strspn(p, "\r\n");
   c.request_info.num_headers = parse_http_headers(&p, c.request_info.http_headers, ARRAY_SIZE(c.request_info.http_headers));
   ASSERT(p > buf);
   ASSERT(*p == 0);
@@ -879,6 +1488,7 @@ static void test_response_header_rw() {
   ASSERT(rv >= 0);
   ASSERT(conn->tx_headers_len == 87);
   ASSERT(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ == conn->request_info.uri);
+  ASSERT_STREQ(conn->request_info.uri, "/oh-boy");
   ASSERT_STREQ(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ, "/oh-boy");
   ASSERT(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ + 8 == conn->request_info.query_string);
   ASSERT_STREQ(conn->buf + bufsiz + CHUNK_HEADER_BUFSIZ + 8, "what=shall&I=do.now");
@@ -894,7 +1504,22 @@ static void test_response_header_rw() {
 }
 
 
+static int test_client_connect_expect_error = 0;
 
+static void *test_client_event_handler(enum mg_event event, struct mg_connection *conn) {
+  struct mg_request_info *ri = mg_get_request_info(conn);
+
+  if (event == MG_EVENT_LOG) {
+    if (test_client_connect_expect_error == 1) {
+      const char *emsg = ri->log_message;
+      if (strstr(emsg, "content data bytes beyond the END of a chunked transfer")) {
+        test_client_connect_expect_error = 0;
+        fprintf(stderr, "### EXPECTED error! This is part of the test suite! ###\n");
+      }
+    }
+  }
+  return 0;
+}
 
 
 static void test_client_connect() {
@@ -906,6 +1531,9 @@ static void test_client_connect() {
   int rv;
   const char *cookies[16];
   int cl;
+
+  ctx_fake.user_functions.user_callback = test_client_event_handler;
+  test_client_connect_expect_error = 0;
 
   printf("=== TEST: %s ===\n", __func__);
 
@@ -1077,8 +1705,10 @@ static void test_client_connect() {
   ASSERT(mg_get_tx_chunk_no(conn) == 1);
 
   // now try to write past the EOF! This should fire off an error message.
+  test_client_connect_expect_error = 1;
   rv = mg_printf(conn, "bugger!");
   ASSERT(rv == 0);
+  ASSERT(test_client_connect_expect_error == 0);
 
   // fetch response, blocking I/O:
   //
@@ -1110,7 +1740,7 @@ static void test_client_connect() {
 
   ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
   ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "keep-alive"));
-  
+
   // explicitly set chunked mode; the header writing logic should catch up:
   mg_set_tx_mode(conn, MG_IOMODE_CHUNKED_DATA);
 
@@ -1446,93 +2076,93 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 static int gcl[3] = {0};
 
 static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
-  struct mg_context *ctx = mg_get_context(conn); 
+  struct mg_context *ctx = mg_get_context(conn);
 
   if (chunk_size == 0 && !conn->is_client_conn) {
-	// This section is a special hack to force mongoose into the buffer overflow
-	// edge condition, where mongoose MUST decide to 'shift' the buffered data
-	// in order to load a full chunk header:
-	// to accomplish this, our test code must DISABLE mongoose mg_write()
-	// intelligence as we need to construct a single send() by hand to guarantee
-	// that the other test thread (main loop) will pull() in this series of
-	// chunks (headers + data) all at once: that is the only way to ensure that
-	// the main thread MAY run into this buffer overflow edge condition in a
-	// predictible fashion.
+    // This section is a special hack to force mongoose into the buffer overflow
+    // edge condition, where mongoose MUST decide to 'shift' the buffered data
+    // in order to load a full chunk header:
+    // to accomplish this, our test code must DISABLE mongoose mg_write()
+    // intelligence as we need to construct a single send() by hand to guarantee
+    // that the other test thread (main loop) will pull() in this series of
+    // chunks (headers + data) all at once: that is the only way to ensure that
+    // the main thread MAY run into this buffer overflow edge condition in a
+    // predictible fashion.
 
-	// are we in a state where connexpects to send a chunk header?
-    ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_HEADER); 
-	// HACK:
-	// make mg_write() think we're writing a chunk header. 
-	// In actual fact, we're sending a whole bunch of 'em + data!
-    ASSERT(conn->tx_chunk_header_sent == 2); 
+    // are we in a state where connexpects to send a chunk header?
+    ASSERT(mg_get_tx_mode(conn) == MG_IOMODE_CHUNKED_HEADER);
+    // HACK:
+    // make mg_write() think we're writing a chunk header.
+    // In actual fact, we're sending a whole bunch of 'em + data!
+    ASSERT(conn->tx_chunk_header_sent == 2);
 
-	// construct a chunk header + data series large enough to flood the read/pull() buffer.
-	if (01)
-	{
-		int flood_bufsiz = conn->buf_size * 4;
-		char *flood_buf = (char *)malloc(flood_bufsiz + 512);
-		int todo;
-		int sn;
-		char *p = flood_buf;
-		int c = mg_get_tx_chunk_no(conn);
+    // construct a chunk header + data series large enough to flood the read/pull() buffer.
+    if (01)
+    {
+      int flood_bufsiz = conn->buf_size * 4;
+      char *flood_buf = (char *)malloc(flood_bufsiz + 512);
+      int todo;
+      int sn;
+      char *p = flood_buf;
+      int c = mg_get_tx_chunk_no(conn);
 
-		ASSERT(flood_buf);
-		for (todo = flood_bufsiz; ; )
-		{
-			// produce a semi-chaotic chunk size to maximize the chance to hit both edge cases:
-			// 1) buffer overflow --> do_shift=1 for a regular chunk
-			// 2) buffer overflow during tail (0-length) chunk header parsing --> do_shift=1 for the tail chunk
-			//
-			// Particularly #2 is EXTREMELY hard to hit, but it does happen and that code path
-			// MAY contain bugs (it did before ;-) ); this code, together with the multiple runs
-			// and sequenced requests has been created to maximally exercise the mongoose chunk I/O.
-			int chunk_len = 59; /* gcl[0] */;
+      ASSERT(flood_buf);
+      for (todo = flood_bufsiz; ; )
+      {
+        // produce a semi-chaotic chunk size to maximize the chance to hit both edge cases:
+        // 1) buffer overflow --> do_shift=1 for a regular chunk
+        // 2) buffer overflow during tail (0-length) chunk header parsing --> do_shift=1 for the tail chunk
+        //
+        // Particularly #2 is EXTREMELY hard to hit, but it does happen and that code path
+        // MAY contain bugs (it did before ;-) ); this code, together with the multiple runs
+        // and sequenced requests has been created to maximally exercise the mongoose chunk I/O.
+        int chunk_len = 59; /* gcl[0] */;
 
-			pthread_spin_lock(&chunky_request_spinlock);
-	        chunk_len += (chunky_request_counters.responses_sent * (256 + 18467 /* gcl[1] */) + c) % 37 /* gcl[2] */;
-		    pthread_spin_unlock(&chunky_request_spinlock);
+        pthread_spin_lock(&chunky_request_spinlock);
+        chunk_len += (chunky_request_counters.responses_sent * (256 + 18467 /* gcl[1] */) + c) % 37 /* gcl[2] */;
+        pthread_spin_unlock(&chunky_request_spinlock);
 
-			if (todo < chunk_len)
-				break;
+        if (todo < chunk_len)
+          break;
 
-			sn = mg_snq0printf(conn, p, todo + 512, 
-					((c % 3) == 2 ? 
-					 "\r\n%x;mongoose-ext=oh-la-la-XXX;\r\ntodo=%7u %*s" : 
-					 "\r\n%x\r\ntodo=%7u %*s"),
-					chunk_len, 
-					todo,
-					chunk_len - 6 - 7, "B0rk?");
-			ASSERT(sn > chunk_len);
-			todo -= sn;
-			p += sn;
-			c++;
-		  
-			pthread_spin_lock(&chunky_request_spinlock);
-		    chunky_request_counters.chunks_sent++;
-		    pthread_spin_unlock(&chunky_request_spinlock);
-		}
-		sn = mg_write(conn, flood_buf, p - flood_buf);
-		ASSERT(sn == p - flood_buf);
-		free(flood_buf);
+        sn = mg_snq0printf(conn, p, todo + 512,
+                           ((c % 3) == 2 ?
+                            "\r\n%x;mongoose-ext=oh-la-la-XXX;\r\ntodo=%7u %*s" :
+                            "\r\n%x\r\ntodo=%7u %*s"),
+                           chunk_len,
+                           todo,
+                           chunk_len - 6 - 7, "B0rk?");
+        ASSERT(sn > chunk_len);
+        todo -= sn;
+        p += sn;
+        c++;
 
-		conn->tx_chunk_count = c;
-	}
-	//conn->tx_chunk_header_sent = 0; 
-	//conn->tx_remaining_chunksize = 0; 
+        pthread_spin_lock(&chunky_request_spinlock);
+        chunky_request_counters.chunks_sent++;
+        pthread_spin_unlock(&chunky_request_spinlock);
+      }
+      sn = mg_write(conn, flood_buf, p - flood_buf);
+      ASSERT(sn == p - flood_buf);
+      free(flood_buf);
+
+      conn->tx_chunk_count = c;
+    }
+    //conn->tx_chunk_header_sent = 0;
+    //conn->tx_remaining_chunksize = 0;
   }
 
   // the regular test code, which adds chunk extensions to /some/ chunks:
   {
-	  int c = mg_get_tx_chunk_no(conn);
+    int c = mg_get_tx_chunk_no(conn);
 
-	  pthread_spin_lock(&chunky_request_spinlock);
-	  chunky_request_counters.chunks_sent++;
-	  pthread_spin_unlock(&chunky_request_spinlock);
+    pthread_spin_lock(&chunky_request_spinlock);
+    chunky_request_counters.chunks_sent++;
+    pthread_spin_unlock(&chunky_request_spinlock);
 
-	  // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
-	  if ((c % 3) == 2) {
-		mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
-	  }
+    // generate some custom chunk extensions, semi-randomly, to make sure the decoder can cope as well!
+    if ((c % 3) == 2) {
+      mg_snq0printf(conn, chunk_extensions, dstbuf_size - (chunk_extensions - dstbuf), "mongoose-ext=oh-la-la-%d", c);
+    }
   }
 
   return 0; // run default handler; we were just here to add extensions...
@@ -2020,6 +2650,9 @@ int main(void) {
   test_remove_double_dots();
   test_IPaddr_parsing();
   test_logpath_fmt();
+  test_http_hdr_value_unquoting();
+  test_token_value_extractor();
+  test_http_header_extractor();
   test_header_processing();
   test_should_keep_alive();
   test_parse_http_request();
@@ -2034,41 +2667,43 @@ int main(void) {
 
   test_client_connect();
   test_mg_fetch();
+
   {
-	  int gcl_best[3] = {0};
-	  int gcl_tbest[3] = {0};
-	  int hitc = 0;
-	  int hittc = 0;
-	  for (;;) {
-		  int v0 = rand();
-		  int v1 = rand();
-		  int v2 = rand();
+    int gcl_best[3] = {0};
+    int gcl_tbest[3] = {0};
+    int hitc = 0;
+    int hittc = 0;
+    for (;;) {
+      int v0 = rand();
+      int v1 = rand();
+      int v2 = rand();
 
-			pthread_spin_lock(&chunky_request_spinlock);
-	        chunky_request_counters.responses_sent = 0;
-		    pthread_spin_unlock(&chunky_request_spinlock);
-		shift_hit = 0;
-		shift_tail_hit = 0;
+      pthread_spin_lock(&chunky_request_spinlock);
+      chunky_request_counters.responses_sent = 0;
+      pthread_spin_unlock(&chunky_request_spinlock);
 
-		gcl[0] = 18 + v0 % 50;
-		gcl[1] = 0 + v1;
-		gcl[2] = 3 + v2 % 50;
+      shift_hit = 0;
+      shift_tail_hit = 0;
 
-		test_chunked_transfer();
-		if (shift_hit > hitc) {
-			hitc = shift_hit;
-			memcpy(gcl_best, gcl, sizeof(gcl));
-		}
-		if (shift_tail_hit > hittc) {
-			hittc = shift_tail_hit;
-			memcpy(gcl_tbest, gcl, sizeof(gcl));
-		}
-		printf("#######---------------------------------------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d", 
-			gcl_best[0], gcl_best[1], gcl_best[2], 
-			gcl_tbest[0], gcl_tbest[1], gcl_tbest[2], 
-			hitc, hittc);
-		fflush(stdout);
-	  }
+      gcl[0] = 18 + v0 % 50;
+      gcl[1] = 0 + v1;
+      gcl[2] = 3 + v2 % 50;
+
+      test_chunked_transfer();
+      if (shift_hit > hitc) {
+        hitc = shift_hit;
+        memcpy(gcl_best, gcl, sizeof(gcl));
+      }
+      if (shift_tail_hit > hittc) {
+        hittc = shift_tail_hit;
+        memcpy(gcl_tbest, gcl, sizeof(gcl));
+      }
+      printf("#######---------------------------------------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d",
+             gcl_best[0], gcl_best[1], gcl_best[2],
+             gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
+             hitc, hittc);
+      fflush(stdout);
+    }
   }
 
   printf("\nAll tests have completed successfully.\n"

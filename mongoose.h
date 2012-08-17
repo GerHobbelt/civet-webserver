@@ -56,7 +56,7 @@ struct mg_request_info {
   char *uri;                       // URL-decoded URI
   char *phys_path;                 // the URI transformed to a physical path. NULL when the transformation has not been done yet. NULL again by the time event MG_REQUEST_COMPLETE is fired.
   const char *http_version;        // E.g. "1.0", "1.1"
-  char *query_string;              // URL part after '?' (not including '?') or NULL
+  char *query_string;              // URL part after '?' (not including '?') or ""
   char *path_info;                 // PATH_INFO part of the URL
   char *remote_user;               // Authenticated user, or NULL if no auth used
   const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
@@ -147,9 +147,9 @@ typedef void * (*mg_callback_t)(enum mg_event event,
 //   conn:              the connection which processes the HTTP request.
 //   username:          the username for which a password is needed.
 //   auth_domain:       the authorization domain for which a password is needed (isn't necessarily equal to the 'Host:' request header)
-//   uri, nonce, nc, cnonce, qop, reponse:
+//   uri, nonce, nc, cnonce, qop, response, opaque:
 //                      the elements decoded from the 'Authorization:' HTTP header;
-//                      NULL when that header was not present or wasn't of the 'Digest' type.
+//                      MAY be NULL when that header was not present or wasn't of the 'Digest' type.
 //   hash:              the buffer where user should store the requested password hash.
 //                      The usual way to construct the hash would be to call
 //                          mg_md5(hash, username, ":", auth_domain, ":", password, NULL);
@@ -174,6 +174,7 @@ typedef int (*mg_password_callback_t)(struct mg_connection *conn,
                                       const char *cnonce,
                                       const char *qop,
                                       const char *response,
+                                      const char *opaque,
                                       char hash[],
                                       size_t hash_bufsize);
 
@@ -691,6 +692,96 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size);
 const char *mg_get_header(const struct mg_connection *, const char *name);
 
 
+// Extract a
+//   token [LWS] "=" [LWS] [quoted-string]
+// token,value pair from the string buffer.
+// 0-terminate both token and (optional) value. Skip trailing LWS if any.
+// Advance pointer to buffer to the next non-WS content.
+// Set pointers to found 0-terminated token and value. value is NULL to identify an
+// unspecified value, contrasting with a (quoted) empty value.
+//
+// '*sentinel' will be set to the original character value of the char pointed at
+// by *buf when this routine exits; having this original char value available is
+// important because inputs like "a=b,c=d" will NUL the ',' in there out of
+// necessity [to 0-terminate the "b" value], while *buf would point at that same
+// location [as "," is a non-WS separator], and without having the original char
+// value available, this would be indiscernible from having reached the very end
+// of the original input string.
+// A good way to use the 'sentinel' char value (which is only NUL when the entire
+// input string has been processed to the very end by this call) is shown in
+// mongoose's parse_auth_header(), or:
+//
+//   char sep;
+//   ...
+//   mg_extract_token_qstring_value(&s, &sep, &name, &value, "");
+//   // accept ',' and ' ' as separators:
+//   if (sep && !strchr(",; ", sep))
+//     return -1;
+//   // 's + !!sep' is important, because "a=b,c=d" type input will have
+//   // NULled that ',' (but stored it in 'sep') and 's' would be
+//   // pointing at that (inserted) NUL then, while sep==NUL indicates that
+//   // the true end of the original string has been reached, and a
+//   // simple 's+1' would have been disasterous then:
+//   s += strspn(s + !!sep, ",; ");
+//   ...
+//
+// Return 0 on success, -1 when the buffer string does not start with a valid
+// token=[quoted-string] pair cf. RFC2616 sec. 2.2.
+//
+// Notes: token_ref and/or value_ref MAY be NULL, in which case the pair is parsed and
+//        processed nevertheless, just the token and/or value strings won't be available
+//        to the caller then.
+//
+//        buffer MAY start with LWS.
+//
+//        This function REQUIRES that any quoted-string does NOT contain any
+//        'line continuation' in the sense of RFC2616 sec 2.2; any existing
+//        line-continuation should already have been transformed to single SP.
+int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string);
+
+// Convert the specified string (token or quoted_string cf. RFC2616 sec. 2.2) to its
+// unquoted variant, i.e. remove surrounding quotes and unescape \-escaped characters.
+//
+// The input string is edited in place and may be either a token or quoted-string input.
+//
+// When 'end_ref' is non-NULL, 'sentinel' must be non-NULL too: in this case,
+// *sentinel will contain the original char value at *end_ref, which will be set
+// to point to the first character beyond the token/quoted-string.
+// Users can use the non-NULL 'end_ref' method to unquote ('parse') parts of a
+// string which is a combination of tokens, quoted-strings and other elements.
+//
+// When 'end_buf' is NULL, trailing LWS and CRLF will be ignored (discarded).
+//
+// Return 0 on success, -1 on failure, i.e. when the string is not a single token or
+// quoted-string, when the quoted-string is not correctly terminated by an ending <"> quote,
+// or when the string contains illegal characters cf. RFC2616 sec. 2.2.
+//
+// Note: 'sentinel' and 'end_ref' will not be set/changed on error.
+//
+//       The quoted_string input is expected to have its LWS ('line continuation')
+//       already converted to SP spaces. Hence, CR or LF are illegal inside the
+//       quoted-string, as is any other unescaped control character.
+int mg_unquote_header_value(char *str, char *sentinel, char **end_ref);
+
+// Extract a HTTP header token + (optional) value cf. RFC2616 sec. 4.2 and sec. 2.2.
+// 0-terminate both token and value. Skip trailing LWS if any.
+// Advance pointer to buffer to the next header.
+// Set pointers to found 0-terminated token and value. value MAY be an empty string.
+// Return 0 on success, -1 when the buffer string is not a legal header cf. sec. RFC2616 4.2.
+//
+// Notes: line continuation cf. RFC2616 sec. 2.2 is converted to a single SP space as
+//        specified in sec. 2.2; caller must decode RFC2047-encoded token values produced
+//        by this function.
+//
+//        token_ref and/or value_ref MAY be NULL, in which case the header is parsed and
+//        processed nevertheless, just the token and/or value strings won't be available
+//        to the caller then.
+//
+//        *buf is assumed to be a 0-terminated string containing only HTTP headers, i.e.
+//        nothing beyond the 2*CRLF which marks the end of the message-header section
+//        cf. RFC2616 sec. 4.1
+int mg_extract_raw_http_header(char **buf, char **token_ref, char **value_ref);
+
 // Get a value of particular form variable.
 //
 // Parameters:
@@ -801,22 +892,22 @@ int mg_is_producing_nested_page(struct mg_connection *conn);
 
 // bitwise OR-able constants for mg_connect_to_host(..., flags):
 typedef enum mg_connect_flags_t {
-	// nothing special; the default
-	MG_CONNECT_BASIC = 0,
-	// set up and use a SSL encrypted connection
-	MG_CONNECT_USE_SSL = 0x0001,
-	// tell Mongoose we're going to connect to a HTTP server; this allows us
-	// the usage of the built-in HTTP specific features such as mg_get_header(), etc.
-	//
-	// Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
-	//       rather inappropriately, as they are geared towards server-side use, a
-	//       set of more sensible rx/tx aliases is provided in this header, such as
-	//       mg_add_tx_header().
-	//
-	//       Also note that HTTP I/O connections allocate buffer space from the heap,
-	//       so their memory footprint is quite a bit larger than for non-HTTP I/O
-	//       sockets.
-	MG_CONNECT_HTTP_IO = 0x0002
+  // nothing special; the default
+  MG_CONNECT_BASIC = 0,
+  // set up and use a SSL encrypted connection
+  MG_CONNECT_USE_SSL = 0x0001,
+  // tell Mongoose we're going to connect to a HTTP server; this allows us
+  // the usage of the built-in HTTP specific features such as mg_get_header(), etc.
+  //
+  // Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
+  //       rather inappropriately, as they are geared towards server-side use, a
+  //       set of more sensible rx/tx aliases is provided in this header, such as
+  //       mg_add_tx_header().
+  //
+  //       Also note that HTTP I/O connections allocate buffer space from the heap,
+  //       so their memory footprint is quite a bit larger than for non-HTTP I/O
+  //       sockets.
+  MG_CONNECT_HTTP_IO = 0x0002
 } mg_connect_flags_t;
 
 // Connect to the remote host / web server: set up an outgoing client connection, connect to the given host/port.
@@ -854,23 +945,23 @@ int mg_read_http_response(struct mg_connection *conn);
 //   url: URL to download
 //   path: file name where to save the data
 //   conn_ref: (optional, in/out) reference to a connection pointer.
-//             1) May be NULL, which means that the connection will be established 
+//             1) May be NULL, which means that the connection will be established
 //                and closed inside mg_fetch().
-//             2) When the referenced connection pointer is NULL, it will be set 
-//                to point to the created connection, when it was successfully 
+//             2) When the referenced connection pointer is NULL, it will be set
+//                to point to the created connection, when it was successfully
 //                established.
-//                The caller is responsible for calling mg_close_connection(). 
-//                When created by mg_fetch(), the connection cannot be reused 
-//                for a second request (fetch): it is only provided so that the 
-//                caller may access the still valid request and response info 
+//                The caller is responsible for calling mg_close_connection().
+//                When created by mg_fetch(), the connection cannot be reused
+//                for a second request (fetch): it is only provided so that the
+//                caller may access the still valid request and response info
 //                contained in its request_info struct.
-//             3) When the connection is non-NULL, then mg_fetch() will assume 
+//             3) When the connection is non-NULL, then mg_fetch() will assume
 //                this is a 'persistent' connection and adjust its behaviour
 //                accordingly.
-//                Again, the caller is responsible for calling 
-//                mg_close_connection(), even when an error occurred inside 
+//                Again, the caller is responsible for calling
+//                mg_close_connection(), even when an error occurred inside
 //                mg_fetch().
-//                Before reusing the connection for a subsequent request, the 
+//                Before reusing the connection for a subsequent request, the
 //                caller must invoke mg_cleanup_after_request().
 // Return:
 //   On error, NULL

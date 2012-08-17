@@ -278,8 +278,8 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
       mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
       mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
-	  //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
-	  mg_write_http_response_head(conn, 200, NULL);
+      //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
+      mg_write_http_response_head(conn, 200, NULL);
 
       if ((int)len != mg_write(conn, data, len))
       {
