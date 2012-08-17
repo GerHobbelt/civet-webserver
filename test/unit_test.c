@@ -572,7 +572,27 @@ static void test_token_value_extractor(void) {
   char tv21[] = "a=b{c=d}e=f<g=h>";
   // yes, '=' is also a regular separator (RFC2616 sec 2.2)
   char tv22[] = "a=b<c=d>e=f=g=h=";
+
+  // no-value cases:
+
+  char tv30[] = "a=,c=;e=\r\ng=";
+  char tv31[] = "a= ,c= ;e= \r\ng=";
+  char tv32[] = "a=, c=; e= \r\n\r\n g="; // simple [\r\n ] would be detected as line continuation, hence [\r\n\r\n ]
+  char tv33[] = "a= , c= ; e= \r\n \r\n\r\n g=";
+  char tv34[] = "a=\n,\nc=\n;\ne=\ng=";
+  char tv35[] = "a=\r\n,\r\nc=\r\n;\r\ne=\r\ng=";
+  char tv36[] = "a=\r\n , \r\n c= \r\n ; \r\ne=\r\n\r\ng=";
+  char tv37[] = "a=\"\",c= \"\"; e=\"\" g=\"\"";  // empty quoted-strings are NOT replaced by 'empty_string' as they are actually values!
+  // oddballs: \\ outside a string serves as a separator:
+  char tv38[] = "a=\\c=?e=/g=";
+  char tv39[] = "a=@c=[e=]g=";
+  char tv40[] = "a=(c=)e={g=}";
+  char tv41[] = "a={c=}e=<g=>";
+  // yes, '=' is also a regular separator (RFC2616 sec 2.2)
+  char tv42[] = "a=<c=>e==g= \r\n";
+
   // faulty cases:
+
   // token=value: token cannot be quoted or contain escaped chars
   char tv50[] = "\"a\"=b";
   char tv51[] = "\\a=b";
@@ -592,6 +612,7 @@ static void test_token_value_extractor(void) {
   int rv, i, j;
   char *tv2_9[] = { tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9 };
   char *tv10_22[] = { tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20, tv21, tv22 };
+  char *tv30_42[] = { tv30, tv31, tv32, tv33, tv34, tv35, tv36, tv37, tv38, tv39, tv40, tv41, tv42 };
   char *tv50e[] = { tv50, tv51, tv52, tv53, tv54, tv55, tv56, tv57, tv58, tv59, tv60 };
   name = value = NULL;
   buf = tv1;
@@ -616,17 +637,17 @@ static void test_token_value_extractor(void) {
 	  ASSERT_STREQ(name, "bla");
 	  ASSERT_STREQ(value, "boo");
 	}
-	ASSERT(sep == 'b');
+	ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
 	name = value = NULL;
 	buf += !!sep;
 	ASSERT(strstr(buf, "bugger"));
-	buf += strspn(buf, " \t\r\n");
+	ASSERT(0 == strncmp(buf, "bugger", 6));
 	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
 	ASSERT(rv == -1);
 	ASSERT(name == NULL);
 	ASSERT(value == NULL);
-	ASSERT(sep == '\r');
-	ASSERT_STREQ(buf, "");
+	ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
+	ASSERT(0 == strncmp(buf, "bugger", 6));
   }
 
   for (i = 0; i < ARRAY_SIZE(tv10_22); i++) {
@@ -638,11 +659,34 @@ static void test_token_value_extractor(void) {
 	  ASSERT(rv == 0);
 	  ASSERT(*name == 'a' + 2 * j);
 	  ASSERT(*value == 'b' + 2 * j);
-	  ASSERT(sep == '\r');
-	  ASSERT_STREQ(buf, "");
+	  ASSERT(!name[1]);
+	  ASSERT(!value[1]);
+	  ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
 	  buf += !!sep;
 	}
-	ASSERT(sep == 0);
+	ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
+	ASSERT_STREQ(buf, "");
+	ASSERT(buf == e);
+  }
+
+  for (i = 0; i < ARRAY_SIZE(tv30_42); i++) {
+	buf = tv30_42[i];
+	e = buf + strlen(buf);
+	for (j = 0; j < 4; j++) {
+	  name = value = NULL;
+	  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, "empty!");
+	  ASSERT(rv == 0);
+	  ASSERT(*name == 'a' + 2 * j);
+	  ASSERT(!name[1]);
+	  if (i == 7) {
+	    ASSERT_STREQ(value, "");
+	  } else {
+	    ASSERT_STREQ(value, "empty!");
+	  }
+	  ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
+	  buf += !!sep;
+	}
+	ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
 	ASSERT_STREQ(buf, "");
 	ASSERT(buf == e);
   }

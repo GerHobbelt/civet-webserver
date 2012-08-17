@@ -1473,7 +1473,14 @@ static char *skip_lws(char *str) {
   str += strspn(str, " \t");
   for(;;) {
     if (*str && strchr("\r\n", *str)) {
-      char *p = str + strspn(str, "\r\n");
+	  // Check whether this is a true 'line continuation' in the sense of RFC2616 sec. 2.2:
+      char *p = str;
+	  // Only look *one* CRLF ahead; be tolerant of MACs & UNIXes and non-std input:
+	  // accept single CR/LF as well, so we can reuse this for file-based I/O too.
+	  if (*p == '\r')
+		p++;
+	  if (*p == '\n')
+		p++;
       if (*p && strchr(" \t", *p)) {
         str = p + strspn(p, " \t");
         continue;
@@ -1488,6 +1495,12 @@ static char *skip_lws(char *str) {
 static char *skip_eolws(char *str) {
   str = skip_lws(str);
   str += strspn(str, "\r\n");
+  return str;
+}
+
+// skip ALL whitespace
+static char *skip_allws(char *str) {
+  str += strspn(str, " \t\r\n");
   return str;
 }
 
@@ -1511,7 +1524,7 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
       *end_ref = p;
       *sentinel = *p;
       *p = 0;
-    } else if (*p && skip_eolws(p)[0]) {
+    } else if (*p && skip_allws(p)[0]) {
       // when we can't tell caller where token ended, we must fail when input isn't a single token
       return -1;
     }
@@ -1546,7 +1559,7 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
     if (end_ref) {
       *end_ref = p;
       *sentinel = *p;
-    } else if (*p && skip_eolws(p)[0]) {
+    } else if (*p && skip_allws(p)[0]) {
       // when we can't tell caller where quoted-string ended, we must fail when input isn't a single quoted-string
       return -1;
     }
@@ -1558,13 +1571,13 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
 // Return 0 on success, -1 on failure.
 int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string) {
   char *p, *te, *begin_word, *end_word;
-  char sep;
+  char sep, ec;
 
   if (token_ref) *token_ref = NULL;
   if (*value_ref) *value_ref = NULL;
 
   begin_word = *buf;
-  begin_word = skip_eolws(begin_word);
+  begin_word = skip_allws(begin_word);
 
   // token [LWS] "=" [LWS] [quoted-string]
   end_word = begin_word + strcspn(begin_word, "= \t\r\n");
@@ -1590,7 +1603,7 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
 
   // do we have a OPTIONAL field-value?
   // extract UNQUOTED field-value, where field-value is either a *single* quoted-string or a token cf. RFC2616 sec 2.2
-  if (*begin_word != '"' && !strchr(rfc2616_token_charset, *begin_word)) {
+  if (!*begin_word || (*begin_word != '"' && !strchr(rfc2616_token_charset, *begin_word))) {
     // no value specified; we're looking at either a separator, WS, CR/LF or a NUL (EOS)
     if (value_ref) {
       *value_ref = empty_string;
@@ -1623,31 +1636,41 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   }
 
   // If there's any content following this token,value pair and 'end_word'
-  // is not pointing at a separator or NUL (can't point at a WS or CR/LF 
-  // as we skipped 'em all!), then back it up 1 char and report 'sep' as 
+  // is not pointing at a separator or NUL (can't point at a WS or CR/LF
+  // as we skipped 'em all!), then back it up 1 char and report 'sep' as
   // the separator instead of *end_word.
   //
   // This helps the caller identify both invalid follow-up, e.g. [a="b"c=d]
   // where [c=d] wasn't preceded by a separator, and identify, and process,
   // any LWS-surrounded non-WS separator such as ';', e.g. [a=b ;c=d] where
-  // the caller would be best served by pointing buf at the ';' instead of 
+  // the caller would be best served by pointing buf at the ';' instead of
   // the preceding ' ' space.
   //
   // Also note that <">-quotes are NOT considered true separators here, so
   // [a=b"c=d] won't cut it.
-  if (*end_word && !strchr(rfc2616_nonws_separator_charset, *end_word)) {
-	// use 'sep':
-	*sentinel = sep;
+  ec = sep;
+  if (end_word > te)
+	ec = *end_word;
+  if (ec && !strchr(rfc2616_nonws_separator_charset, ec)) {
 	end_word--;
-	// If 'sep' is not a legal separator, then report an error:
-	// this simplifies sanity checks as the caller will now catch errors 
-	// when an expected single token.value pair has invalid trailing data.
-	if (sep && !strchr(" \t\r\n", sep) && !strchr(rfc2616_nonws_separator_charset, sep)) {
-  	  *buf = end_word;
-	  return -1;
+	if (end_word > te) {
+	  // we did skip extra CRLF/WS at the end there, so we can use the last WS/CRLF as separator:
+	  *sentinel = *end_word;
+	} else {
+	  // use 'sep':
+	  *sentinel = sep;
+	  // If 'sep' is not a legal separator, then report an error:
+	  // this simplifies sanity checks as the caller will now catch errors
+	  // when an expected single token.value pair has invalid trailing data.
+	  if (sep && !strchr(" \t\r\n", sep) && !strchr(rfc2616_nonws_separator_charset, sep)) {
+  	    *buf = end_word;
+	    return -1;
+	  }
 	}
-  } else {
+  } else if (end_word > te) {
 	*sentinel = *end_word;
+  } else {
+	*sentinel = sep;
   }
   *buf = end_word;
 
