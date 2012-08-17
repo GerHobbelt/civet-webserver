@@ -695,14 +695,14 @@ const char *mg_get_header(const struct mg_connection *, const char *name);
 // Extract a
 //   token [LWS] "=" [LWS] [quoted-string]
 // token,value pair from the string buffer.
-// 0-terminate both token and (optional) value. 
+// 0-terminate both token and (optional) value.
 // Set pointers to found 0-terminated token and value. value is NULL to identify an
 // unspecified value, contrasting with a (quoted) empty value.
-// Skip trailing LWS if any, except the last LWS char when it is followed by a 
+// Skip trailing LWS if any, except the last LWS char when it is followed by a
 // token char or quote.
 // Advance pointer to buffer to that position.
-// (This is done so that the caller always receives a valid 'separator' sentinel 
-//  char value AND has 'buf' point at that separator position on return when the 
+// (This is done so that the caller always receives a valid 'separator' sentinel
+//  char value AND has 'buf' point at that separator position on return when the
 //  string contains more token/quoted-string data beyond the current parse point.
 //  By positioning the returned buffer pointer this way, the 'buf += !!sep;'
 //  code as shown below will always work, regardless whether the actual separator

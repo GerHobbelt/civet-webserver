@@ -547,7 +547,7 @@ static void test_token_value_extractor(void) {
 
   char tv1[] = "bla=boo\r\n";
   char tv2[] = "bla=boo\r\nbugger";
-  // the next one is NOT a 'line continuation in the sense of RFC2616 as 
+  // the next one is NOT a 'line continuation in the sense of RFC2616 as
   // mg_extract_token_qstring_value() REQUIRES such LWS to have been already
   // converted to SP by the caller before invocation:
   char tv3[] = "bla=boo\r\n bugger";
@@ -626,76 +626,76 @@ static void test_token_value_extractor(void) {
   ASSERT(buf == e);
 
   for (i = 0; i < ARRAY_SIZE(tv2_9); i++) {
-	name = value = NULL;
-	buf = tv2_9[i];
-	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
-	ASSERT(rv == 0);
-	if (i == 7 /* tv9 */ ) {
-	  ASSERT_STREQ(name, "b-la.1");
-	  ASSERT_STREQ(value, "boo bongo \"bear\"\\");
-	} else {
-	  ASSERT_STREQ(name, "bla");
-	  ASSERT_STREQ(value, "boo");
-	}
-	ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
-	name = value = NULL;
-	buf += !!sep;
-	ASSERT(strstr(buf, "bugger"));
-	ASSERT(0 == strncmp(buf, "bugger", 6));
-	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
-	ASSERT(rv == -1);
-	ASSERT(name == NULL);
-	ASSERT(value == NULL);
-	ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
-	ASSERT(0 == strncmp(buf, "bugger", 6));
+    name = value = NULL;
+    buf = tv2_9[i];
+    rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+    ASSERT(rv == 0);
+    if (i == 7 /* tv9 */ ) {
+      ASSERT_STREQ(name, "b-la.1");
+      ASSERT_STREQ(value, "boo bongo \"bear\"\\");
+    } else {
+      ASSERT_STREQ(name, "bla");
+      ASSERT_STREQ(value, "boo");
+    }
+    ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
+    name = value = NULL;
+    buf += !!sep;
+    ASSERT(strstr(buf, "bugger"));
+    ASSERT(0 == strncmp(buf, "bugger", 6));
+    rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+    ASSERT(rv == -1);
+    ASSERT(name == NULL);
+    ASSERT(value == NULL);
+    ASSERT(sep == ((i == 0 || i == 5 || i == 7) ? '\n' : ' '));
+    ASSERT(0 == strncmp(buf, "bugger", 6));
   }
 
   for (i = 0; i < ARRAY_SIZE(tv10_22); i++) {
-	buf = tv10_22[i];
-	e = buf + strlen(buf);
-	for (j = 0; j < 4; j++) {
-	  name = value = NULL;
-	  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
-	  ASSERT(rv == 0);
-	  ASSERT(*name == 'a' + 2 * j);
-	  ASSERT(*value == 'b' + 2 * j);
-	  ASSERT(!name[1]);
-	  ASSERT(!value[1]);
-	  ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
-	  buf += !!sep;
-	}
-	ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
-	ASSERT_STREQ(buf, "");
-	ASSERT(buf == e);
+    buf = tv10_22[i];
+    e = buf + strlen(buf);
+    for (j = 0; j < 4; j++) {
+      name = value = NULL;
+      rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+      ASSERT(rv == 0);
+      ASSERT(*name == 'a' + 2 * j);
+      ASSERT(*value == 'b' + 2 * j);
+      ASSERT(!name[1]);
+      ASSERT(!value[1]);
+      ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
+      buf += !!sep;
+    }
+    ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
+    ASSERT_STREQ(buf, "");
+    ASSERT(buf == e);
   }
 
   for (i = 0; i < ARRAY_SIZE(tv30_42); i++) {
-	buf = tv30_42[i];
-	e = buf + strlen(buf);
-	for (j = 0; j < 4; j++) {
-	  name = value = NULL;
-	  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, "empty!");
-	  ASSERT(rv == 0);
-	  ASSERT(*name == 'a' + 2 * j);
-	  ASSERT(!name[1]);
-	  if (i == 7) {
-	    ASSERT_STREQ(value, "");
-	  } else {
-	    ASSERT_STREQ(value, "empty!");
-	  }
-	  ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
-	  buf += !!sep;
-	}
-	ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
-	ASSERT_STREQ(buf, "");
-	ASSERT(buf == e);
+    buf = tv30_42[i];
+    e = buf + strlen(buf);
+    for (j = 0; j < 4; j++) {
+      name = value = NULL;
+      rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, "empty!");
+      ASSERT(rv == 0);
+      ASSERT(*name == 'a' + 2 * j);
+      ASSERT(!name[1]);
+      if (i == 7) {
+        ASSERT_STREQ(value, "");
+      } else {
+        ASSERT_STREQ(value, "empty!");
+      }
+      ASSERT(sep == 0 || !!strchr("\n;, \\/?@()={}[]<>", sep));
+      buf += !!sep;
+    }
+    ASSERT(sep == 0 || (i == 10 && sep == '}') || (i == 11 && sep == '>') || (i == 12 && sep == '='));
+    ASSERT_STREQ(buf, "");
+    ASSERT(buf == e);
   }
 
   for (i = 0; i < ARRAY_SIZE(tv50e); i++) {
-	buf = tv50e[i];
+    buf = tv50e[i];
     name = value = NULL;
-	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
-	ASSERT(rv == -1);
+    rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+    ASSERT(rv == -1);
   }
 }
 
@@ -2338,7 +2338,7 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
         if (get_w_hdr_no != 3) {
           ASSERT(header_count == 0);
         } else {
-          ASSERT(header_count == 1);
+          ASSERT(header_count == ARRAY_SIZE(conn->request_info.response_headers) - 6 + 1);
           ASSERT_STREQ(chunk_headers[0].name, "X-Mongoose-Chunky-CLIENT");
           switch (subresp_no) {
           default:
@@ -2387,7 +2387,7 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
           }
         }
       } else {
-        ASSERT(header_count == 1);
+        ASSERT(header_count == ARRAY_SIZE(conn->request_info.response_headers) - 6 + 1);
         ASSERT_STREQ(chunk_headers[0].name, "X-Mongoose-Chunky-CLIENT");
         ASSERT_STREQ(chunk_headers[0].value, "Alter-3-of-18, 2048");
       }
@@ -2477,7 +2477,15 @@ int test_chunked_transfer(int round) {
       ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       if (add_chunkend_header) {
+        int hi;
+
         mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "%d, %d, %d", rv, runs, prospect_chunk_size);
+
+        // help trigger edge case 2 by pumping out a huge tail chunk header section:
+        for (hi = 6; hi < (int)ARRAY_SIZE(conn->request_info.response_headers); hi++) {
+          ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; bugger-it millennium hand and shrink and still no cocktail under the bridge!",
+                                             hi, runs, prospect_chunk_size));
+        }
       }
 
       // this one is optional here as we didn't send any data:
@@ -2543,7 +2551,7 @@ int test_chunked_transfer(int round) {
     // now do the same for POST requests: send chunked, receive another chunked stream:
     for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
     {
-      int i, c, chunk_size;
+      int i, c, chunk_size, hi;
       int rx_state;
       int rcv_amount;
       int req_sent_count;
@@ -2647,6 +2655,12 @@ int test_chunked_transfer(int round) {
             break;
           }
         }
+      }
+
+      // help trigger edge case 2 by pumping out a huge tail chunk header section:
+      for (hi = 6; hi < (int)ARRAY_SIZE(conn->request_info.response_headers); hi++) {
+        ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; bugger-it millennium hand and shrink and still no cocktail under the bridge!",
+                                           hi, runs, prospect_chunk_size));
       }
 
       // make sure we mark the chunked transmission as finished!
@@ -2797,13 +2811,13 @@ int main(void) {
   /*
   semi-random testing of the chunked transfer I/O logic: the edge cases are easily seen
   yet very / extremely hard to trigger using static analysis/prediction: as the edge
-  cases depend on network behaviour and internal behaviour of the TCP stack to 
+  cases depend on network behaviour and internal behaviour of the TCP stack to
   'fill those buffers just right' to tickle the edge case, their occurrence is semi-random
   in practice.
 
   To counter this in testing, we construct a parameterized test, which' parameters are then
-  randomized within heuristically determined ranges on each run, while the data collected 
-  in those test runs is used to check whether the edge cases have been triggered and how 
+  randomized within heuristically determined ranges on each run, while the data collected
+  in those test runs is used to check whether the edge cases have been triggered and how
   often this has happened.
   Particularly the second edge case is extremely hard to trigger, depending on your
   protocol stack/OS and other uncontrolled external factors, so many runs may be required
@@ -2916,15 +2930,15 @@ int main(void) {
       total_hittc += shift_tail_hit;
 
       if (improved) {
-		FILE *lf = fopen("gcl-best.log", "a");
-		if (lf) {
-		  fprintf(lf, "BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
-				gcl_best[0], gcl_best[1], gcl_best[2],
-				gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
-				hitc, hittc,
-				total_hitc, total_hittc);
-		  fclose(lf);
-		}
+        FILE *lf = fopen("gcl-best.log", "a");
+        if (lf) {
+          fprintf(lf, "BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
+                gcl_best[0], gcl_best[1], gcl_best[2],
+                gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
+                hitc, hittc,
+                total_hitc, total_hittc);
+          fclose(lf);
+        }
         printf("\n#######--------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
                gcl_best[0], gcl_best[1], gcl_best[2],
                gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],

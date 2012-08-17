@@ -1473,14 +1473,14 @@ static char *skip_lws(char *str) {
   str += strspn(str, " \t");
   for(;;) {
     if (*str && strchr("\r\n", *str)) {
-	  // Check whether this is a true 'line continuation' in the sense of RFC2616 sec. 2.2:
+      // Check whether this is a true 'line continuation' in the sense of RFC2616 sec. 2.2:
       char *p = str;
-	  // Only look *one* CRLF ahead; be tolerant of MACs & UNIXes and non-std input:
-	  // accept single CR/LF as well, so we can reuse this for file-based I/O too.
-	  if (*p == '\r')
-		p++;
-	  if (*p == '\n')
-		p++;
+      // Only look *one* CRLF ahead; be tolerant of MACs & UNIXes and non-std input:
+      // accept single CR/LF as well, so we can reuse this for file-based I/O too.
+      if (*p == '\r')
+        p++;
+      if (*p == '\n')
+        p++;
       if (*p && strchr(" \t", *p)) {
         str = p + strspn(p, " \t");
         continue;
@@ -1608,30 +1608,30 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
     if (value_ref) {
       *value_ref = empty_string;
     }
-	te = end_word;
-	sep = *end_word;
-	end_word = skip_eolws(end_word);
+    te = end_word;
+    sep = *end_word;
+    end_word = skip_eolws(end_word);
   } else if (*begin_word != '"') {
     if (value_ref)
       *value_ref = begin_word;
 
     // accept rfc2616_token_charset
     end_word += strspn(begin_word, rfc2616_token_charset);
-	te = end_word;
-	sep = *end_word;
-	end_word = skip_eolws(end_word);
+    te = end_word;
+    sep = *end_word;
+    end_word = skip_eolws(end_word);
     *te = 0;
   } else {
-	if (value_ref)
-	  *value_ref = begin_word;
+    if (value_ref)
+      *value_ref = begin_word;
 
     // unquote the value; unescape \\-escaped characters
     if (mg_unquote_header_value(begin_word, &sep, &end_word) < 0)
       return -1;
-	// 'end_word' will now point 1 char past the ending <">-quote.
-	assert(sep ? *end_word : 1);
-	assert(!sep ? !*end_word : 1);
-	te = end_word;
+    // 'end_word' will now point 1 char past the ending <">-quote.
+    assert(sep ? *end_word : 1);
+    assert(!sep ? !*end_word : 1);
+    te = end_word;
     end_word = skip_eolws(end_word);
   }
 
@@ -1650,27 +1650,27 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   // [a=b"c=d] won't cut it.
   ec = sep;
   if (end_word > te)
-	ec = *end_word;
+    ec = *end_word;
   if (ec && !strchr(rfc2616_nonws_separator_charset, ec)) {
-	end_word--;
-	if (end_word > te) {
-	  // we did skip extra CRLF/WS at the end there, so we can use the last WS/CRLF as separator:
-	  *sentinel = *end_word;
-	} else {
-	  // use 'sep':
-	  *sentinel = sep;
-	  // If 'sep' is not a legal separator, then report an error:
-	  // this simplifies sanity checks as the caller will now catch errors
-	  // when an expected single token.value pair has invalid trailing data.
-	  if (sep && !strchr(" \t\r\n", sep) && !strchr(rfc2616_nonws_separator_charset, sep)) {
-  	    *buf = end_word;
-	    return -1;
-	  }
-	}
+    end_word--;
+    if (end_word > te) {
+      // we did skip extra CRLF/WS at the end there, so we can use the last WS/CRLF as separator:
+      *sentinel = *end_word;
+    } else {
+      // use 'sep':
+      *sentinel = sep;
+      // If 'sep' is not a legal separator, then report an error:
+      // this simplifies sanity checks as the caller will now catch errors
+      // when an expected single token.value pair has invalid trailing data.
+      if (sep && !strchr(" \t\r\n", sep) && !strchr(rfc2616_nonws_separator_charset, sep)) {
+        *buf = end_word;
+        return -1;
+      }
+    }
   } else if (end_word > te) {
-	*sentinel = *end_word;
+    *sentinel = *end_word;
   } else {
-	*sentinel = sep;
+    *sentinel = sep;
   }
   *buf = end_word;
 
@@ -7921,10 +7921,14 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
         mg_cry(fc(ctx), "%s: fopen(%s): %s", __func__, path, mg_strerror(ERRNO));
       } else {
         // Read all response data and store in the file:
-        do {
+        for (;;) {
           nread = mg_read(conn, buf2, sizeof(buf2));
-          if (nread <= 0) {
+          if (nread < 0) {
             mg_cry(fc(ctx), "%s(%s): failed to read data, connection may have been closed prematurely by the server: %s", __func__, url, mg_strerror(ERRNO));
+            break;
+          }
+          if (nread == 0) {
+            // end of data reached
             break;
           }
           nwrite = push(fp, NULL, buf2, nread);
@@ -7933,7 +7937,7 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
             mg_cry(fc(ctx), "%s: fwrite(%s): %s", __func__, path, mg_strerror(ERRNO));
             break;
           }
-        } while (nread > 0);
+        }
 
         if (nread < 0) {
           fclose(fp);
