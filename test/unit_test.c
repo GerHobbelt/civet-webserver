@@ -2794,6 +2794,26 @@ int main(void) {
   test_client_connect();
   test_mg_fetch();
 
+  /*
+  semi-random testing of the chunked transfer I/O logic: the edge cases are easily seen
+  yet very / extremely hard to trigger using static analysis/prediction: as the edge
+  cases depend on network behaviour and internal behaviour of the TCP stack to 
+  'fill those buffers just right' to tickle the edge case, their occurrence is semi-random
+  in practice.
+
+  To counter this in testing, we construct a parameterized test, which' parameters are then
+  randomized within heuristically determined ranges on each run, while the data collected 
+  in those test runs is used to check whether the edge cases have been triggered and how 
+  often this has happened.
+  Particularly the second edge case is extremely hard to trigger, depending on your
+  protocol stack/OS and other uncontrolled external factors, so many runs may be required
+  to observe a trigger there.
+
+  The collected cases are the ones which have shown to trigger either or both edge cases
+  for particular hardware significantly more often than others and are hence included
+  as 'presets' for the first number of runs in order to maximize our chances of success
+  in a short period of time.
+  */
   {
     int gcl_best[3] = {0};
     int gcl_tbest[3] = {0};
@@ -2861,6 +2881,12 @@ int main(void) {
         gcl[0] = 60;
         gcl[1] = 12382;
         gcl[2] = 24;
+        break;
+
+      case 8:
+        gcl[0] = 34;
+        gcl[1] = 3035;
+        gcl[2] = 43;
         break;
 
       default:
