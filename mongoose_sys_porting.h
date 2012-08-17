@@ -646,7 +646,9 @@ typedef int SOCKET;
 #endif
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+#if !defined(MG_BUF_LEN)
 #define MG_BUF_LEN        8192
+#endif
 #define MG_MAX(a, b)      ((a) >= (b) ? (a) : (b))
 #define MG_MIN(a, b)      ((a) <= (b) ? (a) : (b))
 

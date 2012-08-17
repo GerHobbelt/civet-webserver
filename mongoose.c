@@ -1493,6 +1493,7 @@ static char *skip_eolws(char *str) {
 
 // cf. RFC2616 sec. 2.2
 static const char *rfc2616_token_charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~`!#$%^&*_-+'.|";
+static const char *rfc2616_nonws_separator_charset = "@()={}[]:;,<>?/\\"; // plus <">, SP, HT
 
 // Return 0 on success, -1 on failure.
 int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
@@ -1557,12 +1558,13 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
 // Return 0 on success, -1 on failure.
 int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string) {
   char *p, *te, *begin_word, *end_word;
+  char sep;
 
   if (token_ref) *token_ref = NULL;
   if (*value_ref) *value_ref = NULL;
 
   begin_word = *buf;
-  begin_word = skip_lws(begin_word);
+  begin_word = skip_eolws(begin_word);
 
   // token [LWS] "=" [LWS] [quoted-string]
   end_word = begin_word + strcspn(begin_word, "= \t\r\n");
@@ -1584,39 +1586,69 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   else if (token_ref)
     *token_ref = begin_word;
 
-  end_word = skip_lws(end_word);
-  begin_word = end_word;
+  begin_word = end_word = skip_lws(end_word);
 
   // do we have a OPTIONAL field-value?
   // extract UNQUOTED field-value, where field-value is either a *single* quoted-string or a token cf. RFC2616 sec 2.2
   if (*begin_word != '"' && !strchr(rfc2616_token_charset, *begin_word)) {
-    // no value specified; we're looking at either a separator, WS or a NUL (EOS)
+    // no value specified; we're looking at either a separator, WS, CR/LF or a NUL (EOS)
     if (value_ref) {
       *value_ref = empty_string;
     }
-    *sentinel = *end_word;
+	te = end_word;
+	sep = *end_word;
+	end_word = skip_eolws(end_word);
   } else if (*begin_word != '"') {
     if (value_ref)
       *value_ref = begin_word;
 
     // accept rfc2616_token_charset
     end_word += strspn(begin_word, rfc2616_token_charset);
-    te = end_word;
-    end_word = skip_eolws(end_word);
-    *sentinel = *end_word;
+	te = end_word;
+	sep = *end_word;
+	end_word = skip_eolws(end_word);
     *te = 0;
   } else {
-    char sep;
-
-    *value_ref = p = begin_word;
+	if (value_ref)
+	  *value_ref = begin_word;
 
     // unquote the value; unescape \\-escaped characters
-    if (mg_unquote_header_value(p, &sep, &end_word) < 0)
+    if (mg_unquote_header_value(begin_word, &sep, &end_word) < 0)
       return -1;
+	// 'end_word' will now point 1 char past the ending <">-quote.
+	assert(sep ? *end_word : 1);
+	assert(!sep ? !*end_word : 1);
+	te = end_word;
     end_word = skip_eolws(end_word);
-    *sentinel = *end_word;
   }
 
+  // If there's any content following this token,value pair and 'end_word'
+  // is not pointing at a separator or NUL (can't point at a WS or CR/LF 
+  // as we skipped 'em all!), then back it up 1 char and report 'sep' as 
+  // the separator instead of *end_word.
+  //
+  // This helps the caller identify both invalid follow-up, e.g. [a="b"c=d]
+  // where [c=d] wasn't preceded by a separator, and identify, and process,
+  // any LWS-surrounded non-WS separator such as ';', e.g. [a=b ;c=d] where
+  // the caller would be best served by pointing buf at the ';' instead of 
+  // the preceding ' ' space.
+  //
+  // Also note that <">-quotes are NOT considered true separators here, so
+  // [a=b"c=d] won't cut it.
+  if (*end_word && !strchr(rfc2616_nonws_separator_charset, *end_word)) {
+	// use 'sep':
+	*sentinel = sep;
+	end_word--;
+	// If 'sep' is not a legal separator, then report an error:
+	// this simplifies sanity checks as the caller will now catch errors 
+	// when an expected single token.value pair has invalid trailing data.
+	if (sep && !strchr(" \t\r\n", sep) && !strchr(rfc2616_nonws_separator_charset, sep)) {
+  	  *buf = end_word;
+	  return -1;
+	}
+  } else {
+	*sentinel = *end_word;
+  }
   *buf = end_word;
 
   return 0;
@@ -1634,7 +1666,6 @@ int mg_extract_raw_http_header(char **buf, char **token_ref, char **value_ref) {
     RFC2616_SEPARATOR,
     RFC2616_QSTRING
   } field_mode;
-  static const char *rfc2616_nonws_separator_charset = "@()={}[]:;\"<>,?/\\";
 
   if (token_ref) *token_ref = NULL;
   if (*value_ref) *value_ref = NULL;
@@ -5198,8 +5229,10 @@ static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int buf
   return request_len;
 }
 
+#if defined(TEST_CHUNKING_SEARCH_OPT_TESTSETTING)
 static int shift_hit = 0;
 static int shift_tail_hit = 0;
+#endif
 
 // Read enough bytes into the buffer to completely fetch a HTTP chunk header,
 // then decode it.
@@ -5324,7 +5357,9 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
         return -1;  // invalid or overlarge chunk header
       }
       do_shift = 1;
+#if defined(TEST_CHUNKING_SEARCH_OPT_TESTSETTING)
       shift_hit++;
+#endif
       //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
       continue;
     }
@@ -5380,7 +5415,9 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
           return -1;  // malformed end chunk header set
         }
         do_shift = 1;
+#if defined(TEST_CHUNKING_SEARCH_OPT_TESTSETTING)
         shift_tail_hit++;
+#endif
         DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
@@ -7810,7 +7847,7 @@ int mg_read_http_response(struct mg_connection *conn) {
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct mg_connection **conn_ref) {
   struct mg_connection *conn = NULL;
   int n, nread, nwrite, port, is_ssl, is_persistent_conn, rv;
-  char host[1025], proto[10], buf2[MG_BUF_LEN];
+  char host[1025], proto[10], buf2[DATA_COPY_BUFSIZ];
   FILE *fp = NULL;
 
   if (sscanf(url, "%9[htps]://%1024[^:]:%d/%n", proto, host, &port, &n) == 3) {
@@ -7841,7 +7878,7 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
       mg_add_tx_header(conn, 0, "Content-Length", "0");
     }
 
-    rv = mg_write_http_request_head(conn, "GET", "%s", url + n);
+    rv = mg_write_http_request_head(conn, "GET", "/%s", url + n);
     if (rv <= 0) {
       mg_cry(fc(ctx), "%s(%s): failed to send the HTTP request", __func__, url);
     } else {
@@ -8628,7 +8665,7 @@ fail_dramatically:
   (void) pthread_mutex_lock(&ctx->mutex);
   ctx->num_threads--;
   (void) pthread_cond_signal(&ctx->cond);
-  assert(ctx->num_threads >= 0);
+  assert(ctx->num_threads >= 1);
   (void) pthread_mutex_unlock(&ctx->mutex);
 
   // WARNING: ctx->num_threads-- MUST be the VERY LAST THING this thread does.
@@ -8785,7 +8822,7 @@ static void master_thread(struct mg_context *ctx) {
   pthread_cond_broadcast(&ctx->sq_full);
 
   // Wait until all threads finish
-  while (ctx->num_threads > 0) {
+  while (ctx->num_threads > 1) {
     (void) pthread_cond_wait(&ctx->cond, &ctx->mutex);
   }
 
@@ -8799,6 +8836,10 @@ static void master_thread(struct mg_context *ctx) {
     DEBUG_TRACE(("grabbed socket %d, forcibly closing the bugger", dummy_conn.client.sock));
     close_socket_UNgracefully(dummy_conn.client.sock);
   }
+
+  // Account for ourselves (master) being done and exiting
+  ctx->num_threads--;
+  assert(ctx->num_threads == 0);
 
   (void) pthread_mutex_unlock(&ctx->mutex);
 
@@ -8867,6 +8908,8 @@ void mg_stop(struct mg_context *ctx) {
   while (ctx->stop_flag != 2) {
     (void) mg_sleep(10);
   }
+
+  assert(ctx->num_threads == 0);
 
   // call the user event handler to make sure the custom code is aware of this termination as well and do some final cleanup:
   call_user_over_ctx(ctx, ctx->ssl_ctx, MG_EXIT0);
@@ -9013,10 +9056,6 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   for ( ; i > 0; i--) {
     if (mg_start_thread(ctx, (mg_thread_func_t) worker_thread, ctx) != 0) {
       mg_cry(fc(ctx), "Cannot start worker thread: %d (%s)", ERRNO, mg_strerror(ERRNO));
-    } else {
-      (void) pthread_mutex_lock(&ctx->mutex);
-      ctx->num_threads++;
-      (void) pthread_mutex_unlock(&ctx->mutex);
     }
   }
 

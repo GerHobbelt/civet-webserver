@@ -1,13 +1,19 @@
+#define TEST_CHUNKING_SEARCH_OPT_TESTSETTING     1
+//#define MG_BUF_LEN                             512
+
 #include "mongoose_ex.c"
 
 #include <math.h>
 
+static void fatal_exit(struct mg_context *ctx) {
+  mg_signal_stop(ctx);
+  abort();
+}
 
 #define FATAL(str, line)                                                    \
     do {                                                                    \
       printf("Fail on line %d: [%s]\n", line, str);                         \
-      mg_signal_stop(ctx);                                                  \
-      abort();                                                              \
+      fatal_exit(ctx);                                                      \
     } while (0)
 
 #define ASSERT(expr)                                                        \
@@ -23,8 +29,7 @@
         printf("Fail on line %d: strings not matching: "                    \
                "inp:\"%s\" != ref:\"%s\"\n",                                \
                __LINE__, str1, str2);                                       \
-        mg_signal_stop(ctx);                                                \
-        abort();                                                            \
+        fatal_exit(ctx);                                                    \
       }                                                                     \
     } while (0)
 
@@ -542,23 +547,52 @@ static void test_token_value_extractor(void) {
 
   char tv1[] = "bla=boo\r\n";
   char tv2[] = "bla=boo\r\nbugger";
-  char tv3[] = " \tbla =\r\n   boo  \r\nbugger";
-  char tv4[] = " \tb-la.1 = \"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
-  char tv5[] = "a=b,c=d;e=f g=h";
-  char tv6[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
-
-  char hdrs1[] = "foo: bar\r\ndoo    :dar   \r\ncoo:car\r\n";
-  // now with 'line continuation'
-  char hdrs2[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
-  // and quoted strings:
-  char hdrs3[] = "$$foo##: \"bar\r\n \\\"bar2\\\"   \r\n  \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar\r\n \r\n \r\n da2\"\r\n \r\ncoo:\"car\"";
+  // the next one is NOT a 'line continuation in the sense of RFC2616 as 
+  // mg_extract_token_qstring_value() REQUIRES such LWS to have been already
+  // converted to SP by the caller before invocation:
+  char tv3[] = "bla=boo\r\n bugger";
+  char tv4[] = "bla=boo bugger";
+  char tv5[] = "bla=boo bugger ";
+  char tv6[] = "bla=boo bugger\r";
+  char tv7[] = " \tbla =\r\n   boo  \r\nbugger";
+  char tv8[] = " \tbla =\r\n   boo  \r\n  bugger";
+  char tv9[] = " \tb-la.1 = \"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
+  char tv10[] = "a=b,c=d;e=f g=h";
+  char tv11[] = "a=b ,c=d ;e=f g=h";
+  char tv12[] = "a=b, c=d; e=f g=h";
+  char tv13[] = "a=b , c=d ; e=f g=h";
+  char tv14[] = "a=b\n,\nc=d\n;\ne=f\ng=h";
+  char tv15[] = "a=b\r\n,\r\nc=d\r\n;\r\ne=f\r\ng=h";
+  char tv16[] = "a=b\r\n , \r\n c=d \r\n ; \r\ne=f\r\n\r\ng=h";
+  char tv17[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
+  // oddballs: \\ outside a string serves as a separator:
+  char tv18[] = "a=b\\c=d?e=f/g=h";
+  char tv19[] = "a=b@c=d[e=f]g=h";
+  char tv20[] = "a=b(c=d)e=f{g=h}";
+  char tv21[] = "a=b{c=d}e=f<g=h>";
+  // yes, '=' is also a regular separator (RFC2616 sec 2.2)
+  char tv22[] = "a=b<c=d>e=f=g=h=";
+  // faulty cases:
+  // token=value: token cannot be quoted or contain escaped chars
+  char tv50[] = "\"a\"=b";
+  char tv51[] = "\\a=b";
+  char tv52[] = "a\x80=b";
+  char tv53[] = "\x80\x61=b";
+  char tv54[] = "a=b\x80";
+  char tv55[] = "a=\x80\x62";
+  char tv56[] = "a=b\"c=d";
+  char tv57[] = "a=b\"c\"=d";
+  char tv58[] = "a=\"b+c+d";
+  char tv59[] = "a?b";  // wrong separator
+  char tv60[] = "a?=b";  // wrong separator
 
   char *value, *name, *e;
-  struct mg_header hdrs[64];
   char *buf;
   char sep;
-  int rv;
-
+  int rv, i, j;
+  char *tv2_9[] = { tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9 };
+  char *tv10_22[] = { tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20, tv21, tv22 };
+  char *tv50e[] = { tv50, tv51, tv52, tv53, tv54, tv55, tv56, tv57, tv58, tv59, tv60 };
   name = value = NULL;
   buf = tv1;
   e = buf + strlen(buf);
@@ -570,83 +604,71 @@ static void test_token_value_extractor(void) {
   ASSERT_STREQ(buf, "");
   ASSERT(buf == e);
 
+  for (i = 0; i < ARRAY_SIZE(tv2_9); i++) {
+	name = value = NULL;
+	buf = tv2_9[i];
+	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+	ASSERT(rv == 0);
+	if (i == 7 /* tv9 */ ) {
+	  ASSERT_STREQ(name, "b-la.1");
+	  ASSERT_STREQ(value, "boo bongo \"bear\"\\");
+	} else {
+	  ASSERT_STREQ(name, "bla");
+	  ASSERT_STREQ(value, "boo");
+	}
+	ASSERT(sep == 'b');
+	name = value = NULL;
+	buf += !!sep;
+	ASSERT(strstr(buf, "bugger"));
+	buf += strspn(buf, " \t\r\n");
+	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+	ASSERT(rv == -1);
+	ASSERT(name == NULL);
+	ASSERT(value == NULL);
+	ASSERT(sep == '\r');
+	ASSERT_STREQ(buf, "");
+  }
 
-  // implicitly tests mg_extract_raw_http_header():
-  memset(hdrs, 0, sizeof(hdrs));
-  buf = hdrs1;
-  e = buf + strlen(buf);
-  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
-  ASSERT(rv == 3);
-  ASSERT_STREQ(hdrs[0].name, "foo");
-  ASSERT_STREQ(hdrs[0].value, "bar");
-  ASSERT_STREQ(hdrs[1].name, "doo");
-  ASSERT_STREQ(hdrs[1].value, "dar");
-  ASSERT_STREQ(hdrs[2].name, "coo");
-  ASSERT_STREQ(hdrs[2].value, "car");
-  ASSERT_STREQ(buf, "");
-  ASSERT(buf == e);
+  for (i = 0; i < ARRAY_SIZE(tv10_22); i++) {
+	buf = tv10_22[i];
+	e = buf + strlen(buf);
+	for (j = 0; j < 4; j++) {
+	  name = value = NULL;
+	  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+	  ASSERT(rv == 0);
+	  ASSERT(*name == 'a' + 2 * j);
+	  ASSERT(*value == 'b' + 2 * j);
+	  ASSERT(sep == '\r');
+	  ASSERT_STREQ(buf, "");
+	  buf += !!sep;
+	}
+	ASSERT(sep == 0);
+	ASSERT_STREQ(buf, "");
+	ASSERT(buf == e);
+  }
 
-  memset(hdrs, 0, sizeof(hdrs));
-  buf = hdrs2;
-  e = buf + strlen(buf);
-  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
-  ASSERT(rv == 2);
-  ASSERT_STREQ(hdrs[0].name, "foo_min.1-2");
-  ASSERT_STREQ(hdrs[0].value, "bar bar2 ; bar3");
-  ASSERT_STREQ(hdrs[1].name, "doo");
-  ASSERT_STREQ(hdrs[1].value, "dar da2");
-  ASSERT_STREQ(buf, "");
-  ASSERT(buf == e);
-
-  memset(hdrs, 0, sizeof(hdrs));
-  buf = hdrs3;
-  e = buf + strlen(buf);
-  rv = parse_http_headers(&buf, hdrs, ARRAY_SIZE(hdrs));
-  ASSERT(rv == 3);
-  ASSERT_STREQ(hdrs[0].name, "$$foo##");
-  ASSERT_STREQ(hdrs[0].value, "\"bar \\\"bar2\\\"    \\ \\\\bar3 \" ,, ,, \" bar4 \",d=e,f=g");
-  ASSERT_STREQ(hdrs[1].name, "doo");
-  ASSERT_STREQ(hdrs[1].value, "\"dar da2\"");
-  ASSERT_STREQ(hdrs[2].name, "coo");
-  ASSERT_STREQ(hdrs[2].value, "\"car\"");
-  ASSERT_STREQ(buf, "");
-  ASSERT(buf == e);
+  for (i = 0; i < ARRAY_SIZE(tv50e); i++) {
+	buf = tv50e[i];
+    name = value = NULL;
+	rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
+	ASSERT(rv == -1);
+  }
 }
 
 static void test_http_header_extractor(void) {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
 
-  char tv1[] = "bla=boo\r\n";
-  char tv2[] = "bla=boo\r\nbugger";
-  char tv3[] = " \tbla =\r\n   boo  \r\nbugger";
-  char tv4[] = " \tb-la.1 = \"boo bongo \\\"bear\\\"\\\\\"\r\nbugger";
-  char tv5[] = "a=b,c=d;e=f g=h";
-  char tv6[] = "a=\"b\",c= \"d\"; e=\"f\" g=\"h\"";
-
   char hdrs1[] = "foo: bar\r\ndoo    :dar   \r\ncoo:car\r\n";
   // now with 'line continuation'
   char hdrs2[] = "foo_min.1-2: bar\r\n bar2 \r\n  ;    bar3\r\ndoo: dar\r\n \r\n \r\n da2\r\n\r";
   // and quoted strings:
   char hdrs3[] = "$$foo##: \"bar\r\n \\\"bar2\\\"   \r\n  \\ \\\\bar3 \" ,,  ,,  \" bar4 \",d=e,f=g \r\ndoo: \"dar\r\n \r\n \r\n da2\"\r\n \r\ncoo:\"car\"";
 
-  char *value, *name, *e;
+  char *e;
   struct mg_header hdrs[64];
   char *buf;
-  char sep;
   int rv;
-
-  name = value = NULL;
-  buf = tv1;
-  e = buf + strlen(buf);
-  rv = mg_extract_token_qstring_value(&buf, &sep, &name, &value, NULL);
-  ASSERT(rv == 0);
-  ASSERT_STREQ(name, "bla");
-  ASSERT_STREQ(value, "boo");
-  ASSERT(sep == 0);
-  ASSERT_STREQ(buf, "");
-  ASSERT(buf == e);
-
 
   // implicitly tests mg_extract_raw_http_header():
   memset(hdrs, 0, sizeof(hdrs));
@@ -797,104 +819,6 @@ static void test_remove_double_dots() {
     remove_double_dots_and_double_slashes(data[i].before);
     ASSERT_STREQ(data[i].before, data[i].after);
   }
-}
-
-static const char *fetch_data = "hello world!\n";
-static void *fetch_callback(enum mg_event event,
-                           struct mg_connection *conn) {
-  const struct mg_request_info *request_info = mg_get_request_info(conn);
-  if (event == MG_NEW_REQUEST && !strcmp(request_info->uri, "/data")) {
-    mg_printf(conn, "HTTP/1.1 200 OK\r\n"
-              "Content-Length: %d\r\n"
-              "Content-Type: text/plain\r\n\r\n",
-              (int) strlen(fetch_data));
-    mg_mark_end_of_header_transmission(conn);
-    mg_printf(conn, "%s", fetch_data);
-    return "";
-  } else if (event == MG_EVENT_LOG) {
-    printf("%s\n", request_info->log_message);
-  }
-
-  return NULL;
-}
-
-static void test_mg_fetch(void) {
-  static const char *options[] = {
-    "document_root", ".",
-    "listening_ports", "33796",
-    NULL,
-  };
-  char buf2[2000];
-  int length;
-  struct mg_context *ctx;
-  struct mg_connection *conn = NULL;
-  struct mg_request_info *ri;
-  const char *tmp_file = "temporary_file_name_for_unit_test.txt";
-  struct mgstat st;
-  FILE *fp;
-  struct mg_user_class_t ucb = {
-    NULL,
-    fetch_callback
-  };
-
-  ASSERT((ctx = mg_start(&ucb, options)) != NULL);
-
-  // Failed fetch, pass invalid URL
-  ASSERT(mg_fetch(ctx, "localhost", tmp_file, NULL) == NULL);
-  ASSERT(mg_fetch(ctx, "localhost:33796", tmp_file,
-                  &conn) == NULL);
-  ASSERT(conn == NULL);
-  ASSERT(mg_fetch(ctx, "http://$$$.$$$", tmp_file,
-                  &conn) == NULL);
-  ASSERT(conn == NULL);
-
-  // Failed fetch, pass invalid file name
-  ASSERT(mg_fetch(ctx, "http://localhost:33796/data",
-                  "/this/file/must/not/exist/ever",
-                  &conn) == NULL);
-  ASSERT(conn == NULL);
-
-  // Successful fetch
-  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, NULL);
-  ASSERT(fp != NULL);
-
-  // Successful fetch, keeping the connection but NOT keep-alive!
-  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, &conn);
-  ASSERT(fp != NULL);
-  ASSERT(conn != NULL);
-  ri = mg_get_request_info(conn);
-  ASSERT(ri->num_headers == 2);
-  ASSERT_STREQ(ri->request_method, "GET");
-  ASSERT_STREQ(ri->http_version, "1.1");
-  ASSERT_STREQ(ri->uri, "/data");
-  ASSERT(ri->status_code == 200);
-  ASSERT_STREQ(ri->status_custom_description, "OK");
-  ASSERT((length = ftell(fp)) == (int) strlen(fetch_data));
-  fseek(fp, 0, SEEK_SET);
-  ASSERT(fread(buf2, 1, length, fp) == (size_t) length);
-  ASSERT(memcmp(buf2, fetch_data, length) == 0);
-  fclose(fp);
-  mg_close_connection(conn);
-  conn = NULL;
-
-  // Fetch big file, mongoose.c
-  fp = mg_fetch(ctx, "http://localhost:33796/mongoose.c", tmp_file, &conn);
-  ASSERT(fp != NULL);
-  ASSERT(conn != NULL);
-  ri = mg_get_request_info(conn);
-  ASSERT(mg_stat("mongoose.c", &st) == 0);
-  ASSERT(st.size == ftell(fp));
-  ASSERT_STREQ(ri->request_method, "GET");
-  ASSERT_STREQ(ri->http_version, "1.1");
-  ASSERT_STREQ(ri->uri, "/data");
-  ASSERT(ri->status_code == 200);
-  ASSERT_STREQ(ri->status_custom_description, "OK");
-  fclose(fp);
-  mg_close_connection(conn);
-  conn = NULL;
-
-  mg_remove(tmp_file);
-  mg_stop(ctx);
 }
 
 static void test_IPaddr_parsing() {
@@ -1504,6 +1428,127 @@ static void test_response_header_rw() {
 }
 
 
+static const char *fetch_data = "hello world!\n";
+static void *fetch_callback(enum mg_event event,
+                           struct mg_connection *conn) {
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
+  if (event == MG_NEW_REQUEST && !strcmp(request_info->uri, "/data")) {
+    mg_printf(conn, "HTTP/1.1 200 OK\r\n"
+              "Content-Length: %d\r\n"
+              "Content-Type: text/plain\r\n\r\n",
+              (int) strlen(fetch_data));
+    mg_mark_end_of_header_transmission(conn);
+    mg_printf(conn, "%s", fetch_data);
+    return "";
+  } else if (event == MG_EVENT_LOG) {
+    printf("%s\n", request_info->log_message);
+  }
+
+  return NULL;
+}
+
+static void test_mg_fetch(void) {
+  static const char *options[] = {
+    "document_root", ".",
+    "listening_ports", "33796",
+    NULL,
+  };
+  char buf2[2000];
+  int length;
+  struct mg_context *ctx;
+  struct mg_connection *conn = NULL;
+  struct mg_request_info *ri;
+  const char *tmp_file = "temporary_file_name_for_unit_test.txt";
+  struct mgstat st;
+  FILE *fp;
+  struct mg_user_class_t ucb = {
+    NULL,
+    fetch_callback
+  };
+
+  ASSERT((ctx = mg_start(&ucb, options)) != NULL);
+
+  // Failed fetch, pass invalid URL
+  ASSERT(mg_fetch(ctx, "localhost", tmp_file, NULL) == NULL);
+  ASSERT(mg_fetch(ctx, "localhost:33796", tmp_file,
+                  &conn) == NULL);
+  ASSERT(conn == NULL);
+  ASSERT(mg_fetch(ctx, "http://$$$.$$$", tmp_file,
+                  &conn) == NULL);
+  ASSERT(conn == NULL);
+
+  // Failed fetch, pass invalid file name
+  fp = mg_fetch(ctx, "http://localhost:33796/data",
+                  "/this/file/must/not/exist/ever",
+                  &conn);
+  ASSERT(fp == NULL);
+  ASSERT(conn != NULL);
+  ri = mg_get_request_info(conn);
+  ASSERT(ri->num_headers == 2);
+  ASSERT_STREQ(ri->request_method, "GET");
+  ASSERT_STREQ(ri->http_version, "1.1");
+  ASSERT_STREQ(ri->uri, "/data");
+  ASSERT(ri->status_code == 200);
+  ASSERT_STREQ(ri->status_custom_description, "OK");
+  mg_close_connection(conn);
+  conn = NULL;
+
+  // Successful fetch
+  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, NULL);
+  ASSERT(fp != NULL);
+
+  // Successful fetch, keeping the connection but NOT keep-alive!
+  fp = mg_fetch(ctx, "http://localhost:33796/data", tmp_file, &conn);
+  ASSERT(fp != NULL);
+  ASSERT(conn != NULL);
+  ri = mg_get_request_info(conn);
+  ASSERT(ri->num_headers == 2);
+  ASSERT_STREQ(ri->request_method, "GET");
+  ASSERT_STREQ(ri->http_version, "1.1");
+  ASSERT_STREQ(ri->uri, "/data");
+  ASSERT(ri->status_code == 200);
+  ASSERT_STREQ(ri->status_custom_description, "OK");
+  ASSERT((length = ftell(fp)) == (int) strlen(fetch_data));
+  fseek(fp, 0, SEEK_SET);
+  ASSERT(fread(buf2, 1, length, fp) == (size_t) length);
+  ASSERT(memcmp(buf2, fetch_data, length) == 0);
+  fclose(fp);
+  mg_close_connection(conn);
+  conn = NULL;
+
+  // Fetch big file, mongoose.c
+#if defined(_MSC_VER)
+  if (mg_stat("mongoose.c", &st) && !mg_stat("../../mongoose.c", &st)) {
+    // copy mongoose.c to project directory
+    int mongoose_c_copied = CopyFileA("../../mongoose.c", "mongoose.c", TRUE);
+#endif
+  fp = mg_fetch(ctx, "http://localhost:33796/mongoose.c", tmp_file, &conn);
+  ASSERT(fp != NULL);
+  ASSERT(conn != NULL);
+  ri = mg_get_request_info(conn);
+  ASSERT(mg_stat("mongoose.c", &st) == 0);
+  ASSERT(st.size == ftell(fp));
+  ASSERT_STREQ(ri->request_method, "GET");
+  ASSERT_STREQ(ri->http_version, "1.1");
+  ASSERT_STREQ(ri->uri, "/mongoose.c");
+  ASSERT(ri->status_code == 200);
+  ASSERT_STREQ(ri->status_custom_description, "OK");
+  fclose(fp);
+  mg_close_connection(conn);
+  conn = NULL;
+#if defined(_MSC_VER)
+    // remove copy of mongoose.c from project directory
+    if (mongoose_c_copied)
+      mg_remove("mongoose.c");
+  }
+#endif
+
+  mg_remove(tmp_file);
+  mg_stop(ctx);
+}
+
+
+
 static int test_client_connect_expect_error = 0;
 
 static void *test_client_event_handler(enum mg_event event, struct mg_connection *conn) {
@@ -2075,6 +2120,10 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
 
 static int gcl[3] = {0};
 
+typedef struct test_conn_user_data {
+  int req_id;
+} test_conn_user_data_t;
+
 static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_size, char *dstbuf, size_t dstbuf_size, char *chunk_extensions) {
   struct mg_context *ctx = mg_get_context(conn);
 
@@ -2190,10 +2239,11 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
     if (conn->is_client_conn) {
       int req_no, subreq_no;
       char nbuf[20];
+      test_conn_user_data_t *ud;
 
-      pthread_spin_lock(&chunky_request_spinlock);
-      req_no = chunky_request_counters.requests_sent;
-      pthread_spin_unlock(&chunky_request_spinlock);
+      ud = (test_conn_user_data_t *)conn->request_info.req_user_data;
+      ASSERT(ud);
+      req_no = ud->req_id;
       subreq_no = req_no - 1;
       subreq_no %= 8;
 
@@ -2252,42 +2302,42 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
             break;
 
           case 0:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 16", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "131, %d, 16", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 1:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 32", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "131, %d, 32", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 2:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "116, %d, 64", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "131, %d, 64", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 3:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 128", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "132, %d, 128", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 4:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 256", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "132, %d, 256", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 5:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "117, %d, 512", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "132, %d, 512", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 6:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "118, %d, 1024", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "133, %d, 1024", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
 
           case 7:
-            mg_snq0printf(conn, nbuf, sizeof(nbuf), "118, %d, 2048", 16 - run_no);
+            mg_snq0printf(conn, nbuf, sizeof(nbuf), "133, %d, 2048", 16 - run_no);
             ASSERT_STREQ(chunk_headers[0].value, nbuf);
             break;
           }
@@ -2302,7 +2352,10 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
   return 0;  // run default handler; we were just here to add extensions...
 }
 
-int test_chunked_transfer(void) {
+// first push all requests to the server asap, then go fetch their responses.
+#define BLAST_ALL_REQUESTS_TO_SERVER_FIRST      0
+
+int test_chunked_transfer(int round) {
   struct mg_context *ctx;
   /*
   The test server MUST run with 1 (ONE) thread, as the test code use a global chunk counter
@@ -2325,7 +2378,8 @@ int test_chunked_transfer(void) {
   int prospect_chunk_size;
   int runs;
 
-  printf("=== TEST: %s ===\n", __func__);
+  if (round == 1)
+    printf("=== TEST: %s ===\n", __func__);
 
   pthread_spin_init(&chunky_request_spinlock, 0);
   memset(&chunky_request_counters, 0, sizeof(chunky_request_counters));
@@ -2337,12 +2391,15 @@ int test_chunked_transfer(void) {
   if (!ctx)
     return -1;
 
-  printf("Restartable server started on ports %s.\n",
-         mg_get_option(ctx, "listening_ports"));
-
-  printf("WARNING: multiple runs test the HTTP chunked I/O mode extensively; this may take a while.\n");
+  if (round == 1) {
+    printf("Restartable server started on ports %s.\n",
+           mg_get_option(ctx, "listening_ports"));
+  } else {
+    printf(".");
+  }
 
   for (runs = 16; runs > 0; runs--) {
+    test_conn_user_data_t ud = {0};
 
     DEBUG_TRACE(("######### RUN: %d #############", runs));
 
@@ -2353,21 +2410,27 @@ int test_chunked_transfer(void) {
 
     pthread_spin_lock(&chunky_request_spinlock);
     chunky_request_counters.connections_opened++;
+    ud.req_id = chunky_request_counters.requests_sent;
     pthread_spin_unlock(&chunky_request_spinlock);
+
+    mg_get_request_info(conn)->req_user_data = &ud;
 
     for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
     {
       int add_chunkend_header = 0;
+      int req_sent_count;
+
       mg_add_tx_header(conn, 0, "Host", "localhost");
       mg_add_tx_header(conn, 0, "Connection", "keep-alive");
-      rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
-      ASSERT(rv >= 88);
-      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       pthread_spin_lock(&chunky_request_spinlock);
-      chunky_request_counters.requests_sent++;
-      add_chunkend_header = (chunky_request_counters.requests_sent % 5 == 3);
+      req_sent_count = ++chunky_request_counters.requests_sent;
       pthread_spin_unlock(&chunky_request_spinlock);
+      add_chunkend_header = (req_sent_count % 5 == 3);
+
+      rv = mg_write_http_request_head(conn, "GET", "/chunky?count=%d&chunk_size=%d&sent_count=%03u", 10, prospect_chunk_size, req_sent_count % 1000);
+      ASSERT(rv >= 100);
+      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       if (add_chunkend_header) {
         mg_add_response_header(conn, 0, "X-Mongoose-Chunky-CLIENT", "%d, %d, %d", rv, runs, prospect_chunk_size);
@@ -2378,6 +2441,16 @@ int test_chunked_transfer(void) {
       mg_flush(conn);
       // signal request phase done:
       //mg_shutdown(conn, SHUT_WR);
+
+#if BLAST_ALL_REQUESTS_TO_SERVER_FIRST
+      // as we've got a kept-alive connection, we can send another request!
+      ASSERT(0 == mg_cleanup_after_request(conn));
+    }
+
+    for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
+    {
+#endif
+      ud.req_id++;
 
       // fetch response, blocking I/O:
       //
@@ -2429,18 +2502,20 @@ int test_chunked_transfer(void) {
       int i, c, chunk_size;
       int rx_state;
       int rcv_amount;
+      int req_sent_count;
 
       mg_add_tx_header(conn, 0, "Host", "localhost");
       mg_add_tx_header(conn, 0, "Connection", "keep-alive");
       mg_add_response_header(conn, 0, "Content-Type", "text/plain");
       mg_add_response_header(conn, 0, "Transfer-Encoding", "%s", "chunked"); // '%s'? Just foolin' with ya. 'chunked' mode must be detected AFTER printf-formatting has been applied to value.
-      rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chunk_size=%d", 10, prospect_chunk_size);
-      ASSERT(rv >= 143);
-      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       pthread_spin_lock(&chunky_request_spinlock);
-      chunky_request_counters.requests_sent++;
+      req_sent_count = ++chunky_request_counters.requests_sent;
       pthread_spin_unlock(&chunky_request_spinlock);
+
+      rv = mg_write_http_request_head(conn, "POST", "/chunky?count=%d&chunk_size=%d&sent_count=%03u", 10, prospect_chunk_size, req_sent_count % 1000);
+      ASSERT(rv >= 158);
+      ASSERT_STREQ(mg_get_tx_header(conn, "Connection"), "keep-alive");
 
       //----------------------------------------------------------------------------------------
       // WARNING:
@@ -2498,6 +2573,8 @@ int test_chunked_transfer(void) {
           switch (rx_state)
           {
           case 0:
+            ud.req_id++;
+
             rv = mg_read_http_response(conn);
             ASSERT(rv == 0);
             ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
@@ -2556,6 +2633,8 @@ int test_chunked_transfer(void) {
         switch (rx_state)
         {
         case 0:
+          ud.req_id++;
+
           rv = mg_read_http_response(conn);
           ASSERT(rv == 0);
           ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
@@ -2613,7 +2692,9 @@ int test_chunked_transfer(void) {
 
   // now stop the server: done testing
   mg_stop(ctx);
-  printf("Server stopped.\n");
+
+//  if (round == 1)
+//    printf("Server stopped.\n");
 
   mg_sleep(1000);
   pthread_spin_destroy(&chunky_request_spinlock);
@@ -2628,7 +2709,8 @@ int test_chunked_transfer(void) {
   ASSERT(chunky_request_counters.chunks_processed == chunky_request_counters.chunks_sent);
   ASSERT(chunky_request_counters.connections_closed_due_to_server_stop >= 0);
 
-  printf("Server terminating now.\n");
+//  if (round == 1)
+//  printf("Server terminating now.\n");
   return 0;
 }
 
@@ -2673,36 +2755,113 @@ int main(void) {
     int gcl_tbest[3] = {0};
     int hitc = 0;
     int hittc = 0;
-    for (;;) {
+    int round;
+    int total_hitc = 0;
+    int total_hittc = 0;
+
+    printf("WARNING: multiple runs test the HTTP chunked I/O mode extensively;\n"
+           "         this may take a while. The HTTP chunk transfer test code\n"
+           "         attempts to include two important 'edge conditions' in the\n"
+           "         tests, but hitting these is dependent on network conditions\n"
+           "         i.e. hits occur semi-randomly. This code runs until both\n"
+           "         edge conditions have been hit at least 100 times.\n");
+
+    for (round = 1; total_hittc < 1000; round++) {
       int v0 = rand();
       int v1 = rand();
       int v2 = rand();
+      int improved = 0;
 
       pthread_spin_lock(&chunky_request_spinlock);
       chunky_request_counters.responses_sent = 0;
       pthread_spin_unlock(&chunky_request_spinlock);
 
+      switch (round) {
+      case 1:
+        gcl[0] = 18;
+        gcl[1] = 19169;
+        gcl[2] = 27;
+        break;
+
+      case 2:
+        gcl[0] = 59;
+        gcl[1] = 18467;
+        gcl[2] = 37;
+        break;
+
+      case 3:
+        gcl[0] = 46;
+        gcl[1] = 29358;
+        gcl[2] = 15;
+        break;
+
+      case 4:
+        gcl[0] = 65;
+        gcl[1] = 21726;
+        gcl[2] = 24;
+        break;
+
+      case 5:
+        gcl[0] = 34;
+        gcl[1] = 19718;
+        gcl[2] = 48;
+        break;
+
+      case 6:
+        gcl[0] = 58;
+        gcl[1] = 8942;
+        gcl[2] = 17;
+        break;
+
+      case 7:
+        gcl[0] = 60;
+        gcl[1] = 12382;
+        gcl[2] = 24;
+        break;
+
+      default:
+        gcl[0] = 18 + v0 % 50;
+        gcl[1] = 0 + v1;
+        gcl[2] = 3 + v2 % 50;
+        break;
+      }
+
       shift_hit = 0;
       shift_tail_hit = 0;
 
-      gcl[0] = 18 + v0 % 50;
-      gcl[1] = 0 + v1;
-      gcl[2] = 3 + v2 % 50;
+      test_chunked_transfer(round);
 
-      test_chunked_transfer();
       if (shift_hit > hitc) {
         hitc = shift_hit;
         memcpy(gcl_best, gcl, sizeof(gcl));
+        improved = 1;
       }
       if (shift_tail_hit > hittc) {
         hittc = shift_tail_hit;
         memcpy(gcl_tbest, gcl, sizeof(gcl));
+        improved = 1;
       }
-      printf("#######---------------------------------------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d",
-             gcl_best[0], gcl_best[1], gcl_best[2],
-             gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
-             hitc, hittc);
-      fflush(stdout);
+
+      total_hitc += shift_hit;
+      total_hittc += shift_tail_hit;
+
+      if (improved) {
+		FILE *lf = fopen("gcl-best.log", "a");
+		if (lf) {
+		  fprintf(lf, "BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
+				gcl_best[0], gcl_best[1], gcl_best[2],
+				gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
+				hitc, hittc,
+				total_hitc, total_hittc);
+		  fclose(lf);
+		}
+        printf("\n#######--------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
+               gcl_best[0], gcl_best[1], gcl_best[2],
+               gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
+               hitc, hittc,
+               total_hitc, total_hittc);
+        fflush(stdout);
+      }
     }
   }
 
