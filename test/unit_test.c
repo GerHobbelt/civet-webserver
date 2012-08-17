@@ -2209,10 +2209,10 @@ static int chunky_write_chunk_header(struct mg_connection *conn, int64_t chunk_s
         // Particularly #2 is EXTREMELY hard to hit, but it does happen and that code path
         // MAY contain bugs (it did before ;-) ); this code, together with the multiple runs
         // and sequenced requests has been created to maximally exercise the mongoose chunk I/O.
-        int chunk_len = 59; /* gcl[0] */;
+        int chunk_len = gcl[0];
 
         pthread_spin_lock(&chunky_request_spinlock);
-        chunk_len += (chunky_request_counters.responses_sent * (256 + 18467 /* gcl[1] */) + c) % 37 /* gcl[2] */;
+        chunk_len += (chunky_request_counters.responses_sent * (256 + gcl[1]) + c) % gcl[2];
         pthread_spin_unlock(&chunky_request_spinlock);
 
         if (todo < chunk_len)
