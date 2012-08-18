@@ -65,7 +65,7 @@ static void test_get_var(struct mg_connection *conn) {
     buf_len = strlen(ri->query_string);
     buf = malloc(buf_len + 1);
     strcpy(buf, ri->query_string);
-    is_form_enc = 0;
+    is_form_enc = 1;
   }
   var = malloc(buf_len + 1);
   var_len = mg_get_var(buf, buf_len, "my_var", var, buf_len + 1, is_form_enc);
