@@ -689,18 +689,40 @@ typedef int SOCKET;
 #else
 #define MG_PTHREAD_SELF()   (void *)pthread_self()
 #endif
-#define DEBUG_TRACE(x) do {                                 \
-  flockfile(stdout);                                        \
-  printf("*** %lu.%p.%s.%d: ",                              \
-         (unsigned long) time(NULL), MG_PTHREAD_SELF(),     \
-         __func__, __LINE__);                               \
-  printf x;                                                 \
-  putchar('\n');                                            \
-  fflush(stdout);                                           \
-  funlockfile(stdout);                                      \
+#define MG_DEBUG_TRACING									1
+/*
+  mg_trace_level bits:
+
+      0x0001:          general socket I/O
+      0x0002:          keep alive (HTTP) specifics (queueing and headers)
+      0x0004:          chunked transfer details
+      0x0008:          tail chunk specifics
+      0x0010:          read/write socket details
+      0x0020:          close socket specifics (graceful / UNgraceful close)
+      0x0100:          tasks / threads
+      0x0200:          URL and other HTTP encoding / decoding
+      0x0400:          file system / web server ops (PUT, DELETE, ...)
+      0x0800:          web server request handling
+      0x1000:          mongoose config options
+  0x00010000..onwards: application specific
+*/
+extern unsigned int mg_trace_level;
+#define DEBUG_TRACE(l, x)                                   \
+do {                                                        \
+  if (mg_trace_level & l) {                                 \
+    flockfile(stdout);                                      \
+    printf("*** %lu.%p.%s.%d: ",                            \
+           (unsigned long) time(NULL), MG_PTHREAD_SELF(),   \
+           __func__, __LINE__);                             \
+    printf x;                                               \
+    putchar('\n');                                          \
+    fflush(stdout);                                         \
+    funlockfile(stdout);                                    \
+  }                                                         \
 } while (0)
 #else
-#define DEBUG_TRACE(x)
+#define MG_DEBUG_TRACING                                    0
+#define DEBUG_TRACE(l, x)
 #endif // DEBUG
 
 // Darwin prior to 7.0 and Win32 do not have socklen_t

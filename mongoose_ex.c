@@ -59,7 +59,7 @@ int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optv
 {
     if (conn && conn->client.sock != INVALID_SOCKET)
     {
-        socklen_t optlen = 0;
+        socklen_t optlen = (socklen_t)*optlen_ref;
         int rv = getsockopt(conn->client.sock, level, optname, optval, &optlen);
 
         *optlen_ref = optlen;

@@ -82,7 +82,10 @@ static char *messages_to_json(long last_id) {
   pthread_rwlock_rdlock(&rwlock);
   len = 0;
   max_msgs = sizeof(messages) / sizeof(messages[0]);
-  DEBUG_TRACE(("JSON: fetching msgs from %ld onwards; server has %d up to id=%ld", last_id, max_msgs, last_message_id));
+  DEBUG_TRACE(0x00010000, 
+			  ("JSON: fetching msgs from %ld onwards; server has %d up to id=%ld", 
+			   last_id, max_msgs, last_message_id));
+
   // If client is too far behind, return all messages.
   if (last_message_id - last_id > max_msgs) {
     last_id = last_message_id - max_msgs;

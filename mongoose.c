@@ -66,6 +66,9 @@
 #define MG_LOGFILE_MAX_URI_COMPONENT_LEN    64
 #endif
 
+#if MG_DEBUG_TRACING									
+/* extern */ unsigned int mg_trace_level = ~0;
+#endif
 
 #if defined(_WIN32)
 
@@ -1997,13 +2000,12 @@ static int should_keep_alive(struct mg_connection *conn) {
   if (conn->is_client_conn) {
     const char *header = mg_get_tx_header(conn, "Connection");
 
-#if 0
-    DEBUG_TRACE(("CLIENT: must_close: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
-                 (int)conn->must_close,
+    DEBUG_TRACE(0x0002,
+		        ("CLIENT: must_close: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+				 (int)conn->must_close,
                  get_conn_option(conn, ENABLE_KEEP_ALIVE),
                  header, http_version,
                  mg_get_stop_flag(conn->ctx)));
-#endif
 
     return (!conn->must_close &&
             !mg_strcasecmp(get_conn_option(conn, ENABLE_KEEP_ALIVE), "yes") &&
@@ -2014,15 +2016,14 @@ static int should_keep_alive(struct mg_connection *conn) {
   } else {
     const char *header = mg_get_header(conn, "Connection");
 
-#if 0
-    DEBUG_TRACE(("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
-                 (int)conn->must_close,
+	DEBUG_TRACE(0x0002,
+		        ("must_close: %d, status: %d, legal: %d, keep-alive: %s, header: %s / ver: %s, stop: %d",
+				 (int)conn->must_close,
                  (int)conn->request_info.status_code,
                  (int)is_legal_response_code(conn->request_info.status_code),
                  get_conn_option(conn, ENABLE_KEEP_ALIVE),
                  header, http_version,
                  mg_get_stop_flag(conn->ctx)));
-#endif
 
     return (!conn->must_close &&
             conn->request_info.status_code != 401 &&
@@ -2041,9 +2042,7 @@ static int should_keep_alive(struct mg_connection *conn) {
 
 static const char *suggest_connection_header(struct mg_connection *conn) {
   int rv = should_keep_alive(conn);
-#if 0
-  DEBUG_TRACE(("suggest_connection_header() --> %s", rv ? "keep-alive" : "close"));
-#endif
+  DEBUG_TRACE(0x0002, (" --> %s", (rv ? "keep-alive" : "close")));
   return rv ? "keep-alive" : "close";
 }
 
@@ -2562,7 +2561,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
     } else {
       len = 0;
     }
-    DEBUG_TRACE(("[%s]", conn->request_info.status_custom_description));
+	DEBUG_TRACE(0x0401, ("[%s]", conn->request_info.status_custom_description));
 
     // do NOT produce the nested error (allow parent to send its own error page/info to client):
     if (!mg_have_headers_been_sent(conn) && !mg_is_producing_nested_page(conn)) {
@@ -3128,7 +3127,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
   (void) mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s%s%c%s",
                      interp, is_empty(interp) ? "" : " ", dir, DIRSEP, prog);
 
-  DEBUG_TRACE(("Running [%s]", cmdline));
+  DEBUG_TRACE(0x0100, ("Running [%s]", cmdline));
   if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
         CREATE_NEW_PROCESS_GROUP, envblk, dir, &si, &pi) == 0) {
     mg_cry(conn, "%s: CreateProcess(%s): %d (%s)",
@@ -3541,7 +3540,9 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
         if (nread == 0 || mg_is_read_data_available(conn) == 1 || !nonblocking) {
           cl = read_and_parse_chunk_header(conn);
           if (conn->rx_remaining_chunksize == 0) {
-              //DEBUG_TRACE(("End Of Chunked Transmission @ chunk header %d @ nread = %d", conn->rx_chunk_count, nread));
+			DEBUG_TRACE(0x0004,
+				        ("End Of Chunked Transmission @ chunk header %d @ nread = %d", 
+						 conn->rx_chunk_count, nread));
           }
           if (cl < 0)
             return cl;
@@ -3629,18 +3630,18 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 int mg_read(struct mg_connection *conn, void *buf, size_t len) {
   int nread;
 
-#if 0
-  DEBUG_TRACE(("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, buf, (int64_t)len,
+  DEBUG_TRACE(0x0010,
+	          ("%p buflen:%" PRId64 " %" PRId64 " %" PRId64, 
+			   buf, (int64_t)len,
                conn->content_len, conn->consumed_content));
-#endif
 
   nread = read_bytes(conn, buf, len, ((conn->content_len == -1) && !conn->rx_is_in_chunked_mode) ||
                     conn->rx_chunk_header_parsed >= 2);
 
-#if 0
-  DEBUG_TRACE(("%p nread: %d %" PRId64 " %" PRId64, buf, nread,
-              conn->content_len, conn->consumed_content));
-#endif
+  DEBUG_TRACE(0x0010,
+	          ("%p --> nread: %d %" PRId64 " %" PRId64, 
+			   buf, nread,
+               conn->content_len, conn->consumed_content));
 
   return nread;
 }
@@ -3681,7 +3682,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
     // another request (e.g. in HTTP keep-alive mode):
     if (conn->tx_chunk_header_sent == 1 && conn->tx_remaining_chunksize == 0) {
       mg_cry(conn, "%s: trying to send %d content data bytes beyond the END of a chunked transfer", __func__, (int)len);
-      DEBUG_TRACE(("Should never get here; if you do, then your user I/O code is faulty!"));
+	  DEBUG_TRACE(0x00FF, ("Should never get here; if you do, then your user I/O code is faulty!"));
       return -1;
     }
 
@@ -3991,7 +3992,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     }
   }
 
-  //DEBUG_TRACE(("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
+  DEBUG_TRACE(0x0200, ("[%s] -> [%s], [%.*s]", uri, buf, (int) b.len, b.ptr));
 
   return stat_result;
 }
@@ -5361,7 +5362,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
 #if defined(TEST_CHUNKING_SEARCH_OPT_TESTSETTING)
       shift_hit++;
 #endif
-      //DEBUG_TRACE(("SHIFTing the RX buffer: %d", offset));
+	  DEBUG_TRACE(0x0004, ("SHIFTing the RX buffer: %d", offset));
       continue;
     }
     rv = e - buf + 1; // ~ request_len
@@ -5419,7 +5420,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
 #if defined(TEST_CHUNKING_SEARCH_OPT_TESTSETTING)
         shift_tail_hit++;
 #endif
-        DEBUG_TRACE(("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
+		DEBUG_TRACE(0x000C, ("SHIFTing the RX buffer @ TAIL chunk: %d", offset));
         continue;
       }
 
@@ -6073,7 +6074,7 @@ static int put_dir(const char *path) {
     buf[len] = '\0';
 
     // Try to create intermediate directory
-    DEBUG_TRACE(("mkdir(%s)", buf));
+	DEBUG_TRACE(0x0400, ("mkdir(%s)", buf));
     if (mg_stat(buf, &st) == -1 && mg_mkdir(buf, 0755) != 0) {
       res = -1;
       break;
@@ -6514,7 +6515,7 @@ static void handle_request(struct mg_connection *conn) {
   stat_result = convert_uri_to_file_name(conn, path, sizeof(path), &st);
   ri->phys_path = path;
 
-  //DEBUG_TRACE(("%s", ri->uri));
+  DEBUG_TRACE(0x0800, ("[%s]", ri->uri));
 
   if (!check_allowed(conn)) {
     send_http_error(conn, 405, NULL, "You cannot %s to this server", conn->request_info.request_method);
@@ -6875,13 +6876,17 @@ static int set_timeout(struct socket *sock, int seconds) {
   if (sock->sock != INVALID_SOCKET && user_timeout > 0) {
     if (setsockopt(sock->sock, SOL_SOCKET, SO_RCVTIMEO, (const void *)&timeout, sizeof(timeout)) < 0 &&
         setsockopt(sock->sock, SOL_SOCKET, SO_SNDTIMEO, (const void *)&timeout, sizeof(timeout)) < 0) {
-      DEBUG_TRACE(("setsockopt SO_RCVTIMEO and SO_SNDTIMEO timeout %d set failed on socket: %d", seconds, sock->sock));
+	  DEBUG_TRACE(0x0011,
+			      ("setsockopt SO_RCVTIMEO and SO_SNDTIMEO timeout %d set failed on socket: %d", 
+				   seconds, sock->sock));
       rv = -1;
     }
 
 #if defined(TCP_USER_TIMEOUT)
     if (setsockopt(sock->sock, SOL_SOCKET, TCP_USER_TIMEOUT, (const void *)&user_timeout, sizeof(user_timeout)) < 0) {
-      DEBUG_TRACE(("setsockopt TCP_USER_TIMEOUT timeout %d set failed on socket: %d", seconds, sock->sock));
+	  DEBUG_TRACE(0x0010,
+			      ("setsockopt TCP_USER_TIMEOUT timeout %d set failed on socket: %d", 
+				   seconds, sock->sock));
       rv = -1;
     }
 #endif
@@ -7423,7 +7428,9 @@ static void close_socket_gracefully(struct mg_connection *conn) {
       conn->client.has_read_data = 1;
       // only fetch RX data when there actually is some:
       n = pull(NULL, conn, buf, sizeof(buf));
-      //DEBUG_TRACE(("close(%d -> n=%d/t=%d/sel=%d)", sock, n, linger_timeout, sv));
+	  DEBUG_TRACE(0x0020,
+		          ("close(%d -> n=%d/t=%d/sel=%d)", 
+				   sock, n, linger_timeout, sv));
       w = 0;
       if (n < 0) {
         linger_timeout = 0;
@@ -7478,7 +7485,9 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   linger.l_onoff = (linger_timeout > 0 && (conn->ctx->stop_flag == 0 || !abort_when_server_stops));
   linger.l_linger = (linger_timeout + 999) / 1000; // round up
   setsockopt(sock, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof(linger));
-  //DEBUG_TRACE(("linger-on-close(%d:t=%d[s])", sock, (int)linger.l_linger));
+  DEBUG_TRACE(0x0020,
+	          ("linger-on-close(%d:t=%d[s])", 
+			   sock, (int)linger.l_linger));
 
   if (linger.l_onoff)
     (void) __DisconnectEx(sock, 0, 0, 0);
@@ -7978,10 +7987,14 @@ static int process_new_connection(struct mg_connection *conn) {
   do {
     int data_len;
 
-    if (conn->request_info.seq_no > 0) {
-      //DEBUG_TRACE(("************************** round: %d! *******************", conn->request_info.seq_no + 1));
+#if MG_DEBUG_TRACING
+	if (conn->request_info.seq_no > 0) {
+	  DEBUG_TRACE(0x0002,
+		 	      ("****** round: %d! ******", 
+				   conn->request_info.seq_no + 1));
     }
-    reset_per_request_attributes(conn);
+#endif
+	reset_per_request_attributes(conn);
 
     // when a bit of buffered data is still available, make sure it's in the right spot:
     data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
@@ -8378,7 +8391,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         struct mg_idle_connection *arr = ctx->queue_store;
         int p;
 
-        //DEBUG_TRACE(("%s: testing pushed-back (idle) keep-alive connections:", __func__));
+		DEBUG_TRACE(0x0002, ("testing pushed-back (idle) keep-alive connections"));
         FD_ZERO(&fdr);
         p = idle_test_set;
         do {
@@ -8466,7 +8479,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
         }
         (void) pthread_mutex_unlock(&ctx->mutex);
 
-        //DEBUG_TRACE(("grabbed socket %d, going busy", conn->client.sock));
+		DEBUG_TRACE(0x0002, ("grabbed socket %d, going busy", conn->client.sock));
         return 1;
       } else {
         (void) pthread_mutex_lock(&ctx->mutex);
@@ -8486,7 +8499,7 @@ static int consume_socket(struct mg_context *ctx, struct mg_connection *conn) {
     }
 
     // when we get here, we can be sure there's no-one active in the test set: try again until it's server termination time
-    //DEBUG_TRACE(("going idle"));
+	DEBUG_TRACE(0x0002, ("going idle"));
 
     (void) pthread_mutex_lock(&ctx->mutex);
     (void) pthread_cond_signal(&ctx->sq_empty);
@@ -8532,7 +8545,7 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
       (void) pthread_cond_wait(&ctx->sq_empty, &ctx->mutex);
     } else if (full >= 0) {
       rv = 1;
-      //DEBUG_TRACE(("queued socket %d", conn->client.sock));
+	  DEBUG_TRACE(0x0002, ("queued socket %d", (int)conn->client.sock));
     }
   }
 
@@ -8578,7 +8591,7 @@ static void worker_thread(struct mg_context *ctx) {
     conn->request_info.is_ssl = conn->client.is_ssl;
     conn->abort_when_server_stops = 1;
     if (conn->client.idle_time_expired) {
-      DEBUG_TRACE(("%s: kept-alive(?) connection expired (keep-alive-timeout)", __func__));
+	  DEBUG_TRACE(0x0023, ("kept-alive(?) connection expired (keep-alive-timeout)"));
       conn->must_close = 1;
       // when we expire, don't spend ANY further effort on this connection:
       doing_fine = 0;
@@ -8610,9 +8623,9 @@ static void worker_thread(struct mg_context *ctx) {
         mg_cry(conn, "%s: socket %d failed to initialize completely: %s", __func__, (int)conn->client.sock, mg_strerror(ERRNO));
       }
     } else if (doing_fine) {
-      //DEBUG_TRACE(("%s: revived kept-alive socket %d", __func__, (int)conn->client.sock));
+      DEBUG_TRACE(0x0002, ("revived kept-alive socket %d", (int)conn->client.sock));
     } else {
-      DEBUG_TRACE(("%s: closing expired connection socket %d", __func__, (int)conn->client.sock));
+      DEBUG_TRACE(0x0003, ("closing expired connection socket %d", (int)conn->client.sock));
     }
 
     if (doing_fine) {
@@ -8620,7 +8633,7 @@ static void worker_thread(struct mg_context *ctx) {
     }
 
     if (!doing_fine) {
-      //DEBUG_TRACE(("%s: closing connection", __func__));
+      DEBUG_TRACE(0x0022, ("closing connection"));
       //reset_per_request_attributes(conn); // otherwise the callback will receive arbitrary (garbage) data
       call_user(conn, MG_EXIT_CLIENT_CONN);
       close_connection(conn);
@@ -8631,7 +8644,7 @@ static void worker_thread(struct mg_context *ctx) {
     } else {
       // The simplest way is to push the current connection onto the queue, and then
       // let consume_socket() [and its internal select() logic] cope with it.
-      //DEBUG_TRACE(("%s: pushing MAYBE-IDLE connection back onto the queue", __func__));
+      DEBUG_TRACE(0x0022, ("pushing MAYBE-IDLE connection back onto the queue"));
       if (!produce_socket(ctx, conn)) {
         char src_addr[SOCKADDR_NTOA_BUFSIZE];
         mg_cry(conn, "%s: closing active connection %s because server is shutting down",
@@ -8664,7 +8677,7 @@ fail_dramatically:
   // our purposes nicely, but we need to tweak the behaviour to prevent the race:
   mg_sleep(1 + 1000 / CLK_TCK);
 #endif
-  DEBUG_TRACE(("%s: exiting", __func__));
+  DEBUG_TRACE(~0, ("exiting"));
 
   // Signal master that we're done with connection and exiting
   (void) pthread_mutex_lock(&ctx->mutex);
@@ -8707,7 +8720,7 @@ static int accept_new_connection(const struct socket *listener,
       struct mg_connection dummy_conn = {0};
 
       // Put accepted socket structure into the queue
-      //DEBUG_TRACE(("accepted socket %d", accepted.sock));
+      DEBUG_TRACE(0x0020, ("accepted socket %d", accepted.sock));
       accepted.is_ssl = listener->is_ssl;
       dummy_conn.client = accepted;
       if (!produce_socket(ctx, &dummy_conn)) {
@@ -8817,7 +8830,7 @@ static void master_thread(struct mg_context *ctx) {
   // fix: issue 345 for the master thread
   call_user_over_ctx(ctx, 0, MG_EXIT_MASTER);
 
-  DEBUG_TRACE(("stopping workers"));
+  DEBUG_TRACE(~0, ("stopping workers"));
 
   // Stop signal received: somebody called mg_stop. Quit.
   close_all_listening_sockets(ctx);
@@ -8838,7 +8851,7 @@ static void master_thread(struct mg_context *ctx) {
     // close socket from the queue and increment tail
     struct mg_connection dummy_conn = {0};
     ctx->sq_head = pop_node_from_idle_queue(ctx, ctx->sq_head, &dummy_conn);
-    DEBUG_TRACE(("grabbed socket %d, forcibly closing the bugger", dummy_conn.client.sock));
+    DEBUG_TRACE(0x0023, ("grabbed socket %d, forcibly closing the bugger", (int)dummy_conn.client.sock));
     close_socket_UNgracefully(dummy_conn.client.sock);
   }
 
@@ -8861,7 +8874,7 @@ static void master_thread(struct mg_context *ctx) {
   // fix: issue 345 for the master thread
   call_user_over_ctx(ctx, 0, MG_EXIT_SERVER);
 
-  DEBUG_TRACE(("%s: exiting", __func__));
+  DEBUG_TRACE(~0, ("exiting"));
 
   // Signal mg_stop() that we're done; ctx will be invalid after this as main thread may finish mg_stop() at any time now
   ctx->stop_flag = 2;
@@ -8971,7 +8984,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
         free_context(ctx);
         return NULL;
       } else {
-        DEBUG_TRACE(("[%s] -> [%s]", name, value));
+        DEBUG_TRACE(0x1000, ("[%s] -> [%s]", name, value));
         continue;
       }
     } else if (value == NULL) {
@@ -9000,7 +9013,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
       }
       *qp = '"';
     }
-    DEBUG_TRACE(("[%s] -> [%s]", name, ctx->config[i]));
+    DEBUG_TRACE(0x1000, ("[%s] -> [%s]", name, ctx->config[i]));
   }
 
   // Set default value if needed
@@ -9008,7 +9021,8 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     default_value = config_options[i * MG_ENTRIES_PER_CONFIG_OPTION + 2];
     if (ctx->config[i] == NULL && default_value != NULL) {
       ctx->config[i] = mg_strdup(default_value);
-      DEBUG_TRACE(("Setting default: [%s] -> [%s]",
+      DEBUG_TRACE(0x1000,
+		          ("Setting default: [%s] -> [%s]",
                    config_options[i * MG_ENTRIES_PER_CONFIG_OPTION + 1],
                    default_value));
     }
@@ -9374,7 +9388,7 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size) {
 		  if (buflen_rem >= n_l + v_l) {
 			d += mg_snq0printf(conn, d, sizeof(buf) - wl, "%s: %s\r\n", h->name, h->value);
 		  } else {
-			DEBUG_TRACE(("%s: buffer overflow while writing sentinel chunk trailer; writing headers collected so far", __func__));
+			DEBUG_TRACE(0x0008, ("buffer overflow while writing sentinel chunk trailer; writing headers collected so far"));
 			assert(conn->tx_chunk_header_sent == 2);
 			if (wl == 0 || wl != mg_write(conn, buf, wl))
 			  goto fail_dramatically;

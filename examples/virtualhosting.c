@@ -500,7 +500,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 #endif
   if (event == MG_EVENT_LOG)
   {
-    DEBUG_TRACE(("[%s] %s", request_info->log_severity, request_info->log_message));
+    DEBUG_TRACE(0x00010000, ("[%s] %s", request_info->log_severity, request_info->log_message));
     return 0;
   }
 
@@ -702,7 +702,9 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
           if (gotNow == 0)
           {
-            DEBUG_TRACE(("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize));
+            DEBUG_TRACE(0x00020000, 
+			            ("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", 
+						 dataSize, gotNow, gotSize));
             break;
           }
           gotSize += gotNow;
