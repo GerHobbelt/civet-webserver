@@ -800,8 +800,9 @@ int mg_extract_raw_http_header(char **buf, char **token_ref, char **value_ref);
 //   buf:       destination buffer for the decoded variable
 //   buf_len:   length of the destination buffer
 //   is_form_url_encoded:
-//              1 if the 'data' buffer is form-url-encoded, 0 otherwise,
-//              i.e. when the 'data' buffer is URI encoded, e.g. a query string.
+//              !0 if the 'data' buffer is form-url-encoded, 0 otherwise.
+//              When the 'data' buffer is form-url-encoded, e.g. in a URI query string, set to !0.
+//              (See also: http://stackoverflow.com/questions/1634271/url-encoding-the-space-character-or-20)
 //
 // Note: form-url-encoded data differs from URI encoding in a way that it
 //       uses '+' as character for space, see RFC 1866 section 8.2.1

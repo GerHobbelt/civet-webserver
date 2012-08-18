@@ -1545,7 +1545,7 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
         // RFC2616 sec 2.2 says you can escape char NUL too, but we don't allow it, as it opens a floodgate of assault scenarios
         if (p[1] <= 0 || p[1] >= 128)
           return -1;
-        *p++;
+        p++;
         *str++ = *p++;
       } else if (*p >= ' ' && *p < 128) {
         *str++ = *p++;
@@ -4541,7 +4541,10 @@ static int parse_auth_header(struct mg_connection *conn, char *buf,
   return 1;
 }
 
-#define MG_STRINGIZE(v)  #v
+// gcc needs TWO call levels to expand a #define to its value and then stringize it; MSVC only requires 1 call level:
+#define MG__STRINGIZE(v)  #v
+#define MG_STRINGIZE(v)  MG__STRINGIZE(v)
+
 #define USRDMNPWD_BUFSIZ_STR    MG_STRINGIZE(USRDMNPWD_BUFSIZ)
 
 // Authorize against the opened passwords file or user callback.
@@ -7689,7 +7692,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
       return -1;
     }
     // check overflow, i.e. whether we hit the edge in scratch space
-    if (rv >= sizeof(uribuf) - 2 || rv > conn->buf_size - 5) {
+    if (rv >= (int)sizeof(uribuf) - 2 || rv > conn->buf_size - 5) {
       mg_cry(conn, "%s: scratch buffer overflow while constructing the request line [%.*s(...)]", __func__, (int)MG_MIN(200, sizeof(uribuf)), uribuf);
       return -1;
     }
