@@ -24,7 +24,7 @@
 
 
 
-#define MONGOOSE_VERSION                "3.2"
+#define MONGOOSE_VERSION                "3.3"
 #define PASSWORDS_FILE_NAME             ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE            MG_MAX(MG_BUF_LEN, 4096)
 #define MAX_CGI_ENVIR_VARS              64
