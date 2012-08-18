@@ -84,12 +84,13 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka\n", mg_version());
+  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built %s\n",
+          mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
   fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
   fprintf(stderr, "  mongoose <config_file>\n");
   fprintf(stderr, "  mongoose [-option value ...]\n");
-  fprintf(stderr, "OPTIONS:\n");
+  fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
   for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
@@ -97,7 +98,7 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
             (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
   }
-  fprintf(stderr, "See  http://code.google.com/p/mongoose/wiki/MongooseManual"
+  fprintf(stderr, "\nSee  http://code.google.com/p/mongoose/wiki/MongooseManual"
           " for more details.\n");
   fprintf(stderr, "Example:\n  mongoose -s cert.pem -p 80,443s -d no\n");
   exit(EXIT_FAILURE);
@@ -344,17 +345,13 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
 
-      mg_set_response_code(conn, 200);
-      (void) mg_printf(conn,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Content-Type: image/x-icon\r\n"
-                       "Cache-Control: no-cache\r\n"
-                       "Content-Length: %u\r\n"
-                       "Connection: close\r\n\r\n", (unsigned int)len);
-      mg_mark_end_of_header_transmission(conn);
+      mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
+      mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
+      //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
+      mg_write_http_response_head(conn, 200, NULL);
 
-      if ((int)len != mg_write(conn, data, len))
-      {
+      if ((int)len != mg_write(conn, data, len)) {
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
       }
       return (void *)1;
@@ -400,11 +397,12 @@ static void start_mongoose(int argc, char *argv[]) {
   };
 
   /* Edit passwords file if -A option is specified */
-  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
+  if (argc > 1 && !strcmp(argv[1], "-A")) {
     if (argc != 6) {
       show_usage_and_exit(ctx);
     }
-    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
+    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ?
+         EXIT_SUCCESS : EXIT_FAILURE);
   }
 
   /* Show usage if -h or --help options are specified */
@@ -625,6 +623,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           break;
       }
       break;
+    case WM_CLOSE:
+      mg_stop(ctx);
+      Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+      PostQuitMessage(EXIT_SUCCESS);
+      return 0;  // We've just sent our own quit message, with proper hwnd.
   }
 
   return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -656,7 +659,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.uCallbackMessage = WM_USER;
   Shell_NotifyIconA(NIM_ADD, &TrayIcon);
 
-  while (GetMessage(&msg, hWnd, 0, 0)) {
+  while (GetMessage(&msg, hWnd, 0, 0) > 0) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }

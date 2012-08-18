@@ -55,7 +55,6 @@ static const char *default_options[] = {
   "access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
   "index_files",           "default.html",
   "ssi_pattern",           "**.html$|**.htm|**.shtml$|**.shtm$",
-  "enable_keep_alive",     "yes",
   //"ssi_marker",          "{!--#,}",
   "keep_alive_timeout",    "5",
 
@@ -91,12 +90,13 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka\n", mg_version());
+  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built %s\n",
+          mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
   fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
   fprintf(stderr, "  mongoose <config_file>\n");
   fprintf(stderr, "  mongoose [-option value ...]\n");
-  fprintf(stderr, "OPTIONS:\n");
+  fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
   for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
@@ -104,7 +104,7 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
             (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
   }
-  fprintf(stderr, "See  http://code.google.com/p/mongoose/wiki/MongooseManual"
+  fprintf(stderr, "\nSee  http://code.google.com/p/mongoose/wiki/MongooseManual"
           " for more details.\n");
   fprintf(stderr, "Example:\n  mongoose -s cert.pem -p 80,443s -d no\n");
   exit(EXIT_FAILURE);
@@ -116,7 +116,7 @@ static void verify_document_root(const char *root) {
 
   getcwd(buf, sizeof(buf));
   if (mg_stat(root, &st) != 0 || !st.is_directory) {
-    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(errno), buf);
+    die("Invalid root directory: [%s]: %s; current directory = [%s]", root, mg_strerror(ERRNO), buf);
   }
 }
 
@@ -168,7 +168,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
   // If config file was set in command line and open failed, exit
   if (argv[1] != NULL && argv[2] == NULL && fp == NULL) {
-    die("Cannot open config file %s: %s", config_file, mg_strerror(errno));
+    die("Cannot open config file %s: %s", config_file, mg_strerror(ERRNO));
   }
 
   // use the default values for starters (so that all options have a known reasonable value):
@@ -789,11 +789,12 @@ static void start_mongoose(int argc, char *argv[]) {
   };
 
   /* Edit passwords file if -A option is specified */
-  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
+  if (argc > 1 && !strcmp(argv[1], "-A")) {
     if (argc != 6) {
       show_usage_and_exit(ctx);
     }
-    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
+    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ?
+         EXIT_SUCCESS : EXIT_FAILURE);
   }
 
   /* Show usage if -h or --help options are specified */
@@ -1024,6 +1025,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           break;
       }
       break;
+    case WM_CLOSE:
+      mg_stop(ctx);
+      Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+      PostQuitMessage(EXIT_SUCCESS);
+      return 0;  // We've just sent our own quit message, with proper hwnd.
   }
 
   return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -1055,7 +1061,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.uCallbackMessage = WM_USER;
   Shell_NotifyIconA(NIM_ADD, &TrayIcon);
 
-  while (GetMessage(&msg, hWnd, 0, 0)) {
+  while (GetMessage(&msg, hWnd, 0, 0) > 0) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
