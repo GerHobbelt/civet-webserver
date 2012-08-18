@@ -1575,7 +1575,7 @@ int mg_unquote_header_value(char *str, char *sentinel, char **end_ref) {
 // Extract a token,value pair from the string buffer. (See mongoose.h for full doc)
 // Return 0 on success, -1 on failure.
 int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string) {
-  char *p, *te, *begin_word, *end_word;
+  char *te, *ve, *begin_word, *end_word;
   char sep, ec;
 
   if (token_ref) *token_ref = NULL;
@@ -1585,23 +1585,20 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   begin_word = skip_allws(begin_word);
 
   // token [LWS] "=" [LWS] [quoted-string]
-  end_word = begin_word + strcspn(begin_word, "= \t\r\n");
+  // make sure token is actually cf. RC2616 sec. 2.2:
+  end_word = begin_word + strspn(begin_word, rfc2616_token_charset);
   if (end_word == begin_word)
     return -1;
+
   te = end_word;
   end_word = skip_lws(end_word);
 
   // now we should see the mandatory "="
   if (*end_word != '=')
     return -1;
-  *te = 0;
   end_word++;
 
-  // make sure token is actually cf. RC2616 sec. 2.2:
-  p = begin_word + strspn(begin_word, rfc2616_token_charset);
-  if (*p)
-    return -1;
-  else if (token_ref)
+  if (token_ref)
     *token_ref = begin_word;
 
   begin_word = end_word = skip_lws(end_word);
@@ -1610,10 +1607,10 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   // extract UNQUOTED field-value, where field-value is either a *single* quoted-string or a token cf. RFC2616 sec 2.2
   if (!*begin_word || (*begin_word != '"' && !strchr(rfc2616_token_charset, *begin_word))) {
     // no value specified; we're looking at either a separator, WS, CR/LF or a NUL (EOS)
-    if (value_ref) {
+    if (value_ref)
       *value_ref = empty_string;
-    }
-    te = end_word;
+
+    ve = end_word;
     sep = *end_word;
     end_word = skip_eolws(end_word);
   } else if (*begin_word != '"') {
@@ -1622,10 +1619,9 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
 
     // accept rfc2616_token_charset
     end_word += strspn(begin_word, rfc2616_token_charset);
-    te = end_word;
+    ve = end_word;
     sep = *end_word;
     end_word = skip_eolws(end_word);
-    *te = 0;
   } else {
     if (value_ref)
       *value_ref = begin_word;
@@ -1636,7 +1632,7 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
     // 'end_word' will now point 1 char past the ending <">-quote.
     assert(sep ? *end_word : 1);
     assert(!sep ? !*end_word : 1);
-    te = end_word;
+    ve = end_word;
     end_word = skip_eolws(end_word);
   }
 
@@ -1654,11 +1650,11 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
   // Also note that <">-quotes are NOT considered true separators here, so
   // [a=b"c=d] won't cut it.
   ec = sep;
-  if (end_word > te)
+  if (end_word > ve)
     ec = *end_word;
   if (ec && !strchr(rfc2616_nonws_separator_charset, ec)) {
     end_word--;
-    if (end_word > te) {
+    if (end_word > ve) {
       // we did skip extra CRLF/WS at the end there, so we can use the last WS/CRLF as separator:
       *sentinel = *end_word;
     } else {
@@ -1672,12 +1668,14 @@ int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **toke
         return -1;
       }
     }
-  } else if (end_word > te) {
+  } else if (end_word > ve) {
     *sentinel = *end_word;
   } else {
     *sentinel = sep;
   }
   *buf = end_word;
+  *te = 0;
+  *ve = 0;
 
   return 0;
 }
@@ -9512,7 +9510,7 @@ int mg_is_read_data_available(struct mg_connection *conn) {
 
 
 int mg_match_prefix(const char *pattern, int pattern_len, const char *str) {
-  if (!str || !pattern) 
+  if (!str || !pattern)
 	return -1;
 
   return match_prefix(pattern, pattern_len, str);

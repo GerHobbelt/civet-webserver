@@ -745,6 +745,11 @@ const char *mg_get_header(const struct mg_connection *, const char *name);
 //        This function REQUIRES that any quoted-string does NOT contain any
 //        'line continuation' in the sense of RFC2616 sec 2.2; any existing
 //        line-continuation should already have been transformed to single SP.
+//
+//        The input buffer 'buf' content will NOT be edited (by inserted NUL chars
+//        or unquoting) until at least the token and the '=' separator have
+//        been acknowledged. Only when followed by an invalidly quoted value,
+//        will 'buf' content be changed when this function returns an error code.
 int mg_extract_token_qstring_value(char **buf, char *sentinel, const char **token_ref, const char **value_ref, const char *empty_string);
 
 // Convert the specified string (token or quoted_string cf. RFC2616 sec. 2.2) to its
