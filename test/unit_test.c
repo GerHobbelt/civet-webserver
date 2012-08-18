@@ -1532,7 +1532,7 @@ static void test_mg_fetch(void) {
   ASSERT(fp == NULL);
   ASSERT(conn != NULL);
   ri = mg_get_request_info(conn);
-  ASSERT(ri->num_headers == 2);
+  ASSERT(ri->num_headers == 3);
   ASSERT_STREQ(ri->request_method, "GET");
   ASSERT_STREQ(ri->http_version, "1.1");
   ASSERT_STREQ(ri->uri, "/data");
@@ -1550,7 +1550,7 @@ static void test_mg_fetch(void) {
   ASSERT(fp != NULL);
   ASSERT(conn != NULL);
   ri = mg_get_request_info(conn);
-  ASSERT(ri->num_headers == 2);
+  ASSERT(ri->num_headers == 3);
   ASSERT_STREQ(ri->request_method, "GET");
   ASSERT_STREQ(ri->http_version, "1.1");
   ASSERT_STREQ(ri->uri, "/data");
@@ -1576,6 +1576,7 @@ static void test_mg_fetch(void) {
   ri = mg_get_request_info(conn);
   ASSERT(mg_stat("mongoose.c", &st) == 0);
   ASSERT(st.size == ftell(fp));
+  ASSERT(ri->num_headers == 3);
   ASSERT_STREQ(ri->request_method, "GET");
   ASSERT_STREQ(ri->http_version, "1.1");
   ASSERT_STREQ(ri->uri, "/mongoose.c");
