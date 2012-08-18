@@ -31,8 +31,8 @@ login_page(struct mg_connection *conn)
     const char  *qs = ri->query_string;
     size_t       qslen = strlen(qs); // query_string ~ "" when no query string was specified in the request
 
-    mg_get_var(qs, qslen, "name", name, ARRAY_SIZE(name), 0);
-    mg_get_var(qs, qslen, "pass", pass, ARRAY_SIZE(pass), 0);
+    mg_get_var(qs, qslen, "name", name, ARRAY_SIZE(name), 1);
+    mg_get_var(qs, qslen, "pass", pass, ARRAY_SIZE(pass), 1);
     mg_get_headers(cookies, ARRAY_SIZE(cookies), conn, "Cookie");
 
     /*

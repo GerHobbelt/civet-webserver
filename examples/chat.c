@@ -66,7 +66,7 @@ static void get_qsvar(const struct mg_request_info *request_info,
                       const char *name, char *dst, size_t dst_len) {
   const char *qs = request_info->query_string;
   assert(qs != NULL); // qs ~ "" when no query string was specified in the request
-  mg_get_var(qs, strlen(qs == NULL ? "" : qs), name, dst, dst_len, 0);
+  mg_get_var(qs, (size_t)-1, name, dst, dst_len, 1);
 }
 
 // Get a set of messages with IDs greater than last_id and transform them
