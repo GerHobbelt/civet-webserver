@@ -328,11 +328,12 @@ static void start_mongoose(int argc, char *argv[]) {
   };
 
   /* Edit passwords file if -A option is specified */
-  if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'A') {
+  if (argc > 1 && !strcmp(argv[1], "-A")) {
     if (argc != 6) {
       show_usage_and_exit(ctx);
     }
-    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ? EXIT_SUCCESS : EXIT_FAILURE);
+    exit(mg_modify_passwords_file(argv[2], argv[3], argv[4], argv[5]) ?
+         EXIT_SUCCESS : EXIT_FAILURE);
   }
 
   /* Show usage if -h or --help options are specified */
@@ -555,8 +556,8 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
       break;
     case WM_CLOSE:
       mg_stop(ctx);
-      Shell_NotifyIcon(NIM_DELETE, &TrayIcon);
-      PostQuitMessage(0);
+      Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+      PostQuitMessage(EXIT_SUCCESS);
       return 0;  // We've just sent our own quit message, with proper hwnd.
   }
 
