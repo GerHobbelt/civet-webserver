@@ -470,9 +470,11 @@ We also check whether someone else has gone before us setting up these C99 defin
 #define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
 #define RTLD_LAZY  0
 #if !defined(_POSIX_)
+#define fseeko(x, y, z) _lseeki64(_fileno(x), (y), (z))
 #define fdopen(x, y) _fdopen((x), (y))
+#else
+#define fseeko(x, y, z) _lseeki64(fileno(x), (y), (z))
 #endif
-#define fseeko(x, y, z) fseek((x), (y), (z))
 
 // prevent collisions / odd replacements outside mongoose.c + mongoose_ex.c:
 #if defined(INSIDE_MONGOOSE_C)
@@ -729,6 +731,7 @@ do {                                                        \
 #ifdef NO_SOCKLEN_T
 typedef int socklen_t;
 #endif // NO_SOCKLEN_T
+#define _DARWIN_UNLIMITED_SELECT
 
 /* buffer size that will fit both IPv4 and IPv6 addresses formatted by ntoa() / ntop() */
 #define SOCKADDR_NTOA_BUFSIZE           42
