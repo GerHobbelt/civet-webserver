@@ -504,6 +504,8 @@ struct mg_connection {
   int64_t content_len;                  // received Content-Length header value or chunk size; INT64_MAX means fetch as much as you can, mg_read() will act like a single pull(); -1 means we'd have to fetch (and decode) the (HTTP) headers first
   int64_t consumed_content;             // How many bytes of content have already been read
   char *buf;                            // Buffer for received data [buf_size] / chunk header reception [CHUNK_HEADER_BUFSIZ] / headers to transmit [buf_size]
+  //char *body;                           // Pointer to not-read yet buffered body data
+  //char *next_request;                   // Pointer to the buffered next request
   int buf_size;                         // Buffer size for received data + chunk header reception
   int request_len;                      // Size of the request + headers in buffer buf[]
 
@@ -3506,6 +3508,10 @@ static int read_bytes(struct mg_connection *conn, void *buf, size_t len, int non
 
   assert((conn->content_len == -1) ||
          conn->consumed_content <= conn->content_len);
+
+  assert(conn->next_request != NULL &&
+         conn->body != NULL &&
+         conn->next_request >= conn->body);
 
   nread = 0;
   while (len > 0 && (conn->consumed_content < conn->content_len || conn->content_len == -1)) {

@@ -553,6 +553,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           break;
       }
       break;
+    case WM_CLOSE:
+      mg_stop(ctx);
+      Shell_NotifyIcon(NIM_DELETE, &TrayIcon);
+      PostQuitMessage(0);
+      return 0;  // We've just sent our own quit message, with proper hwnd.
   }
 
   return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -584,7 +589,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.uCallbackMessage = WM_USER;
   Shell_NotifyIconA(NIM_ADD, &TrayIcon);
 
-  while (GetMessage(&msg, hWnd, 0, 0)) {
+  while (GetMessage(&msg, hWnd, 0, 0) > 0) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
