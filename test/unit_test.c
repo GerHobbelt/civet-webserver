@@ -2059,12 +2059,12 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     chunky_request_counters.requests_processed++;
     pthread_spin_unlock(&chunky_request_spinlock);
 
-    if (mg_get_var(request_info->query_string, (size_t)-1, "chunk_size", content, sizeof(content), 0) > 0) {
+    if (mg_get_var(request_info->query_string, (size_t)-1, "chunk_size", content, sizeof(content), 1) > 0) {
       chunk_size = atoi(content);
     } else {
       chunk_size = 0;
     }
-    if (mg_get_var(request_info->query_string, (size_t)-1, "count", content, sizeof(content), 0) > 0) {
+    if (mg_get_var(request_info->query_string, (size_t)-1, "count", content, sizeof(content), 1) > 0) {
       chunk_count = atoi(content);
     } else {
       chunk_count = 50;

@@ -5221,7 +5221,8 @@ static int parse_http_request(char *buf, struct mg_request_info *ri) {
 // buffer (which marks the end of HTTP request). Buffer buf may already
 // have some data. The length of the data is stored in nread.
 // Upon every read operation, increase nread by the number of bytes read.
-static int read_request(FILE *fp, struct mg_connection *conn, char *buf, int bufsiz, int *nread) {
+static int read_request(FILE *fp, struct mg_connection *conn,
+                        char *buf, int bufsiz, int *nread) {
   int request_len, n = 1;
 
   request_len = get_request_len(buf, *nread);
@@ -5624,8 +5625,7 @@ static char *addenv(struct cgi_env_block *block, FORMAT_STRING(const char *fmt),
 #endif
     ;
 
-static char *addenv(struct cgi_env_block *block, const char *fmt, ...)
-{
+static char *addenv(struct cgi_env_block *block, const char *fmt, ...) {
   int n;
   size_t space;
   char *added;
@@ -9082,7 +9082,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
     return NULL;
   }
 
-  // Start worker threads
+  // Start worker threads; always start at least one of those.
   i = atoi(get_option(ctx, NUM_THREADS));
   if (i < 1) i = 1;
   for ( ; i > 0; i--) {

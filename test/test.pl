@@ -165,7 +165,6 @@ unlink $config;
 kill_spawned_child();
 
 # Spawn the server on port $port
-#write_file($config, "");
 my $cmd = "$exe ".
   "-listening_ports $port ".
   "-access_log_file access.log ".
