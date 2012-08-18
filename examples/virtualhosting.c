@@ -702,9 +702,9 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
           if (gotNow == 0)
           {
-            DEBUG_TRACE(0x00020000, 
-			            ("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n", 
-						 dataSize, gotNow, gotSize));
+            DEBUG_TRACE(0x00020000,
+                        ("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n",
+                         dataSize, gotNow, gotSize));
             break;
           }
           gotSize += gotNow;

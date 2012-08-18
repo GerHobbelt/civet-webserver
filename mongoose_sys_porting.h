@@ -689,7 +689,7 @@ typedef int SOCKET;
 #else
 #define MG_PTHREAD_SELF()   (void *)pthread_self()
 #endif
-#define MG_DEBUG_TRACING									1
+#define MG_DEBUG_TRACING                                    1
 /*
   mg_trace_level bits:
 

@@ -5,7 +5,7 @@
 
 #include <math.h>
 
-#define TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO		150   // <= 160
+#define TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO     150   // <= 160
 // first push all requests to the server asap, then go fetch their responses.
 #define BLAST_ALL_REQUESTS_TO_SERVER_FIRST      0
 
@@ -2142,9 +2142,9 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     chunky_request_counters.responses_sent++;
     pthread_spin_unlock(&chunky_request_spinlock);
 
-    DEBUG_TRACE(0x00010000, 
-			    ("test server callback: %s request serviced", 
-				 request_info->uri));
+    DEBUG_TRACE(0x00010000,
+                ("test server callback: %s request serviced",
+                 request_info->uri));
 
     return (void *)1;
   } else if (event == MG_NEW_REQUEST) {
@@ -2405,7 +2405,7 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
 
 static void fixup_tcp_buffers_for_large_send_chunks(struct mg_connection *conn) {
   struct mg_context *ctx;
-  // see what the OS default is, then increase that for this connection when it's 
+  // see what the OS default is, then increase that for this connection when it's
   // smaller than the expected largest send() tail headers' chunk:
   int tx_tcpbuflen = 0, rx_tcpbuflen = 0;
   size_t tx_varsize = sizeof(int), rx_varsize = sizeof(int);
@@ -2416,12 +2416,12 @@ static void fixup_tcp_buffers_for_large_send_chunks(struct mg_connection *conn) 
   ASSERT(0 == mg_getsockopt(conn, SOL_SOCKET, SO_SNDBUF, &tx_tcpbuflen, &tx_varsize));
 
   if (tx_tcpbuflen < conn->buf_size + CHUNK_HEADER_BUFSIZ) {
-	tx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
-	ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_SNDBUF, &tx_tcpbuflen, sizeof(tx_tcpbuflen)));
+    tx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
+    ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_SNDBUF, &tx_tcpbuflen, sizeof(tx_tcpbuflen)));
   }
   if (rx_tcpbuflen < conn->buf_size + CHUNK_HEADER_BUFSIZ) {
-	rx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
-	ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_RCVBUF, &rx_tcpbuflen, sizeof(rx_tcpbuflen)));
+    rx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
+    ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_RCVBUF, &rx_tcpbuflen, sizeof(rx_tcpbuflen)));
   }
 }
 
@@ -2485,23 +2485,23 @@ int test_chunked_transfer(int round) {
 
     mg_get_request_info(conn)->req_user_data = &ud;
 
-	/*
-	When you expect to send large chunks at once, such as we are when we send a large number 
-	of headers (and consequently large bytecount) in the tail chunk, you MUST increase
-	the internal TCP stack send buffer to ensure that you do not suffer from deadlock 
-	when both parties (such as in this testclient and built-in test server) MAY send these
-	large numbers of bytes without the option of them emptying their receive buffers
-	at the same time.
+    /*
+    When you expect to send large chunks at once, such as we are when we send a large number
+    of headers (and consequently large bytecount) in the tail chunk, you MUST increase
+    the internal TCP stack send buffer to ensure that you do not suffer from deadlock
+    when both parties (such as in this testclient and built-in test server) MAY send these
+    large numbers of bytes without the option of them emptying their receive buffers
+    at the same time.
 
-	You may observe this deadlock cause happen without the SO_SNDBUF + SO_RCVBUF adjustment below
-	as we must account for both testclient and testserver sending large header blocks in
-	their tail chunks; we only 'cope' with that by adjusting at the client side here, i.e.
-	SO_RCVBUF increase is meant to cope with the expected large incoming tail block from the
-	testserver.
+    You may observe this deadlock cause happen without the SO_SNDBUF + SO_RCVBUF adjustment below
+    as we must account for both testclient and testserver sending large header blocks in
+    their tail chunks; we only 'cope' with that by adjusting at the client side here, i.e.
+    SO_RCVBUF increase is meant to cope with the expected large incoming tail block from the
+    testserver.
 
-	(At later revision will include these adjustments as an option for mongoose proper.)
-	*/
-	fixup_tcp_buffers_for_large_send_chunks(conn);
+    (At later revision will include these adjustments as an option for mongoose proper.)
+    */
+    fixup_tcp_buffers_for_large_send_chunks(conn);
 
     for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
     {
@@ -2828,7 +2828,7 @@ int main(void) {
 #endif
 #endif
 
-#if MG_DEBUG_TRACING									
+#if MG_DEBUG_TRACING
   mg_trace_level = 0x00021501;
 #endif
 
@@ -2884,33 +2884,33 @@ int main(void) {
     int round;
     int total_hitc = 0;
     int total_hittc = 0;
-	const int presets[][3] =
-	{
-	  { 111,3548,132 },
-	  { 134,19718,98 },
-	  { 140,30333,126 },
-	  { 155,27753,36 }, // tail hits ~ / 8 ~ / 39
-	  { 155,28297,21 }, // tail hits ~ / 9 ~ / 80
-	  { 156,1869,115 },
-	  { 159,27529,31 },
-	  { 18,13458,21 },
-	  { 18,19169,27 },
-	  { 18,3788,130 },
-	  { 21,32729,10 },
-	  { 22,6995,5 },
-	  { 24,11840,19 },
-	  { 31,9514,12 },
-	  { 32,15141,14 },
-	  { 34,19718,48 },
-	  { 34,3035,43 },
-	  { 41,24084,7 },
-	  { 46,29358,15 },
-	  { 58,8942,17 },
-	  { 59,18467,37 },
-	  { 60,12382,24 },
-	  { 60,26439,6 },
-	  { 65,21726,24 },
-	};
+    const int presets[][3] =
+    {
+      { 111,3548,132 },
+      { 134,19718,98 },
+      { 140,30333,126 },
+      { 155,27753,36 }, // tail hits ~ / 8 ~ / 39
+      { 155,28297,21 }, // tail hits ~ / 9 ~ / 80
+      { 156,1869,115 },
+      { 159,27529,31 },
+      { 18,13458,21 },
+      { 18,19169,27 },
+      { 18,3788,130 },
+      { 21,32729,10 },
+      { 22,6995,5 },
+      { 24,11840,19 },
+      { 31,9514,12 },
+      { 32,15141,14 },
+      { 34,19718,48 },
+      { 34,3035,43 },
+      { 41,24084,7 },
+      { 46,29358,15 },
+      { 58,8942,17 },
+      { 59,18467,37 },
+      { 60,12382,24 },
+      { 60,26439,6 },
+      { 65,21726,24 },
+    };
 
     printf("WARNING: multiple runs test the HTTP chunked I/O mode extensively;\n"
            "         this may take a while. The HTTP chunk transfer test code\n"
@@ -2926,13 +2926,13 @@ int main(void) {
       chunky_request_counters.responses_sent = 0;
       pthread_spin_unlock(&chunky_request_spinlock);
 
-	  if (round < ARRAY_SIZE(presets)) {
+      if (round < ARRAY_SIZE(presets)) {
         printf("@");
         fflush(stdout);
         gcl[0] = presets[round][0];
         gcl[1] = presets[round][1];
         gcl[2] = presets[round][2];
-	  } else {
+      } else {
         gcl[0] = 18 + rand() % 150;
         gcl[1] = 0 + rand();
         gcl[2] = 3 + rand() % 150;
@@ -2960,7 +2960,7 @@ int main(void) {
       if (improved) {
         FILE *lf = fopen("gcl-best.log", "a");
         if (lf) {
-		  fprintf(lf, "  { %d,%d,%d }, // hits ~ %d ~ %d\n",
+          fprintf(lf, "  { %d,%d,%d }, // hits ~ %d ~ %d\n",
                 gcl_best[0], gcl_best[1], gcl_best[2],
                 hitc,
                 total_hitc);
