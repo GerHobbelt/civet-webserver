@@ -5,7 +5,7 @@
 // 1. type "make" in the directory where this file lives
 // 2. point your browser to http://127.0.0.1:8081
 
-#include "mongoose_ex.h"    // mg_send_http_error()
+#include "mongoose.h"
 
 
 #define MAX_USER_LEN  20
@@ -423,7 +423,7 @@ static void redirect_to_ssl(struct mg_connection *conn) {
 
   if (host != NULL && (p = strchr(host, ':')) != NULL) {
     mg_printf(conn, "HTTP/1.1 302 Found\r\n"
-              "Location: https://%.*s:8082/%s:8082\r\n\r\n",
+              "Location: https://%.*s:8082/%s\r\n\r\n",
               (int)(p - host), host, ri->uri);
     mg_mark_end_of_header_transmission(conn);
   } else {
