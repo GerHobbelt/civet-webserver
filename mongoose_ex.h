@@ -103,27 +103,6 @@ int mg_get_lasterror(void);
 void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx);
 
 
-
-// Match string against wildcard pattern and return -1 when no match is
-// found or the match length in characters when the string (prefix) matches
-// the pattern.
-//
-// Pattern special characters:
-//
-// $         - matches end of string
-// ?         - matches one arbitrary character
-// *         - matches zero or more characters except the '/', hence matches
-//             'one directory' when used to match paths
-// **        - matches the remainder of the string
-// |         - a|b matches either pattern a or pattern b
-int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
-
-// Parse the UTC date string and return the decoded timestamp as UNIX time_t value in seconds since epoch 1/1/1970
-time_t mg_parse_date_string(const char *datetime);
-
-// Converts the given timestamp to UTC timestamp string compatible with HTTP headers.
-void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
-
 // Return the set of matching HTTP header values in dst[] and the number of discovered entries as a return value.
 // The dst[] array will be terminated by a NULL sentinel.
 //
@@ -132,26 +111,6 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
 // Note, hence, that the return value may be larger than the 'dst_buffersize' input value.
 int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connection *ri, const char *name);
 
-/*
-Send HTTP error response headers, if we still can. Log the error anyway.
-
-'reason' may be NULL, in which case the default RFC2616 response code text will be used instead.
-
-'fmt' + args is the content sent along as error report (request response).
-*/
-void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-;
-void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
-
-
-// Returns a string useful as Connection: header value, depending on the current state of connection
-const char *mg_suggest_connection_header(struct mg_connection *conn);
-
-// signal mongoose that the server should close the connection with the client once the current request has been serviced.
-void mg_connection_must_close(struct mg_connection *conn);
 
 // Instruct connection to keep going when server is stopped (mg_get_stop_flag() != 0): mode = 1.
 // Default for all connections: mode = 0

@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_ex.h"    // mg_send_http_error()
+#include "mongoose.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"
@@ -233,7 +233,7 @@ static void init_server_name(void) {
 
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
-  struct mg_request_info *request_info = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
 
   if (event == MG_INIT0)
   {
@@ -344,7 +344,7 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
 
-      request_info->status_code = 200;
+      mg_set_response_code(conn, 200);
       (void) mg_printf(conn,
                        "HTTP/1.1 200 OK\r\n"
                        "Content-Type: image/x-icon\r\n"

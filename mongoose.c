@@ -1221,7 +1221,7 @@ const char *mg_version(void) {
   return MONGOOSE_VERSION;
 }
 
-struct mg_request_info *mg_get_request_info(struct mg_connection *conn) {
+const struct mg_request_info *mg_get_request_info(const struct mg_connection *conn) {
   return conn ? &conn->request_info : NULL;
 }
 
@@ -2029,6 +2029,7 @@ static int should_keep_alive(struct mg_connection *conn) {
 
     return (!conn->must_close &&
             conn->request_info.status_code != 401 &&
+            conn->request_info.status_code != 400 &&
             // only okay persistence when we see legal response codes;
             // anything else means we're foobarred ourselves already,
             // so it's time to close and let them retry.
@@ -8048,13 +8049,11 @@ static int process_new_connection(struct mg_connection *conn) {
     if (parse_http_request(conn->buf, ri) ||
         !is_valid_uri(ri->uri)) {
       // Do not put garbage in the access log, just send it back to the client
-      conn->must_close = 1;
       send_http_error(conn, 400, NULL,
                       "Cannot parse HTTP request: [%.*s]", data_len, conn->buf);
     } else if (strcmp(ri->http_version, "1.0") &&
                strcmp(ri->http_version, "1.1")) {
       // Request seems valid, but HTTP version is strange
-      conn->must_close = 1;
       send_http_error(conn, 505, NULL, "");
       log_access(conn);
     } else {
@@ -9176,8 +9175,41 @@ struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx) {
   return ctx ? &ctx->user_functions : NULL;
 }
 
+void *mg_get_request_user_data(struct mg_connection *conn) {
+  if (conn) {
+	return conn->request_info.req_user_data;
+  }
+  return NULL;
+}
+
+void mg_set_request_user_data(struct mg_connection *conn, void *user_data) {
+  if (conn) {
+	conn->request_info.req_user_data = user_data;
+  }
+}
+
 struct mg_context *mg_get_context(struct mg_connection *conn) {
   return conn ? conn->ctx : NULL;
+}
+
+const char *mg_suggest_connection_header(struct mg_connection *conn) {
+  return suggest_connection_header(conn);
+}
+
+void mg_connection_must_close(struct mg_connection *conn) {
+  conn->must_close = 1;
+}
+
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...) {
+  va_list ap;
+
+  va_start(ap, fmt);
+  vsend_http_error(conn, status, reason, fmt, ap);
+  va_end(ap);
+}
+
+void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap) {
+  vsend_http_error(conn, status, reason, fmt, ap);
 }
 
 int mg_get_stop_flag(struct mg_context *ctx) {
@@ -9476,5 +9508,24 @@ int mg_is_read_data_available(struct mg_connection *conn) {
     }
   }
   return 0;
+}
+
+
+int mg_match_prefix(const char *pattern, int pattern_len, const char *str) {
+  if (!str || !pattern) 
+	return -1;
+
+  return match_prefix(pattern, pattern_len, str);
+}
+
+time_t mg_parse_date_string(const char *datetime) {
+  if (!datetime)
+    return (time_t)0;
+
+  return parse_date_string(datetime);
+}
+
+void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm) {
+  gmt_time_string(buf, bufsize, tm);
 }
 

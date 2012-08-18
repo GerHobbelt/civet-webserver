@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_ex.h"    // mg_send_http_error()
+#include "mongoose.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"

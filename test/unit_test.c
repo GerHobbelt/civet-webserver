@@ -1482,11 +1482,10 @@ static void *fetch_callback(enum mg_event event,
                            struct mg_connection *conn) {
   const struct mg_request_info *request_info = mg_get_request_info(conn);
   if (event == MG_NEW_REQUEST && !strcmp(request_info->uri, "/data")) {
-    mg_printf(conn, "HTTP/1.1 200 OK\r\n"
-              "Content-Length: %d\r\n"
-              "Content-Type: text/plain\r\n\r\n",
-              (int) strlen(fetch_data));
-    mg_mark_end_of_header_transmission(conn);
+    mg_add_response_header(conn, 0, "Content-Length", "%d", (int) strlen(fetch_data));
+    mg_add_response_header(conn, 0, "Content-Type", "text/plain; charset=utf-8");
+    mg_write_http_response_head(conn, 200, NULL);
+
     mg_printf(conn, "%s", fetch_data);
     return "";
   } else if (event == MG_EVENT_LOG) {
@@ -1506,7 +1505,7 @@ static void test_mg_fetch(void) {
   int length;
   struct mg_context *ctx;
   struct mg_connection *conn = NULL;
-  struct mg_request_info *ri;
+  const struct mg_request_info *ri;
   const char *tmp_file = "temporary_file_name_for_unit_test.txt";
   struct mgstat st;
   FILE *fp;
@@ -1601,7 +1600,7 @@ static void test_mg_fetch(void) {
 static int test_client_connect_expect_error = 0;
 
 static void *test_client_event_handler(enum mg_event event, struct mg_connection *conn) {
-  struct mg_request_info *ri = mg_get_request_info(conn);
+  const struct mg_request_info *ri = mg_get_request_info(conn);
 
   if (event == MG_EVENT_LOG) {
     if (test_client_connect_expect_error == 1) {
@@ -1621,7 +1620,7 @@ static void test_client_connect() {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
   struct mg_connection *conn;
-  struct mg_request_info *ri;
+  struct mg_request_info *ri4m;
   int rv;
   const char *cookies[16];
   int cl;
@@ -1675,11 +1674,11 @@ static void test_client_connect() {
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(conn);
-  ri->http_version = "1.1";
-  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri->request_method = "GET";
-  ri->uri = "/search";
+  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
+  ri4m->http_version = "1.1";
+  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri4m->request_method = "GET";
+  ri4m->uri = "/search";
 
   rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(rv == 153);
@@ -1707,11 +1706,11 @@ static void test_client_connect() {
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(conn);
-  ri->http_version = "1.1";
-  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri->request_method = "GET";
-  ri->uri = "/search";
+  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
+  ri4m->http_version = "1.1";
+  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri4m->request_method = "GET";
+  ri4m->uri = "/search";
 
   rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(rv == 153);
@@ -1781,11 +1780,11 @@ static void test_client_connect() {
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(conn);
-  ri->http_version = "1.1";
-  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri->request_method = "GET";
-  ri->uri = "/search";
+  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
+  ri4m->http_version = "1.1";
+  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri4m->request_method = "GET";
+  ri4m->uri = "/search";
 
   rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(mg_get_tx_header(conn, "Content-Length") == NULL);
@@ -1841,11 +1840,11 @@ static void test_client_connect() {
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(conn);
-  ri->http_version = "1.1";
-  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri->request_method = "GET";
-  ri->uri = "/search";
+  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
+  ri4m->http_version = "1.1";
+  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri4m->request_method = "GET";
+  ri4m->uri = "/search";
 
   rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(mg_get_tx_header(conn, "Content-Length") == NULL);
@@ -1892,11 +1891,11 @@ static void test_client_connect() {
   // set up the request the rude way: directly patch the request_info struct. Nasty!
   //
   // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri = mg_get_request_info(conn);
-  ri->http_version = "1.1";
-  ri->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri->request_method = "GET";
-  ri->uri = "/search";
+  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
+  ri4m->http_version = "1.1";
+  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
+  ri4m->request_method = "GET";
+  ri4m->uri = "/search";
 
   rv = mg_write_http_request_head(conn, NULL, NULL);
   ASSERT(mg_get_tx_header(conn, "Transfer-Encoding") == NULL);
@@ -2023,7 +2022,7 @@ static struct
 static pthread_spinlock_t chunky_request_spinlock;
 
 static void *chunky_server_callback(enum mg_event event, struct mg_connection *conn) {
-  struct mg_request_info *request_info = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
   struct mg_context *ctx = mg_get_context(conn);
   char content[1024];
   int content_length;
@@ -2483,7 +2482,7 @@ int test_chunked_transfer(int round) {
     ud.req_id = chunky_request_counters.requests_sent;
     pthread_spin_unlock(&chunky_request_spinlock);
 
-    mg_get_request_info(conn)->req_user_data = &ud;
+    mg_set_request_user_data(conn, &ud);
 
     /*
     When you expect to send large chunks at once, such as we are when we send a large number

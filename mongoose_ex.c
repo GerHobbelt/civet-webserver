@@ -243,21 +243,6 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
 
 
 
-int mg_match_prefix(const char *pattern, int pattern_len, const char *str)
-{
-    if (!str || !pattern) return -1;
-
-    return match_prefix(pattern, pattern_len, str);
-}
-
-time_t mg_parse_date_string(const char *datetime)
-{
-    if (!datetime)
-        return (time_t)0;
-
-    return parse_date_string(datetime);
-}
-
 
 static void set_header_ptr(const char **dst, int dstsize, int idx, const char *value)
 {
@@ -285,35 +270,6 @@ int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connect
     set_header_ptr(dst, dst_buffersize, dst_buffersize - 1, NULL);
 
     return cnt;
-}
-
-void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsend_http_error(conn, status, reason, fmt, ap);
-    va_end(ap);
-}
-
-void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap)
-{
-    vsend_http_error(conn, status, reason, fmt, ap);
-}
-
-void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm)
-{
-    gmt_time_string(buf, bufsize, tm);
-}
-
-const char *mg_suggest_connection_header(struct mg_connection *conn)
-{
-    return suggest_connection_header(conn);
-}
-
-void mg_connection_must_close(struct mg_connection *conn)
-{
-    conn->must_close = 1;
 }
 
 void mg_set_connection_abort_mode(struct mg_connection *conn, int mode)

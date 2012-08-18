@@ -10,7 +10,7 @@ volatile int should_restart = 0;
 
 static void *callback(enum mg_event event,
                       struct mg_connection *conn) {
-  struct mg_request_info *request_info = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
   char content[1024];
   int content_length;
 

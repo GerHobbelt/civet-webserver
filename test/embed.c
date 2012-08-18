@@ -28,9 +28,12 @@
 #define LISTENING_PORT "23456"
 #endif
 
-static const char *standard_reply = "HTTP/1.1 200 OK\r\n"
-  "Content-Type: text/plain\r\n"
-  "Connection: close\r\n\r\n";
+static void send_standard_reply_head(struct mg_connection *conn) {
+  mg_connection_must_close(conn);
+  // Connection: close is automatically added by mg_write_http_response_head()
+  mg_add_response_header(conn, 0, "Content-Type", "text/plain; charset=utf-8");
+  mg_write_http_response_head(conn, 200, NULL);
+}
 
 static void test_get_var(struct mg_connection *conn) {
   char *var, *buf;
@@ -40,8 +43,7 @@ static void test_get_var(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
   int is_form_enc = 0;
 
-  mg_printf(conn, "%s", standard_reply);
-  mg_mark_end_of_header_transmission(conn);
+  send_standard_reply_head(conn);
 
   buf_len = 0;
   var = buf = NULL;
@@ -80,8 +82,8 @@ static void test_get_header(struct mg_connection *conn) {
   int i;
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
-  mg_printf(conn, "%s", standard_reply);
-  mg_mark_end_of_header_transmission(conn);
+  send_standard_reply_head(conn);
+
   printf("HTTP headers: %d\n", ri->num_headers);
   for (i = 0; i < ri->num_headers; i++) {
     printf("[%s]: [%s]\n", ri->http_headers[i].name, ri->http_headers[i].value);
@@ -97,8 +99,7 @@ static void test_get_request_info(struct mg_connection *conn) {
   int i;
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
-  mg_printf(conn, "%s", standard_reply);
-  mg_mark_end_of_header_transmission(conn);
+  send_standard_reply_head(conn);
 
   mg_printf(conn, "Method: [%s]\n", ri->request_method);
   mg_printf(conn, "URI: [%s]\n", ri->uri);
@@ -130,9 +131,10 @@ static void test_get_request_info(struct mg_connection *conn) {
 static void test_error(struct mg_connection *conn) {
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
-  mg_printf(conn, "HTTP/1.1 %d XX\r\n"
-            "Connection: close\r\n\r\n", ri->status_code);
-  mg_mark_end_of_header_transmission(conn);
+  mg_connection_must_close(conn);
+  // Connection: close is automatically added by mg_write_http_response_head()
+  mg_write_http_response_head(conn, 0, NULL);  // 0 ~ use previously set response code
+
   mg_printf(conn, "Error: [%d]", ri->status_code);
 }
 
@@ -142,8 +144,7 @@ static void test_post(struct mg_connection *conn) {
   int len;
   const struct mg_request_info *ri = mg_get_request_info(conn);
 
-  mg_printf(conn, "%s", standard_reply);
-  mg_mark_end_of_header_transmission(conn);
+  send_standard_reply_head(conn);
 
   if (strcmp(ri->request_method, "POST") == 0 &&
       (cl = mg_get_header(conn, "Content-Length")) != NULL) {

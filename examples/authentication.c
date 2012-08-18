@@ -27,7 +27,7 @@ login_page(struct mg_connection *conn)
 {
     char        name[100], pass[100], uri[100];
     const char  *cookies[20];
-    struct mg_request_info *ri = mg_get_request_info(conn);
+    const struct mg_request_info *ri = mg_get_request_info(conn);
     const char  *qs = ri->query_string;
     size_t       qslen = strlen(qs); // query_string ~ "" when no query string was specified in the request
 

@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose_ex.h"    // mg_send_http_error()
+#include "mongoose_ex.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"
@@ -283,7 +283,7 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
 #define SD_READ_UNIT 1024
 #define SD_OUTPUT_UNIT 64
 
-  struct mg_request_info *ri = mg_get_request_info(conn);
+  const struct mg_request_info *ri = mg_get_request_info(conn);
   struct sd_buf *ib, *ob;
   int ret;
   unsigned int enabled_extensions = MKDEXT_TABLES | MKDEXT_FENCED_CODE | MKDEXT_EMAIL_FRIENDLY;
@@ -342,28 +342,26 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
   if (!is_inline_production)
   {
     /* write the appropriate headers */
-    char date[64], lm[64], etag[64], range[64];
+    char date[64], lm[64], etag[64];
     time_t curtime = time(NULL);
     const char *hdr;
     int64_t cl, r1, r2;
     int n;
 
-    ri->status_code = 200;
+    mg_set_response_code(conn, 200);
 
     cl = ob->size;
-
-    range[0] = '\0';
 
 #if 0
     // If Range: header specified, act accordingly
     r1 = r2 = 0;
     hdr = mg_get_header(conn, "Range");
     if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
-      conn->request_info.status_code = 206;
+      mg_set_response_code(conn, 206);
       (void) fseeko(fp, (off_t) r1, SEEK_SET);
       cl = n == 2 ? r2 - r1 + 1: cl - r1;
-      (void) mg_snprintf(conn, range, sizeof(range),
-                         "Content-Range: bytes "
+      mg_add_response_header(conn, 0, "Content-Range",
+                         "bytes "
                          "%" PRId64 "-%"
                          PRId64 "/%" PRId64 "\r\n",
                          r1, r1 + cl - 1, stp->size);
@@ -376,23 +374,13 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
     mg_gmt_time_string(lm, sizeof(lm), &st->mtime);
     (void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx", (unsigned long) st->mtime, (unsigned long) st->size);
 
-    (void) mg_printf(conn,
-                     "HTTP/1.1 %d %s\r\n"
-                     "Date: %s\r\n"
-                     "Last-Modified: %s\r\n"
-                     "Etag: \"%s\"\r\n"
-                     "Content-Type: text/html\r\n"
-                     "Content-Length: %" PRId64 "\r\n"
-                     "Connection: %s\r\n"
-                     // "Accept-Ranges: bytes\r\n"
-                     "%s\r\n"
-                    , ri->status_code, mg_get_response_code_text(ri->status_code)
-                    , date, lm, etag
-                    , cl
-                    , mg_suggest_connection_header(conn)
-                    , range
-                    );
-    mg_mark_end_of_header_transmission(conn);
+    mg_add_response_header(conn, 0, "Date", "%s", date);
+    mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
+    mg_add_response_header(conn, 0, "Etag", "\"%s\"", etag);
+    mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
+    mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
+    // Connection: close is automatically added by mg_write_http_response_head()
+    mg_write_http_response_head(conn, 0, NULL);
 
     ret = (int)cl;
     if (strcmp(ri->request_method, "HEAD") != 0) {
@@ -443,7 +431,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
   // check local IP for IP-based Virtual Hosting & switch DocumentRoot for the connection accordingly:
   if (conn && !strcmp("document_root", name))
   {
-    struct mg_request_info *request_info = mg_get_request_info(conn);
+    const struct mg_request_info *request_info = mg_get_request_info(conn);
 
     if (/* IP-based Virtual Hosting */
         (!request_info->local_ip.is_ip6 &&
@@ -472,7 +460,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
 
 static void *event_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
-  struct mg_request_info *request_info = mg_get_request_info(conn);
+  const struct mg_request_info *request_info = mg_get_request_info(conn);
   int i;
   struct t_user_arg * udata = (struct t_user_arg *)mg_get_user_data(ctx)->user_data;
   const char * uri;
@@ -562,14 +550,12 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
 
   if (!strcmp(uri, "/_stat")) {
     mg_connection_must_close(conn);
-    request_info->status_code = 200;
-    mg_printf(conn,
-              "HTTP/1.1 200 OK\r\n"
-              "Connection: close\r\n"
-              "Cache-Control: no-cache"
-              "Content-Type: text/html; charset=utf-8\r\n\r\n");
-    mg_mark_end_of_header_transmission(conn);
-    mg_printf(conn,
+	// Connection: close is automatically added by mg_write_http_response_head()
+    mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+    mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
+    mg_write_http_response_head(conn, 200, NULL);
+
+	mg_printf(conn,
               "<html><head><title>HTTP server statistics</title>"
               "<style>th {text-align: left;}</style></head>"
               "<body><h1>HTTP server statistics</h1>\r\n");
@@ -597,13 +583,10 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
     const char * contentLength = mg_get_header(conn, "Content-Length");
 
     mg_connection_must_close(conn);
-    request_info->status_code = 200;
-    mg_printf(conn,
-              "HTTP/1.1 200 OK\r\n"
-              "Connection: close\r\n"
-              "Cache-Control: no-cache"
-              "Content-Type: text/plain; charset=utf-8\r\n\r\n");
-    mg_mark_end_of_header_transmission(conn);
+	// Connection: close is automatically added by mg_write_http_response_head()
+    mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+    mg_add_response_header(conn, 0, "Content-Type", "text/plain; charset=utf-8");
+    mg_write_http_response_head(conn, 200, NULL);
 
     mg_printf(conn, "Received headers:\r\n");
     for (i = 0; i < request_info->num_headers; i++)
@@ -752,17 +735,12 @@ static void *event_callback(enum mg_event event, struct mg_connection *conn) {
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
 
-      request_info->status_code = 200;
-      (void) mg_printf(conn,
-                       "HTTP/1.1 200 OK\r\n"
-                       "Content-Type: image/x-icon\r\n"
-                       "Cache-Control: no-cache\r\n"
-                       "Content-Length: %u\r\n"
-                       "Connection: close\r\n\r\n", (unsigned int)len);
-      mg_mark_end_of_header_transmission(conn);
+      mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
+      mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
+      mg_write_http_response_head(conn, 200, NULL);
 
-      if ((int)len != mg_write(conn, data, len))
-      {
+      if ((int)len != mg_write(conn, data, len)) {
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
       }
       return (void *)1;
