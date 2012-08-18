@@ -5,6 +5,11 @@
 
 #include <math.h>
 
+#define TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO		100   // <= 160
+// first push all requests to the server asap, then go fetch their responses.
+#define BLAST_ALL_REQUESTS_TO_SERVER_FIRST      0
+
+
 static void fatal_exit(struct mg_context *ctx) {
   mg_signal_stop(ctx);
   abort();
@@ -2137,7 +2142,9 @@ static void *chunky_server_callback(enum mg_event event, struct mg_connection *c
     chunky_request_counters.responses_sent++;
     pthread_spin_unlock(&chunky_request_spinlock);
 
-    //DEBUG_TRACE(("test server callback: %s request serviced", request_info->uri));
+    DEBUG_TRACE(0x00010000, 
+			    ("test server callback: %s request serviced", 
+				 request_info->uri));
 
     return (void *)1;
   } else if (event == MG_NEW_REQUEST) {
@@ -2396,8 +2403,27 @@ static int chunky_process_rx_chunk_header(struct mg_connection *conn, int64_t ch
   return 0;  // run default handler; we were just here to add extensions...
 }
 
-// first push all requests to the server asap, then go fetch their responses.
-#define BLAST_ALL_REQUESTS_TO_SERVER_FIRST      0
+static void fixup_tcp_buffers_for_large_send_chunks(struct mg_connection *conn) {
+  struct mg_context *ctx;
+  // see what the OS default is, then increase that for this connection when it's 
+  // smaller than the expected largest send() tail headers' chunk:
+  int tx_tcpbuflen = 0, rx_tcpbuflen = 0;
+  size_t tx_varsize = sizeof(int), rx_varsize = sizeof(int);
+
+  ctx = mg_get_context(conn);
+
+  ASSERT(0 == mg_getsockopt(conn, SOL_SOCKET, SO_RCVBUF, &rx_tcpbuflen, &rx_varsize));
+  ASSERT(0 == mg_getsockopt(conn, SOL_SOCKET, SO_SNDBUF, &tx_tcpbuflen, &tx_varsize));
+
+  if (tx_tcpbuflen < conn->buf_size + CHUNK_HEADER_BUFSIZ) {
+	tx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
+	ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_SNDBUF, &tx_tcpbuflen, sizeof(tx_tcpbuflen)));
+  }
+  if (rx_tcpbuflen < conn->buf_size + CHUNK_HEADER_BUFSIZ) {
+	rx_tcpbuflen = conn->buf_size + CHUNK_HEADER_BUFSIZ;
+	ASSERT(0 == mg_setsockopt(conn, SOL_SOCKET, SO_RCVBUF, &rx_tcpbuflen, sizeof(rx_tcpbuflen)));
+  }
+}
 
 int test_chunked_transfer(int round) {
   struct mg_context *ctx;
@@ -2445,7 +2471,7 @@ int test_chunked_transfer(int round) {
   for (runs = 16; runs > 0; runs--) {
     test_conn_user_data_t ud = {0};
 
-    DEBUG_TRACE(("######### RUN: %d #############", runs));
+    DEBUG_TRACE(0x00020000, ("##### RUN: %d #####", runs));
 
     // open client connection to server and GET and POST chunked content
     conn = mg_connect(ctx, "localhost", 32156, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
@@ -2458,6 +2484,24 @@ int test_chunked_transfer(int round) {
     pthread_spin_unlock(&chunky_request_spinlock);
 
     mg_get_request_info(conn)->req_user_data = &ud;
+
+	/*
+	When you expect to send large chunks at once, such as we are when we send a large number 
+	of headers (and consequently large bytecount) in the tail chunk, you MUST increase
+	the internal TCP stack send buffer to ensure that you do not suffer from deadlock 
+	when both parties (such as in this testclient and built-in test server) MAY send these
+	large numbers of bytes without the option of them emptying their receive buffers
+	at the same time.
+
+	You may observe this deadlock cause happen without the SO_SNDBUF + SO_RCVBUF adjustment below
+	as we must account for both testclient and testserver sending large header blocks in
+	their tail chunks; we only 'cope' with that by adjusting at the client side here, i.e.
+	SO_RCVBUF increase is meant to cope with the expected large incoming tail block from the
+	testserver.
+
+	(At later revision will include these adjustments as an option for mongoose proper.)
+	*/
+	fixup_tcp_buffers_for_large_send_chunks(conn);
 
     for (prospect_chunk_size = 16; prospect_chunk_size < 4096; prospect_chunk_size *= 2)
     {
@@ -2483,8 +2527,8 @@ int test_chunked_transfer(int round) {
 
         // help trigger edge case 2 by pumping out a huge tail chunk header section:
         for (hi = 6; hi < (int)ARRAY_SIZE(conn->request_info.response_headers); hi++) {
-          ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; bugger-it millennium hand and shrink and still no cocktail under the bridge!",
-                                             hi, runs, prospect_chunk_size));
+          ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; \"bugger-it and still no cocktail under the bridge! %*s!\"",
+                                             hi, runs, prospect_chunk_size, req_sent_count % TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO, "ugh"));
         }
       }
 
@@ -2659,8 +2703,8 @@ int test_chunked_transfer(int round) {
 
       // help trigger edge case 2 by pumping out a huge tail chunk header section:
       for (hi = 6; hi < (int)ARRAY_SIZE(conn->request_info.response_headers); hi++) {
-        ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; bugger-it millennium hand and shrink and still no cocktail under the bridge!",
-                                           hi, runs, prospect_chunk_size));
+        ASSERT(0 == mg_add_response_header(conn, 1, "X-Mongoose-Chunky-CLIENT-FloodTest", "%d; %d; %d; \"bugger-it and still no cocktail under the bridge! %*s!\"",
+                                           hi, runs, prospect_chunk_size, req_sent_count % TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO, "ugh"));
       }
 
       // make sure we mark the chunked transmission as finished!
@@ -2784,6 +2828,10 @@ int main(void) {
 #endif
 #endif
 
+#if MG_DEBUG_TRACING									
+  mg_trace_level = 0x00021501;
+#endif
+
   test_MSVC_fix();
 
   test_match_prefix();
@@ -2904,9 +2952,9 @@ int main(void) {
         break;
 
       default:
-        gcl[0] = 18 + v0 % 50;
+        gcl[0] = 18 + v0 % 150;
         gcl[1] = 0 + v1;
-        gcl[2] = 3 + v2 % 50;
+        gcl[2] = 3 + v2 % 150;
         break;
       }
 
