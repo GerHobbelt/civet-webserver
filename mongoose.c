@@ -67,7 +67,7 @@
 #endif
 
 #if MG_DEBUG_TRACING									
-/* extern */ unsigned int mg_trace_level = ~0;
+/* extern */ unsigned int mg_trace_level = ~0u;
 #endif
 
 #if defined(_WIN32)
@@ -8169,13 +8169,13 @@ static int pull_testset_from_idle_queue(struct mg_context *ctx, int n) {
 
 // re-insert a series of idle connections into the idle queue: place these
 // at the back when they are not marked as 'active', place the nodes which are
-// marked as 'active' at the front of the queue so thy can be picked off
+// marked as 'active' at the front of the queue so they can be picked off
 // as fast as possible.
 // This procedure makes the idle queue testing behave like a Round Robin process.
 static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test_set) {
   // nasty: as we need to re-order the nodes, we do it quick&dirty by placing
-  // them in proper in order in this local array (of same size as the idle_queue_store)
-  // and then rebuild the linked lists in CTX in one feel swoop.
+  // them in proper order in this local array (of same size as the idle_queue_store)
+  // and then rebuild the linked lists in CTX in one fell swoop.
   int node_set[ARRAY_SIZE(ctx->queue_store) + 4 /* front/end sentinels */];
   int a, z, p, i;
   struct mg_idle_connection *arr = ctx->queue_store;
@@ -8185,6 +8185,7 @@ static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test
   z = ARRAY_SIZE(node_set) - 1;
   node_set[0] = node_set[ARRAY_SIZE(node_set) - 1] = -1;
   assert(idle_test_set >= 0);
+  assert(idle_test_set < ARRAY_SIZE(ctx->queue_store));
   p = idle_test_set;
   do {
     if (arr[p].client.was_idle && arr[p].client.has_read_data)
@@ -8192,6 +8193,9 @@ static void insert_testset_into_idle_queue(struct mg_context *ctx, int idle_test
     else
       node_set[a++] = p;
     p = arr[p].next;
+    assert(p >= 0);
+    assert(p < ARRAY_SIZE(ctx->queue_store));
+	assert(a < z);
   } while (p != idle_test_set);
   node_set[a] = node_set[z - 1] = -1;
 

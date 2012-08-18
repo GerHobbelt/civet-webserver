@@ -5,7 +5,7 @@
 
 #include <math.h>
 
-#define TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO		100   // <= 160
+#define TAIL_CHUNK_HDR_FLOOD_ATTEMPT_MODULO		150   // <= 160
 // first push all requests to the server asap, then go fetch their responses.
 #define BLAST_ALL_REQUESTS_TO_SERVER_FIRST      0
 
@@ -2884,6 +2884,33 @@ int main(void) {
     int round;
     int total_hitc = 0;
     int total_hittc = 0;
+	const int presets[][3] =
+	{
+	  { 111,3548,132 },
+	  { 134,19718,98 },
+	  { 140,30333,126 },
+	  { 155,27753,36 }, // tail hits ~ / 8 ~ / 39
+	  { 155,28297,21 }, // tail hits ~ / 9 ~ / 80
+	  { 156,1869,115 },
+	  { 159,27529,31 },
+	  { 18,13458,21 },
+	  { 18,19169,27 },
+	  { 18,3788,130 },
+	  { 21,32729,10 },
+	  { 22,6995,5 },
+	  { 24,11840,19 },
+	  { 31,9514,12 },
+	  { 32,15141,14 },
+	  { 34,19718,48 },
+	  { 34,3035,43 },
+	  { 41,24084,7 },
+	  { 46,29358,15 },
+	  { 58,8942,17 },
+	  { 59,18467,37 },
+	  { 60,12382,24 },
+	  { 60,26439,6 },
+	  { 65,21726,24 },
+	};
 
     printf("WARNING: multiple runs test the HTTP chunked I/O mode extensively;\n"
            "         this may take a while. The HTTP chunk transfer test code\n"
@@ -2892,70 +2919,23 @@ int main(void) {
            "         i.e. hits occur semi-randomly. This code runs until both\n"
            "         edge conditions have been hit at least 100 times.\n");
 
-    for (round = 1; total_hittc < 1000; round++) {
-      int v0 = rand();
-      int v1 = rand();
-      int v2 = rand();
+    for (round = 1; total_hittc < 100; round++) {
       int improved = 0;
 
       pthread_spin_lock(&chunky_request_spinlock);
       chunky_request_counters.responses_sent = 0;
       pthread_spin_unlock(&chunky_request_spinlock);
 
-      switch (round) {
-      case 1:
-        gcl[0] = 18;
-        gcl[1] = 19169;
-        gcl[2] = 27;
-        break;
-
-      case 2:
-        gcl[0] = 59;
-        gcl[1] = 18467;
-        gcl[2] = 37;
-        break;
-
-      case 3:
-        gcl[0] = 46;
-        gcl[1] = 29358;
-        gcl[2] = 15;
-        break;
-
-      case 4:
-        gcl[0] = 65;
-        gcl[1] = 21726;
-        gcl[2] = 24;
-        break;
-
-      case 5:
-        gcl[0] = 34;
-        gcl[1] = 19718;
-        gcl[2] = 48;
-        break;
-
-      case 6:
-        gcl[0] = 58;
-        gcl[1] = 8942;
-        gcl[2] = 17;
-        break;
-
-      case 7:
-        gcl[0] = 60;
-        gcl[1] = 12382;
-        gcl[2] = 24;
-        break;
-
-      case 8:
-        gcl[0] = 34;
-        gcl[1] = 3035;
-        gcl[2] = 43;
-        break;
-
-      default:
-        gcl[0] = 18 + v0 % 150;
-        gcl[1] = 0 + v1;
-        gcl[2] = 3 + v2 % 150;
-        break;
+	  if (round < ARRAY_SIZE(presets)) {
+        printf("@");
+        fflush(stdout);
+        gcl[0] = presets[round][0];
+        gcl[1] = presets[round][1];
+        gcl[2] = presets[round][2];
+	  } else {
+        gcl[0] = 18 + rand() % 150;
+        gcl[1] = 0 + rand();
+        gcl[2] = 3 + rand() % 150;
       }
 
       shift_hit = 0;
@@ -2980,11 +2960,14 @@ int main(void) {
       if (improved) {
         FILE *lf = fopen("gcl-best.log", "a");
         if (lf) {
-          fprintf(lf, "BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
+		  fprintf(lf, "  { %d,%d,%d }, // hits ~ %d ~ %d\n",
                 gcl_best[0], gcl_best[1], gcl_best[2],
+                hitc,
+                total_hitc);
+          fprintf(lf, "  { %d,%d,%d }, // tail hits ~ / %d ~ / %d\n",
                 gcl_tbest[0], gcl_tbest[1], gcl_tbest[2],
-                hitc, hittc,
-                total_hitc, total_hittc);
+                hittc,
+                total_hittc);
           fclose(lf);
         }
         printf("\n#######--------- BEST GCL: %d.%d.%d / %d.%d.%d ~ %d / %d ~ %d / %d\n",
