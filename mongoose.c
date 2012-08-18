@@ -3446,28 +3446,6 @@ static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
   return sent;
 }
 
-// This function is needed to prevent Mongoose to be stuck in a blocking
-// socket read when user requested exit. To do that, we sleep in select
-// with a timeout, and when returned, check the context for the stop flag.
-// If it is set, we return 0, and this means that we must not continue
-// reading, must give up and close the connection and exit serving thread.
-static int wait_until_socket_is_readable(struct mg_connection *conn) {
-  int result;
-  struct timeval tv;
-  fd_set set;
-
-  do {
-    tv.tv_sec = 0;
-    tv.tv_usec = 300 * 1000;
-    FD_ZERO(&set);
-    FD_SET(conn->client.sock, &set);
-    result = select(conn->client.sock + 1, &set, NULL, NULL, &tv);
-  } while ((result == 0 || (result < 0 && ERRNO == EINTR)) &&
-           conn->ctx->stop_flag == 0);
-
-  return conn->ctx->stop_flag || result < 0 ? 0 : 1;
-}
-
 // Read from IO channel - opened file descriptor, socket, or SSL descriptor.
 // Return number of bytes read, negative value on error
 static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
@@ -9381,20 +9359,36 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size) {
     if (chunk_size == 0) {
       int n = conn->request_info.num_response_headers;
       int i;
-      char *o_d = d;
 
       for (i = 0; i < n; i++) {
         struct mg_header *h = conn->request_info.response_headers + i;
+		int n_l = (int)strlen(h->name), v_l;
 
         // Was this tag edited/added after we had all headers written in the HTTP response header?
         // If yes, dump it in the trailer block!
-        if (h->name[strlen(h->name) + 1] == '!') {
-          d += mg_snq0printf(conn, d, sizeof(buf) - (d - buf), "%s: %s\r\n", h->name, h->value);
+        if (h->name[n_l + 1] == '!') {
+		  int wl = (int)(d - buf);
+		  int buflen_rem = (int)sizeof(buf) - 7 /* [: ]+[\r\n]+[\r\n]+NUL */ - wl;
+
+		  v_l = (int)strlen(h->value);
+		  if (buflen_rem >= n_l + v_l) {
+			d += mg_snq0printf(conn, d, sizeof(buf) - wl, "%s: %s\r\n", h->name, h->value);
+		  } else {
+			DEBUG_TRACE(("%s: buffer overflow while writing sentinel chunk trailer; writing headers collected so far", __func__));
+			assert(conn->tx_chunk_header_sent == 2);
+			if (wl == 0 || wl != mg_write(conn, buf, wl))
+			  goto fail_dramatically;
+
+			// risk: tag:value may not fit buffer in extreme case, so we write it directly, to make sure:
+			if (n_l + v_l + 4 != mg_printf(conn, "%s: %s\r\n", h->name, h->value))
+			  goto fail_dramatically;
+			d = buf;
+		  }
         }
       }
       if (d + 2 >= buf + sizeof(buf)) {
-        mg_cry(conn, "%s: buffer overflow while writing sentinel chunk trailer; ignoring all headers", __func__);
-        d = o_d;
+        mg_cry(conn, "%s: buffer overflow while writing sentinel chunk trailer", __func__);
+		goto fail_dramatically;
       }
       // and the final CRLF after the (possibly empty) trailer:
       *d++ = 13;
@@ -9402,18 +9396,21 @@ int mg_write_chunk_header(struct mg_connection *conn, int64_t chunk_size) {
     }
 
     assert(conn->tx_chunk_header_sent == 2);
-    if ((d - buf) != mg_write(conn, buf, (d - buf))) {
-      // make sure we reset the state first
-      if (conn->tx_chunk_header_sent == 2)
-        conn->tx_chunk_header_sent = 1;
-      return -1;
-    }
+	assert((d - buf) >= 2);
+    if ((d - buf) != mg_write(conn, buf, (d - buf)))
+	  goto fail_dramatically;
+
     // make sure we reset the state first and update the counters
     if (conn->tx_chunk_header_sent == 2)
       conn->tx_chunk_header_sent = 1;
     conn->tx_chunk_count++;
     conn->tx_remaining_chunksize = chunk_size;
     return 0;
+
+fail_dramatically:
+	// make sure we reset the state first
+	if (conn->tx_chunk_header_sent == 2)
+	  conn->tx_chunk_header_sent = 1;
   }
   return -1;
 }
