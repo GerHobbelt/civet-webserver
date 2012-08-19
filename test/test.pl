@@ -50,24 +50,38 @@ sub get_num_of_log_entries {
 
 # Send the request to the 127.0.0.1:$port and return the reply
 sub req {
+  print 'L53: ', "\n";
   my ($request, $inc, $timeout) = @_;
+  $inc = 1 unless defined($inc);
+  $timeout = 0 unless defined($timeout);
+  print 'L57: request: ', $request, ", inc: ", $inc, ", timeout", $timeout, "\n";
   my $sock = IO::Socket::INET->new(Proto=>"tcp",
     PeerAddr=>'127.0.0.1', PeerPort=>$port);
+  print 'L60: ', $sock, " @ port: ", $port, "\n";
   fail("Cannot connect: $!") unless $sock;
   $sock->autoflush(1);
+  print 'L63: ', $request, "\n";
   foreach my $byte (split //, $request) {
     last unless print $sock $byte;
     select undef, undef, undef, .001 if length($request) < 256;
   }
+  print 'L65: ', $timeout, "\n";
   my ($out, $buf) = ('', '');
   eval {
     alarm $timeout if $timeout;
-    $out .= $buf while (sysread($sock, $buf, 1024) > 0);
+  print 'L72: ', $timeout, "\n";
+    my $rl = 0;
+	do {
+	  $rl = sysread($sock, $buf, 1024);
+	  print 'L76: ', $rl, ": buf: ", $buf, "\n";
+  	  $out .= $buf;
+    } while ($rl > 0);
+  print 'L74: ', $timeout, "\n";
     alarm 0 if $timeout;
   };
   close $sock;
 
-  $num_requests += defined($inc) ? $inc : 1;
+  $num_requests += $inc;
   my $num_logs = get_num_of_log_entries();
 
   unless ($num_requests == $num_logs) {
@@ -79,7 +93,9 @@ sub req {
 
 # Send the request. Compare with the expected reply. Fail if no match
 sub o {
+  print 'L82: ', @_, "\n";
   my ($request, $expected_reply, $message, $num_logs) = @_;
+  print 'L84: request: ', $request, ", expected_reply: ", $expected_reply, ", message: ", $message, ", num_logs: ", $num_logs, "\n";
   print "==> $message ... ";
   my $reply = req($request, $num_logs);
   if ($reply =~ /$expected_reply/s) {
@@ -107,6 +123,7 @@ sub spawn {
     }
   }
   sleep 1;
+  print 'server started...', "\n";
 }
 
 sub write_file {
@@ -158,8 +175,9 @@ if (scalar(@ARGV) > 0 and $ARGV[0] eq 'unit') {
 
 # Make sure we load config file if no options are given.
 # Command line options override config files settings
-write_file($config, "access_log_file access.log\nlistening_ports 12345\n");
+write_file($config, "access_log_file access.log\nlistening_ports 12345\ndocument_root ./test/");
 spawn("$exe -p $port");
+  print 'L164: ', "\n";
 o("GET /test/hello.txt HTTP/1.0\n\n", 'HTTP/1.1 200 OK', 'Loading config file');
 unlink $config;
 kill_spawned_child();
