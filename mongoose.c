@@ -715,6 +715,8 @@ static unsigned short int get_socket_port(const struct usa *usa)
 // IPv4 + IPv6 support: produce the individual numbers of the IP address in a usable/portable (host) structure
 static void get_socket_ip_address(struct mg_ip_address *dst, const struct usa *usa)
 {
+  memset(&dst->ip_addr, 0, sizeof(dst->ip_addr));
+
 #if defined(USE_IPV6)
   // Note: According to RFC3493 the only specified member of the in6_addr structure is s6_addr.
   dst->is_ip6 = (usa->u.sa.sa_family == AF_INET6);
@@ -6881,12 +6883,14 @@ static int parse_port_string(const struct vec *vec, struct socket *so) {
 
 // return 0 on success!
 // mask_n and maskbits may be NULL
-static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mask_n, struct mg_ip_address *maskbits)
-{
+//
+// IP address + netmask input is assumed to be in CIDR notation:
+// http://en.wikipedia.org/wiki/CIDR_notation
+static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mask_n, struct mg_ip_address *maskbits) {
   int n, mask;
   char addr_buf[SOCKADDR_NTOA_BUFSIZE];
 
-  if (sscanf(src, "%40[^/]%n", addr_buf, &n) != 2) {
+  if (sscanf(src, "%40[^/]%n", addr_buf, &n) != 1) {
     return -1;
   } else if (!parse_ipvX_addr_string(addr_buf, 0, ip)) {
     return -2;
@@ -6900,20 +6904,22 @@ static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mas
     *mask_n = mask;
   if (maskbits) {
     if (ip->u.sa.sa_family == AF_INET) {
-      mask = 32 - mask;
-      // convert IPv4 mask to IPv6 mask:
-      mask += (mask >= 24 ? 24 : mask >= 16 ? 16 : mask >= 8 ? 8 : 0);
+      maskbits->is_ip6 = 0;
+      maskbits->ip_addr.v4[0] = (mask < 4 * 8 ? mask > 3 * 8 ? 0xffU << (4 * 8 - mask) : 0 : 0xffU) & 0xffU;
+      maskbits->ip_addr.v4[1] = (mask < 3 * 8 ? mask > 2 * 8 ? 0xffU << (3 * 8 - mask) : 0 : 0xffU) & 0xffU;
+      maskbits->ip_addr.v4[2] = (mask < 2 * 8 ? mask > 1 * 8 ? 0xffU << (2 * 8 - mask) : 0 : 0xffU) & 0xffU;
+      maskbits->ip_addr.v4[3] = (mask < 1 * 8 ? mask > 0 * 8 ? 0xffU << (1 * 8 - mask) : 0 : 0xffU) & 0xffU;
     } else {
-      mask = 8 * 16 - mask;
+      maskbits->is_ip6 = 1;
+      maskbits->ip_addr.v6[0] = (mask < 8 * 16 ? mask > 7 * 16 ? 0xffffU << (8 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[1] = (mask < 7 * 16 ? mask > 6 * 16 ? 0xffffU << (7 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[2] = (mask < 6 * 16 ? mask > 5 * 16 ? 0xffffU << (6 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[3] = (mask < 5 * 16 ? mask > 4 * 16 ? 0xffffU << (5 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[4] = (mask < 4 * 16 ? mask > 3 * 16 ? 0xffffU << (4 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[5] = (mask < 3 * 16 ? mask > 2 * 16 ? 0xffffU << (3 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[6] = (mask < 2 * 16 ? mask > 1 * 16 ? 0xffffU << (2 * 16 - mask) : 0 : 0xffffU);
+      maskbits->ip_addr.v6[7] = (mask < 1 * 16 ? mask > 0 * 16 ? 0xffffU << (1 * 16 - mask) : 0 : 0xffffU);
     }
-    maskbits->ip_addr.v6[0] = (mask < 8 * 16 ? mask > 7 * 16 ? 0xffffU << (8 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[1] = (mask < 7 * 16 ? mask > 6 * 16 ? 0xffffU << (7 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[2] = (mask < 6 * 16 ? mask > 5 * 16 ? 0xffffU << (6 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[3] = (mask < 5 * 16 ? mask > 4 * 16 ? 0xffffU << (5 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[4] = (mask < 4 * 16 ? mask > 3 * 16 ? 0xffffU << (4 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[5] = (mask < 3 * 16 ? mask > 2 * 16 ? 0xffffU << (3 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[6] = (mask < 2 * 16 ? mask > 1 * 16 ? 0xffffU << (2 * 16 - mask) : 0 : 0xffffU);
-    maskbits->ip_addr.v6[7] = (mask < 1 * 16 ? mask > 0 * 16 ? 0xffffU << (1 * 16 - mask) : 0 : 0xffffU);
   }
   return 0;
 }
@@ -7142,29 +7148,38 @@ static int check_acl(struct mg_context *ctx, const struct usa *usa) {
   allowed = '-';
 
   while ((list = next_option(list, &vec, NULL)) != NULL) {
-    flag = vec.ptr[0];
-    if (sscanf(vec.ptr, " %c%n", &flag, &i) != 1 && flag != '+' && flag != '-') {
+    char acl_buf[SOCKADDR_NTOA_BUFSIZE * 2 + 10];
+
+	if (vec.len >= sizeof(acl_buf)) {
+      mg_cry(fc(ctx), "%s: bad acl ip/mask: [%.*s]", __func__, (int)vec.len, vec.ptr);
+      return -1;
+	}
+	mg_strlcpy(acl_buf, vec.ptr, vec.len + 1);
+
+    flag = acl_buf[0];
+    if (sscanf(acl_buf, " %c%n", &flag, &i) != 1 && flag != '+' && flag != '-') {
       mg_cry(fc(ctx), "%s: flag must be + or -: [%s]", __func__, vec.ptr);
       return -1;
     }
-    switch (parse_ipvX_addr_and_netmask(vec.ptr + i, &ip, &mask, &acl_mask)) {
+    switch (parse_ipvX_addr_and_netmask(acl_buf + i, &ip, &mask, &acl_mask)) {
     case 0:
       break;
     default:
-      mg_cry(fc(ctx), "%s: subnet must be [+|-]<IPv4 address: x.x.x.x>[/x] or [+|-]<IPv6 address>[/x], instead we see [%s]", __func__, vec.ptr);
+      mg_cry(fc(ctx), "%s: subnet must be [+|-]<IPv4 address: x.x.x.x>[/x] or [+|-]<IPv6 address>[/x], instead we see [%s]", __func__, acl_buf);
       return -1;
     case -2:
-      mg_cry(fc(ctx), "%s: bad ip address: [%s]", __func__, vec.ptr);
+      mg_cry(fc(ctx), "%s: bad ip address: [%s]", __func__, acl_buf);
       return -1;
     case -3:
-      mg_cry(fc(ctx), "%s: bad subnet mask: %d [%s]", __func__, mask, vec.ptr);
+      mg_cry(fc(ctx), "%s: bad subnet mask: %d [%s]", __func__, mask, acl_buf);
       return -1;
     }
     get_socket_ip_address(&acl_subnet, &ip);
     cvt_ipv4_to_ipv6(&acl_subnet, &acl_subnet);
+    cvt_ipv4_to_ipv6(&acl_mask, &acl_mask);
 
     for (i = 0; i < 8; i++) {
-      if (acl_subnet.ip_addr.v6[i] != (remote_ip.ip_addr.v6[i] & acl_mask.ip_addr.v6[i])) {
+      if ((acl_subnet.ip_addr.v6[i]  & acl_mask.ip_addr.v6[i]) != (remote_ip.ip_addr.v6[i] & acl_mask.ip_addr.v6[i])) {
         flag = 0;
         break;
       }
@@ -7350,8 +7365,8 @@ static int set_gpass_option(struct mg_context *ctx) {
 }
 
 static int set_acl_option(struct mg_context *ctx) {
-  struct usa fake;
-  return check_acl(ctx, &fake) != -1;
+  struct usa fake = {0};
+  return check_acl(ctx, &fake) >= 0;
 }
 
 static void reset_per_request_attributes(struct mg_connection *conn) {
