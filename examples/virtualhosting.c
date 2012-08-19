@@ -196,17 +196,15 @@ static void process_command_line_arguments(char *argv[], char **options) {
       if (line[0] == '#')
         continue;
 
-      switch (sscanf(line, "%s %[^\r\n#]", opt, val))
-      {
-      case 0:
-        // empty line!
-        continue;
+	  // MS sscanf() says: The return value is EOF for an error or if the end of the string is reached before the first conversion.
+	  // Hence we make sure we don't feed it an empty line --> -1 will only have one meaning then.
+	  if (line[strspn(line, " \t\r\n")] == 0)
+		continue;
 
-      case 2:
+      if (2 == sscanf(line, "%s %[^\r\n#]", opt, val)) {
         set_option(options, opt, val);
         continue;
-
-      default:
+	  } else {
         die("%s: line %d is invalid", config_file, line_no);
         break;
       }
@@ -458,7 +456,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
 
 
 
-static void *event_callback(enum mg_event event, struct mg_connection *conn) {
+static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) {
   struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
   int i;
@@ -782,7 +780,7 @@ static void start_mongoose(int argc, char *argv[]) {
   int i;
   struct mg_user_class_t userdef = {
       0,
-      &event_callback,
+      &mongoose_callback,
       0,
       0,
       option_get_callback
