@@ -54,28 +54,16 @@
     <None Include="..\..\documentation\BuildOnAndroid.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
-    <None Include="..\..\documentation\BuildOnAndroid.wiki">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
     <None Include="..\..\documentation\ConfigurationProblems.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
-    <None Include="..\..\documentation\ConfigurationProblems.wiki">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
     <None Include="..\..\documentation\default.html">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
-    <None Include="..\..\documentation\desktop.ini">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\development-info.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\Features.html">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
-    <None Include="..\..\documentation\Features.wiki">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\icon.svg">
@@ -87,25 +75,13 @@
     <None Include="..\..\documentation\MongooseManual.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
-    <None Include="..\..\documentation\MongooseManual.wiki">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
     <None Include="..\..\documentation\UsefulResources.html">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
-    <None Include="..\..\documentation\UsefulResources.wiki">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\WindowsUsage.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
-    <None Include="..\..\documentation\WindowsUsage.wiki">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
     <None Include="..\..\documentation\WritingWebApplications.html">
-      <Filter>Misc Files\documentation</Filter>
-    </None>
-    <None Include="..\..\documentation\WritingWebApplications.wiki">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\images\leftphoto.jpg">

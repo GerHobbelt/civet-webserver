@@ -1425,8 +1425,8 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
 #ifdef _MSC_VER
   VA_COPY(aq, ap);
   // adjust size for NUL and set it up so the fallback loop further below does not cycle
-  size = _vscprintf(fmt, aq) + 2; 
-  if (size < 2) 
+  size = _vscprintf(fmt, aq) + 2;
+  if (size < 2)
 	size = MG_BUF_LEN;
   va_end(aq);
 #endif
@@ -3432,10 +3432,11 @@ static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
     // How many bytes we send in this iteration
     k = len - sent > INT_MAX ? INT_MAX : (int) (len - sent);
 
+    assert(conn ? !conn->client.is_ssl == !conn->ssl : 1);
     if (conn && conn->ssl) {
-    do {
-      n = SSL_write(conn->ssl, buf + sent, k);
-    } while (ssl_renegotiation_ongoing(conn, &n));
+      do {
+        n = SSL_write(conn->ssl, buf + sent, k);
+      } while (ssl_renegotiation_ongoing(conn, &n));
       conn->client.write_error = (n < 0);
       if (n == 0)
         break;
@@ -3465,10 +3466,11 @@ static int64_t push(FILE *fp, struct mg_connection *conn, const char *buf,
 static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
   int nread;
 
+  assert(conn ? !conn->client.is_ssl == !conn->ssl : 1);
   if (conn && conn->ssl) {
-  do {
-    nread = SSL_read(conn->ssl, buf, len);
-  } while (ssl_renegotiation_ongoing(conn, &nread));
+    do {
+      nread = SSL_read(conn->ssl, buf, len);
+    } while (ssl_renegotiation_ongoing(conn, &nread));
     conn->client.read_error = (nread < 0);
     // and reset the select() markers used by consume_socket() et al:
     conn->client.was_idle = 0;
@@ -7415,6 +7417,18 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   sock = conn->client.sock;
   abort_when_server_stops = conn->abort_when_server_stops;
 
+  assert(!conn->client.is_ssl == !conn->ssl);
+  if (conn->ssl) {
+    // see http://www.openssl.org/docs/ssl/SSL_set_shutdown.html#NOTES
+    // and http://www.openssl.org/docs/ssl/SSL_shutdown.html
+    SSL_shutdown(conn->ssl);
+    // don't call SSL_shutdown() a second time as that would make us
+    // block & wait for the client to complete the close, which would
+    // be a server vulnerability.
+    SSL_free(conn->ssl);
+    conn->ssl = NULL;
+  }
+
   /*
 
   ( http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx )
@@ -7553,16 +7567,6 @@ static void close_socket_gracefully(struct mg_connection *conn) {
 
 static void close_connection(struct mg_connection *conn) {
   (void) mg_flush(conn);       // shut down chunked transfers 'cleanly', if possible
-  if (conn->ssl) {
-    // see http://www.openssl.org/docs/ssl/SSL_set_shutdown.html#NOTES
-    // and http://www.openssl.org/docs/ssl/SSL_shutdown.html
-    SSL_shutdown(conn->ssl);
-    // don't call SSL_shutdown() a second time as that would make us
-    // block & wait for the client to complete the close, which would
-    // be a server vulnerability.
-    SSL_free(conn->ssl);
-    conn->ssl = NULL;
-  }
   close_socket_gracefully(conn);
 }
 

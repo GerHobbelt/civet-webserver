@@ -27,7 +27,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_main</ProjectName>
+    <ProjectName>mongoose_NoSSL</ProjectName>
     <RootNamespace>mongoose</RootNamespace>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>
@@ -147,7 +147,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -208,7 +208,7 @@
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -269,7 +269,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -322,7 +322,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -380,7 +380,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -438,7 +438,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -480,22 +480,30 @@
   <ItemGroup>
     <None Include="..\..\.gitmodules" />
     <None Include="..\..\documentation\BuildOnAndroid.html" />
+    <None Include="..\..\documentation\BuildOnAndroid.wiki" />
     <None Include="..\..\documentation\ConfigurationProblems.html" />
+    <None Include="..\..\documentation\ConfigurationProblems.wiki" />
     <None Include="..\..\documentation\default.html" />
+    <None Include="..\..\documentation\desktop.ini" />
     <None Include="..\..\documentation\development-info.html" />
     <None Include="..\..\documentation\Features.html" />
+    <None Include="..\..\documentation\Features.wiki" />
     <None Include="..\..\documentation\icon.svg" />
     <None Include="..\..\documentation\images\leftphoto.jpg" />
     <None Include="..\..\documentation\master.dwt" />
     <None Include="..\..\documentation\MongooseManual.html" />
+    <None Include="..\..\documentation\MongooseManual.wiki" />
     <None Include="..\..\documentation\styles\layout.css" />
     <None Include="..\..\documentation\styles\style0.css" />
     <None Include="..\..\documentation\styles\style1.css" />
     <None Include="..\..\documentation\styles\style2.css" />
     <None Include="..\..\documentation\styles\style3.css" />
     <None Include="..\..\documentation\UsefulResources.html" />
+    <None Include="..\..\documentation\UsefulResources.wiki" />
     <None Include="..\..\documentation\WindowsUsage.html" />
+    <None Include="..\..\documentation\WindowsUsage.wiki" />
     <None Include="..\..\documentation\WritingWebApplications.html" />
+    <None Include="..\..\documentation\WritingWebApplications.wiki" />
     <None Include="..\..\LICENSE" />
     <None Include="..\..\Makefile" />
     <None Include="..\..\mongoose.1" />
@@ -634,17 +642,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\main.c" />
+    <ClCompile Include="..\..\mongoose_ex.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\win32\resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\win32\res.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
