@@ -38,6 +38,17 @@ static void fatal_exit(struct mg_context *ctx) {
       }                                                                     \
     } while (0)
 
+#define ASSERT_STRPARTEQ(str, master)                                       \
+    do {                                                                    \
+	  int ml = (int)strlen(master);                                         \
+      if (!(str) || strncmp(str, master, ml)) {                             \
+        printf("Fail on line %d: string does not match head: "              \
+               "inp:\"%s\" != head:\"%s\"\n",                               \
+               __LINE__, str, master);                                      \
+        fatal_exit(ctx);                                                    \
+      }                                                                     \
+    } while (0)
+
 
 static void test_MSVC_fix() {
   // when no assert fired in mg_freea(), we're good to go (see mongoose.c: crtdbg.h + malloc.h don't mesh 100% in MSVC2010)
@@ -1241,6 +1252,9 @@ static void test_response_header_rw() {
   conn->ctx = ctx;
   conn->buf_size = bufsiz;
   conn->buf = (char *)(conn + 1);
+  // mark connection as being 'in header transmission/preparation mode':
+  conn->num_bytes_sent = -1;
+  ASSERT(!mg_have_headers_been_sent(conn));
 
   // add and remove a series of response headers:
   tag_add_idx = tag_rm_idx = tag_upd_idx = 0.0;
@@ -1688,7 +1702,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   // google will spit back more than 256-1 header bytes in its response, so we'll get a buffer overrun:
   ASSERT(rv == 413);
   ASSERT(conn->request_len == 0);
@@ -1720,7 +1734,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(conn->request_len > 0);
   ASSERT(conn->request_len < 2048);
@@ -1755,7 +1769,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   cl = atoi(mg_get_header(conn, "Content-Length"));
   ASSERT(cl > 0);
@@ -1807,7 +1821,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(conn->request_len > 0);
   ASSERT(conn->request_len < 2048);
@@ -1860,7 +1874,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(conn->request_len > 0);
   ASSERT(conn->request_len < 2048);
@@ -1911,7 +1925,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(conn->request_len > 0);
   ASSERT(conn->request_len < 2048);
@@ -1946,7 +1960,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(mg_get_request_info(conn));
   ASSERT(mg_get_request_info(conn)->status_code == 404); // funny thing: google doesn't like this; sends a 404; see next for a 'valid' eqv. request: note the '&amp;' vs '&' down there
@@ -1983,7 +1997,7 @@ static void test_client_connect() {
   // fetch response, blocking I/O:
   //
   // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response(conn);
+  rv = mg_read_http_response_head(conn);
   ASSERT(rv == 0);
   ASSERT(NULL == mg_get_header(conn, "Content-Length")); // google doesn't send a Content-Length with this one
   ASSERT(mg_get_request_info(conn));
@@ -2005,6 +2019,137 @@ static void test_client_connect() {
   mg_close_connection(conn);
   //free(conn);
 }
+
+
+
+
+static void *test_local_client_event_handler(enum mg_event event, struct mg_connection *conn) {
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+
+  if (event == MG_EVENT_LOG) {
+    if (test_client_connect_expect_error == 1) {
+      const char *emsg = ri->log_message;
+      test_client_connect_expect_error = 0;
+      fprintf(stderr, "### EXPECTED error! This is part of the test suite! ###\n");
+    }
+  }
+  return 0;
+}
+
+static int test_server_connect_expect_error = 0;
+
+static void *test_local_server_event_handler(enum mg_event event, struct mg_connection *conn) {
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+
+  if (event == MG_EVENT_LOG) {
+    if (test_server_connect_expect_error == 1) {
+      const char *emsg = ri->log_message;
+      test_server_connect_expect_error = 0;
+      fprintf(stderr, "### EXPECTED error! This is part of the test suite! ###\n");
+    }
+  }
+  return 0;
+}
+
+static void test_local_client_connect() {
+  char buf[MG_BUF_LEN];
+  char *d, *e;
+  struct mg_context ctx_client = {0};
+  struct mg_context *ctx;
+  struct mg_connection *conn;
+  struct mg_request_info *ri4m;
+  const struct mg_request_info *ri;
+  int rv;
+
+  static const char *options[] = {
+    "document_root", ".",
+    "listening_ports", "33797",
+    NULL,
+  };
+  const char *tmp_file = "temporary_file_name_for_unit_test.txt";
+  struct mg_user_class_t ucb = {
+    NULL,
+    test_local_server_event_handler
+  };
+
+  ASSERT((ctx = mg_start(&ucb, options)) != NULL);
+
+  ctx_client.user_functions.user_callback = test_local_client_event_handler;
+  test_client_connect_expect_error = 0;
+  test_server_connect_expect_error = 0;
+
+  printf("=== TEST: %s ===\n", __func__);
+
+  conn = mg_connect(&ctx_client, "localhost", 33797, MG_CONNECT_BASIC);
+  ASSERT(conn);
+
+  rv = mg_printf(conn, "GET / HTTP/1.0\r\n\r\n");
+  ASSERT(rv == 18);
+  // half-close to signal server we're done sending the request
+  ASSERT(0 == mg_shutdown(conn, SHUT_WR));
+
+  rv = mg_read(conn, buf, sizeof(buf));
+  ASSERT(rv > 0);
+  ASSERT_STRPARTEQ(buf, "HTTP/1.0 200 OK\r\n");
+  mg_close_connection(conn);
+
+
+
+  // now with HTTP header support:
+  ASSERT_STREQ(get_option(&ctx_client, MAX_REQUEST_SIZE), "");
+  ASSERT(get_option(ctx, MAX_REQUEST_SIZE));
+  ASSERT(atoi(get_option(ctx, MAX_REQUEST_SIZE)) > 0);
+  
+  ctx_client.config[MAX_REQUEST_SIZE] = mg_strdup(get_option(ctx, MAX_REQUEST_SIZE));
+  ASSERT(get_option(&ctx_client, MAX_REQUEST_SIZE));
+  ASSERT(atoi(get_option(&ctx_client, MAX_REQUEST_SIZE)) > 0);
+
+  conn = mg_connect(&ctx_client, "localhost", 33797, MG_CONNECT_HTTP_IO);
+  ASSERT(conn);
+
+  //rv = mg_printf(conn, "GET /test/hello.txt HTTP/1.0\r\n\r\n");
+  mg_set_http_version(conn, "1.0");
+  rv = mg_write_http_request_head(conn, "GET", "/test/hello.txt");
+  ASSERT(rv > 0);
+  mg_shutdown(conn, SHUT_WR);
+
+  // must fail as we can't be in chunked transfer mode
+  ASSERT(-1 == mg_add_tx_header(conn, 0, "Connection", "close"));  
+
+  rv = mg_read_http_response_head(conn);
+  ASSERT(rv == 0);
+
+  rv = mg_read(conn, buf, sizeof(buf));
+  ASSERT(rv >= 0);
+
+  ri = mg_get_request_info(conn);
+  ASSERT(ri->status_code == 404);
+  mg_close_connection(conn);
+
+
+
+
+#if 0
+  // when Content-Length isn't specified and we're not 
+  // in chunked transfer mode (HTTP/1.1 only), then mg_read()
+  // behaves as a single recv(), i.e. it does NOT strive
+  // to fill the entire buf[] by waiting a long time.
+  // This was done as a safeguard against bad/odd peer behaviour.
+  // 
+  d = buf;
+  e = buf + sizeof(buf);
+  do {
+    rv = mg_read(conn, d, e - d);
+    ASSERT(rv >= 0);
+  while (e > d && rv > 0);
+#endif
+
+  // cleanup
+  mg_stop(ctx);
+  free(ctx_client.config[MAX_REQUEST_SIZE]);
+}
+
+
 
 
 
@@ -2551,7 +2696,7 @@ int test_chunked_transfer(int round) {
       // fetch response, blocking I/O:
       //
       // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-      rv = mg_read_http_response(conn);
+      rv = mg_read_http_response_head(conn);
       if (rv == -2)
         break;
       ASSERT(rv == 0);
@@ -2623,7 +2768,7 @@ int test_chunked_transfer(int round) {
       // across a TCP connection.
       //
       // It is worrysome that the client needs to know how the server behaves, transmission-wise,
-      // as mg_read_http_response() is a blocking operation. Of course we have 100% knowledge of
+      // as mg_read_http_response_head() is a blocking operation. Of course we have 100% knowledge of
       // our test server here, but we should think this through in light of the Internet as our
       // scope/context, and then we'd quickly realize that we require a NON-BLOCKING means to
       // detect when the server actually started transmitting the response (not just the content,
@@ -2671,7 +2816,7 @@ int test_chunked_transfer(int round) {
           case 0:
             ud.req_id++;
 
-            rv = mg_read_http_response(conn);
+            rv = mg_read_http_response_head(conn);
             ASSERT(rv == 0);
             ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
             ASSERT(mg_get_request_info(conn));
@@ -2737,7 +2882,7 @@ int test_chunked_transfer(int round) {
         case 0:
           ud.req_id++;
 
-          rv = mg_read_http_response(conn);
+          rv = mg_read_http_response_head(conn);
           ASSERT(rv == 0);
           ASSERT(NULL == mg_get_header(conn, "Content-Length")); // reply should NOT contain a Content-Length header!
           ASSERT(mg_get_request_info(conn));
@@ -2854,6 +2999,7 @@ int main(void) {
 #endif // _WIN32
 
   test_client_connect();
+  test_local_client_connect();
   test_mg_fetch();
 
   /*

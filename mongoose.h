@@ -559,7 +559,7 @@ int mg_read(struct mg_connection *, void *buf, size_t len);
 //
 // Note: This is a non-blocking, very low cost operation which should be
 //       used together with mg_read() and its descendents (e.g.
-//       mg_read_http_response()) in client-side connections at least.
+//       mg_read_http_response_head()) in client-side connections at least.
 //       See also the test/unit_test.c::test_chunked_transfer().
 int mg_is_read_data_available(struct mg_connection *conn);
 
@@ -945,7 +945,7 @@ void mg_close_connection(struct mg_connection *conn);
 // Read & parse an HTTP response, fill in the mg_request_info structure.
 //
 // Return 0 on success.
-int mg_read_http_response(struct mg_connection *conn);
+int mg_read_http_response_head(struct mg_connection *conn);
 
 
 // Download given URL to a given file.
@@ -1177,6 +1177,18 @@ const char *mg_suggest_connection_header(struct mg_connection *conn);
 
 // signal mongoose that the server should close the connection with the client once the current request has been serviced.
 void mg_connection_must_close(struct mg_connection *conn);
+
+// Set the HTTP version to use for this connection from now on.
+// 
+// The default version is "1.1", which will also be used when you invoke this function 
+// with a NULL or empty 'http_version_str'.
+//
+// WARNING: 'http_version_str' must point at memory which has a guaranteed lifetime equal
+//          or longer than the connection itself; unually this is accomplished by
+//          using a string constant, e.g.
+//              mg_set_http_version(conn, "1.0");
+//          which would also show about the only legal non-1.1 HTTP version for use with this API.
+void mg_set_http_version(struct mg_connection *conn, const char *http_version_str);
 
 /*
 Send HTTP error response headers, if we still can. Log the error anyway.

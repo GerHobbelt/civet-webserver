@@ -2239,6 +2239,11 @@ int mg_vadd_response_header(struct mg_connection *conn, int force_add, const cha
   if (!value_fmt)
     value_fmt = "";
 
+  if (mg_have_headers_been_sent(conn) && !conn->tx_is_in_chunked_mode) {
+    mg_cry(conn, "%s: can't add headers after the header has been sent and the connection is NOT in chunked tranfer mode for outgoing traffic", __func__);
+    return -1;
+  }
+
   bufbase = conn->buf + conn->buf_size + CHUNK_HEADER_BUFSIZ;
   dst = bufbase + conn->tx_headers_len;
   space = conn->buf_size - conn->tx_headers_len;
@@ -2362,12 +2367,6 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   if (mg_have_headers_been_sent(conn))
     return 0;
 
-  va_start(ap, first_line_fmt);
-  rv = mg_vprintf(conn, first_line_fmt, ap);
-  va_end(ap);
-  if (rv <= 0)
-    return -1; // malformed first line or transmit failure.
-
   assert(!is_empty(http_version));
 
   // make sure must_close state and Connection: output are in sync
@@ -2425,7 +2424,7 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   }
 
   /*
-  This code expects all headers to be stored in memory 'in order'.
+  The code further below expects all headers to be stored in memory 'in order'.
 
   This assumption holds when headers have only been added, never
   removed or replaced, OR when compact_tx_headers() has run
@@ -2433,6 +2432,12 @@ static int write_http_head(struct mg_connection *conn, const char *first_line_fm
   */
   if (compact_tx_headers(conn) < 0)
     return -1;
+
+  va_start(ap, first_line_fmt);
+  rv = mg_vprintf(conn, first_line_fmt, ap);
+  va_end(ap);
+  if (rv <= 0)
+    return -1; // malformed first line or transmit failure.
 
   /*
   Once we are sure of the header order assumption, this becomes an
@@ -2540,9 +2545,10 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       buf[len++] ='\t';
       len += custom_len;
     }
+    assert(len == (int)strlen(buf));
   }
 
-  mg_set_response_code(conn, status);
+  status = mg_set_response_code(conn, status);
   conn->request_info.status_custom_description = buf;
 
   if (status == 405) {
@@ -2560,6 +2566,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
       len = (int)strlen(conn->request_info.status_custom_description);
     else
       conn->request_info.status_custom_description = buf;
+    assert(len == (int)strlen(conn->request_info.status_custom_description));
     p = strchr(conn->request_info.status_custom_description, '\t');
     if (p)
       *p = 0;
@@ -2617,6 +2624,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_write_http_response_head(conn, status, reason);
 
           if (len > 0) {
+		    assert(len == (int)strlen(conn->request_info.status_custom_description));
             if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
               conn->must_close = 1;
             }
@@ -5114,7 +5122,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
   return wlen;
 }
 
-// Return 1 on success.
+// Return >= 1 on success.
 static int parse_range_header(const char *header, int64_t *a, int64_t *b) {
   return sscanf(header, "bytes=%" SCNd64 "-%" SCNd64, a, b);
 }
@@ -6882,7 +6890,7 @@ static int parse_ipvX_addr_and_netmask(const char *src, struct usa *ip, int *mas
     return -1;
   } else if (!parse_ipvX_addr_string(addr_buf, 0, ip)) {
     return -2;
-  } else if (sscanf(src + n, "/%d", &mask) == 0) {
+  } else if (sscanf(src + n, "/%d", &mask) != 1) {
     // no mask specified
     mask = (ip->u.sa.sa_family == AF_INET ? 32 : 8 * 16);
   } else if (mask < 0 || mask > (ip->u.sa.sa_family == AF_INET ? 32 : 8 * 16)) {
@@ -7786,7 +7794,7 @@ int mg_write_http_request_head(struct mg_connection *conn, const char *request_m
   return write_http_head(conn, "%s %s%s%s HTTP/%s\r\n", request_method, uri, q, q_str, http_version);
 }
 
-int mg_read_http_response(struct mg_connection *conn) {
+int mg_read_http_response_head(struct mg_connection *conn) {
   char *buf;
   struct mg_request_info *ri;
   const char *status_code;
@@ -7802,12 +7810,9 @@ int mg_read_http_response(struct mg_connection *conn) {
 
   // when a bit of buffered data is still available, make sure it's in the right spot:
   data_len = conn->rx_buffer_loaded_len - conn->rx_buffer_read_len;
-  if (data_len > 0)
-  {
+  if (data_len > 0) {
     memmove(conn->buf, conn->buf + conn->request_len + conn->rx_buffer_read_len, data_len);
-  }
-  else
-  {
+  } else {
     data_len = 0;
   }
 
@@ -7959,7 +7964,7 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
       // fetch response, blocking I/O:
       //
       // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-      rv = mg_read_http_response(conn);
+      rv = mg_read_http_response_head(conn);
       if (rv < 0) {
         mg_cry(fc(ctx), "%s(%s): invalid HTTP reply or invalid HTTP response headers, error code %d", __func__, url, rv);
       } else if ((fp = fopen(path, "w+b")) == NULL) {
@@ -8009,6 +8014,10 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path, struct
 static void discard_current_request_from_buffer(struct mg_connection *conn) {
   int n;
   char buf[MG_BUF_LEN];
+
+  // Don't do this for connections which are NOT HTTP/1.1 keep-alive enabled:
+  if (!should_keep_alive(conn))
+	return;
 
   // make sure we fetch all content (and discard it), if we
   // haven't done so already (f.e.: event callback handler might've
@@ -9233,6 +9242,12 @@ void *mg_get_request_user_data(struct mg_connection *conn) {
 void mg_set_request_user_data(struct mg_connection *conn, void *user_data) {
   if (conn) {
 	conn->request_info.req_user_data = user_data;
+  }
+}
+
+void mg_set_http_version(struct mg_connection *conn, const char *http_version_str) {
+  if (conn) {
+	conn->request_info.http_version = (is_empty(http_version_str) ? "1.1" : http_version_str);
   }
 }
 
