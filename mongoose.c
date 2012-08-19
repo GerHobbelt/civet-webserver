@@ -6144,8 +6144,12 @@ static void put_file(struct mg_connection *conn, const char *path) {
     r1 = r2 = 0;
     if (range != NULL && parse_range_header(range, &r1, &r2) > 0) {
       mg_set_response_code(conn, 206);
-      // TODO(lsm): handle seek error
-      (void) fseeko(fp, r1, SEEK_SET);
+      if (fseeko(fp, r1, SEEK_SET) == -1) {
+        send_http_error(conn, 500, NULL,
+                    "fseeko(%s, %" PRId64 "): %s", path, r1, mg_strerror(ERRNO));
+        (void) mg_fclose(fp);
+		return;
+      }
     }
     if (forward_body_data(conn, fp, NULL, 1)) {
       mg_write_http_response_head(conn, 0, 0);
