@@ -149,13 +149,9 @@ main(void)
     };
 
     ctx = mg_start(&ucb, options);
-#if !defined(WIN32)
-    pause();
-#else
     while (!mg_get_stop_flag(ctx)) {
         mg_sleep(10);
     }
     mg_stop(ctx);
-#endif
     return 0;
 }
