@@ -1418,13 +1418,25 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
   int size = MG_BUF_LEN;
   char *buf = (char *)malloc(size);
 
+  if (max_buflen == 0 || max_buflen > INT_MAX) {
+    max_buflen = INT_MAX;
+  }
+
+#ifdef _MSC_VER
+  VA_COPY(aq, ap);
+  // adjust size for NUL and set it up so the fallback loop further below does not cycle
+  size = _vscprintf(fmt, aq) + 2; 
+  if (size < 2) 
+	size = MG_BUF_LEN;
+  va_end(aq);
+#endif
+  if (size > (int)max_buflen)
+    size = (int)max_buflen;
+
+  buf = (char *)malloc(size);
   if (buf == NULL) {
     *buf_ref = NULL;
     return 0;
-  }
-
-  if (max_buflen == 0 || max_buflen > INT_MAX) {
-    max_buflen = INT_MAX;
   }
 
   VA_COPY(aq, ap);
@@ -1450,10 +1462,20 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
     n = (int)strlen(buf);
   } else if (n >= size) {
     // truncated output:
-    strcpy(buf + size - 1 - 7, " (...)\n"); // mark the string as clipped
-    //n = size - 1;
-    //buf[n] = '\0';
-    n = (int)strlen(buf);
+	// mark the string as clipped and take optional line ending from fmt string
+	char *d;
+	const char *le = fmt + strlen(fmt) - 1;
+	n = size - 1;
+	d = buf + n - 6;
+	assert(le > fmt);
+	assert(d > buf);
+	while (le > fmt && d > buf && strchr("\r\n", *le)) {
+	  le--;
+	  d--;
+	}
+    strcpy(d, " (...)");
+	d += 6;
+	strcpy(d, le);
   } else {
     buf[n] = '\0';
   }
@@ -3663,7 +3685,10 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   const char *src = (const char *)buf;
   int64_t txlen = (int64_t) len;
 
-  assert(len > 0);
+  // may be called with len == 0 from the mg_printf() family:
+  if (len == 0)
+	return 0;
+
   // chunked I/O only applies to data I/O, NOT to (HTTP) header I/O:
   if (conn->tx_is_in_chunked_mode && conn->num_bytes_sent >= 0) {
     int64_t txlen_1;
@@ -3760,7 +3785,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
   return (src - (const char *)buf);
 }
 
-int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
+int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
   char *buf = NULL;
   int len;
   int rv;
@@ -3770,55 +3795,50 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   } else if (!strcmp(fmt, "%s")) {
-    fmt = va_arg(ap, const char *);
+    fmt = va_arg(aa, const char *);
     if (!fmt) fmt = "???";
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   } else {
-#if 0 // TODO: merge Sergey's way in here
-  char mem[MG_BUF_LEN], *buf = mem;
-  int len;
-  va_list ap;
+    char mem[MG_BUF_LEN];
+    va_list ap;
 
-  // Print in a local buffer first, hoping that it is large enough to
-  // hold the whole message
-  va_start(ap, fmt);
-  len = vsnprintf(mem, sizeof(mem), fmt, ap);
-  va_end(ap);
-
-  if (len <= 0) {
-    // vsnprintf() error, give up
-    len = -1;
-    cry(conn, "%s(%s, ...): vsnprintf() error", __func__, fmt);
-  } else if (len > (int) sizeof(mem) && (buf = malloc(len + 1)) != NULL) {
-    // Local buffer is not large enough, allocate big buffer on heap
-    va_start(ap, fmt);
-    vsnprintf(buf, len + 1, fmt, ap);
+    // Print in a local buffer first, hoping that it is large enough to
+    // hold the whole message
+    VA_COPY(ap, aa);
+    mem[0] = 0;
+    len = vsnprintf(mem, sizeof(mem), fmt, ap);
+    mem[sizeof(mem) - 1] = 0;
     va_end(ap);
-    len = mg_write(conn, buf, (size_t) len);
-    free(buf);
-  } else if (len > (int) sizeof(mem)) {
-    // Failed to allocate large enough buffer, give up
-    cry(conn, "%s(%s, ...): Can't allocate %d bytes, not printing anything",
-        __func__, fmt, len);
-    len = -1;
-  } else {
-    // Copy to the local buffer succeeded
-    len = mg_write(conn, buf, (size_t) len);
-  }
 
-  return len;
-#endif
-    len = mg_vasprintf(conn, &buf, 0, fmt, ap);
+    if (len < 0) {
+      // MSVC produces -1 on printf("%s", str) for very long 'str'!
+      len = (int)strlen(mem);
+	}
+    if (len == 0) {
+      // vsnprintf() error, give up
+      mg_cry(conn, "%s(%s, ...): vsnprintf() error", __func__, fmt);
+    } else if (len >= (int) sizeof(mem) - 1) {
+	  VA_COPY(ap, aa);
+      len = mg_vasprintf(conn, &buf, 0, fmt, ap);
+      va_end(ap);
 
-    if (buf) {
-      rv = mg_write(conn, buf, (size_t)len);
-      free(buf);
-      return (rv < len ? 0 : rv);
-    } else {
-      return 0;
+      if (buf) {
+        rv = mg_write(conn, buf, (size_t)len);
+        free(buf);
+        return (rv < len ? 0 : rv);
+      } else {
+        // Failed to allocate large enough buffer, give up
+        mg_cry(conn, "%s(%s, ...): Can't allocate buffer, not printing anything",
+               __func__, fmt);
+      }
+	} else {
+      // Copy to the local buffer succeeded
+      rv = mg_write(conn, mem, (size_t) len);
+      return (rv < 0 ? 0 : rv);
     }
   }
+  return 0;
 }
 
 int mg_printf(struct mg_connection *conn, const char *fmt, ...) {
@@ -6569,7 +6589,7 @@ static void handle_request(struct mg_connection *conn) {
     pretty darn quickly.
     */
 #if 0
-    conn->must_close = 1; // TODO: currently there is no way to set the close flag in the callback
+    conn->must_close = 1;
 #endif
 
   } else if (!strcmp(ri->request_method, "OPTIONS")) {
