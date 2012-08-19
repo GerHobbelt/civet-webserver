@@ -538,11 +538,7 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // mg_printf() is guaranteed to return 0 when an error occurs or when
 // and empty string was written, otherwise the function returns the
 // number of bytes in the formatted output, excluding the NUL sentinel.
-int mg_printf(struct mg_connection *, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 2, 3)))
-#endif
-;
+int mg_printf(struct mg_connection *, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 
 // Send data to the browser using vprintf() semantics.
 //
@@ -857,11 +853,8 @@ int mg_set_response_code(struct mg_connection *conn, int status);
 // with the tag is constructed from this format string and any optional extra parameters a la sprintf().
 //
 // Return zero on success, non-zero otherwise.
-int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, FORMAT_STRING(const char *value_fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-;
+int mg_add_response_header(struct mg_connection *conn, int force_add, const char *tag, PRINTF_FORMAT_STRING(const char *value_fmt), ...) PRINTF_ARGS(4, 5);
+
 int mg_vadd_response_header(struct mg_connection *conn, int force_add, const char *tag, const char *value_fmt, va_list ap);
 
 // Remove the specified response header, if available.
@@ -1068,11 +1061,7 @@ char * mg_strdup(const char *str);
 int mg_vsnprintf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnprintf() what printf() is to vprintf().
-int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-;
+int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(4, 5);
 
 // Like vsnprintf(), but never returns negative value, or the value
 // that is larger than a supplied buffer.
@@ -1082,11 +1071,7 @@ int mg_snprintf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STR
 int mg_vsnq0printf(struct mg_connection *conn, char *buf, size_t buflen, const char *fmt, va_list ap);
 
 // Is to mg_vsnq0printf() what printf() is to vprintf().
-int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-    ;
+int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(4, 5);
 
 // Writes suitably sized, heap allocated, string buffer in *buf_ref and returns
 // output length (excluding NUL sentinel).
@@ -1102,11 +1087,7 @@ int mg_snq0printf(struct mg_connection *conn, char *buf, size_t buflen, FORMAT_S
 //
 // The variable referenced by buf_ref is guaranteed to be set to NULL or a valid value
 // as returned by malloc/realloc(3).
-int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-;
+int mg_asprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(4, 5);
 
 // Similar to mg_asprintf().
 int mg_vasprintf(struct mg_connection *conn, char **buf_ref, size_t max_buflen, const char *fmt, va_list ap);
@@ -1132,11 +1113,8 @@ int mg_fclose(FILE *fp);
 // Print error message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
-void mg_cry(struct mg_connection *conn, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 2, 3)))
-#endif
-;
+void mg_cry(struct mg_connection *conn, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
+
 // Print error message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
@@ -1168,11 +1146,8 @@ int mg_write2log_raw(struct mg_connection *conn, const char *logfile, time_t tim
 // Print log message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
-void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 5, 6)))
-#endif
-;
+void mg_write2log(struct mg_connection *conn, const char *logfile, time_t timestamp, const char *severity, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(5, 6);
+
 // Print log message to the opened error log stream.
 //
 // Accepts arbitrarily large input as the function uses mg_vasprintf() internally.
@@ -1210,11 +1185,8 @@ Send HTTP error response headers, if we still can. Log the error anyway.
 
 'fmt' + args is the content sent along as error report (request response).
 */
-void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-;
+void mg_send_http_error(struct mg_connection *conn, int status, const char *reason, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(4, 5);
+
 void mg_vsend_http_error(struct mg_connection *conn, int status, const char *reason, const char *fmt, va_list ap);
 
 

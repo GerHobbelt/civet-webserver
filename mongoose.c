@@ -2324,11 +2324,7 @@ const char *mg_get_response_header(const struct mg_connection *conn, const char 
   return NULL;
 }
 
-static int write_http_head(struct mg_connection *conn, FORMAT_STRING(const char *first_line_fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 2, 3)))
-#endif
-  ;
+static int write_http_head(struct mg_connection *conn, PRINTF_FORMAT_STRING(const char *first_line_fmt), ...) PRINTF_ARGS(2, 3);
 
 // Return number of bytes sent; return 0 when nothing was done; -1 on error.
 static int write_http_head(struct mg_connection *conn, const char *first_line_fmt, ...) {
@@ -2623,11 +2619,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
 }
 
 static void send_http_error(struct mg_connection *conn, int status,
-  const char *reason, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 4, 5)))
-#endif
-  ;
+  const char *reason, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(4, 5);
 
 static void send_http_error(struct mg_connection *conn, int status,
                             const char *reason, const char *fmt, ...) {
@@ -3783,6 +3775,40 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list ap) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   } else {
+#if 0 // TODO: merge Sergey's way in here
+  char mem[MG_BUF_LEN], *buf = mem;
+  int len;
+  va_list ap;
+
+  // Print in a local buffer first, hoping that it is large enough to
+  // hold the whole message
+  va_start(ap, fmt);
+  len = vsnprintf(mem, sizeof(mem), fmt, ap);
+  va_end(ap);
+
+  if (len <= 0) {
+    // vsnprintf() error, give up
+    len = -1;
+    cry(conn, "%s(%s, ...): vsnprintf() error", __func__, fmt);
+  } else if (len > (int) sizeof(mem) && (buf = malloc(len + 1)) != NULL) {
+    // Local buffer is not large enough, allocate big buffer on heap
+    va_start(ap, fmt);
+    vsnprintf(buf, len + 1, fmt, ap);
+    va_end(ap);
+    len = mg_write(conn, buf, (size_t) len);
+    free(buf);
+  } else if (len > (int) sizeof(mem)) {
+    // Failed to allocate large enough buffer, give up
+    cry(conn, "%s(%s, ...): Can't allocate %d bytes, not printing anything",
+        __func__, fmt, len);
+    len = -1;
+  } else {
+    // Copy to the local buffer succeeded
+    len = mg_write(conn, buf, (size_t) len);
+  }
+
+  return len;
+#endif
     len = mg_vasprintf(conn, &buf, 0, fmt, ap);
 
     if (buf) {
@@ -5618,11 +5644,7 @@ struct cgi_env_block {
 // pointer into the vars array.
 //
 // Return NULL on error, otherwise return pointer to saved variable=value string.
-static char *addenv(struct cgi_env_block *block, FORMAT_STRING(const char *fmt), ...)
-#ifdef __GNUC__
-    __attribute__((format(printf, 2, 3)))
-#endif
-    ;
+static char *addenv(struct cgi_env_block *block, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 
 static char *addenv(struct cgi_env_block *block, const char *fmt, ...) {
   int n;

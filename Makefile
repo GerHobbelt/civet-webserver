@@ -23,18 +23,13 @@ all:
 ###                 UNIX build: linux, bsd, mac, rtems
 ##########################################################################
 
-# Shut up GCC about these, because we know they're there and we don't mind. Don't crowd the screen with these.
-GCC_WARNINGS = -W -Wall -pedantic \
-	-Wno-missing-field-initializers \
-	-Wno-unused-parameter \
-	-Wno-format-zero-length \
-	-Wno-missing-braces
-
-CFLAGS = -std=c99 -O2 $(GCC_WARNINGS) $(COPT)
-MAC_SHARED = -flat_namespace -bundle -undefined suppress
-LINFLAGS = -ldl -pthread $(CFLAGS)
-LIB = _$(PROG).so
-CC = gcc
+GCC_WARNS   = -W -Wall -pedantic -Wno-missing-field-initializers \
+              -Wno-unused-parameter -Wno-format-zero-length -Wno-missing-braces
+CFLAGS      = -W -Wall -std=c99 -O2 $(GCC_WARNS) $(COPT)
+MAC_SHARED  = -flat_namespace -bundle -undefined suppress
+LINFLAGS    = -ldl -pthread $(CFLAGS)
+LIB         = _$(PROG).so
+CC          = gcc
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -66,16 +61,16 @@ solaris:
 #  o  Set VC variable below to where VS 6.0 is installed on your system
 #  o  Run "PATH_TO_VC6\bin\nmake windows"
 
-VC=     z:
-CYA=    y:
-#DBG=   /Zi /DDEBUG /Od
-DBG=    /DNDEBUG /O1
-CL=     cl /MD /TC /nologo $(DBG) /Gz /W3 /DNO_SSL_DL
+VC    = z:
+CYA   = y:
+#DBG  = /Zi /DDEBUG /Od
+DBG   = /DNDEBUG /O1
+CL    = cl /MD /TC /nologo $(DBG) /Gz /W3 /DNO_SSL_DL
 GUILIB= user32.lib shell32.lib
-LINK=   /link /incremental:no /libpath:$(VC)\lib /subsystem:windows \
-		ws2_32.lib advapi32.lib cyassl.lib
+LINK  = /link /incremental:no /libpath:$(VC)\lib /subsystem:windows \
+        ws2_32.lib advapi32.lib cyassl.lib
 CYAFL = /c /I $(CYA)/include -I $(CYA)/include/openssl \
-		/I $(CYA)/ctaocrypt/include /D _LIB /D OPENSSL_EXTRA
+        /I $(CYA)/ctaocrypt/include /D _LIB /D OPENSSL_EXTRA
 
 CYASRC= \
 	$(CYA)/src/cyassl_int.c \
@@ -120,8 +115,8 @@ windows:
 	$(CL) mongoose_ex.c /GD $(LINK) /DLL /DEF:win32\dll.def /out:_$(PROG).dll
 
 # Build for Windows under MinGW
-#MINGWDBG=  -DDEBUG -O0 -ggdb
-MINGWDBG=   -DNDEBUG -Os
+#MINGWDBG= -DDEBUG -O0 -ggdb
+MINGWDBG= -DNDEBUG -Os
 MINGWOPT=   -std=c99 -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
 #MINGWOPT=  -std=c99 -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
 mingw:
@@ -143,19 +138,18 @@ man:
 # "TEST=unit make test" - perform unit test only
 # "TEST=embedded" - test embedded API by building and testing test/embed.c
 # "TEST=basic_tests" - perform basic tests only (no CGI, SSI..)
-test: do_test
-do_test:
+tests:
 	perl test/test.pl $(TEST)
 
 release: clean
 	F=mongoose-`perl -lne '/define\s+MONGOOSE_VERSION\s+"(\S+)"/ and print $$1' mongoose.c`.tgz ; cd .. && tar -czf x mongoose/{LICENSE,Makefile,bindings,examples,test,win32,mongoose.c,mongoose.h,mongoose.1,main.c} && mv x mongoose/$$F
-
-clean:
-	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz $(PROG).exe *.dll *.lib
-
 
 # dependencies
 .PHONY: mongoose_ex.c main.c
 
 mongoose_ex.c: mongoose.c mongoose.h mongoose_ex.h mongoose_sys_porting.h
 main.c:        mongoose.h mongoose_ex.h mongoose_sys_porting.h
+
+clean:
+	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz $(PROG).exe *.dll *.lib
+

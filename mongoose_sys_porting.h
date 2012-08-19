@@ -434,18 +434,28 @@ We also check whether someone else has gone before us setting up these C99 defin
 
 #endif  /* C++ && format macros */
 
+// Below are the macros for enabling compiler-specific checks for
+// printf-like arguments.
+//
 // See also: http://stackoverflow.com/questions/2354784/attribute-formatprintf-1-2-for-msvc/6849629#6849629
-#undef FORMAT_STRING
+#undef PRINTF_FORMAT_STRING
 #if _MSC_VER >= 1400
-# include <sal.h>
-# if _MSC_VER > 1400
-#  define FORMAT_STRING(p) _Printf_format_string_ p
-# else
-# define FORMAT_STRING(p) __format_string p
-# endif /* FORMAT_STRING */
+#include <sal.h>
+#if _MSC_VER > 1400
+#define PRINTF_FORMAT_STRING(s) _Printf_format_string_ s
 #else
-# define FORMAT_STRING(p) p
-#endif /* _MSC_VER */
+#define PRINTF_FORMAT_STRING(s) __format_string s
+#endif
+#else
+#define PRINTF_FORMAT_STRING(s) s
+#endif
+
+#ifdef __GNUC__
+#define PRINTF_ARGS(x, y) __attribute__((format(printf, x, y)))
+#else
+#define PRINTF_ARGS(x, y)
+#endif
+// -------------
 
 #define WINCDECL __cdecl
 
