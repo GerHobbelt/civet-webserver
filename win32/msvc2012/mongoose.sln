@@ -23,11 +23,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_testclient", "3rdp
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "upskirt", "upskirt", "{DD218416-C5C4-47BC-A031-D2E3032505F1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libupskirt", "..\..\upskirt\mvc\2010\libupskirt.vcxproj", "{BEF78878-99B5-47FC-AE1B-210EDF9643F8}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libupskirt", "..\..\upskirt\mvc\2012\libupskirt.vcxproj", "{BEF78878-99B5-47FC-AE1B-210EDF9643F8}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "smartypants", "..\..\upskirt\mvc\2010\smartypants.vcxproj", "{B682A9FC-8C10-CE85-1083-3C42CA82502D}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "smartypants", "..\..\upskirt\mvc\2012\smartypants.vcxproj", "{B682A9FC-8C10-CE85-1083-3C42CA82502D}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "upskirt", "..\..\upskirt\mvc\2010\upskirt.vcxproj", "{17794A55-DE45-431F-BAEE-B92226BF831E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "upskirt", "..\..\upskirt\mvc\2012\upskirt.vcxproj", "{17794A55-DE45-431F-BAEE-B92226BF831E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_vhost_sample", "3rdparty_mongoose_vhost_sample.vcxproj", "{F5209267-8284-83BD-73F0-DBD7E0EC729F}"
 EndProject
@@ -35,11 +35,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_pthread", "3rdpart
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pthread", "pthread", "{E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_lib", "..\..\pthread-win32\pthread_lib.2010.vcxproj", "{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_lib", "..\..\pthread-win32\pthread_lib.2012.vcxproj", "{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\..\pthread-win32\pthread.2010.vcxproj", "{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\..\pthread-win32\pthread.2012.vcxproj", "{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\..\pthread-win32\tests\Debug.2010.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\..\pthread-win32\tests\Debug.2012.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_ie9_isue349", "3rdparty_mongoose_ie9_isue349.vcxproj", "{21E9BAC9-D00C-0C73-F5DA-6D2B62198074}"
 EndProject

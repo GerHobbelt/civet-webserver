@@ -16,9 +16,16 @@ Makefile.in
 *.layout
 *.res
 *.user
+
+win32/msvc2008/bin/
+win32/msvc2008/obj/
+win32/msvc2008/ipch/
 win32/msvc2010/bin/
 win32/msvc2010/obj/
 win32/msvc2010/ipch/
+win32/msvc2012/bin/
+win32/msvc2012/obj/
+win32/msvc2012/ipch/
 
 *.suo
 *.sdf

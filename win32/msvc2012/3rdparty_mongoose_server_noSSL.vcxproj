@@ -27,9 +27,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_vhost_sample</ProjectName>
-    <RootNamespace>mongoose_vhost_sample</RootNamespace>
+    <ProjectName>mongoose_NoSSL</ProjectName>
+    <RootNamespace>mongoose</RootNamespace>
     <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{C489E36F-CCB9-0C96-D054-0DCC2029399F}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -37,12 +38,14 @@
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v110</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v110</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -61,12 +64,14 @@
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v110</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v110</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -92,24 +97,24 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
     <RunCodeAnalysis Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</RunCodeAnalysis>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">$(SolutionDir)bin/$(Platform)_MSVC2010.$(Configuration)\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2010.$(Configuration)\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">$(SolutionDir)bin/$(Platform)_MSVC2012.$(Configuration)\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">$(SolutionDir)obj/$(ProjectName)_$(Platform)_MSVC2012.$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">false</LinkIncremental>
     <CodeAnalysisRuleSet Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">AllRules.ruleset</CodeAnalysisRuleSet>
     <CodeAnalysisRules Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'" />
@@ -147,7 +152,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -160,7 +165,6 @@
       <CompileAs>Default</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DisableSpecificWarnings>4127;4244;4306;4100;4204;4221;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>
       </OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
@@ -209,7 +213,7 @@
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -270,7 +274,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -283,7 +287,6 @@
       <CompileAs>Default</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DisableSpecificWarnings>4127;4244;4306;4100;4204;4221;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>
       </OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
@@ -324,7 +327,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -360,6 +363,7 @@
       <DataExecutionPrevention>
       </DataExecutionPrevention>
       <TargetMachine>MachineX86</TargetMachine>
+      <Profile>true</Profile>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -381,7 +385,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -418,6 +422,7 @@
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
       <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <Profile>true</Profile>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -438,7 +443,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_SSL;NO_CGI;NO_USE_IPV6;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -471,33 +476,184 @@
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <TargetMachine>MachineIA64</TargetMachine>
       <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <Profile>true</Profile>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <None Include="..\..\examples\html\favicon.ico" />
-    <None Include="..\..\examples\html\index.html" />
-    <None Include="..\..\examples\html\jquery.js" />
-    <None Include="..\..\examples\html\login.html" />
-    <None Include="..\..\examples\html\logo.png" />
-    <None Include="..\..\examples\html\main.js" />
-    <None Include="..\..\examples\html\style.css" />
+    <None Include="..\..\.gitmodules" />
+    <None Include="..\..\documentation\BuildOnAndroid.html" />
+    <None Include="..\..\documentation\BuildOnAndroid.wiki" />
+    <None Include="..\..\documentation\ConfigurationProblems.html" />
+    <None Include="..\..\documentation\ConfigurationProblems.wiki" />
+    <None Include="..\..\documentation\default.html" />
+    <None Include="..\..\documentation\desktop.ini" />
+    <None Include="..\..\documentation\development-info.html" />
+    <None Include="..\..\documentation\Features.html" />
+    <None Include="..\..\documentation\Features.wiki" />
+    <None Include="..\..\documentation\icon.svg" />
+    <None Include="..\..\documentation\images\leftphoto.jpg" />
+    <None Include="..\..\documentation\master.dwt" />
+    <None Include="..\..\documentation\MongooseManual.html" />
+    <None Include="..\..\documentation\MongooseManual.wiki" />
+    <None Include="..\..\documentation\styles\layout.css" />
+    <None Include="..\..\documentation\styles\style0.css" />
+    <None Include="..\..\documentation\styles\style1.css" />
+    <None Include="..\..\documentation\styles\style2.css" />
+    <None Include="..\..\documentation\styles\style3.css" />
+    <None Include="..\..\documentation\UsefulResources.html" />
+    <None Include="..\..\documentation\UsefulResources.wiki" />
+    <None Include="..\..\documentation\WindowsUsage.html" />
+    <None Include="..\..\documentation\WindowsUsage.wiki" />
+    <None Include="..\..\documentation\WritingWebApplications.html" />
+    <None Include="..\..\documentation\WritingWebApplications.wiki" />
+    <None Include="..\..\LICENSE" />
+    <None Include="..\..\Makefile" />
+    <None Include="..\..\mongoose.1" />
+    <None Include="..\..\test\.leading.dot.txt" />
+    <None Include="..\..\test\100images.htm">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="..\..\test\ajax\echo.cgi" />
+    <None Include="..\..\test\ajax\jquery.js" />
+    <None Include="..\..\test\ajax\test-18.html" />
+    <None Include="..\..\test\ajax\test.html" />
+    <None Include="..\..\test\all_build_flags.pl" />
+    <None Include="..\..\test\bad.cgi" />
+    <None Include="..\..\test\bad2.cgi" />
+    <None Include="..\..\test\env.cgi" />
+    <None Include="..\..\test\error\404.shtml" />
+    <None Include="..\..\test\error\error.shtml" />
+    <None Include="..\..\test\exploit.pl" />
+    <None Include="..\..\test\hello.cgi" />
+    <None Include="..\..\test\hello.txt" />
+    <None Include="..\..\test\imagetest\00.png" />
+    <None Include="..\..\test\imagetest\01.png" />
+    <None Include="..\..\test\imagetest\02.png" />
+    <None Include="..\..\test\imagetest\03.png" />
+    <None Include="..\..\test\imagetest\04.png" />
+    <None Include="..\..\test\imagetest\05.png" />
+    <None Include="..\..\test\imagetest\06.png" />
+    <None Include="..\..\test\imagetest\07.png" />
+    <None Include="..\..\test\imagetest\08.png" />
+    <None Include="..\..\test\imagetest\09.png" />
+    <None Include="..\..\test\imagetest\10.png" />
+    <None Include="..\..\test\imagetest\11.png" />
+    <None Include="..\..\test\imagetest\12.png" />
+    <None Include="..\..\test\imagetest\13.png" />
+    <None Include="..\..\test\imagetest\14.png" />
+    <None Include="..\..\test\imagetest\15.png" />
+    <None Include="..\..\test\imagetest\16.png" />
+    <None Include="..\..\test\imagetest\17.png" />
+    <None Include="..\..\test\imagetest\18.png" />
+    <None Include="..\..\test\imagetest\19.png" />
+    <None Include="..\..\test\imagetest\20.png" />
+    <None Include="..\..\test\imagetest\21.png" />
+    <None Include="..\..\test\imagetest\22.png" />
+    <None Include="..\..\test\imagetest\23.png" />
+    <None Include="..\..\test\imagetest\24.png" />
+    <None Include="..\..\test\imagetest\25.png" />
+    <None Include="..\..\test\imagetest\26.png" />
+    <None Include="..\..\test\imagetest\27.png" />
+    <None Include="..\..\test\imagetest\28.png" />
+    <None Include="..\..\test\imagetest\29.png" />
+    <None Include="..\..\test\imagetest\30.png" />
+    <None Include="..\..\test\imagetest\31.png" />
+    <None Include="..\..\test\imagetest\32.png" />
+    <None Include="..\..\test\imagetest\33.png" />
+    <None Include="..\..\test\imagetest\34.png" />
+    <None Include="..\..\test\imagetest\35.png" />
+    <None Include="..\..\test\imagetest\36.png" />
+    <None Include="..\..\test\imagetest\37.png" />
+    <None Include="..\..\test\imagetest\38.png" />
+    <None Include="..\..\test\imagetest\39.png" />
+    <None Include="..\..\test\imagetest\40.png" />
+    <None Include="..\..\test\imagetest\41.png" />
+    <None Include="..\..\test\imagetest\42.png" />
+    <None Include="..\..\test\imagetest\43.png" />
+    <None Include="..\..\test\imagetest\44.png" />
+    <None Include="..\..\test\imagetest\45.png" />
+    <None Include="..\..\test\imagetest\46.png" />
+    <None Include="..\..\test\imagetest\47.png" />
+    <None Include="..\..\test\imagetest\48.png" />
+    <None Include="..\..\test\imagetest\49.png" />
+    <None Include="..\..\test\imagetest\50.png" />
+    <None Include="..\..\test\imagetest\51.png" />
+    <None Include="..\..\test\imagetest\52.png" />
+    <None Include="..\..\test\imagetest\53.png" />
+    <None Include="..\..\test\imagetest\54.png" />
+    <None Include="..\..\test\imagetest\55.png" />
+    <None Include="..\..\test\imagetest\56.png" />
+    <None Include="..\..\test\imagetest\57.png" />
+    <None Include="..\..\test\imagetest\58.png" />
+    <None Include="..\..\test\imagetest\59.png" />
+    <None Include="..\..\test\imagetest\60.png" />
+    <None Include="..\..\test\imagetest\61.png" />
+    <None Include="..\..\test\imagetest\62.png" />
+    <None Include="..\..\test\imagetest\63.png" />
+    <None Include="..\..\test\imagetest\64.png" />
+    <None Include="..\..\test\imagetest\65.png" />
+    <None Include="..\..\test\imagetest\66.png" />
+    <None Include="..\..\test\imagetest\67.png" />
+    <None Include="..\..\test\imagetest\68.png" />
+    <None Include="..\..\test\imagetest\69.png" />
+    <None Include="..\..\test\imagetest\70.png" />
+    <None Include="..\..\test\imagetest\71.png" />
+    <None Include="..\..\test\imagetest\72.png" />
+    <None Include="..\..\test\imagetest\73.png" />
+    <None Include="..\..\test\imagetest\74.png" />
+    <None Include="..\..\test\imagetest\75.png" />
+    <None Include="..\..\test\imagetest\76.png" />
+    <None Include="..\..\test\imagetest\77.png" />
+    <None Include="..\..\test\imagetest\78.png" />
+    <None Include="..\..\test\imagetest\79.png" />
+    <None Include="..\..\test\imagetest\80.png" />
+    <None Include="..\..\test\imagetest\81.png" />
+    <None Include="..\..\test\imagetest\82.png" />
+    <None Include="..\..\test\imagetest\83.png" />
+    <None Include="..\..\test\imagetest\84.png" />
+    <None Include="..\..\test\imagetest\85.png" />
+    <None Include="..\..\test\imagetest\86.png" />
+    <None Include="..\..\test\imagetest\87.png" />
+    <None Include="..\..\test\imagetest\88.png" />
+    <None Include="..\..\test\imagetest\89.png" />
+    <None Include="..\..\test\imagetest\90.png" />
+    <None Include="..\..\test\imagetest\91.png" />
+    <None Include="..\..\test\imagetest\92.png" />
+    <None Include="..\..\test\imagetest\93.png" />
+    <None Include="..\..\test\imagetest\94.png" />
+    <None Include="..\..\test\imagetest\95.png" />
+    <None Include="..\..\test\imagetest\96.png" />
+    <None Include="..\..\test\imagetest\97.png" />
+    <None Include="..\..\test\imagetest\98.png" />
+    <None Include="..\..\test\imagetest\99.png" />
+    <None Include="..\..\test\passfile" />
+    <None Include="..\..\test\sh.cgi" />
+    <None Include="..\..\test\ssi1.shtml" />
+    <None Include="..\..\test\ssi2.shtml" />
+    <None Include="..\..\test\ssi3.shtml" />
+    <None Include="..\..\test\ssi4.shtml" />
+    <None Include="..\..\test\ssi5.shtml" />
+    <None Include="..\..\test\ssi6.shtml" />
+    <None Include="..\..\test\ssi7.shtml" />
+    <None Include="..\..\test\ssi8.shtml" />
+    <None Include="..\..\test\ssi9.shtml" />
+    <None Include="..\..\test\test.pl" />
+    <None Include="..\..\test\timeout.cgi" />
+    <None Include="..\..\win32\favicon.ico" />
+    <None Include="..\..\win32\systray.ico" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\virtualhosting.c" />
+    <ClCompile Include="..\..\main.c" />
+    <ClCompile Include="..\..\mongoose_ex.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread.2010.vcxproj">
-      <Project>{5d459ba0-5eeb-47d3-a1c4-6b55c8d37ec0}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\upskirt\mvc\2010\libupskirt.vcxproj">
-      <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
-    </ProjectReference>
-    <ProjectReference Include="3rdparty_mongoose_pthread.vcxproj">
-      <Project>{5da681a2-3c45-2e42-0e35-0d24831144d8}</Project>
-    </ProjectReference>
+    <ClInclude Include="..\..\win32\resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\win32\res.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
