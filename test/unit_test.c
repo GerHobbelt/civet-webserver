@@ -2974,7 +2974,7 @@ int main(void) {
 #endif
 
 #if MG_DEBUG_TRACING
-  mg_trace_level = 0x00021501;
+  *mg_trace_level() = 0x00021501;
 #endif
 
   test_MSVC_fix();

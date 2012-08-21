@@ -67,7 +67,12 @@
 #endif
 
 #if MG_DEBUG_TRACING
-/* extern */ unsigned int mg_trace_level = ~0u;
+// 'data' exports don't work well for dynamic libs: use accessor function
+unsigned int *mg_trace_level(void) {
+  static unsigned int trace_level = ~0u;
+
+  return &trace_level;
+}
 #endif
 
 #if defined(_WIN32)

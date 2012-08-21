@@ -718,10 +718,10 @@ typedef int SOCKET;
       0x1000:          mongoose config options
   0x00010000..onwards: application specific
 */
-extern unsigned int mg_trace_level;
+unsigned int *mg_trace_level(void);
 #define DEBUG_TRACE(l, x)                                   \
 do {                                                        \
-  if (mg_trace_level & l) {                                 \
+  if (*mg_trace_level() & l) {                              \
     flockfile(stdout);                                      \
     printf("*** %lu.%p.%s.%d: ",                            \
            (unsigned long) time(NULL), MG_PTHREAD_SELF(),   \
