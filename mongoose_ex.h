@@ -86,6 +86,12 @@ void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 // Same as FD_ISSET but now for mongoose sockets (struct socket)
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
+// for those occasions where you need to edit the uri, query string or request method.
+//
+// Input strings may be NULL, but must otherwise have a lifetime equal or longer than the connection.
+void mg_set_request_uri(struct mg_connection *conn, const char *uri, const char *query_string);
+void mg_set_request_method(struct mg_connection *conn, const char *method);
+
 
 // create a socket pair over local loopback. Used for inter-thread communications.
 int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx);
