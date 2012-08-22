@@ -553,7 +553,7 @@ struct timespec {
 
 
 
-#if defined(HAVE_STDINT) || (defined(_MSC_VER) && _MSC_VER >= 1500)
+#if defined(HAVE_STDINT) || (defined(_MSC_VER) && _MSC_VER >= 1600)
 #include <stdint.h>
 #else
 typedef unsigned int  uint32_t;
