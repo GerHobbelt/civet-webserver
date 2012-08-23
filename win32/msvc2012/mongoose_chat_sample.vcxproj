@@ -27,10 +27,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_restarting_server</ProjectName>
-    <RootNamespace>restarting_server</RootNamespace>
+    <ProjectName>mongoose_chat_sample</ProjectName>
+    <RootNamespace>mongoose_chat_sample</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{279FCCD2-0D90-2CE4-BD05-E91BD3373266}</ProjectGuid>
+    <ProjectGuid>{F6B724F5-4885-2E3E-45F8-7DBFD8CD97B1}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -480,12 +480,21 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ProjectReference Include="3rdparty_mongoose.vcxproj">
-      <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
-    </ProjectReference>
+    <ClCompile Include="..\..\examples\chat.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\restarting_server.c" />
+    <None Include="..\..\examples\html\favicon.ico" />
+    <None Include="..\..\examples\html\index.html" />
+    <None Include="..\..\examples\html\jquery.js" />
+    <None Include="..\..\examples\html\login.html" />
+    <None Include="..\..\examples\html\logo.png" />
+    <None Include="..\..\examples\html\main.js" />
+    <None Include="..\..\examples\html\style.css" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="mongoose.vcxproj">
+      <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

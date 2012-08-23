@@ -27,7 +27,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <RootNamespace>My3rdparty_mongoose</RootNamespace>
+    <RootNamespace>Mymongoose</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectName>mongoose</ProjectName>
     <ProjectGuid>{97722804-CC3F-33C5-5548-40260C09C0DC}</ProjectGuid>

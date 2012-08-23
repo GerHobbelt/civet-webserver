@@ -1,25 +1,25 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose", "3rdparty_mongoose.vcxproj", "{97722804-CC3F-33C5-5548-40260C09C0DC}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose", "mongoose.vcxproj", "{97722804-CC3F-33C5-5548-40260C09C0DC}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_main", "3rdparty_mongoose_server.vcxproj", "{C459B541-F064-72CE-427A-59C3966CE84D}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_main", "mongoose_server.vcxproj", "{C459B541-F064-72CE-427A-59C3966CE84D}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "mongoose", "mongoose", "{A49FBF42-AA78-4459-B83B-201271B73458}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_chat_sample", "3rdparty_mongoose_chat_sample.vcxproj", "{F6B724F5-4885-2E3E-45F8-7DBFD8CD97B1}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_chat_sample", "mongoose_chat_sample.vcxproj", "{F6B724F5-4885-2E3E-45F8-7DBFD8CD97B1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_hello", "3rdparty_mongoose_hello_sample.vcxproj", "{11090A1C-83F7-9D0D-301F-5EFBAB779D0D}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_hello", "mongoose_hello_sample.vcxproj", "{11090A1C-83F7-9D0D-301F-5EFBAB779D0D}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_test_embed", "3rdparty_mongoose_test_embed.vcxproj", "{00C24C20-A5A0-79D8-FB6B-C6569F244A87}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_test_embed", "mongoose_test_embed.vcxproj", "{00C24C20-A5A0-79D8-FB6B-C6569F244A87}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_unit_test", "3rdparty_mongoose_test_unit_test.vcxproj", "{622F5DC3-8BA6-AB0E-07EC-A927B505E703}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_unit_test", "mongoose_test_unit_test.vcxproj", "{622F5DC3-8BA6-AB0E-07EC-A927B505E703}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_authentication_sample", "3rdparty_mongoose_authentication_sample.vcxproj", "{32080287-2D50-ECB0-7402-4443A0858715}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_authentication_sample", "mongoose_authentication_sample.vcxproj", "{32080287-2D50-ECB0-7402-4443A0858715}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_service", "3rdparty_mongoose_service.vcxproj", "{640A834B-DBF3-C057-F78E-DDF6020A036B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_service", "mongoose_service.vcxproj", "{640A834B-DBF3-C057-F78E-DDF6020A036B}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_testclient", "3rdparty_mongoose_testclient.vcxproj", "{F275CE2E-B17A-5F58-25D0-498ADF588A55}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_testclient", "mongoose_testclient.vcxproj", "{F275CE2E-B17A-5F58-25D0-498ADF588A55}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "upskirt", "upskirt", "{DD218416-C5C4-47BC-A031-D2E3032505F1}"
 EndProject
@@ -29,9 +29,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "smartypants", "..\..\upskir
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "upskirt", "..\..\upskirt\mvc\2012\upskirt.vcxproj", "{17794A55-DE45-431F-BAEE-B92226BF831E}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_vhost_sample", "3rdparty_mongoose_vhost_sample.vcxproj", "{F5209267-8284-83BD-73F0-DBD7E0EC729F}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_vhost_sample", "mongoose_vhost_sample.vcxproj", "{F5209267-8284-83BD-73F0-DBD7E0EC729F}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_pthread", "3rdparty_mongoose_pthread.vcxproj", "{5DA681A2-3C45-2E42-0E35-0D24831144D8}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_pthread", "mongoose_pthread.vcxproj", "{5DA681A2-3C45-2E42-0E35-0D24831144D8}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pthread", "pthread", "{E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}"
 EndProject
@@ -41,11 +41,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\..\pthrea
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\..\pthread-win32\tests\Debug.2012.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_ie9_isue349", "3rdparty_mongoose_ie9_isue349.vcxproj", "{21E9BAC9-D00C-0C73-F5DA-6D2B62198074}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_ie9_isue349", "mongoose_ie9_isue349.vcxproj", "{21E9BAC9-D00C-0C73-F5DA-6D2B62198074}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_restarting_server", "3rdparty_mongoose_restarting_server.vcxproj", "{279FCCD2-0D90-2CE4-BD05-E91BD3373266}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_restarting_server", "mongoose_restarting_server.vcxproj", "{279FCCD2-0D90-2CE4-BD05-E91BD3373266}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_NoSSL", "3rdparty_mongoose_server_noSSL.vcxproj", "{C489E36F-CCB9-0C96-D054-0DCC2029399F}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mongoose_NoSSL", "mongoose_server_noSSL.vcxproj", "{C489E36F-CCB9-0C96-D054-0DCC2029399F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -450,7 +450,7 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ProjectReference Include="3rdparty_mongoose.vcxproj">
+    <ProjectReference Include="mongoose.vcxproj">
       <Project>{fc4eff85-2c41-4ed6-a13e-eb98409de435}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
