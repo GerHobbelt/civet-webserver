@@ -8678,12 +8678,12 @@ static void worker_thread(struct mg_context *ctx) {
 
   if (buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
     mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
-    goto fail_dramatically;
+    goto fail_dramatically; 
   }
   conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
-    goto fail_dramatically;
+    goto fail_dramatically; 
   }
   memset(conn, 0, sizeof(conn[0]));
   conn->client.sock = INVALID_SOCKET;
