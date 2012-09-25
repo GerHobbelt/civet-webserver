@@ -5551,7 +5551,7 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
 }
 
 // For given directory path, append the valid index file.
-// Return 0 if the index file exists, -1 if no index file could be located in the given directory.
+// Return 1 if the index file exists, 0 if no index file could be located in the given directory.
 // If the file is found, it's stats are returned in stp and path has been augmented to point at the index file.
 int mg_substitute_index_file(struct mg_connection *conn, char *path,
                              size_t path_len, struct mgstat *stp) {
