@@ -66,7 +66,7 @@ static const char *default_options[] = {
   "num_threads",           "5",
   "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
   "access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
-  "index_files",           "default.html",
+  "index_files",           "index.html,index.htm,index.cgi,index.shtml,index.php,default.html",
   "ssi_pattern",           "**.html$|**.htm|**.shtml$|**.shtm$",
   //"ssi_marker",          "{!--#,}",
   "keep_alive_timeout",    "5",
@@ -740,19 +740,18 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   }
   else
   {
-    int file_found;
     struct mgstat fst;
 
     assert(request_info->phys_path);
     if (0 == mg_stat(request_info->phys_path, &fst)) {
 	  char index_filepath[PATH_MAX];
-	  struct mgstat index_st;
 
-	  file_found = !fst.is_directory;
-      if (file_found) {
+      if (!fst.is_directory) {
         return NULL; // let mongoose handle the default of 'file exists'...
-      } else if (!mg_substitute_index_file(conn, index_filepath, ARRAY_SIZE(index_filepath), &index_st)) {
+      } else if (fst.is_directory && mg_substitute_index_file(conn, index_filepath, ARRAY_SIZE(index_filepath), &fst)) {
         return NULL; // let mongoose handle the default of 'index file exists'...
+      } else if (fst.is_directory && !strcmp(request_info->uri, "/")) {
+        return NULL; // let mongoose handle the default of 'directory listing' when we're looking at the root dir...
 	  }
 	}
 

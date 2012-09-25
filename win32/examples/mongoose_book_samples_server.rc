@@ -1,4 +1,103 @@
+// Microsoft Visual C++ generated resource script.
+//
 #include "mongoose_book_samples_server.resource.h"
+/////////////////////////////////////////////////////////////////////////////
+// English (United States) resources
 
-IDI_ICON ICON DISCARDABLE "mongoose_book_samples_server.systray.ico"
-IDR_FAVICON RCDATA "mongoose_book_samples_server.favicon.ico"
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+//LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON                ICON                    "mongoose_book_samples_server.systray.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// RCDATA
+//
+
+IDR_FAVICON             RCDATA                  "mongoose_book_samples_server.favicon.ico"
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "mongoose_book_samples_server.resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_FORMVIEW DIALOGEX 0, 0, 412, 239
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_BORDER
+EXSTYLE WS_EX_ACCEPTFILES
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "General Message",IDC_STATIC,7,7,398,46
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,76,29,296,10
+    ICON            IDI_ICON,IDC_STATIC,22,23,21,20
+    GROUPBOX        "Server log messages",IDC_STATIC,7,75,398,157
+    CONTROL         "",IDC_RICHEDIT4LOG,"RichEdit20W",ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | WS_BORDER | WS_VSCROLL | WS_TABSTOP,9,87,394,143
+    PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,398,16
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_FORMVIEW, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 405
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 232
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (United States) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
