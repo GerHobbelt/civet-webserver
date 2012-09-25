@@ -363,8 +363,8 @@ typedef struct mg_user_class_t {
   mg_write_callback_t         write_callback;     // Exposes received body data to user. Can act as substitute for file system I/O.
   mg_read_callback_t          read_callback;      // Requests body data from user to be sent with HTTP response. Can act as substitute for file system I/O.
 
-  mg_write_chunk_header_t       write_chunk_header;
-  mg_read_chunk_header_t    read_chunk_header;
+  mg_write_chunk_header_t     write_chunk_header;
+  mg_read_chunk_header_t      read_chunk_header;
   mg_process_rx_chunk_header_t  process_rx_chunk_header;
 } mg_user_class_t;
 
@@ -1108,6 +1108,9 @@ FILE *mg_fopen(const char *path, const char *mode);
 
 // Like fclose() but the other of the matching pair with mg_fopen()
 int mg_fclose(FILE *fp);
+
+// Convert the specified string (buffer) to an absolute path with UNIX '/' slashes for directory separators. Return 0 on success.
+int mg_mk_fullpath(char *buf, size_t buf_len);
 
 
 // Print error message to the opened error log stream.

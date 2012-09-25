@@ -2857,10 +2857,10 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
     // Convert to Unicode and back. If doubly-converted string does not
     // match the original, something is fishy, reject.
     memset(wbuf, 0, wbuf_len*sizeof(wchar_t)); // <bel>: fix otherwise an "uninitialized memory read in WideCharToMultiByte" occurs
-    MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len);
-    WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
-                        NULL, NULL);
-    if (strcmp(buf, buf2) != 0) {
+    if (!MultiByteToWideChar(CP_UTF8, 0, buf, -1, wbuf, (int) wbuf_len) ||
+        !WideCharToMultiByte(CP_UTF8, 0, wbuf, (int) wbuf_len, buf2, sizeof(buf2),
+                        NULL, NULL) ||
+        strcmp(buf, buf2) != 0) {
       mg_cry(NULL, "Rejecting malicious path: [%s]", buf);
       wbuf[0] = L'\0';
     }
@@ -2923,6 +2923,25 @@ size_t strftime(char *dst, size_t dst_size, const char *fmt,
 }
 #endif
 
+int mg_mk_fullpath(char *buf, size_t buf_len) {
+  wchar_t woldbuf[PATH_MAX];
+  wchar_t wnewbuf[PATH_MAX];
+  int pos;
+
+  to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
+  pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
+  assert(pos < ARRAY_SIZE(wnewbuf));
+  wnewbuf[pos] = 0;
+  if (!WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL))
+	return -1;
+  pos = (int)strlen(buf);
+  while (pos-- > 0) {
+    if (buf[pos] == '\\')
+      buf[pos] = '/';
+  }
+  return 0;
+}
+
 int mg_rename(const char* oldname, const char* newname) {
   wchar_t woldbuf[PATH_MAX];
   wchar_t wnewbuf[PATH_MAX];
@@ -2945,7 +2964,8 @@ FILE *mg_fopen(const char *path, const char *mode) {
   }
 
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
-  MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
+  if (!MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode)))
+	return NULL;
 
   // recursively create the included path when the file is to be created / appended to:
   if (wmode[wcscspn(wmode, L"aw")]) {
@@ -3063,9 +3083,11 @@ static struct dirent *readdir(DIR *dir) {
   if (dir) {
     if (dir->handle != INVALID_HANDLE_VALUE) {
       result = &dir->result;
-      (void) WideCharToMultiByte(CP_UTF8, 0,
+      if (!WideCharToMultiByte(CP_UTF8, 0,
           dir->info.cFileName, -1, result->d_name,
-          sizeof(result->d_name), NULL, NULL);
+          sizeof(result->d_name), NULL, NULL)) {
+		return 0;
+	  }
 
       if (!FindNextFileW(dir->handle, &dir->info)) {
         (void) FindClose(dir->handle);
@@ -3183,6 +3205,15 @@ static int set_non_blocking_mode(SOCKET sock, int on) {
 }
 
 #else // WIN32
+
+int mg_mk_fullpath(char *buf, size_t buf_len) {
+  char newbuf[PATH_MAX + 1];
+
+  if (!realpath(buf, newbuf))
+	return -1;
+  mg_strlcpy(buf, newbuf, buf_len);
+  return 0;
+}
 
 FILE *mg_fopen(const char *path, const char *mode) {
   if (!path || !path[0] || !mode || !mode[0]) {
@@ -4014,24 +4045,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
   // keep in mind that other scenarios, e.g. user event handlers, may fail similarly
   // when receiving relative filesystem paths, so we solve the issue once and for all,
   // right here:
-#if defined(_WIN32)
-  {
-    wchar_t woldbuf[PATH_MAX];
-    wchar_t wnewbuf[PATH_MAX];
-    int pos;
-
-    to_unicode(buf, woldbuf, ARRAY_SIZE(woldbuf));
-    pos = GetFullPathNameW(woldbuf, ARRAY_SIZE(wnewbuf), wnewbuf, NULL);
-    assert(pos < ARRAY_SIZE(wnewbuf));
-    wnewbuf[pos] = 0;
-    WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL);
-    pos = (int)strlen(buf);
-    while (pos-- > 0) {
-      if (buf[pos] == '\\')
-        buf[pos] = '/';
-    }
-  }
-#endif
+  mg_mk_fullpath(buf, buf_len);
 
   if ((stat_result = mg_stat(buf, st)) != 0) {
     const char *cgi_exts = get_conn_option(conn, CGI_EXTENSIONS);

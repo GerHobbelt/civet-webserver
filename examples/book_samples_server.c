@@ -45,6 +45,11 @@ static volatile int should_restart = 0;
 static char server_name[40];          // Set by init_server_name()
 static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
 static struct mg_context *ctx = NULL; // Set by start_mongoose()
+#if defined(_WIN32)
+static HWND app_hwnd = NULL;
+static UINT WM_SERVER_IS_STOPPING = 0;
+#endif
+static char document_root_dir[PATH_MAX] = "./test";
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -55,7 +60,7 @@ static void WINCDECL signal_handler(int sig_num) {
 }
 
 static const char *default_options[] = {
-  "document_root",         "./test",
+  "document_root",         document_root_dir,
   "listening_ports",       "9999",                         // "8081,8082s"
   //"ssl_certificate",     "ssl_cert.pem",
   "num_threads",           "5",
@@ -480,6 +485,21 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     verify_document_root(mg_get_conn_option(conn, "document_root"));
     return (void *)1;
   }
+  if (event == MG_EXIT_MASTER && mg_get_stop_flag(ctx))
+  {
+	/*
+	 master thread stopped due to STOP signal given by somebody;
+	 this is a sure-fire way to detect if the STOP signal was issued, 
+	 but it has the 'drawback' that by now, the master thread and
+	 probably quite a few of the client threads have terminated as 
+	 well.
+	 If you don't mind about that, it's a fine way to detect the STOP
+	 with a minimum of fuss in an event-driven environment such as the
+	 Windows message loop.
+	*/
+	PostMessage(app_hwnd, WM_SERVER_IS_STOPPING, 0, 0);
+	return (void *)1;
+  }
 
 #if defined(_WIN32)
   if (event == MG_EVENT_LOG &&
@@ -771,6 +791,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     mg_write(conn, content, content_length);
 
     // signal the server to stop
+	should_restart = 0;
     mg_signal_stop(mg_get_context(conn));
 
     // Mark as processed
@@ -838,6 +859,7 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
   // CTRL-CLOSE: confirm that the user wants to exit.
   case CTRL_CLOSE_EVENT:
   case CTRL_BREAK_EVENT:
+	should_restart = 0;
     exit_flag = 1000 + signal_type;
     //mg_signal_stop(ctx);
     return TRUE;
@@ -846,6 +868,7 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
   case CTRL_LOGOFF_EVENT:
   case CTRL_SHUTDOWN_EVENT:
   default:
+	should_restart = 0;
     return FALSE;
   }
 }
@@ -863,6 +886,8 @@ static void start_mongoose(int argc, char *argv[]) {
       0,
       option_get_callback
   };
+
+  should_restart = 0;
 
   /* Edit passwords file if -A option is specified */
   if (argc > 1 && !strcmp(argv[1], "-A")) {
@@ -1058,6 +1083,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
   switch (msg) {
     case WM_CREATE:
+	  app_hwnd = hWnd;
 #if defined(MONGOOSE_AS_SERVICE)
       if (__argv[1] != NULL &&
           !strcmp(__argv[1], service_magic_argument)) {
@@ -1071,11 +1097,12 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		start_mongoose(__argc, __argv);
       }
       break;
+
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case ID_QUIT:
           mg_stop(ctx);
-          Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+          //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
           PostQuitMessage(EXIT_SUCCESS);
           break;
         case ID_EDIT_CONFIG:
@@ -1089,6 +1116,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 #endif // MONGOOSE_AS_SERVICE
       }
       break;
+
     case WM_USER:
       switch (lParam) {
         case WM_RBUTTONUP:
@@ -1118,27 +1146,70 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           break;
       }
       break;
+
     case WM_CLOSE:
+      should_restart = 0;
       mg_stop(ctx);
-      Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+      //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
       PostQuitMessage(EXIT_SUCCESS);
       return 0;  // We've just sent our own quit message, with proper hwnd.
-	case WM_DROPFILES:
-		{
-			HDROP drop_handle = (HDROP)wParam;
-			int filecount = DragQueryFile(drop_handle, 0xFFFFFFFF, NULL, 0);
-			int i;
-			TCHAR filepath[PATH_MAX + 1];
 
-			for (i = 0; i < filecount; i++)
-			{
-				DragQueryFile(drop_handle, i, filepath, ARRAY_SIZE(filepath));
-				OutputDebugString(filepath);
+	case WM_DESTROY:
+	  if (hWnd == app_hwnd) {
+		app_hwnd = NULL;
+	  }
+	  break;
+
+	case WM_DROPFILES:  // drag & drop functionality: when a file is dropped, its directory is used.
+	  {
+		HDROP drop_handle = (HDROP)wParam;
+		int filecount = DragQueryFile(drop_handle, 0xFFFFFFFF, NULL, 0);
+		int i;
+		char filepath[PATH_MAX + 1];
+		struct mgstat st;
+
+		for (i = 0; i < filecount; i++)	{
+			DragQueryFileA(drop_handle, i, filepath, ARRAY_SIZE(filepath));
+			if (!mg_mk_fullpath(filepath, ARRAY_SIZE(filepath)) &&
+			    !mg_stat(filepath, &st)) {
+			  if (!st.is_directory) {
+				strrchr(filepath, '/')[0] = 0;
+			  }
+			  if (!mg_stat(filepath, &st) && st.is_directory) {
+			    mg_strlcpy(document_root_dir, filepath, ARRAY_SIZE(document_root_dir));
+			    OutputDebugStringA(filepath);
+			    should_restart = 1;
+			    mg_signal_stop(ctx);
+			    break;
+			  }
 			}
-			DragFinish(drop_handle);
-			return 0;
 		}
-		break;
+		DragFinish(drop_handle);
+		return 0;
+	  }
+	  break;
+
+	default:
+	  if (msg == WM_SERVER_IS_STOPPING) {
+		// check if we need to restart the server.
+		if (should_restart) {
+          mg_stop(ctx);
+	      printf("Server stopped.\n");
+
+#if defined(MONGOOSE_AS_SERVICE)
+		  if (__argv[1] != NULL &&
+			  !strcmp(__argv[1], service_magic_argument)) {
+			start_mongoose(1, service_argv);
+		  } else {
+#else
+		  {
+#endif // MONGOOSE_AS_SERVICE
+			start_mongoose(__argc, __argv);
+		  }
+		}
+		return 0;
+	  }
+	  break;
   }
 
   // See also: http://stackoverflow.com/questions/11884021/c-why-this-window-title-gets-truncated
@@ -1154,6 +1225,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   HWND hWnd;
   MSG msg;
 
+  WM_SERVER_IS_STOPPING = RegisterWindowMessageA("mongoose_server_stopping");
+
   init_server_name();
   memset(&cls, 0, sizeof(cls));
   cls.lpfnWndProc = (WNDPROC) WindowProc;
@@ -1168,7 +1241,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   TrayIcon.cbSize = sizeof(TrayIcon);
   TrayIcon.uID = ID_TRAYICON;
   TrayIcon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-  TrayIcon.hIcon = LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON),
+  TrayIcon.hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON),
                              IMAGE_ICON, 16, 16, 0);
   TrayIcon.hWnd = hWnd;
   snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", server_name);
