@@ -5550,11 +5550,11 @@ static int read_and_parse_chunk_header(struct mg_connection *conn)
   }
 }
 
-// For given directory path, substitute it to valid index file.
-// Return 0 if index file has been found, -1 if not found.
-// If the file is found, it's stats is returned in stp.
-static int substitute_index_file(struct mg_connection *conn, char *path,
-                                 size_t path_len, struct mgstat *stp) {
+// For given directory path, append the valid index file.
+// Return 0 if the index file exists, -1 if no index file could be located in the given directory.
+// If the file is found, it's stats are returned in stp and path has been augmented to point at the index file.
+int mg_substitute_index_file(struct mg_connection *conn, char *path,
+                             size_t path_len, struct mgstat *stp) {
   const char *list = get_conn_option(conn, INDEX_FILES);
   struct mgstat st;
   struct vec filename_vec;
@@ -6652,7 +6652,7 @@ static void handle_request(struct mg_connection *conn) {
   } else if (!strcmp(ri->request_method, "PROPFIND")) {
     handle_propfind(conn, path, &st);
   } else if (st.is_directory &&
-             !substitute_index_file(conn, path, sizeof(path), &st)) {
+             !mg_substitute_index_file(conn, path, sizeof(path), &st)) {
     if (!mg_strcasecmp(get_conn_option(conn, ENABLE_DIRECTORY_LISTING), "yes")) {
       handle_directory_request(conn, path);
     } else {
@@ -9023,7 +9023,7 @@ When you want to signal a FULL STOP condition from any of those, call
 mg_signal_stop() instead.
 */
 void mg_stop(struct mg_context *ctx) {
-  ctx->stop_flag = 1;
+  mg_signal_stop(ctx); // only set stop=1 when not set already!
 
   // Wait until master_thread() stops
   while (ctx->stop_flag != 2) {
@@ -9314,7 +9314,8 @@ int mg_get_stop_flag(struct mg_context *ctx) {
 }
 
 void mg_signal_stop(struct mg_context *ctx) {
-  ctx->stop_flag = 1;
+  if (ctx->stop_flag == 0)
+    ctx->stop_flag = 1;
 }
 
 

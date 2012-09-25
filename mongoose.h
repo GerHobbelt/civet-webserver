@@ -1112,6 +1112,11 @@ int mg_fclose(FILE *fp);
 // Convert the specified string (buffer) to an absolute path with UNIX '/' slashes for directory separators. Return 0 on success.
 int mg_mk_fullpath(char *buf, size_t buf_len);
 
+// For given directory path, append the valid index file.
+// Return 0 if the index file exists, -1 if no index file could be located in the given directory.
+// If the file is found, it's stats are returned in stp and path has been augmented to point at the index file.
+int mg_substitute_index_file(struct mg_connection *conn, char *path, size_t path_len, struct mgstat *stp);
+
 
 // Print error message to the opened error log stream.
 //
