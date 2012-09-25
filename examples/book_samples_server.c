@@ -744,80 +744,63 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     struct mgstat fst;
 
     assert(request_info->phys_path);
-    file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
-    if (file_found) {
-      return NULL; // let mongoose handle the default of 'file exists'...
-    }
+    if (0 == mg_stat(request_info->phys_path, &fst)) {
+	  char index_filepath[PATH_MAX];
+	  struct mgstat index_st;
 
+	  file_found = !fst.is_directory;
+      if (file_found) {
+        return NULL; // let mongoose handle the default of 'file exists'...
+      } else if (!mg_substitute_index_file(conn, index_filepath, ARRAY_SIZE(index_filepath), &index_st)) {
+        return NULL; // let mongoose handle the default of 'index file exists'...
+	  }
+	}
 
-  if (event == MG_NEW_REQUEST &&
-      strstr(request_info->uri, "/restart")) {
-    // send an info page
-    content_length = mg_snprintf(conn, content, sizeof(content),
-                                 "<html><body><h1>Restart in progress</h1>"
-                                 "<p><a href=\"/\">Click here</a> to view "
-                                 "the hello page again.");
-
-    mg_connection_must_close(conn);
-
-    //mg_set_response_code(conn, 200);
-    mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
-    mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
-    mg_write_http_response_head(conn, 200, 0);
-
-    mg_write(conn, content, content_length);
-
-    // signal the server to stop & restart
-    should_restart = 1;
-    mg_signal_stop(mg_get_context(conn));
-
-    // Mark as processed
-    return "";
-  } else if (event == MG_NEW_REQUEST &&
-      strstr(request_info->uri, "/quit")) {
-    // send an info page
-    content_length = mg_snprintf(conn, content, sizeof(content),
-                                 "<html><body><h1>Server shut down in progress</h1>");
-
-    mg_connection_must_close(conn);
-
-    //mg_set_response_code(conn, 200);
-    mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
-    mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
-    mg_write_http_response_head(conn, 200, 0);
-
-    mg_write(conn, content, content_length);
-
-    // signal the server to stop
-	should_restart = 0;
-    mg_signal_stop(mg_get_context(conn));
-
-    // Mark as processed
-    return "";
-  } else if (event == MG_NEW_REQUEST &&
-             !strstr(request_info->uri, "/favicon.ico")) {
-    content_length = mg_snprintf(conn, content, sizeof(content),
-                                 "<html><body><p>Hello from mongoose! Remote port: %d."
-                                 "<p><a href=\"/restart\">Click here</a> to restart "
-                                 "the server."
-                                 "<p><a href=\"/quit\">Click here</a> to stop "
-                                 "the server.",
-                                 request_info->remote_port);
-
-    //mg_set_response_code(conn, 200); -- not needed any longer
-    mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
-    mg_add_response_header(conn, 0, "Content-Type", "text/html");
-    //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
-    mg_write_http_response_head(conn, 200, 0);
-
-    mg_write(conn, content, content_length);
-
-    // Mark as processed
-    return "";
-  }
-
+    if (strstr(request_info->uri, "/restart")) {
+      // send an info page
+      content_length = mg_snprintf(conn, content, sizeof(content),
+                                   "<html><body><h1>Restart in progress</h1>"
+                                   "<p><a href=\"/\">Click here</a> to view "
+                                   "the hello page again.");
+  
+      mg_connection_must_close(conn);
+  
+      //mg_set_response_code(conn, 200);
+      mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
+      mg_add_response_header(conn, 0, "Content-Type", "text/html");
+      //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+      mg_write_http_response_head(conn, 200, 0);
+  
+      mg_write(conn, content, content_length);
+  
+      // signal the server to stop & restart
+      should_restart = 1;
+      mg_signal_stop(mg_get_context(conn));
+  
+      // Mark as processed
+      return "";
+    } else if (strstr(request_info->uri, "/quit")) {
+      // send an info page
+      content_length = mg_snprintf(conn, content, sizeof(content),
+                                   "<html><body><h1>Server shut down in progress</h1>");
+  
+      mg_connection_must_close(conn);
+  
+      //mg_set_response_code(conn, 200);
+      mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
+      mg_add_response_header(conn, 0, "Content-Type", "text/html");
+      //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+      mg_write_http_response_head(conn, 200, 0);
+  
+      mg_write(conn, content, content_length);
+  
+      // signal the server to stop
+  	  should_restart = 0;
+      mg_signal_stop(mg_get_context(conn));
+  
+      // Mark as processed
+      return "";
+    } else 
 #ifdef _WIN32
     // Send the systray icon as favicon
     if (!strcmp("/favicon.ico", request_info->uri)) {
@@ -841,8 +824,28 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
       }
       return (void *)1;
-    }
+    } else
 #endif
+    {
+      content_length = mg_snprintf(conn, content, sizeof(content),
+                                   "<html><body><p>Hello from mongoose! Remote port: %d."
+                                   "<p><a href=\"/restart\">Click here</a> to restart "
+                                   "the server."
+                                   "<p><a href=\"/quit\">Click here</a> to stop "
+                                   "the server.",
+                                   request_info->remote_port);
+  
+      //mg_set_response_code(conn, 200); -- not needed any longer
+      mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
+      mg_add_response_header(conn, 0, "Content-Type", "text/html");
+      //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
+      mg_write_http_response_head(conn, 200, 0);
+  
+      mg_write(conn, content, content_length);
+  
+      // Mark as processed
+      return "";
+    }
   }
 
   return NULL;
@@ -1194,7 +1197,7 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		// check if we need to restart the server.
 		if (should_restart) {
           mg_stop(ctx);
-	      printf("Server stopped.\n");
+	      printf("Server stopped; will restart now.\n");
 
 #if defined(MONGOOSE_AS_SERVICE)
 		  if (__argv[1] != NULL &&
@@ -1206,6 +1209,12 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 #endif // MONGOOSE_AS_SERVICE
 			start_mongoose(__argc, __argv);
 		  }
+		} else {
+          mg_stop(ctx);
+	      printf("Server stopped.\n");
+
+		  //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+		  PostQuitMessage(EXIT_SUCCESS);
 		}
 		return 0;
 	  }
