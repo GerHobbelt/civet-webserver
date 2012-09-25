@@ -1,3 +1,24 @@
+// Mongoose is Copyright (c) 2004-2012 Sergey Lyubka
+// Book Samples Server code is Copyright (c) 2012-2013 Ger Hobbelt
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+
 /*
 Shows/tests how to completely restart the mongoose server:
 when someone visits the '/restart' URL, the server is stopped and restarted after waiting
@@ -5,11 +26,15 @@ when someone visits the '/restart' URL, the server is stopped and restarted afte
 */
 
 
-#include "mongoose.h"
+#include "mongoose_ex.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"
 #endif // _WIN32
+
+#include <upskirt/src/markdown.h>
+#include <upskirt/html/html.h>
+
 
 
 #define MAX_OPTIONS (1 + 27 /* NUM_OPTIONS */ * 3 /* once as defaults, once from config file, once from command line */)
@@ -31,11 +56,14 @@ static void WINCDECL signal_handler(int sig_num) {
 
 static const char *default_options[] = {
   "document_root",         "./test",
-  "listening_ports",       "8080",                         // "8081,8082s"
+  "listening_ports",       "9999",                         // "8081,8082s"
   //"ssl_certificate",     "ssl_cert.pem",
   "num_threads",           "5",
   "error_log_file",        "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-error.log",
   "access_log_file",       "./log/%Y/%m/tws_ib_if_srv-%Y%m%d.%H-IP-%[s]-%[p]-access.log",
+  "index_files",           "default.html",
+  "ssi_pattern",           "**.html$|**.htm|**.shtml$|**.shtm$",
+  //"ssi_marker",          "{!--#,}",
   "keep_alive_timeout",    "5",
 
   NULL
@@ -207,11 +235,500 @@ static void init_server_name(void) {
            mg_version());
 }
 
+// example and test case for a callback
+// this callback creates a statistics of request methods and the requested uris
+// it is not meant as a feature but as a simple test case
+
+struct t_stat {
+  const char * name;
+  unsigned long getCount;
+  unsigned long postCount;
+  struct t_stat * next;
+};
+
+struct t_user_arg {
+   pthread_mutex_t mutex;
+   struct t_stat * uris[0x10000];
+};
+
+unsigned short crc16(const void * data, size_t bitCount) {
+  unsigned short r = 0xFFFFu;
+  size_t i;
+  for (i = 0; i < bitCount; i++) {
+    unsigned short b = ((unsigned char*)data)[i>>3];
+    b >>= i & 0x7ul;
+    r = ((r & 1u) != (b & 1u)) ? ((r>>1) ^ 0xA001u) : (r>>1);
+  }
+  r ^= 0xFFFFu;
+  return r;
+}
+
+static int report_markdown_failure(struct mg_connection *conn, int is_inline_production, int response_code, const char *fmt, ...)
+{
+  va_list args;
+
+  if (is_inline_production)
+  {
+    mg_printf(conn, "<h1 style=\"color: red;\">Error: %d - %s</h1>\n", response_code, mg_get_response_code_text(response_code));
+    va_start(args, fmt);
+    mg_vprintf(conn, fmt, args);
+    va_end(args);
+  }
+  else
+  {
+    va_start(args, fmt);
+    mg_vsend_http_error(conn, response_code, NULL, fmt, args);
+    va_end(args);
+  }
+  return -1;
+}
+
+
+int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, int is_inline_production)
+{
+#define SD_READ_UNIT 1024
+#define SD_OUTPUT_UNIT 64
+
+  const struct mg_request_info *ri = mg_get_request_info(conn);
+  struct sd_buf *ib, *ob;
+  int ret;
+  unsigned int enabled_extensions = MKDEXT_TABLES | MKDEXT_FENCED_CODE | MKDEXT_EMAIL_FRIENDLY;
+  unsigned int render_flags = 0; // HTML_SKIP_HTML | HTML_SKIP_STYLE | HTML_HARD_WRAP;
+
+  struct sd_callbacks callbacks;
+  struct html_renderopt options;
+  struct sd_markdown *markdown;
+
+  /* opening the file */
+  FILE *in;
+
+  assert(ri->phys_path);
+  /* opening the file */
+  in = mg_fopen(ri->phys_path, "r");
+  if (!in)
+  {
+    return report_markdown_failure(conn, is_inline_production, 404, "Unable to open input file: [%s] %s", ri->uri, mg_strerror(errno));
+  }
+
+  /* reading everything */
+  ib = sd_bufnew(SD_READ_UNIT);
+  if (SD_BUF_OK != sd_bufgrow(ib, (size_t)st->size))
+  {
+    mg_fclose(in);
+    sd_bufrelease(ib);
+    return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while loading Markdown input file: [%s]", ri->uri);
+  }
+  ret = (int)fread(ib->data, 1, ib->asize, in);
+  if (ret > 0)
+  {
+    ib->size += ret;
+    mg_fclose(in);
+  }
+  else
+  {
+    mg_fclose(in);
+    sd_bufrelease(ib);
+    return report_markdown_failure(conn, is_inline_production, 500, "Cannot read from input file: [%s] %s", ri->uri, mg_strerror(errno));
+  }
+
+  /* performing markdown parsing */
+  ob = sd_bufnew(SD_OUTPUT_UNIT);
+
+  sdhtml_renderer(&callbacks, &options, render_flags);
+  markdown = sd_markdown_new(enabled_extensions, 16, &callbacks, &options);
+  if (!markdown)
+  {
+    sd_bufrelease(ib);
+    sd_bufrelease(ob);
+    return report_markdown_failure(conn, is_inline_production, 500, "Out of memory while processing Markdown input file: [%s]", ri->uri);
+  }
+  sd_markdown_render(ob, ib->data, ib->size, markdown);
+  sd_markdown_free(markdown);
+
+  if (!is_inline_production)
+  {
+    /* write the appropriate headers */
+    char date[64], lm[64], etag[64];
+    time_t curtime = time(NULL);
+    const char *hdr;
+    int64_t cl, r1, r2;
+    int n;
+
+    mg_set_response_code(conn, 200);
+
+    cl = ob->size;
+
+#if 0
+    // If Range: header specified, act accordingly
+    r1 = r2 = 0;
+    hdr = mg_get_header(conn, "Range");
+    if (hdr != NULL && (n = parse_range_header(hdr, &r1, &r2)) > 0) {
+      mg_set_response_code(conn, 206);
+      (void) fseeko(fp, (off_t) r1, SEEK_SET);
+      cl = n == 2 ? r2 - r1 + 1: cl - r1;
+      mg_add_response_header(conn, 0, "Content-Range",
+                         "bytes "
+                         "%" PRId64 "-%"
+                         PRId64 "/%" PRId64 "\r\n",
+                         r1, r1 + cl - 1, stp->size);
+    }
+#endif
+
+    // Prepare Etag, Date, Last-Modified headers. Must be in UTC, according to
+    // http://www.w3.org/Protocols/rfc2616/rfc2616-sec3.html#sec3.3
+    mg_gmt_time_string(date, sizeof(date), &curtime);
+    mg_gmt_time_string(lm, sizeof(lm), &st->mtime);
+    (void) mg_snprintf(conn, etag, sizeof(etag), "%lx.%lx", (unsigned long) st->mtime, (unsigned long) st->size);
+
+    mg_add_response_header(conn, 0, "Date", "%s", date);
+    mg_add_response_header(conn, 0, "Last-Modified", "%s", lm);
+    mg_add_response_header(conn, 0, "Etag", "\"%s\"", etag);
+    mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
+    mg_add_response_header(conn, 0, "Content-Length", "%" PRId64, cl);
+    // Connection: close is automatically added by mg_write_http_response_head()
+    mg_write_http_response_head(conn, 0, NULL);
+
+    ret = (int)cl;
+    if (strcmp(ri->request_method, "HEAD") != 0) {
+      ret = mg_write(conn, ob->data, (size_t)cl);
+    }
+  }
+  else
+  {
+    ret = mg_write(conn, ob->data, ob->size);
+  }
+
+  /* cleanup */
+  sd_bufrelease(ib);
+  sd_bufrelease(ob);
+
+  return ret;
+}
+
+
+/*
+Ths bit of code shows how one can go about providing something very much like
+IP-based and/or Name-based Virtual Hosting.
+
+When you have your local DNS (or hosts file for that matter) configured to
+point the 'localhost-9.lan' domain name at IP address 127.0.0.9 and then run
+mongoose on your localhost and visit
+  http://127.0.0.2/
+for an example of IP-based Virtual Hosting, or
+  http://localhost-9.lan/
+for an example of Host-based Virtual Hosting, you will see another website
+located in ./documentation: the mongoose documentation pages.
+If you visit
+  http://127.0.0.1/
+or
+  http://127.0.0.9/
+instead you will visit the website located in ./test/
+
+---
+
+Off Topic: one can override other options on a per-connection / request basis
+           as well. This applies to all options which' values are fetched by
+           mongoose through the internal get_conn_option() call - grep
+           mongoose.c for that one if you like.
+*/
+// typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
+static const char *option_get_callback(struct mg_context *ctx, struct mg_connection *conn, const char *name)
+{
+  // check local IP for IP-based Virtual Hosting & switch DocumentRoot for the connection accordingly:
+  if (conn && !strcmp("document_root", name))
+  {
+    const struct mg_request_info *request_info = mg_get_request_info(conn);
+
+    if (/* IP-based Virtual Hosting */
+        (!request_info->local_ip.is_ip6 &&
+         request_info->local_ip.ip_addr.v4[0] == 127 &&
+         request_info->local_ip.ip_addr.v4[1] == 0 &&
+         request_info->local_ip.ip_addr.v4[2] == 0 &&
+         request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
+        /* Name-based Virtual Hosting */
+        0 < mg_match_prefix("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
+    {
+      static char docu_site_docroot[PATH_MAX] = "";
+
+      if (!*docu_site_docroot)
+      {
+        // use the CTX-based get-option call so our recursive invocation
+        // skips this bit of code as 'conn == NULL' then:
+        mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../documentation", mg_get_option(ctx, name));
+      }
+      return docu_site_docroot;
+    }
+  }
+  return NULL; // let mongoose handle it by himself
+}
+
+
 
 static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) {
+  struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
+  int i;
+  struct t_user_arg * udata = (struct t_user_arg *)mg_get_user_data(ctx)->user_data;
+  const char * uri;
+  unsigned short crc;
+  struct t_stat ** st;
   char content[1024];
   int content_length;
+
+  if (event == MG_INIT0)
+  {
+    verify_document_root(mg_get_conn_option(conn, "document_root"));
+    return (void *)1;
+  }
+
+#if defined(_WIN32)
+  if (event == MG_EVENT_LOG &&
+      strstr(request_info->log_message, "cannot bind to") &&
+      !strcmp(request_info->log_severity, "error"))
+  {
+    if (!error_dialog_shown_previously)
+    {
+      MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
+      error_dialog_shown_previously = 1;
+    }
+    return 0;
+  }
+#endif
+  if (event == MG_EVENT_LOG)
+  {
+    DEBUG_TRACE(0x00010000, ("[%s] %s", request_info->log_severity, request_info->log_message));
+    return 0;
+  }
+
+  if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
+    struct mgstat st;
+    int file_found;
+
+    assert(request_info->phys_path);
+    file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
+    if (file_found) {
+      // are we looking for HTML output of MarkDown file?
+      if (mg_match_prefix("**.md$|**.wiki$", -1, request_info->phys_path) > 0) {
+        serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
+        return "";
+      }
+      return NULL; // let mongoose handle the default of 'file exists'...
+    }
+  }
+
+  if (event != MG_NEW_REQUEST) {
+    // This callback currently only handles new requests
+    return NULL;
+  }
+
+  // This callback adds the request method and the uri to a list.
+  uri = request_info->uri;
+
+  // In C++ one could use a STL-map. However, this is just a test case here.
+  crc = crc16(uri, (strlen(uri)+1)<<3);
+
+  // This is a multithreaded system, so a mutex is required
+  pthread_mutex_lock(&udata->mutex);
+
+  st = &udata->uris[crc];
+
+  while (*st) {
+    if (!strcmp((*st)->name, uri)) {
+      break;
+    } else {
+      st = &((*st)->next);
+    }
+  }
+  if (*st == NULL) {
+    uri = mg_strdup(uri);
+    *st = (struct t_stat*) calloc(1, sizeof(struct t_stat));
+    if (!st || !uri) {
+      pthread_mutex_unlock(&udata->mutex);
+      die("out of memory");
+    }
+    (*st)->name = uri;
+    (*st)->next = 0;
+  }
+  if (!strcmp(request_info->request_method, "GET")) {
+    (*st)->getCount++;
+  } else if (!strcmp(request_info->request_method, "POST")) {
+    (*st)->postCount++;
+  }
+  pthread_mutex_unlock(&udata->mutex);
+
+  if (!strcmp(uri, "/_stat")) {
+    mg_connection_must_close(conn);
+	// Connection: close is automatically added by mg_write_http_response_head()
+    mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+    mg_add_response_header(conn, 0, "Content-Type", "text/html; charset=utf-8");
+    mg_write_http_response_head(conn, 200, NULL);
+
+	mg_printf(conn,
+              "<html><head><title>HTTP server statistics</title>"
+              "<style>th {text-align: left;}</style></head>"
+              "<body><h1>HTTP server statistics</h1>\r\n");
+
+    mg_printf(conn,
+              "<p><pre><table border=\"1\" rules=\"all\">"
+              "<tr><th>Resource</th>"
+              "<th>GET</th><th>POST</th></tr>\r\n");
+
+    pthread_mutex_lock(&udata->mutex);
+
+    for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
+      st = &udata->uris[i];
+      while (*st) {
+        mg_printf(conn, "<tr><td>%s</td><td>%8u</td><td>%8u</td></tr>\r\n",
+                  (*st)->name, (*st)->getCount, (*st)->postCount);
+        st = &((*st)->next);
+      }
+    }
+    pthread_mutex_unlock(&udata->mutex);
+
+    mg_printf(conn, "</table></pre></p></body></html>\r\n");
+    return (void *)1;
+  } else if (!strcmp(uri, "/_echo")) {
+    const char * contentLength = mg_get_header(conn, "Content-Length");
+
+    mg_connection_must_close(conn);
+	// Connection: close is automatically added by mg_write_http_response_head()
+    mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+    mg_add_response_header(conn, 0, "Content-Type", "text/plain; charset=utf-8");
+    mg_write_http_response_head(conn, 200, NULL);
+
+    mg_printf(conn, "Received headers:\r\n");
+    for (i = 0; i < request_info->num_headers; i++)
+    {
+        mg_printf(conn, "Header[%d]: '%s' = '%s'\r\n",
+            i, request_info->http_headers[i].name, request_info->http_headers[i].value);
+    }
+    mg_printf(conn, "----- info bits ------\r\n");
+    mg_printf(conn, "URL: [%s]\r\n", request_info->uri);
+    mg_printf(conn, "Query: [%s]\r\n", request_info->query_string);
+    mg_printf(conn, "Phys.Path: [%s]\r\n", request_info->phys_path);
+    mg_printf(conn, "----- data? ------\r\n");
+
+    if (!strcmp(request_info->request_method, "POST")) {
+      long int dataSize = atol(contentLength);
+#if 0
+      int bufferSize = (dataSize > 1024 * 1024 ? 1024 * 1024 : (int)dataSize);
+#else
+      int bufferSize = (int)dataSize;
+#endif
+      long int gotSize = 0;
+      int bufferFill = 0;
+      char * data = (char*) ((dataSize > 0) ? malloc(bufferSize) : 0);
+      if (data) {
+        mg_set_non_blocking_mode(conn, 1);
+        {
+          const int tcpbuflen = 1 * 1024 * 1024;
+
+          mg_setsockopt(conn, SOL_SOCKET, SO_RCVBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+          mg_setsockopt(conn, SOL_SOCKET, SO_SNDBUF, (const void *)&tcpbuflen, sizeof(tcpbuflen));
+        }
+
+        while (gotSize < dataSize && !mg_get_stop_flag(ctx)) {
+          int gotNow = 0;
+          // check whether there's anything available:
+          fd_set read_set;
+          struct timeval tv;
+          int max_fd;
+
+          FD_ZERO(&read_set);
+          max_fd = -1;
+
+          tv.tv_sec = 1;
+          tv.tv_usec = 0;
+
+          while (mg_get_stop_flag(ctx) == 0)
+          {
+            struct timeval tv2 = tv;
+
+            FD_ZERO(&read_set);
+            max_fd = -1;
+
+            // Add listening sockets to the read set
+            mg_FD_SET(conn, &read_set, &max_fd);
+            if (select(max_fd + 1, &read_set, NULL, NULL, &tv2) < 0)
+            {
+              // signal a fatal failure:
+              // clear the handles sets to prevent 'surprises' from processing these a second time (below):
+              FD_ZERO(&read_set);
+              max_fd = -1;
+              assert(!"Should never get here");
+              mg_send_http_error(conn, 579, NULL, "select() failure"); // internal error in our custom handler
+              break;
+            }
+            else
+            {
+              if (mg_FD_ISSET(conn, &read_set))
+              {
+                break;
+              }
+              max_fd = -1;
+            }
+          }
+
+          if (max_fd >= 0)
+          {
+            long int len = dataSize - gotSize;
+            if (len > bufferSize - bufferFill)
+                len = bufferSize - bufferFill;
+            gotNow = mg_read(conn, data + bufferFill, len);
+            if (gotNow > 0)
+            {
+              bufferFill += gotNow;
+              if (bufferFill == bufferSize && bufferSize != dataSize)
+              {
+                bufferFill = mg_write(conn, data, bufferSize);
+                if (bufferFill < 0)
+                {
+                  mg_send_http_error(conn, 579, NULL, "POST /_echo: write error at dataSize=%lu, gotNow=%u, gotSize=%lu\n", dataSize, gotNow, gotSize);
+                  break;
+                }
+                bufferFill = bufferSize - bufferFill;
+              }
+            }
+          }
+
+          if (gotNow == 0)
+          {
+            DEBUG_TRACE(0x00020000,
+                        ("POST /_echo: ***CLOSE*** at dataSize=%lu, gotNow=%u, gotSize=%lu\n",
+                         dataSize, gotNow, gotSize));
+            break;
+          }
+          gotSize += gotNow;
+        }
+        mg_set_non_blocking_mode(conn, 0);
+        //mg_write(conn, data, gotSize);
+        if (bufferFill > 0 && mg_get_stop_flag(ctx) == 0)
+        {
+          int wlen = mg_write(conn, data, bufferFill);
+          if (bufferFill != wlen)
+          {
+            mg_send_http_error(conn, 580, NULL, "POST /_echo: ***ERR*** at dataSize=%lu, gotSize=%lu, wlen=%d\n", dataSize, gotSize, wlen); // internal error in our custom handler
+          }
+        }
+        free(data);
+      }
+    } else {
+      mg_printf(conn, "%s", request_info->request_method);
+    }
+
+    return (void *)1;
+  }
+  else
+  {
+    int file_found;
+    struct mgstat fst;
+
+    assert(request_info->phys_path);
+    file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
+    if (file_found) {
+      return NULL; // let mongoose handle the default of 'file exists'...
+    }
+
 
   if (event == MG_NEW_REQUEST &&
       strstr(request_info->uri, "/restart")) {
@@ -280,41 +797,6 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     return "";
   }
 
-  if (event == MG_INIT0)
-  {
-    verify_document_root(mg_get_conn_option(conn, "document_root"));
-    return (void *)1;
-  }
-
-#if defined(_WIN32)
-  if (event == MG_EVENT_LOG &&
-      strstr(request_info->log_message, "cannot bind to") &&
-      !strcmp(request_info->log_severity, "error"))
-  {
-    if (!error_dialog_shown_previously)
-    {
-      MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
-      error_dialog_shown_previously = 1;
-    }
-    return 0;
-  }
-#endif
-
-  if (event != MG_NEW_REQUEST) {
-    // This callback currently only handles new requests
-    return NULL;
-  }
-
-  {
-    int file_found;
-    struct mgstat fst;
-
-    assert(request_info->phys_path);
-    file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
-    if (file_found) {
-      return NULL; // let mongoose handle the default of 'file exists'...
-    }
-
 #ifdef _WIN32
     // Send the systray icon as favicon
     if (!strcmp("/favicon.ico", request_info->uri)) {
@@ -332,7 +814,6 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
       mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
       mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
-      //mg_add_response_header(conn, 0, "Connection", suggest_connection_header(conn)); -- not needed any longer
       mg_write_http_response_head(conn, 200, NULL);
 
       if ((int)len != mg_write(conn, data, len)) {
@@ -377,7 +858,10 @@ static void start_mongoose(int argc, char *argv[]) {
   int i;
   struct mg_user_class_t userdef = {
       0,
-      &mongoose_callback
+      &mongoose_callback,
+      0,
+      0,
+      option_get_callback
   };
 
   /* Edit passwords file if -A option is specified */
@@ -412,6 +896,16 @@ static void start_mongoose(int argc, char *argv[]) {
     die("Failed to set up the Win32 console Ctrl-Break handler.");
   }
 #endif
+
+  /* prepare the user_arg */
+  {
+    struct t_user_arg *pUser_arg = (struct t_user_arg *)calloc(1, sizeof(struct t_user_arg));
+    if (!pUser_arg) {
+        die("out of memory");
+    }
+    pthread_mutex_init(&pUser_arg->mutex, 0);
+    userdef.user_data = pUser_arg;
+  }
 
   /* Start Mongoose */
   ctx = mg_start(&userdef, (const char **)options);
@@ -647,7 +1141,12 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		break;
   }
 
-  return DefWindowProc(hWnd, msg, wParam, lParam);
+  // See also: http://stackoverflow.com/questions/11884021/c-why-this-window-title-gets-truncated
+  // In our case, we get a clobered window title in a Unicode build.
+  if(IsWindowUnicode(hWnd))  
+    return DefWindowProcW(hWnd, msg, wParam, lParam);  
+  else  
+    return DefWindowProcA(hWnd, msg, wParam, lParam);
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
@@ -687,6 +1186,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   }
 
   DragAcceptFiles(hWnd, FALSE);
+  Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
 
   // return the WM_QUIT value:
   return msg.wParam;

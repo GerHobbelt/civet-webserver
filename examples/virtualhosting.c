@@ -464,6 +464,8 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   const char * uri;
   unsigned short crc;
   struct t_stat ** st;
+  char content[1024];
+  int content_length;
 
   if (event == MG_INIT0)
   {
