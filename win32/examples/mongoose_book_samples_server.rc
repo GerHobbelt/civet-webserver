@@ -1,0 +1,4 @@
+#include "mongoose_book_samples_server.resource.h"
+
+IDI_ICON ICON DISCARDABLE "mongoose_book_samples_server.systray.ico"
+IDR_FAVICON RCDATA "mongoose_book_samples_server.favicon.ico"

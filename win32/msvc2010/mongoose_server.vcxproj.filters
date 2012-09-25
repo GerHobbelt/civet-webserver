@@ -7,9 +7,6 @@
     <Filter Include="Misc Files">
       <UniqueIdentifier>{f1161ac6-3ec9-4755-bf92-30c448556ffe}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources">
-      <UniqueIdentifier>{52f0ca25-c783-4aba-bbc5-a42f7241f50c}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Misc Files\documentation">
       <UniqueIdentifier>{c617bb9d-e0c3-4b07-9de9-48d3ec0792f0}</UniqueIdentifier>
     </Filter>
@@ -44,12 +41,6 @@
     </None>
     <None Include="..\..\mongoose.1">
       <Filter>Misc Files</Filter>
-    </None>
-    <None Include="..\..\win32\favicon.ico">
-      <Filter>Resources</Filter>
-    </None>
-    <None Include="..\..\win32\systray.ico">
-      <Filter>Resources</Filter>
     </None>
     <None Include="..\..\documentation\BuildOnAndroid.html">
       <Filter>Misc Files\documentation</Filter>
@@ -486,16 +477,6 @@
     <None Include="..\..\test\ajax\test-18.html">
       <Filter>test-website\ajax</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\..\win32\res.rc">
-      <Filter>Resources</Filter>
-    </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\win32\resource.h">
-      <Filter>Resources</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\main.c">
