@@ -59,7 +59,7 @@ static HWND app_hwnd = NULL;
 static char server_url[256] = "";
 #define _T(text)				TEXT(text)
 #endif
-static char document_root_dir[PATH_MAX] = "./test";
+static char document_root_dir[PATH_MAX] = "./";
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -767,22 +767,12 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     }
 
     return (void *)1;
-  }
-  else
-  {
+  } else {
     struct mgstat fst;
 
     assert(request_info->phys_path);
     if (0 == mg_stat(request_info->phys_path, &fst)) {
-	  char index_filepath[PATH_MAX];
-
-      if (!fst.is_directory) {
-        return NULL; // let mongoose handle the default of 'file exists'...
-      } else if (fst.is_directory && mg_substitute_index_file(conn, index_filepath, ARRAY_SIZE(index_filepath), &fst)) {
-        return NULL; // let mongoose handle the default of 'index file exists'...
-      } else if (fst.is_directory && !strcmp(request_info->uri, "/")) {
-        return NULL; // let mongoose handle the default of 'directory listing' when we're looking at the root dir...
-	  }
+      return NULL; // let mongoose handle the default of 'file exists/directory listing'...
 	}
 
     if (strstr(request_info->uri, "/restart")) {
@@ -1132,8 +1122,8 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   char buf[256];
   POINT pt;
   HMENU hMenu;
-  HWND hwndOwner;
-  RECT rcOwner, rcDlg, rc;
+  //HWND hwndOwner;
+  //RECT rcOwner, rcDlg, rc;
   NMHDR *nm;
   ENLINK *link;
   CHARRANGE cr;
@@ -1336,6 +1326,8 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
 	case WM_APPEND_LOG:
 	  {
+		CHARFORMAT2 cf = {0};
+		int pos;
 		wchar_t *wbuf;
 		size_t wbuf_len = strlen((const char *)lParam);
 		wbuf_len++;
@@ -1344,8 +1336,9 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		if (buf && MultiByteToWideChar(CP_UTF8, 0, (const char *)lParam, -1, wbuf, (int) wbuf_len)) {
 		  for(;;) {
 		    // http://msdn.microsoft.com/en-us/library/windows/desktop/bb774195(v=vs.85).aspx
-		    GETTEXTLENGTHEX tex = { GTL_DEFAULT, 1200 /* Unicode */ };
-		    DWORD txtlen = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_GETTEXTLENGTHEX, (WPARAM)&tex, 0);
+		    //GETTEXTLENGTHEX tex = { GTL_DEFAULT, 1200 /* Unicode */ };
+		    //DWORD txtlen = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_GETTEXTLENGTHEX, (WPARAM)&tex, 0);
+			DWORD txtlen = GetWindowTextLength(GetDlgItem(hWnd, IDC_RICHEDIT4LOG));
 		    if (txtlen + wbuf_len/2 > 32000) {
 			  // Throw away the top lines until there's sufficient space...
 			  FINDTEXT ft = { { 0, -1 }, _T("\r") };
@@ -1361,8 +1354,39 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		  cr.cpMin = -1;
 		  cr.cpMax = -1;
 		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
-		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)wbuf);
+		  // color severity sections RED:
+		  pos = 0;
+		  if (wbuf[pos] == '[') {
+			for (pos = 1; wbuf[pos]; pos++) {
+			  if (wbuf[pos] == ']')
+				break;
+			}
+		  }
+		  if (pos > 0 && wbuf[pos] == ']') {
+			wchar_t sentinel = wbuf[++pos];
+			wbuf[pos] = 0;
+
+			cf.cbSize = sizeof(cf);
+			cf.dwMask = CFM_COLOR;
+			cf.crTextColor = RGB(255,0,0);
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)wbuf);
+			// and now write the remainder of the text:
+			wbuf[pos] = sentinel;
+			cr.cpMin = -1;
+			cr.cpMax = -1;
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
+			cf.cbSize = sizeof(cf);
+			cf.dwMask = CFM_COLOR;
+			cf.crTextColor = RGB(0,0,0);
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)(wbuf + pos));
+		  } else {
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)wbuf);
+		  }
 		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_HIDESELECTION, TRUE, 0);
+		  // and make sure the new text is visible: http://stackoverflow.com/questions/2208858/ensure-the-last-character-in-a-richedit-control-is-visible
+		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SCROLLCARET, 0, 0);
 		}
 		free(wbuf);
 	  }
