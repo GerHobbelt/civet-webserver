@@ -56,7 +56,7 @@ static HWND app_hwnd = NULL;
 #define WM_SERVER_IS_STOPPING   (WM_APP + 43)
 #define WM_TRAY_ICON_HIT        (WM_APP + 44)
 #define WM_APPEND_LOG           (WM_APP + 45)
-
+static char server_url[256] = "";
 #define _T(text)				TEXT(text)
 #endif
 static char document_root_dir[PATH_MAX] = "./test";
@@ -88,21 +88,21 @@ static const char *default_options[] = {
 
 void append_log(const char *msg, ...) {
   va_list args;
+  char *buf = NULL;
+  const char *msgbuf = msg;
 
   va_start(args, msg);
-  if (IsWindow(app_hwnd)) {
-	char *buf = NULL;
-	const char *msgbuf = msg;
-	if (strchr(msg, '%')) {
-	  mg_vasprintf(NULL, &buf, 0, msg, args);
-	  msgbuf = buf;
-	}
-    SendMessage(app_hwnd, WM_APPEND_LOG, 0, (LPARAM)msgbuf);
-	free(buf);
-  } else {
-	vfprintf(stderr, msg, args);
+  if (strchr(msg, '%')) {
+	mg_vasprintf(NULL, &buf, 0, msg, args);
+	msgbuf = buf;
   }
   va_end(args);
+  if (IsWindow(app_hwnd)) {
+    SendMessage(app_hwnd, WM_APPEND_LOG, 0, (LPARAM)msgbuf);
+  } else {
+	OutputDebugStringA(msgbuf);
+  }
+  free(buf);
 }
 
 static int error_dialog_shown_previously = 0;
@@ -546,7 +546,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   if (event == MG_EVENT_LOG)
   {
     DEBUG_TRACE(0x00010000, ("[%s] %s", request_info->log_severity, request_info->log_message));
-	append_log("[%s] %s", request_info->log_severity, request_info->log_message);
+	append_log("[%s] %s\n", request_info->log_severity, request_info->log_message);
     return (void *)1;
   }
 
@@ -882,6 +882,25 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 
 #if defined(_WIN32)
 
+static void report_server_started(void)
+{
+  char root_url[256];
+  char ports[64];
+  char *p;
+  mg_strlcpy(ports, mg_get_option(ctx, "listening_ports"), ARRAY_SIZE(ports));
+  p = ports + strcspn(ports, ",sp");
+  p[0] = 0;
+  mg_snprintf(NULL, root_url, ARRAY_SIZE(root_url), "Visit URL: http://localhost:%s/", ports);
+  append_log("\nRestartable server %s started on port(s) %s with web root [%s]\nroot URL: %s\n\n",
+			 server_name, mg_get_option(ctx, "listening_ports"),
+			 mg_get_option(ctx, "document_root"),
+			 root_url + 11);
+  if (IsWindow(app_hwnd)) {
+	SetDlgItemTextA(app_hwnd, IDC_BUTTON_VISIT_URL, root_url);
+	mg_strlcpy(server_url, root_url + 11, ARRAY_SIZE(server_url));
+  }
+}
+
 static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 {
   switch(signal_type)
@@ -1110,17 +1129,22 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   int service_installed;
   char *service_argv[] = {__argv[0], NULL};
 #endif // MONGOOSE_AS_SERVICE
-  char buf[200];
+  char buf[256];
   POINT pt;
   HMENU hMenu;
   HWND hwndOwner;
   RECT rcOwner, rcDlg, rc;
+  NMHDR *nm;
+  ENLINK *link;
+  CHARRANGE cr;
 
   switch (msg) {
     case WM_INITDIALOG:
 	  app_hwnd = hWnd;
 
-      // Get the owner window and dialog box rectangles.
+#if 0 // this is handled by the DM_REPOSITION message
+
+	  // Get the owner window and dialog box rectangles.
       if ((hwndOwner = GetParent(hWnd)) == NULL)
       {
           hwndOwner = GetDesktopWindow();
@@ -1151,9 +1175,13 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           SetFocus(GetDlgItem(hWnd, IDC_RICHEDIT4LOG));
           //return FALSE;
       }
-	  SendMessage(hWnd, WM_START_SERVER, 0, 0);
-	  PostMessage(hWnd, DM_REPOSITION, 0, 0);
+#endif
+
+	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SETEVENTMASK, 0, ENM_LINK);
 	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_AUTOURLDETECT, AURL_ENABLEURL, 0);
+	  SetWindowTextA(hWnd, server_name);
+	  PostMessage(hWnd, DM_REPOSITION, 0, 0);
+	  PostMessage(hWnd, WM_START_SERVER, 0, 0);
 	  return TRUE;
 
 	case WM_SETFONT:
@@ -1170,9 +1198,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
         if (__argv[1] != NULL &&
             !strcmp(__argv[1], service_magic_argument)) {
           start_mongoose(1, service_argv);
-          append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
-                     server_name, mg_get_option(ctx, "listening_ports"),
-                     mg_get_option(ctx, "document_root"));
+          report_server_started();
           StartServiceCtrlDispatcherA(service_table);
           exit(EXIT_SUCCESS);
         } else {
@@ -1180,9 +1206,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 	    {
 #endif // MONGOOSE_AS_SERVICE
 		  start_mongoose(__argc, __argv);
-          append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
-                     server_name, mg_get_option(ctx, "listening_ports"),
-                     mg_get_option(ctx, "document_root"));
+          report_server_started();
         }
 	  }
       break;
@@ -1205,10 +1229,35 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           break;
 #endif // MONGOOSE_AS_SERVICE
 		case IDC_BUTTON_VISIT_URL:
-		  ShellExecute(NULL, _T("open"), _T("http://www.google.com"), NULL, NULL, SW_SHOWNORMAL);
+		  ShellExecuteA(NULL, "open", server_url, NULL, NULL, SW_SHOWNORMAL);
 		  break;
       }
       break;
+
+	case WM_NOTIFY:
+	  nm = (NMHDR *)lParam;
+	  switch (nm->code) {
+	  case EN_LINK:
+		link = (ENLINK *)lParam;
+		switch (link->msg) {
+		case WM_LBUTTONDOWN:
+		case WM_LBUTTONUP:
+		case WM_LBUTTONDBLCLK:
+		  if (link->chrg.cpMax - link->chrg.cpMin < ARRAY_SIZE(buf)) {
+			DWORD len;
+			TCHAR server_url[ARRAY_SIZE(buf)];
+		    SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&link->chrg);
+		    len = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_GETSELTEXT, FALSE, (LPARAM)server_url);
+			server_url[len] = 0;
+			// visit URL:
+			ShellExecute(NULL, _T("open"), server_url, NULL, NULL, SW_SHOWNORMAL);
+		  } else {
+			append_log("[error] Cannot start browser to point at URL in text due to buffer overflow.\n");
+		  }
+		  break;
+		}
+	  }
+	  break;
 
     case WM_TRAY_ICON_HIT:
       switch (lParam) {
@@ -1274,7 +1323,6 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 			  }
 			  if (!mg_stat(filepath, &st) && st.is_directory) {
 			    mg_strlcpy(document_root_dir, filepath, ARRAY_SIZE(document_root_dir));
-			    OutputDebugStringA(filepath);
 			    should_restart = 1;
 			    mg_signal_stop(ctx);
 			    break;
@@ -1288,12 +1336,11 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
 	case WM_APPEND_LOG:
 	  {
-		CHARRANGE cr;
 		wchar_t *wbuf;
 		size_t wbuf_len = strlen((const char *)lParam);
 		wbuf_len++;
 		wbuf_len *= 2;
-		wbuf = malloc(wbuf_len);
+		wbuf = (wchar_t *)malloc(wbuf_len);
 		if (buf && MultiByteToWideChar(CP_UTF8, 0, (const char *)lParam, -1, wbuf, (int) wbuf_len)) {
 		  for(;;) {
 		    // http://msdn.microsoft.com/en-us/library/windows/desktop/bb774195(v=vs.85).aspx
@@ -1315,6 +1362,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		  cr.cpMax = -1;
 		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
 		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)wbuf);
+		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_HIDESELECTION, TRUE, 0);
 		}
 		free(wbuf);
 	  }
@@ -1331,17 +1379,13 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		  if (__argv[1] != NULL &&
 			  !strcmp(__argv[1], service_magic_argument)) {
 			start_mongoose(1, service_argv);
-            append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
-                       server_name, mg_get_option(ctx, "listening_ports"),
-                       mg_get_option(ctx, "document_root"));
+			report_server_started();
 		  } else {
 #else
 		  {
 #endif // MONGOOSE_AS_SERVICE
 			start_mongoose(__argc, __argv);
-            append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
-                       server_name, mg_get_option(ctx, "listening_ports"),
-                       mg_get_option(ctx, "document_root"));
+            report_server_started();
 		  }
 		} else {
           mg_stop(ctx);

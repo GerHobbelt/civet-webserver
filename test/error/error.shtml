@@ -6,12 +6,13 @@
 <style>
 #biohazard
 {
-	width: 130px;
-	height: 130px;
+	width: 415px;
+	height: 393px;
 }
 div#biohazdiv
 {
 	float: left;
+	margin: 0 1em 1em 0;
 }
 </style>
 <body>

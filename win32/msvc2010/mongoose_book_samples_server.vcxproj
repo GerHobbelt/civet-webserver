@@ -496,6 +496,10 @@
     <ResourceCompile Include="..\examples\mongoose_book_samples_server.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\test\error\404.shtml" />
+    <None Include="..\..\test\error\error.shtml" />
+    <None Include="..\..\test\images\biohazard-red-bg.ai" />
+    <None Include="..\..\test\images\biohazard-red-bg.svg" />
     <None Include="..\examples\mongoose_book_samples_server.favicon.ico" />
     <None Include="..\examples\mongoose_book_samples_server.systray.ico" />
   </ItemGroup>
