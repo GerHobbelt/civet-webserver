@@ -490,7 +490,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\examples\mongoose_book_samples_server.resource.h" />
-    <ClInclude Include="..\examples\resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\examples\mongoose_book_samples_server.rc" />

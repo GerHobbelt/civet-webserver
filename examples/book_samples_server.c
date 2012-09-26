@@ -558,7 +558,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
     if (file_found) {
       // are we looking for HTML output of MarkDown file?
-      if (mg_match_prefix("**.md$|**.wiki$", -1, request_info->phys_path) > 0) {
+      if (mg_match_prefix("**.md$|**.mkd$|**.markdown$|**.wiki$", -1, request_info->phys_path) > 0) {
         serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
         return "";
       }
@@ -775,7 +775,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       return NULL; // let mongoose handle the default of 'file exists/directory listing'...
 	}
 
-    if (strstr(request_info->uri, "/restart")) {
+    if (strstr(uri, "/restart")) {
       // send an info page
       content_length = mg_snprintf(conn, content, sizeof(content),
                                    "<html><body><h1>Restart in progress</h1>"
@@ -846,6 +846,11 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     } else
 #endif
     {
+	  // allow default error processing chain:
+      if (!strncmp(uri, "/error/", 7)) {
+	    return 0;
+	  }
+
       content_length = mg_snprintf(conn, content, sizeof(content),
                                    "<html><body><p>Hello from mongoose! Remote port: %d."
                                    "<p><a href=\"/restart\">Click here</a> to restart "
@@ -1424,7 +1429,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
 #if 0
   // See also: http://stackoverflow.com/questions/11884021/c-why-this-window-title-gets-truncated
-  // In our case, we get a clobered window title in a Unicode build.
+  // In our case, we get a clobbered window title in a Unicode build.
   if(IsWindowUnicode(hWnd))
     return DefWindowProcW(hWnd, msg, wParam, lParam);
   else

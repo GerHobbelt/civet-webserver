@@ -46,6 +46,5 @@
     <ClInclude Include="..\examples\mongoose_book_samples_server.resource.h">
       <Filter>Resources</Filter>
     </ClInclude>
-    <ClInclude Include="..\examples\resource.h" />
   </ItemGroup>
 </Project>
