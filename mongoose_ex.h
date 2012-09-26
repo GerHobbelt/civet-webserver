@@ -122,6 +122,9 @@ int mg_get_headers(const char **dst, int dst_buffersize, const struct mg_connect
 // Default for all connections: mode = 0
 void mg_set_connection_abort_mode(struct mg_connection *conn, int mode);
 
+// get a fake, but valid, connection reference for use with mg_printf() et al:
+struct mg_connection *mg_get_fake_printf_conn(struct mg_context *ctx);
+
 
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)

@@ -33,7 +33,6 @@
 #define IDI_ICON                        200
 #define IDR_FAVICON                     201
 #define IDC_RICHEDIT4LOG                1000
-#define IDC_BUTTON1                     1001
 #define IDC_BUTTON_VISIT_URL            1001
 #define IDC_STATIC                      -1
 

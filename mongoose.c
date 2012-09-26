@@ -9023,6 +9023,9 @@ When you want to signal a FULL STOP condition from any of those, call
 mg_signal_stop() instead.
 */
 void mg_stop(struct mg_context *ctx) {
+  if (!ctx) 
+	return;
+
   mg_signal_stop(ctx); // only set stop=1 when not set already!
 
   // Wait until master_thread() stops

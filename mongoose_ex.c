@@ -293,6 +293,10 @@ void mg_set_connection_abort_mode(struct mg_connection *conn, int mode)
     conn->abort_when_server_stops = !mode;
 }
 
+struct mg_connection *mg_get_fake_printf_conn(struct mg_context *ctx)
+{
+  return fc(ctx);
+}
 
 
 #include "selectable-socketpair/socketpair.c"

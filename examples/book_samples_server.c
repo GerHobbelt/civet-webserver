@@ -29,7 +29,12 @@ when someone visits the '/restart' URL, the server is stopped and restarted afte
 #include "mongoose_ex.h"
 
 #ifdef _WIN32
-#include "win32/resource.h"
+#include "win32/examples/mongoose_book_samples_server.resource.h"
+#define _RICHEDIT_VER	0x0300
+#include <richedit.h>
+#ifndef AURL_ENABLEURL
+#define AURL_ENABLEURL   TRUE
+#endif
 #endif // _WIN32
 
 #include <upskirt/src/markdown.h>
@@ -47,7 +52,12 @@ static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
 static struct mg_context *ctx = NULL; // Set by start_mongoose()
 #if defined(_WIN32)
 static HWND app_hwnd = NULL;
-static UINT WM_SERVER_IS_STOPPING = 0;
+#define WM_START_SERVER         (WM_APP + 42)
+#define WM_SERVER_IS_STOPPING   (WM_APP + 43)
+#define WM_TRAY_ICON_HIT        (WM_APP + 44)
+#define WM_APPEND_LOG           (WM_APP + 45)
+
+#define _T(text)				TEXT(text)
 #endif
 static char document_root_dir[PATH_MAX] = "./test";
 
@@ -75,12 +85,32 @@ static const char *default_options[] = {
 };
 
 #if defined(_WIN32)
+
+void append_log(const char *msg, ...) {
+  va_list args;
+
+  va_start(args, msg);
+  if (IsWindow(app_hwnd)) {
+	char *buf = NULL;
+	const char *msgbuf = msg;
+	if (strchr(msg, '%')) {
+	  mg_vasprintf(NULL, &buf, 0, msg, args);
+	  msgbuf = buf;
+	}
+    SendMessage(app_hwnd, WM_APPEND_LOG, 0, (LPARAM)msgbuf);
+	free(buf);
+  } else {
+	vfprintf(stderr, msg, args);
+  }
+  va_end(args);
+}
+
 static int error_dialog_shown_previously = 0;
 #endif
 
 void die(const char *fmt, ...) {
   va_list ap;
-  char msg[200];
+  char msg[1024];
 
   va_start(ap, fmt);
   vsnprintf(msg, sizeof(msg), fmt, ap);
@@ -191,7 +221,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
 
   // Load config file settings first
   if (fp != NULL) {
-    fprintf(stderr, "Loading config file %s\n", config_file);
+    append_log("Loading config file %s\n", config_file);
 
     // Loop over the lines in config file
     while (fgets(line, sizeof(line), fp) != NULL) {
@@ -489,9 +519,9 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   {
 	/*
 	 master thread stopped due to STOP signal given by somebody;
-	 this is a sure-fire way to detect if the STOP signal was issued, 
+	 this is a sure-fire way to detect if the STOP signal was issued,
 	 but it has the 'drawback' that by now, the master thread and
-	 probably quite a few of the client threads have terminated as 
+	 probably quite a few of the client threads have terminated as
 	 well.
 	 If you don't mind about that, it's a fine way to detect the STOP
 	 with a minimum of fuss in an event-driven environment such as the
@@ -511,13 +541,13 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       MessageBoxA(NULL, request_info->log_message, "Error", MB_OK);
       error_dialog_shown_previously = 1;
     }
-    return 0;
   }
 #endif
   if (event == MG_EVENT_LOG)
   {
     DEBUG_TRACE(0x00010000, ("[%s] %s", request_info->log_severity, request_info->log_message));
-    return 0;
+	append_log("[%s] %s", request_info->log_severity, request_info->log_message);
+    return (void *)1;
   }
 
   if (event == MG_SSI_INCLUDE_REQUEST || event == MG_NEW_REQUEST) {
@@ -761,45 +791,45 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
                                    "<html><body><h1>Restart in progress</h1>"
                                    "<p><a href=\"/\">Click here</a> to view "
                                    "the hello page again.");
-  
+
       mg_connection_must_close(conn);
-  
+
       //mg_set_response_code(conn, 200);
       mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
       mg_add_response_header(conn, 0, "Content-Type", "text/html");
       //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
       mg_write_http_response_head(conn, 200, 0);
-  
+
       mg_write(conn, content, content_length);
-  
+
       // signal the server to stop & restart
       should_restart = 1;
       mg_signal_stop(mg_get_context(conn));
-  
+
       // Mark as processed
       return "";
     } else if (strstr(request_info->uri, "/quit")) {
       // send an info page
       content_length = mg_snprintf(conn, content, sizeof(content),
                                    "<html><body><h1>Server shut down in progress</h1>");
-  
+
       mg_connection_must_close(conn);
-  
+
       //mg_set_response_code(conn, 200);
       mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
       mg_add_response_header(conn, 0, "Content-Type", "text/html");
       //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
       mg_write_http_response_head(conn, 200, 0);
-  
+
       mg_write(conn, content, content_length);
-  
+
       // signal the server to stop
   	  should_restart = 0;
       mg_signal_stop(mg_get_context(conn));
-  
+
       // Mark as processed
       return "";
-    } else 
+    } else
 #ifdef _WIN32
     // Send the systray icon as favicon
     if (!strcmp("/favicon.ico", request_info->uri)) {
@@ -833,15 +863,15 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
                                    "<p><a href=\"/quit\">Click here</a> to stop "
                                    "the server.",
                                    request_info->remote_port);
-  
+
       //mg_set_response_code(conn, 200); -- not needed any longer
       mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
       mg_add_response_header(conn, 0, "Content-Type", "text/html");
       //mg_add_response_header(conn, 0, "Connection", "%s", mg_suggest_connection_header(conn)); -- not needed any longer
       mg_write_http_response_head(conn, 200, 0);
-  
+
       mg_write(conn, content, content_length);
-  
+
       // Mark as processed
       return "";
     }
@@ -973,6 +1003,7 @@ static void WINAPI ServiceMain(void) {
     mg_sleep(1000);
   }
   mg_stop(ctx);
+  ctx = NULL;
 
   ss.dwCurrentState = SERVICE_STOPPED;
   ss.dwWin32ExitCode = (DWORD) -1;
@@ -980,13 +1011,13 @@ static void WINAPI ServiceMain(void) {
 }
 #endif // MONGOOSE_AS_SERVICE
 
-#define ID_TRAYICON 100
-#define ID_QUIT 101
-#define ID_EDIT_CONFIG 102
-#define ID_SEPARATOR 103
+#define ID_TRAYICON        100
+#define ID_QUIT            101
+#define ID_EDIT_CONFIG     102
+#define ID_SEPARATOR       103
 #if defined(MONGOOSE_AS_SERVICE)
 #define ID_INSTALL_SERVICE 104
-#define ID_REMOVE_SERVICE 105
+#define ID_REMOVE_SERVICE  105
 #endif // MONGOOSE_AS_SERVICE
 
 static NOTIFYICONDATAA TrayIcon;
@@ -1069,7 +1100,7 @@ static int manage_service(int action) {
 }
 #endif // MONGOOSE_AS_SERVICE
 
-static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
+static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam) {
 #if defined(MONGOOSE_AS_SERVICE)
   static SERVICE_TABLE_ENTRYA service_table[] = {
@@ -1082,28 +1113,85 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   char buf[200];
   POINT pt;
   HMENU hMenu;
+  HWND hwndOwner;
+  RECT rcOwner, rcDlg, rc;
 
   switch (msg) {
+    case WM_INITDIALOG:
+	  app_hwnd = hWnd;
+
+      // Get the owner window and dialog box rectangles.
+      if ((hwndOwner = GetParent(hWnd)) == NULL)
+      {
+          hwndOwner = GetDesktopWindow();
+      }
+
+      GetWindowRect(hwndOwner, &rcOwner);
+      GetWindowRect(hWnd, &rcDlg);
+      CopyRect(&rc, &rcOwner);
+
+      // Offset the owner and dialog box rectangles so that right and bottom
+      // values represent the width and height, and then offset the owner again
+      // to discard space taken up by the dialog box.
+      OffsetRect(&rcDlg, -rcDlg.left, -rcDlg.top);
+      OffsetRect(&rc, -rc.left, -rc.top);
+      OffsetRect(&rc, -rcDlg.right, -rcDlg.bottom);
+
+      // The new position is the sum of half the remaining space and the owner's
+      // original position.
+      SetWindowPos(hWnd,
+                   HWND_TOP,
+                   rcOwner.left + (rc.right / 2),
+                   rcOwner.top + (rc.bottom / 2),
+                   0, 0,          // Ignores size arguments.
+                   SWP_NOSIZE);
+
+      if (GetDlgCtrlID((HWND) wParam) != IDC_RICHEDIT4LOG)
+      {
+          SetFocus(GetDlgItem(hWnd, IDC_RICHEDIT4LOG));
+          //return FALSE;
+      }
+	  SendMessage(hWnd, WM_START_SERVER, 0, 0);
+	  PostMessage(hWnd, DM_REPOSITION, 0, 0);
+	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_AUTOURLDETECT, AURL_ENABLEURL, 0);
+	  return TRUE;
+
+	case WM_SETFONT:
+	  return FALSE;
+
     case WM_CREATE:
 	  app_hwnd = hWnd;
+	  SendMessage(hWnd, WM_START_SERVER, 0, 0);
+	  break;
+
+	case WM_START_SERVER:
+	  if (ctx == NULL) {
 #if defined(MONGOOSE_AS_SERVICE)
-      if (__argv[1] != NULL &&
-          !strcmp(__argv[1], service_magic_argument)) {
-        start_mongoose(1, service_argv);
-        StartServiceCtrlDispatcherA(service_table);
-        exit(EXIT_SUCCESS);
-      } else {
+        if (__argv[1] != NULL &&
+            !strcmp(__argv[1], service_magic_argument)) {
+          start_mongoose(1, service_argv);
+          append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
+                     server_name, mg_get_option(ctx, "listening_ports"),
+                     mg_get_option(ctx, "document_root"));
+          StartServiceCtrlDispatcherA(service_table);
+          exit(EXIT_SUCCESS);
+        } else {
 #else
-	  {
+	    {
 #endif // MONGOOSE_AS_SERVICE
-		start_mongoose(__argc, __argv);
-      }
+		  start_mongoose(__argc, __argv);
+          append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
+                     server_name, mg_get_option(ctx, "listening_ports"),
+                     mg_get_option(ctx, "document_root"));
+        }
+	  }
       break;
 
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case ID_QUIT:
           mg_stop(ctx);
+		  ctx = NULL;
           //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
           PostQuitMessage(EXIT_SUCCESS);
           break;
@@ -1116,10 +1204,13 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           manage_service(LOWORD(wParam));
           break;
 #endif // MONGOOSE_AS_SERVICE
+		case IDC_BUTTON_VISIT_URL:
+		  ShellExecute(NULL, _T("open"), _T("http://www.google.com"), NULL, NULL, SW_SHOWNORMAL);
+		  break;
       }
       break;
 
-    case WM_USER:
+    case WM_TRAY_ICON_HIT:
       switch (lParam) {
         case WM_RBUTTONUP:
         case WM_LBUTTONUP:
@@ -1152,11 +1243,15 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
     case WM_CLOSE:
       should_restart = 0;
       mg_stop(ctx);
+	  ctx = NULL;
       //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
       PostQuitMessage(EXIT_SUCCESS);
-      return 0;  // We've just sent our own quit message, with proper hwnd.
+      return TRUE;  // We've just sent our own quit message, with proper hwnd.
 
 	case WM_DESTROY:
+	  break;
+
+	case WM_NCDESTROY:
 	  if (hWnd == app_hwnd) {
 		app_hwnd = NULL;
 	  }
@@ -1187,53 +1282,104 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 			}
 		}
 		DragFinish(drop_handle);
-		return 0;
+		return TRUE;
 	  }
 	  break;
 
-	default:
-	  if (msg == WM_SERVER_IS_STOPPING) {
+	case WM_APPEND_LOG:
+	  {
+		CHARRANGE cr;
+		wchar_t *wbuf;
+		size_t wbuf_len = strlen((const char *)lParam);
+		wbuf_len++;
+		wbuf_len *= 2;
+		wbuf = malloc(wbuf_len);
+		if (buf && MultiByteToWideChar(CP_UTF8, 0, (const char *)lParam, -1, wbuf, (int) wbuf_len)) {
+		  for(;;) {
+		    // http://msdn.microsoft.com/en-us/library/windows/desktop/bb774195(v=vs.85).aspx
+		    GETTEXTLENGTHEX tex = { GTL_DEFAULT, 1200 /* Unicode */ };
+		    DWORD txtlen = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_GETTEXTLENGTHEX, (WPARAM)&tex, 0);
+		    if (txtlen + wbuf_len/2 > 32000) {
+			  // Throw away the top lines until there's sufficient space...
+			  FINDTEXT ft = { { 0, -1 }, _T("\r") };
+			  cr.cpMin = 0;
+		      cr.cpMax = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_FINDTEXT, FR_DOWN, (LPARAM)&ft) + 1;
+		      SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
+		      SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, FALSE, (LPARAM)_T(""));
+			} else {
+			  break;
+			}
+		  }
+		  // select end of text:
+		  cr.cpMin = -1;
+		  cr.cpMax = -1;
+		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
+		  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, 0, (LPARAM)wbuf);
+		}
+		free(wbuf);
+	  }
+	  return TRUE;
+
+	case WM_SERVER_IS_STOPPING:
 		// check if we need to restart the server.
 		if (should_restart) {
           mg_stop(ctx);
-	      printf("Server stopped; will restart now.\n");
+		  ctx = NULL;
+		  append_log("Server stopped; will restart now.\n");
 
 #if defined(MONGOOSE_AS_SERVICE)
 		  if (__argv[1] != NULL &&
 			  !strcmp(__argv[1], service_magic_argument)) {
 			start_mongoose(1, service_argv);
+            append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
+                       server_name, mg_get_option(ctx, "listening_ports"),
+                       mg_get_option(ctx, "document_root"));
 		  } else {
 #else
 		  {
 #endif // MONGOOSE_AS_SERVICE
 			start_mongoose(__argc, __argv);
+            append_log("Restartable server %s started on port(s) %s with web root [%s]\n",
+                       server_name, mg_get_option(ctx, "listening_ports"),
+                       mg_get_option(ctx, "document_root"));
 		  }
 		} else {
           mg_stop(ctx);
-	      printf("Server stopped.\n");
+		  ctx = NULL;
+		  append_log("Server stopped.\n");
 
 		  //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
 		  PostQuitMessage(EXIT_SUCCESS);
 		}
-		return 0;
-	  }
-	  break;
+		return TRUE;
   }
 
+#if 0
   // See also: http://stackoverflow.com/questions/11884021/c-why-this-window-title-gets-truncated
   // In our case, we get a clobered window title in a Unicode build.
-  if(IsWindowUnicode(hWnd))  
-    return DefWindowProcW(hWnd, msg, wParam, lParam);  
-  else  
+  if(IsWindowUnicode(hWnd))
+    return DefWindowProcW(hWnd, msg, wParam, lParam);
+  else
     return DefWindowProcA(hWnd, msg, wParam, lParam);
+#else
+  return FALSE;
+#endif
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   WNDCLASSA cls;
   HWND hWnd;
   MSG msg;
+  HMODULE richedit_h;
 
-  WM_SERVER_IS_STOPPING = RegisterWindowMessageA("mongoose_server_stopping");
+  //WM_SERVER_IS_STOPPING = RegisterWindowMessageA("mongoose_server_stopping");
+
+  // Initialize RichEdit 2.0 control
+  richedit_h = LoadLibrary(_T("RICHED20.DLL"));
+  if (richedit_h == NULL) {
+    MessageBox(NULL, _T("Could not load the RichEdit 2.0/3.0 control DLL.  The file RICHED20.DLL may be missing or corrupt."), _T("Error"), MB_OK | MB_ICONEXCLAMATION);
+	return EXIT_FAILURE;
+  }
 
   init_server_name();
   memset(&cls, 0, sizeof(cls));
@@ -1241,10 +1387,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   cls.hIcon = LoadIcon(NULL, IDI_APPLICATION);
   cls.lpszClassName = server_name;
 
-  RegisterClassA(&cls);
-  hWnd = CreateWindowA(cls.lpszClassName, server_name, WS_OVERLAPPEDWINDOW,
-                      0, 0, 0, 0, NULL, NULL, NULL, NULL);
-  ShowWindow(hWnd, SW_HIDE);
+  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW), NULL, WindowProc);
 
   TrayIcon.cbSize = sizeof(TrayIcon);
   TrayIcon.uID = ID_TRAYICON;
@@ -1253,21 +1396,26 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
                              IMAGE_ICON, 16, 16, 0);
   TrayIcon.hWnd = hWnd;
   snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", server_name);
-  TrayIcon.uCallbackMessage = WM_USER;
+  TrayIcon.uCallbackMessage = WM_TRAY_ICON_HIT;
   Shell_NotifyIconA(NIM_ADD, &TrayIcon);
 
-  //HWND hWnd = GetConsoleHwnd();
   ShowWindow(hWnd, SW_SHOW);
 
   DragAcceptFiles(hWnd, TRUE);
 
   while (GetMessage(&msg, hWnd, 0, 0) > 0) {
-    TranslateMessage(&msg);
-    DispatchMessage(&msg);
+	if (!IsWindow(hWnd) || !IsDialogMessage(hWnd, &msg)) {
+      TranslateMessage(&msg);
+      DispatchMessage(&msg);
+	}
   }
 
   DragAcceptFiles(hWnd, FALSE);
+  DestroyWindow(hWnd);
+
   Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
+  // HMODULE richedit_h = GetModuleHandle(_T("RICHED32.DLL"));
+  FreeLibrary(richedit_h);
 
   // return the WM_QUIT value:
   return msg.wParam;
@@ -1291,6 +1439,7 @@ int main(int argc, char *argv[]) {
           exit_flag, mg_get_stop_flag(ctx));
     fflush(stdout);
     mg_stop(ctx);
+    ctx = NULL;
     printf("Server stopped.\n");
   } while (should_restart);
 
