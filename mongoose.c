@@ -3844,7 +3844,8 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   } else if (!strcmp(fmt, "%s")) {
-    fmt = va_arg(aa, const char *);
+	// This also takes care of the scenario where mg_printf(conn, "%s", "") was called, so the vsnprintf() further below MUST produce a non-zero length!
+	fmt = va_arg(aa, const char *);
     if (!fmt) fmt = "???";
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
@@ -3860,24 +3861,20 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
     mem[sizeof(mem) - 1] = 0;
     va_end(ap);
 
-    if (len < 0) {
+	// As we took also care above of the scenario where mg_printf(conn, "%s", "") was called, vsnprintf() MUST produce a non-zero length on success!
+    if (len <= 0 || len >= (int) sizeof(mem) - 1) {
       // MSVC produces -1 on printf("%s", str) for very long 'str'!
-      len = (int)strlen(mem);
-	}
-    if (len == 0) {
-      // vsnprintf() error, give up
-      mg_cry(conn, "%s(%s, ...): vsnprintf() error", __func__, fmt);
-    } else if (len >= (int) sizeof(mem) - 1) {
 	  VA_COPY(ap, aa);
       len = mg_vasprintf(conn, &buf, 0, fmt, ap);
       va_end(ap);
 
-      if (buf) {
+      if (buf && len > 0) {
         rv = mg_write(conn, buf, (size_t)len);
         free(buf);
         return (rv < len ? 0 : rv);
       } else {
-        // Failed to allocate large enough buffer, give up
+        // Failed to allocate large enough buffer or failed inside mg_vasprintf, give up
+		if (buf) free(buf);
         mg_cry(conn, "%s(%s, ...): Can't allocate buffer, not printing anything",
                __func__, fmt);
       }
@@ -5126,7 +5123,7 @@ static int64_t send_file_data(struct mg_connection *conn, FILE *fp, int64_t len)
 
     // Read from file, exit the loop on error
     num_read = (int)fread(buf, 1, (size_t)to_read, fp);
-    if (num_read == 0 && ferror(fp)) {
+    if (num_read <= 0 && ferror(fp)) {
       send_http_error(conn, 578, NULL, "%s: failed to read from file: %s", __func__, mg_strerror(ERRNO)); // signal internal error in access log file at least
       return -2;
     }
@@ -7273,8 +7270,7 @@ static unsigned long ssl_id_callback(void) {
 }
 
 #if !defined(NO_SSL_DL)
-static int load_dll(struct mg_context *ctx, const char *dll_name,
-                    struct ssl_func *sw) {
+static int load_dll(const char *dll_name, struct ssl_func *sw) {
   union {void *p; void (*fp)(void);} u;
   void  *dll_handle;
   struct ssl_func *fp;
@@ -7316,8 +7312,7 @@ static int set_ssl_option(struct mg_context *ctx) {
   }
 
 #if !defined(NO_SSL_DL)
-  if (!load_dll(ctx, SSL_LIB, ssl_sw) ||
-      !load_dll(ctx, CRYPTO_LIB, crypto_sw)) {
+  if (!load_dll(SSL_LIB, ssl_sw) || !load_dll(CRYPTO_LIB, crypto_sw)) {
     return 0;
   }
 #endif // NO_SSL_DL
@@ -9148,7 +9143,7 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
   // be initialized before listening ports. UID must be set last.
   if (!set_gpass_option(ctx) ||
 #if !defined(NO_SSL)
-      !set_ssl_option(ctx) ||
+      (ctx->config[SSL_CERTIFICATE] != NULL && !set_ssl_option(ctx)) ||
 #endif
       !set_ports_option(ctx) ||
 #if !defined(_WIN32)

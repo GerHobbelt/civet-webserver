@@ -25,7 +25,7 @@ all:
 
 GCC_WARNS   = -W -Wall -pedantic
 #  -Wno-missing-field-initializers  -Wno-unused-parameter -Wno-format-zero-length -Wno-missing-braces
-CFLAGS      = -W -Wall -std=c99 -O2 $(GCC_WARNS) $(COPT)
+CFLAGS      = -std=c99 -O2 $(GCC_WARNS) $(COPT)
 MAC_SHARED  = -flat_namespace -bundle -undefined suppress
 LINFLAGS    = -ldl -pthread $(CFLAGS)
 LIB         = _$(PROG).so
@@ -117,8 +117,8 @@ windows:
 # Build for Windows under MinGW
 #MINGWDBG= -DDEBUG -O0 -ggdb
 MINGWDBG= -DNDEBUG -Os
-MINGWOPT=   -std=c99 -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
-#MINGWOPT=  -std=c99 -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
+MINGWOPT=  -W -Wall -mthreads -Wl,--subsystem,console $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
+#MINGWOPT= -W -Wall -mthreads -Wl,--subsystem,windows $(MINGWDBG) -DHAVE_STDINT $(GCC_WARNINGS) $(COPT)
 mingw:
 	windres win32\res.rc win32\res.o
 	$(CC) $(MINGWOPT) mongoose_ex.c -lws2_32 \

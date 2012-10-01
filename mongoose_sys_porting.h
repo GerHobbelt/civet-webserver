@@ -23,12 +23,15 @@
 
 #if defined(_WIN32)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
-#else
-#define _XOPEN_SOURCE 600     // For PATH_MAX and flockfile() on Linux
-#define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
+#ifdef WIN32_LEAN_AND_MEAN
+#undef WIN32_LEAN_AND_MEAN      // Disable WIN32_LEAN_AND_MEAN, if necessary
 #endif
-#define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
-#define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
+#else
+#define _XOPEN_SOURCE /*600*/   // For PATH_MAX and flockfile() on Linux
+#define _LARGEFILE_SOURCE       // Enable 64-bit file offsets
+#endif
+#define __STDC_FORMAT_MACROS    // <inttypes.h> wants this for C++
+#define __STDC_LIMIT_MACROS     // C++ wants that for INT64_MAX
 
 #if defined(__SYMBIAN32__)
 #define NO_SSL // SSL is not supported
@@ -695,7 +698,7 @@ typedef int SOCKET;
 #endif
 
 
-#if defined(DEBUG) || defined(_DEBUG)
+#if (defined(DEBUG) || defined(_DEBUG)) && !MG_DEBUG_TRACING
 #if defined(PTW32_VERSION)
 #define MG_PTHREAD_SELF()   pthread_self().p
 #else
@@ -734,6 +737,7 @@ do {                                                        \
 } while (0)
 #else
 #define MG_DEBUG_TRACING                                    0
+#undef DEBUG_TRACE
 #define DEBUG_TRACE(l, x)
 #endif // DEBUG
 
