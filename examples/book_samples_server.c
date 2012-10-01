@@ -54,8 +54,9 @@ static struct mg_context *ctx = NULL; // Set by start_mongoose()
 static HWND app_hwnd = NULL;
 #define WM_START_SERVER         (WM_APP + 42)
 #define WM_SERVER_IS_STOPPING   (WM_APP + 43)
-#define WM_TRAY_ICON_HIT        (WM_APP + 44)
-#define WM_APPEND_LOG           (WM_APP + 45)
+#define WM_RESTART_SERVER       (WM_APP + 44)
+#define WM_TRAY_ICON_HIT        (WM_APP + 45)
+#define WM_APPEND_LOG           (WM_APP + 46)
 static char server_url[256] = "";
 #define _T(text)				TEXT(text)
 #endif
@@ -1192,16 +1193,14 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 #if defined(MONGOOSE_AS_SERVICE)
         if (__argv[1] != NULL &&
             !strcmp(__argv[1], service_magic_argument)) {
-          start_mongoose(1, service_argv);
-          report_server_started();
+		  PostMessage(hWnd, WM_RESTART_SERVER, 0, 0);
           StartServiceCtrlDispatcherA(service_table);
           exit(EXIT_SUCCESS);
         } else {
 #else
 	    {
 #endif // MONGOOSE_AS_SERVICE
-		  start_mongoose(__argc, __argv);
-          report_server_started();
+		  PostMessage(hWnd, WM_RESTART_SERVER, 0, 0);
         }
 	  }
       break;
@@ -1313,11 +1312,13 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 			DragQueryFileA(drop_handle, i, filepath, ARRAY_SIZE(filepath));
 			if (!mg_mk_fullpath(filepath, ARRAY_SIZE(filepath)) &&
 			    !mg_stat(filepath, &st)) {
+			  append_log("[info] Dropped file/directory [%s]\n", filepath);
 			  if (!st.is_directory) {
 				strrchr(filepath, '/')[0] = 0;
 			  }
 			  if (!mg_stat(filepath, &st) && st.is_directory) {
 			    mg_strlcpy(document_root_dir, filepath, ARRAY_SIZE(document_root_dir));
+				append_log("[info] Dropped file/directory --> DocumentRoot = [%s]\n", document_root_dir);
 			    should_restart = 1;
 			    mg_signal_stop(ctx);
 			    break;
@@ -1404,18 +1405,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		  ctx = NULL;
 		  append_log("Server stopped; will restart now.\n");
 
-#if defined(MONGOOSE_AS_SERVICE)
-		  if (__argv[1] != NULL &&
-			  !strcmp(__argv[1], service_magic_argument)) {
-			start_mongoose(1, service_argv);
-			report_server_started();
-		  } else {
-#else
-		  {
-#endif // MONGOOSE_AS_SERVICE
-			start_mongoose(__argc, __argv);
-            report_server_started();
-		  }
+		  PostMessage(hWnd, WM_RESTART_SERVER, 0, 0);
 		} else {
           mg_stop(ctx);
 		  ctx = NULL;
@@ -1425,6 +1415,21 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		  PostQuitMessage(EXIT_SUCCESS);
 		}
 		return TRUE;
+
+	  case WM_RESTART_SERVER:
+#if defined(MONGOOSE_AS_SERVICE)
+		if (__argv[1] != NULL &&
+			!strcmp(__argv[1], service_magic_argument)) {
+				start_mongoose(1, service_argv);
+				report_server_started();
+		} else {
+#else
+		{
+#endif // MONGOOSE_AS_SERVICE
+			start_mongoose(__argc, __argv);
+			report_server_started();
+		}
+		break;
   }
 
 #if 0
