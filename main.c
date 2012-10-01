@@ -142,6 +142,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
   char line[MAX_CONF_FILE_LINE_SIZE], opt[sizeof(line)], val[sizeof(line)], *p;
   FILE *fp = NULL;
   size_t i;
+  int cmd_line_opts_start = 1;
   int line_no = 0;
 
   options[0] = NULL;
@@ -149,6 +150,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
   // Should we use a config file ?
   if (argv[1] != NULL && argv[2] == NULL) {
     snprintf(config_file, sizeof(config_file), "%s", argv[1]);
+    cmd_line_opts_start = 2;
   } else if ((p = strrchr(argv[0], DIRSEP)) == NULL) {
     // No command line flags specified. Look where binary lives
     snprintf(config_file, sizeof(config_file), "%s", CONFIG_FILE);
@@ -206,8 +208,8 @@ static void process_command_line_arguments(char *argv[], char **options) {
     (void) mg_fclose(fp);
   }
 
-  // Now handle command line flags. They override config file / default settings.
-  for (i = 1; argv[i] != NULL; i += 2) {
+  // Handle command line flags. They override config file and default settings.
+  for (i = cmd_line_opts_start; argv[i] != NULL; i += 2) {
     if (argv[i][0] != '-' || argv[i + 1] == NULL) {
       show_usage_and_exit(ctx);
     }
@@ -592,7 +594,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
     DispatchMessage(&msg);
   }
 
-  // return the WM_QUIT value:
+  // Return the WM_QUIT value.
   return msg.wParam;
 }
 #else

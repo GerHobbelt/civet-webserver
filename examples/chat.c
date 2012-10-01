@@ -479,9 +479,10 @@ int main(void) {
   srand((unsigned) time(0));
 
   // Setup and start Mongoose
-  ctx = mg_start(&ucb, options);
-  if (!ctx)
+  if ((ctx = mg_start(&ucb, options)) == NULL) {
+    printf("%s\n", "Cannot start chat server, fatal exit");
     exit(EXIT_FAILURE);
+  }
 
   // Wait until enter is pressed, then exit
   printf("Chat server started on ports %s, press enter to quit.\n",

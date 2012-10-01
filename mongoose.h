@@ -475,9 +475,10 @@ const struct mg_request_info *mg_get_request_info(const struct mg_connection *co
 
 
 // Send data to the client.
-//
-// Return the number of bytes written; 0 when the connection has been closed.
-// Return -1 on error.
+// Return:
+//  0   when the connection has been closed
+//  -1  on error
+//  number of bytes written on success
 int mg_write(struct mg_connection *, const void *buf, size_t len);
 
 // Write the HTTP response code and the set of response headers which
@@ -811,11 +812,12 @@ int mg_extract_raw_http_header(char **buf, char **token_ref, char **value_ref);
 //
 // Return:
 //   On success, length of the decoded variable.
-//   On error, -1 (variable not found, or destination buffer is too small).
-//   On error, -2 (destination buffer NULL or zero length).
+//   On error:
+//      -1 (variable not found, or destination buffer is too small).
+//      -2 (destination buffer is NULL or zero length).
 //
-// Destination buffer is guaranteed to be '\0'-terminated whenever possible.
-// In case of failure, dst[0] == '\0'.
+// Destination buffer is guaranteed to be '\0' - terminated if it is not
+// NULL or zero length. In case of failure, dst[0] == '\0'.
 int mg_get_var(const char *data, size_t data_len, const char *var_name,
                char *buf, size_t buf_len, int is_form_url_encoded);
 
@@ -973,7 +975,7 @@ int mg_read_http_response_head(struct mg_connection *conn);
 // Return:
 //   On error, NULL
 //   On success, opened file stream to the downloaded contents. The stream
-//   is positioned at the end of the file. It is the user's responsibility
+//   is positioned to the end of the file. It is the user's responsibility
 //   to fclose() the opened file stream.
 FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
                struct mg_connection **conn_ref);
@@ -1011,7 +1013,7 @@ const char *mg_version(void);
 // MD5 hash. Example:
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
-void mg_md5(char *buf, ...);
+void mg_md5(char buf[33], ...);
 
 // Return the HTTP response code string for the given response code
 const char *mg_get_response_code_text(int response_code);
