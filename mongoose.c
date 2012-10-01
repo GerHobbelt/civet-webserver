@@ -428,7 +428,7 @@ typedef enum {
   GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE,
   KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT,
   ACCESS_CONTROL_LIST,
-  EXTRA_MIME_TYPES, LISTENING_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE,
+  EXTRA_MIME_TYPES, LISTENING_PORTS, IGNORE_OCCUPIED_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE,
   NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES,
   NUM_OPTIONS
 } mg_option_index_t;
@@ -457,6 +457,7 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "l", "access_control_list",           NULL,
   "m", "extra_mime_types",              NULL,
   "p", "listening_ports",               "8080",
+  "",  "ignore_occupied_ports",         "no",
   "r", "document_root",                 ".",
   "s", "ssl_certificate",               NULL,
   "t", "num_threads",                   "10",
@@ -6997,6 +6998,7 @@ static int is_all_zeroes(void *ptr, size_t len)
 
 static int set_ports_option(struct mg_context *ctx) {
   const char *list = get_option(ctx, LISTENING_PORTS);
+  int ignore_occupied_ports = !mg_strcasecmp("yes", get_option(ctx, IGNORE_OCCUPIED_PORTS));
 #if !defined(_WIN32)
   int reuseaddr = 1;
 #endif // !_WIN32
@@ -7070,7 +7072,8 @@ static int set_ports_option(struct mg_context *ctx) {
           mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
                  (int)vec.len, vec.ptr, mg_strerror(ERRNO));
           closesocket(sock);
-          success = 0;
+		  if (!ignore_occupied_ports)
+			success = 0;
         } else if ((listener = (struct socket *)
                     calloc(1, sizeof(*listener))) == NULL) {
           mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
@@ -7083,6 +7086,7 @@ static int set_ports_option(struct mg_context *ctx) {
           set_timeout(listener, keep_alive_timeout);
           listener->next = ctx->listening_sockets;
           ctx->listening_sockets = listener;
+		  success++;
         }
         so.lsa.len = sizeof(so.lsa.u.sin);
         so.lsa.u.sin.sin_family = AF_INET;
@@ -7092,8 +7096,10 @@ static int set_ports_option(struct mg_context *ctx) {
     }
   }
 
-  if (!success) {
+  // when ignoring occupied ports, we should end up serving at at least ONE port
+  if (!success || (ignore_occupied_ports && success < 2)) {
     close_all_listening_sockets(ctx);
+	success = 0;
   }
 
   return success;
