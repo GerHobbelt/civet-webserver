@@ -28,6 +28,7 @@
 #define PASSWORDS_FILE_NAME             ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE            MG_MAX(MG_BUF_LEN, 4096)
 #define MAX_CGI_ENVIR_VARS              64
+#define MAX_REQUEST_SIZE                16384		// Must be larger than 128 (heuristic lower bound)
 
 
 /* buffer size used when copying data to/from file/socket/... */
@@ -422,9 +423,9 @@ typedef enum {
   CGI_EXTENSIONS,
   ALLOWED_METHODS,
   CGI_ENVIRONMENT, PUT_DELETE_PASSWORDS_FILE, CGI_INTERPRETER,
-  MAX_REQUEST_SIZE, PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS,
+  PROTECT_URI, AUTHENTICATION_DOMAIN, SSI_EXTENSIONS,
   SSI_MARKER, ERROR_FILE,
-  ACCESS_LOG_FILE, SSL_CHAIN_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
+  ACCESS_LOG_FILE, ENABLE_DIRECTORY_LISTING, ERROR_LOG_FILE,
   GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE,
   KEEP_ALIVE_TIMEOUT, SOCKET_LINGER_TIMEOUT,
   ACCESS_CONTROL_LIST,
@@ -439,14 +440,12 @@ static const char *config_options[(NUM_OPTIONS + 1/* sentinel*/) * MG_ENTRIES_PE
   "E", "cgi_environment",               NULL,
   "G", "put_delete_passwords_file",     NULL,
   "I", "cgi_interpreter",               NULL,
-  "M", "max_request_size",              "16384",
   "P", "protect_uri",                   NULL,
   "R", "authentication_domain",         "mydomain.com",
   "S", "ssi_pattern",                   "**.shtml$|**.shtm$",
   "",  "ssi_marker",                    NULL,
   "Z", "error_file",                    "404=/error/404.shtml,0=/error/error.shtml",
   "a", "access_log_file",               NULL,
-  "c", "ssl_chain_file",                NULL,
   "d", "enable_directory_listing",      "yes",
   "e", "error_log_file",                NULL,
   "g", "global_passwords_file",         NULL,
@@ -7270,7 +7269,8 @@ static unsigned long ssl_id_callback(void) {
 }
 
 #if !defined(NO_SSL_DL)
-static int load_dll(const char *dll_name, struct ssl_func *sw) {
+static int load_dll(struct mg_context *ctx, const char *dll_name,
+                    struct ssl_func *sw) {
   union {void *p; void (*fp)(void);} u;
   void  *dll_handle;
   struct ssl_func *fp;
@@ -7305,14 +7305,14 @@ static int load_dll(const char *dll_name, struct ssl_func *sw) {
 static int set_ssl_option(struct mg_context *ctx) {
   int i, size;
   const char *pem = get_option(ctx, SSL_CERTIFICATE);
-  const char *chain = get_option(ctx, SSL_CHAIN_FILE);
 
   if (is_empty(pem)) {
     return 1;
   }
 
 #if !defined(NO_SSL_DL)
-  if (!load_dll(SSL_LIB, ssl_sw) || !load_dll(CRYPTO_LIB, crypto_sw)) {
+  if (!load_dll(ctx, SSL_LIB, ssl_sw) ||
+      !load_dll(ctx, CRYPTO_LIB, crypto_sw)) {
     return 0;
   }
 #endif // NO_SSL_DL
@@ -7322,28 +7322,28 @@ static int set_ssl_option(struct mg_context *ctx) {
   SSL_load_error_strings();
 
   if ((ctx->client_ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL) {
-    mg_cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
+    mg_cry(fc(ctx), "SSL_CTX_new (client) error: %s", ssl_error());
   }
 
   if ((ctx->ssl_ctx = SSL_CTX_new(SSLv23_server_method())) == NULL) {
-    mg_cry(fc(ctx), "SSL_CTX_new error: %s", ssl_error());
+    mg_cry(fc(ctx), "SSL_CTX_new (server) error: %s", ssl_error());
   } else {
     call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT_SSL);
   }
 
-  if (ctx->ssl_ctx != NULL && !is_empty(pem) &&
+  if (ctx->ssl_ctx != NULL && 
       SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
-  if (ctx->ssl_ctx != NULL && !is_empty(pem) &&
+  if (ctx->ssl_ctx != NULL && 
       SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open private key file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
-  if (ctx->ssl_ctx != NULL && !is_empty(chain) &&
-      SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, chain) == 0) {
-    mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, chain, ssl_error());
+  if (ctx->ssl_ctx != NULL && 
+      SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, pem) == 0) {
+    mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
 
@@ -7644,11 +7644,7 @@ struct mg_connection *mg_connect(struct mg_context *ctx,
 
   assert(ctx);
   if (flags & MG_CONNECT_HTTP_IO) {
-    http_io_buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
-    if (http_io_buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
-      mg_cry(fc(ctx), "%s: Invalid MAX_REQUEST_SIZE setting: %d", __func__, http_io_buf_size);
-      return NULL;
-    }
+    http_io_buf_size = MAX_REQUEST_SIZE;
   } else {
     http_io_buf_size = 0;
   }
@@ -8669,13 +8665,8 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
 
 static void worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn = NULL;
-  int buf_size = atoi(get_option(ctx, MAX_REQUEST_SIZE));
 
-  if (buf_size < 128 /* heuristic: simplest GET req + Host: header size. MUST be larger than 1 anyway! */) {
-    mg_cry(fc(ctx), "Invalid MAX_REQUEST_SIZE setting (%d), aborting worker thread(s), OOM", buf_size);
-    goto fail_dramatically; 
-  }
-  conn = (struct mg_connection *) malloc(sizeof(*conn) + buf_size * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
+  conn = (struct mg_connection *) malloc(sizeof(*conn) + MAX_REQUEST_SIZE * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
     goto fail_dramatically; 
@@ -8689,7 +8680,7 @@ static void worker_thread(struct mg_context *ctx) {
     int doing_fine = 1;
 
     // everything in 'conn' is zeroed at this point in time: set up the buffers, etc.
-    conn->buf_size = buf_size;
+    conn->buf_size = MAX_REQUEST_SIZE;
     conn->buf = (char *) (conn + 1);
     conn->ctx = ctx;
     conn->request_info.is_ssl = conn->client.is_ssl;
