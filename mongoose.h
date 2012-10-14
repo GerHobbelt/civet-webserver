@@ -992,7 +992,6 @@ FILE *mg_fetch(struct mg_context *ctx, const char *url, const char *path,
 
 
 
-typedef void * (WINCDECL *mg_thread_func_t)(void *);
 // Convenience function -- create detached thread.
 // Return: 0 on success, non-0 on error.
 int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param);

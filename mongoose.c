@@ -2744,6 +2744,100 @@ pthread_t pthread_self(void) {
   return GetCurrentThreadId();
 }
 
+struct __pthread_thread_func_args {
+  mg_thread_func_t func;
+  void *arg;
+  void *return_value;
+  unsigned return_value_set: 1;
+  pthread_t thread_id;
+  HANDLE thread_h;
+
+  struct __pthread_thread_func_args *next;
+};
+
+static pthread_spinlock_t __pthread_list_lock;
+static struct __pthread_thread_func_args *__pthread_list = NULL;
+
+static unsigned int __stdcall __pthread_starter_func(void *arg) {
+  struct __pthread_thread_func_args *a = (struct __pthread_thread_func_args *)arg;
+  DWORD id = GetCurrentThreadId();
+  void *rv;
+  struct __pthread_thread_func_args *l, *o;
+  pthread_spin_lock(&__pthread_list_lock);
+  l = __pthread_list;
+  while (l && l->thread_id != id) {
+	l = l->next;
+  }
+  pthread_spin_unlock(&__pthread_list_lock);
+  assert(l);
+  assert(l == a);
+
+  rv = a->func(a->arg);
+  if (a->return_value_set)
+	rv = a->return_value;
+
+  pthread_spin_lock(&__pthread_list_lock);
+  o = NULL;
+  l = __pthread_list;
+  while (l && l->thread_id != id) {
+	  l = l->next;
+  }
+  if (o && l) {
+	  o->next = l->next;
+	  l->next = NULL;
+  } else if (l) {
+	  assert(l == __pthread_list);
+	  __pthread_list = l->next;
+	  l->next = NULL;
+  }
+  pthread_spin_unlock(&__pthread_list_lock);
+
+  _endthreadex((unsigned int)rv);
+  CloseHandle(l->thread_h);
+  free(l);
+  return (unsigned int)rv;
+}
+
+int pthread_create(pthread_t * tid,	UNUSED_PARAMETER(const pthread_attr_t * attr), mg_thread_func_t start, void *arg) {
+  struct __pthread_thread_func_args *a = calloc(1, sizeof(*a));
+  unsigned int t;
+  uintptr_t rv;
+  if (!a)
+	return -1;
+  a->arg = arg;
+  a->func = start;
+  if (!__pthread_list) {
+	pthread_spin_init(&__pthread_list_lock, PTHREAD_PROCESS_PRIVATE);
+  }
+  rv = _beginthreadex(NULL, 0, __pthread_starter_func, a, CREATE_SUSPENDED, &t);
+  if (rv != 0) {
+	*tid = t;
+	a->thread_id = t;
+	a->thread_h = (HANDLE)rv;
+	pthread_spin_lock(&__pthread_list_lock);
+	a->next = __pthread_list;
+	__pthread_list = a;
+	pthread_spin_unlock(&__pthread_list_lock);
+	ResumeThread(a->thread_h);
+  }
+  return (rv != 0) ? 0 : errno;
+}
+
+void pthread_exit(void *value_ptr) {
+  DWORD id = GetCurrentThreadId();
+  struct __pthread_thread_func_args *l;
+  pthread_spin_lock(&__pthread_list_lock);
+  l = __pthread_list;
+  while (l && l->thread_id != id) {
+	l = l->next;
+  }
+  pthread_spin_unlock(&__pthread_list_lock);
+  assert(l);
+  if (!l->return_value_set) {
+	l->return_value = value_ptr;
+	l->return_value_set = 1;
+  }
+}
 
 
 // rwlock types have been moved to mongoose_sys_porting.h
@@ -3106,7 +3200,17 @@ static struct dirent *readdir(DIR *dir) {
 #define set_close_on_exec(fd) // No FD_CLOEXEC on Windows
 
 int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param) {
-  int rv = _beginthread((void (__cdecl *)(void *)) func, 0, param) == (uintptr_t)-1L ? -1 : 0;
+  int rv;
+  pthread_t thread_id;
+  pthread_attr_t attr;
+
+#if defined(HAVE_PTHREAD)
+  (void) pthread_attr_init(&attr);
+  (void) pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  // (void) pthread_attr_setstacksize(&attr, sizeof(struct mg_connection) * 5);
+#endif
+
+  rv = pthread_create(&thread_id, &attr, func, param);
   if (rv == 0) {
     // count this thread too so the master_thread will wait for this one to end as well when we stop.
     (void) pthread_mutex_lock(&ctx->mutex);
@@ -4895,7 +4999,7 @@ static void print_dir_entry(struct de *de) {
 // This function is called from send_directory() and used for
 // sorting directory entries by size, or name, or modification time.
 // On windows, __cdecl specification is needed in case if project is built
-// with __stdcall convention. qsort always requires __cdels callback.
+// with __stdcall convention. qsort always requires __cdecl callback.
 static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
   const struct de *a = (const struct de *) p1, *b = (const struct de *) p2;
   const char *query_string = a->conn->request_info.query_string;
@@ -8663,7 +8767,7 @@ static int produce_socket(struct mg_context *ctx, struct mg_connection *conn) {
   return rv;
 }
 
-static void worker_thread(struct mg_context *ctx) {
+static void * WINCDECL worker_thread(struct mg_context *ctx) {
   struct mg_connection *conn = NULL;
 
   conn = (struct mg_connection *) malloc(sizeof(*conn) + MAX_REQUEST_SIZE * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
@@ -8789,6 +8893,8 @@ fail_dramatically:
   //          DEBUG_TRACE() or other code while the master thread completes
   //          due to num_threads reaching zero, which in turn will signal
   //          mg_stop() to destroy the mutexes, etc..
+  pthread_exit(0);
+  return 0;
 }
 
 static int accept_new_connection(const struct socket *listener,
@@ -8847,7 +8953,7 @@ static int accept_new_connection(const struct socket *listener,
   }
 }
 
-static void master_thread(struct mg_context *ctx) {
+static void * WINCDECL master_thread(struct mg_context *ctx) {
   fd_set read_set;
   struct timeval tv;
   struct socket *sp;
@@ -8979,6 +9085,8 @@ static void master_thread(struct mg_context *ctx) {
   //          when mg_stop() completes -- and that one destroys all the
   //          mutexes so writing DEBUG_TRACE() right here would cause a random
   //          crash due to race conditions.
+  pthread_exit(0);
+  return 0;
 }
 
 static void free_context(struct mg_context *ctx) {

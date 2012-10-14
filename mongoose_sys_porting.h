@@ -27,7 +27,11 @@
 #undef WIN32_LEAN_AND_MEAN      // Disable WIN32_LEAN_AND_MEAN, if necessary
 #endif
 #else
-#define _XOPEN_SOURCE /*600*/   // For PATH_MAX and flockfile() on Linux
+#ifdef __linux__
+#define _XOPEN_SOURCE 600       // For PATH_MAX and flockfile() on Linux
+#else
+#define _XOPEN_SOURCE			// BSD
+#endif
 #define _LARGEFILE_SOURCE       // Enable 64-bit file offsets
 #endif
 #define __STDC_FORMAT_MACROS    // <inttypes.h> wants this for C++
@@ -535,6 +539,7 @@ extern "C" {
 typedef HANDLE pthread_mutex_t;
 typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
 typedef DWORD pthread_t;
+typedef struct {WORD dummy;} pthread_attr_t;
 
 struct timespec {
   long tv_nsec;
@@ -753,6 +758,8 @@ typedef int socklen_t;
 
 
 
+typedef void * (WINCDECL *mg_thread_func_t)(void *);
+
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 
 #if !defined(HAVE_PTHREAD)
@@ -778,6 +785,8 @@ extern "C" {
 
 #undef _POSIX_THREAD_ATTR_STACKSIZE
 
+#define PTHREAD_MUTEX_INITIALIZER ((pthread_mutex_t)INVALID_HANDLE_VALUE)
+
 int pthread_mutex_init(pthread_mutex_t *mutex, void *unused);
 int pthread_mutex_destroy(pthread_mutex_t *mutex);
 int pthread_mutex_lock(pthread_mutex_t *mutex);
@@ -789,6 +798,8 @@ int pthread_cond_signal(pthread_cond_t *cv);
 int pthread_cond_broadcast(pthread_cond_t *cv);
 int pthread_cond_destroy(pthread_cond_t *cv);
 pthread_t pthread_self(void);
+int pthread_create(pthread_t * tid,	const pthread_attr_t * attr, mg_thread_func_t start, void *arg);
+void pthread_exit(void *value_ptr);
 
 #if !defined(USE_SRWLOCK)
 #if defined(RTL_SRWLOCK_INIT) && (_WIN32_WINNT >= _WIN32_WINNT_VISTA)
@@ -822,9 +833,11 @@ int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
-//#define PTHREAD_SPINLOCK_INITIALIZER      PTHREAD_MUTEX_INITIALIZER
+#define PTHREAD_SPINLOCK_INITIALIZER      PTHREAD_MUTEX_INITIALIZER
 
 typedef pthread_mutex_t pthread_spinlock_t;
+
+#define PTHREAD_PROCESS_PRIVATE			0
 
 int pthread_spin_init(pthread_spinlock_t *lock, int pshared);
 int pthread_spin_destroy(pthread_spinlock_t *lock);

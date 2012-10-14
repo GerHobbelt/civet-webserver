@@ -1672,47 +1672,6 @@ static void test_client_connect() {
 
 
   // now with HTTP header support:
-  ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
-  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(!conn);
-
-  // all options are empty
-  ASSERT_STREQ(get_option(ctx, MAX_REQUEST_SIZE), "");
-  // so we should set them up, just like one would've got when calling mg_start():
-  ctx->config[MAX_REQUEST_SIZE] = "256";
-
-  conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
-  ASSERT(conn);
-
-  ASSERT(0 == mg_add_tx_header(conn, 0, "Host", "www.google.com"));
-  ASSERT(0 == mg_add_tx_header(conn, 0, "Connection", "close"));
-  // set up the request the rude way: directly patch the request_info struct. Nasty!
-  //
-  // Setting us up cf. https://developers.google.com/custom-search/docs/xml_results?hl=en#WebSearch_Request_Format
-  ri4m = (struct mg_request_info *)mg_get_request_info(conn);
-  ri4m->http_version = "1.1";
-  ri4m->query_string = "q=mongoose&num=5&client=google-csbe&ie=utf8&oe=utf8&cx=00255077836266642015:u-scht7a-8i";
-  ri4m->request_method = "GET";
-  ri4m->uri = "/search";
-
-  rv = mg_write_http_request_head(conn, NULL, NULL);
-  ASSERT(rv == 153);
-  // signal request phase done:
-  mg_shutdown(conn, SHUT_WR);
-  // fetch response, blocking I/O:
-  //
-  // but since this is a HTTP I/O savvy connection, we should first read the headers and parse them:
-  rv = mg_read_http_response_head(conn);
-  // google will spit back more than 256-1 header bytes in its response, so we'll get a buffer overrun:
-  ASSERT(rv == 413);
-  ASSERT(conn->request_len == 0);
-  mg_close_connection(conn);
-
-
-
-  // retry with a suitably large buffer:
-  ctx->config[MAX_REQUEST_SIZE] = "2048";
-
   conn = mg_connect(ctx, "www.google.com", 80, MG_CONNECT_BASIC | MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
@@ -2096,14 +2055,6 @@ static void test_local_client_connect() {
 
 
   // now with HTTP header support:
-  ASSERT_STREQ(get_option(&ctx_client, MAX_REQUEST_SIZE), "");
-  ASSERT(get_option(ctx, MAX_REQUEST_SIZE));
-  ASSERT(atoi(get_option(ctx, MAX_REQUEST_SIZE)) > 0);
-  
-  ctx_client.config[MAX_REQUEST_SIZE] = mg_strdup(get_option(ctx, MAX_REQUEST_SIZE));
-  ASSERT(get_option(&ctx_client, MAX_REQUEST_SIZE));
-  ASSERT(atoi(get_option(&ctx_client, MAX_REQUEST_SIZE)) > 0);
-
   conn = mg_connect(&ctx_client, "localhost", 33797, MG_CONNECT_HTTP_IO);
   ASSERT(conn);
 
@@ -2146,7 +2097,6 @@ static void test_local_client_connect() {
 
   // cleanup
   mg_stop(ctx);
-  free(ctx_client.config[MAX_REQUEST_SIZE]);
 }
 
 
