@@ -629,9 +629,17 @@
     <None Include="..\..\test\ssi9.shtml" />
     <None Include="..\..\test\test.pl" />
     <None Include="..\..\test\timeout.cgi" />
+    <None Include="..\..\win32\favicon.ico" />
+    <None Include="..\..\win32\systray.ico" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\main.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\win32\resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\win32\res.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="mongoose.vcxproj">

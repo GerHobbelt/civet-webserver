@@ -27,10 +27,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_vhost_sample</ProjectName>
-    <RootNamespace>mongoose_vhost_sample</RootNamespace>
+    <ProjectName>mongoose_book_samples_server</ProjectName>
+    <RootNamespace>book_samples_server</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{F5209267-8284-83BD-73F0-DBD7E0EC729F}</ProjectGuid>
+    <ProjectGuid>{48067AB8-2260-730B-17CA-C5B76C3CF0EA}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -160,7 +160,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -173,7 +173,6 @@
       <CompileAs>Default</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DisableSpecificWarnings>4127;4244;4306;4100;4204;4221;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>
       </OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
@@ -191,7 +190,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
@@ -222,7 +221,7 @@
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -251,7 +250,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
@@ -283,7 +282,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -296,7 +295,6 @@
       <CompileAs>Default</CompileAs>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <DisableSpecificWarnings>4127;4244;4306;4100;4204;4221;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>
       </OmitFramePointers>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
@@ -313,7 +311,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <TargetMachine>MachineIA64</TargetMachine>
@@ -337,7 +335,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -366,7 +364,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
@@ -394,7 +392,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -423,7 +421,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
@@ -451,7 +449,7 @@
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_IPV6;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WIN32_WINNT=0x0501;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -479,7 +477,7 @@
       <GenerateMapFile>true</GenerateMapFile>
       <MapFileName>$(IntDir)$(TargetFileName).map</MapFileName>
       <MapExports>true</MapExports>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <TargetMachine>MachineIA64</TargetMachine>
@@ -490,27 +488,41 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <None Include="..\..\examples\html\favicon.ico" />
-    <None Include="..\..\examples\html\index.html" />
-    <None Include="..\..\examples\html\jquery.js" />
-    <None Include="..\..\examples\html\login.html" />
-    <None Include="..\..\examples\html\logo.png" />
-    <None Include="..\..\examples\html\main.js" />
-    <None Include="..\..\examples\html\style.css" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\examples\virtualhosting.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread.2012.vcxproj">
-      <Project>{5d459ba0-5eeb-47d3-a1c4-6b55c8d37ec0}</Project>
+    <ProjectReference Include="..\..\pthread-win32\pthread_lib.2012.vcxproj">
+      <Project>{a063dfad-6995-4e1a-afff-e43dc11e95b1}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\upskirt\mvc\2012\libupskirt.vcxproj">
       <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
     </ProjectReference>
-    <ProjectReference Include="mongoose_pthread.vcxproj">
-      <Project>{5da681a2-3c45-2e42-0e35-0d24831144d8}</Project>
-    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\examples\book_samples_server.c" />
+    <ClCompile Include="..\..\mongoose.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\..\mongoose_ex.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\mongoose.h" />
+    <ClInclude Include="..\..\mongoose_ex.h" />
+    <ClInclude Include="..\..\mongoose_sys_porting.h" />
+    <ClInclude Include="..\examples\mongoose_book_samples_server.resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\examples\mongoose_book_samples_server.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\test\error\404.shtml" />
+    <None Include="..\..\test\error\error.shtml" />
+    <None Include="..\..\test\images\biohazard-red-bg.ai" />
+    <None Include="..\..\test\images\biohazard-red-bg.svg" />
+    <None Include="..\examples\mongoose_book_samples_server.favicon.ico" />
+    <None Include="..\examples\mongoose_book_samples_server.systray.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
