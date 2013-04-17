@@ -547,7 +547,17 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   if (event == MG_EVENT_LOG)
   {
     DEBUG_TRACE(0x00010000, ("[%s] %s", request_info->log_severity, request_info->log_message));
-	append_log("[%s] %s\n", request_info->log_severity, request_info->log_message);
+	// we do not log 'HTTP RESPONSE 304' 'error' lines as those are very valid responses (304 = Not Modified) which should not pollute the log window.
+	switch (request_info->status_code)
+	{
+	case 304:
+		// do not log 'Not Modified' messages.
+		break;
+
+	default:
+		append_log("[%s] %s\n", request_info->log_severity, request_info->log_message);
+		break;
+	}
     return (void *)1;
   }
 
@@ -1208,6 +1218,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case ID_QUIT:
+		  should_restart = 0;
           mg_stop(ctx);
 		  ctx = NULL;
           //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
@@ -1289,9 +1300,16 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 	  ctx = NULL;
       //Shell_NotifyIconA(NIM_DELETE, &TrayIcon);
       PostQuitMessage(EXIT_SUCCESS);
+
+	  DragAcceptFiles(hWnd, FALSE);
+	  DestroyWindow(hWnd);
+
       return TRUE;  // We've just sent our own quit message, with proper hwnd.
 
 	case WM_DESTROY:
+	  if (hWnd == app_hwnd) {
+		app_hwnd = NULL;
+	  }
 	  break;
 
 	case WM_NCDESTROY:

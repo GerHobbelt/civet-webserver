@@ -2780,6 +2780,7 @@ static unsigned int __stdcall __pthread_starter_func(void *arg) {
   o = NULL;
   l = __pthread_list;
   while (l && l->thread_id != id) {
+	  o = l;
 	  l = l->next;
   }
   if (o && l) {
