@@ -30,7 +30,7 @@
 #ifdef __linux__
 #define _XOPEN_SOURCE 600       // For PATH_MAX and flockfile() on Linux
 #else
-#define _XOPEN_SOURCE			// BSD
+#define _XOPEN_SOURCE           // BSD
 #endif
 #define _LARGEFILE_SOURCE       // Enable 64-bit file offsets
 #endif
@@ -798,7 +798,7 @@ int pthread_cond_signal(pthread_cond_t *cv);
 int pthread_cond_broadcast(pthread_cond_t *cv);
 int pthread_cond_destroy(pthread_cond_t *cv);
 pthread_t pthread_self(void);
-int pthread_create(pthread_t * tid,	const pthread_attr_t * attr, mg_thread_func_t start, void *arg);
+int pthread_create(pthread_t * tid, const pthread_attr_t * attr, mg_thread_func_t start, void *arg);
 void pthread_exit(void *value_ptr);
 
 #if !defined(USE_SRWLOCK)
@@ -837,7 +837,7 @@ int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 
 typedef pthread_mutex_t pthread_spinlock_t;
 
-#define PTHREAD_PROCESS_PRIVATE			0
+#define PTHREAD_PROCESS_PRIVATE         0
 
 int pthread_spin_init(pthread_spinlock_t *lock, int pshared);
 int pthread_spin_destroy(pthread_spinlock_t *lock);

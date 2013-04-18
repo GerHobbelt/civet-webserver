@@ -1188,8 +1188,8 @@ const char *mg_suggest_connection_header(struct mg_connection *conn);
 void mg_connection_must_close(struct mg_connection *conn);
 
 // Set the HTTP version to use for this connection from now on.
-// 
-// The default version is "1.1", which will also be used when you invoke this function 
+//
+// The default version is "1.1", which will also be used when you invoke this function
 // with a NULL or empty 'http_version_str'.
 //
 // WARNING: 'http_version_str' must point at memory which has a guaranteed lifetime equal

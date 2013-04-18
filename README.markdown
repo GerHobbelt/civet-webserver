@@ -26,10 +26,10 @@ with the following syntax:
 | Pattern    | Matches ... |
 |------------|-------------|
 |    **      | Matches everything
-|    *       | Matches everything but slash character, '/'      
-|    ?       | Matches any character      
-|    $       | Matches the end of the string      
-|    &#124;  | Matches if pattern on the left side or the right side matches. Pattern on the left side is matched first      
+|    *       | Matches everything but slash character, '/'
+|    ?       | Matches any character
+|    $       | Matches the end of the string
+|    &#124;  | Matches if pattern on the left side or the right side matches. Pattern on the left side is matched first
 | All other characters in the pattern match themselves. ||
 
 If no arguments are given, mongoose searches for a configuration file called "`mongoose.conf`" in the same directory where mongoose binary is located. Alternatively, a file name could be specified in the command line. Format
@@ -83,16 +83,16 @@ OPTIONS
 
 *     `-l access_control_list`
       Specify access control list (ACL). ACL is a comma separated list of IP subnets, each subnet is prepended by '-' or '+' sign. Plus means allow, minus means deny. If subnet mask is omitted, like "`-1.2.3.4`", then it
-	  means single IP address. Mask may vary from 0 to 32 inclusive. On each request, full list is traversed, and last match wins. Default setting is to allow all. For example, to allow only `192.168/16` subnet to connect,
-	  run "`mongoose -0.0.0.0/0,+192.168/16`".  Default: ""
+      means single IP address. Mask may vary from 0 to 32 inclusive. On each request, full list is traversed, and last match wins. Default setting is to allow all. For example, to allow only `192.168/16` subnet to connect,
+      run "`mongoose -0.0.0.0/0,+192.168/16`".  Default: ""
 
 *     `-m extra_mime_types`
       Extra mime types to recognize, in form "`extension1=type1,extension2=type2,...`". Extension must include dot.  Example: "`mongoose -m .cpp=plain/text,.java=plain/text`". Default: ""
 
 *     `-p listening_ports`
       Comma-separated list of ports to listen on. If the port is SSL, a letter '`s`' must be appeneded, for example, "`-p 80,443s`" will open port 80 and port 443, and connections on port 443 will be SSL-ed. It is possible to
-	  specify an IP address to bind to. In this case, an IP address and a colon must be prepended to the port number. For example, to bind to a loopback interface on port 80 and to all interfaces on HTTPS port 443, use
-	  "`mongoose -p 127.0.0.1:80,443s`". Default: "`8080`"
+      specify an IP address to bind to. In this case, an IP address and a colon must be prepended to the port number. For example, to bind to a loopback interface on port 80 and to all interfaces on HTTPS port 443, use
+      "`mongoose -p 127.0.0.1:80,443s`". Default: "`8080`"
 
 *     `-r document_root`
       Location of the WWW root directory. Default: "`.`"
@@ -107,9 +107,9 @@ OPTIONS
       Switch to given user's credentials after startup. Default: ""
 
 *     `-w url_rewrite_patterns`
-      Comma-separated list of URL rewrites in the form of "`pattern=substitution,...`" If the "`pattern`" matches some prefix of the requested URL, then matched prefix gets substituted with "`substitution`".  For example, 
-	  "`-w /config=/etc,**.doc|**.rtf=/path/to/cgi-bin/handle_doc.cgi`" will serve all URLs that start with "`/config`" from the "`/etc`" directory, and call `handle_doc.cgi` script for `.doc` and `.rtf` file requests. 
-	  If some pattern matches, no further matching/substitution is performed (first matching pattern wins). Use full paths in substitutions. Default: ""
+      Comma-separated list of URL rewrites in the form of "`pattern=substitution,...`" If the "`pattern`" matches some prefix of the requested URL, then matched prefix gets substituted with "`substitution`".  For example,
+      "`-w /config=/etc,**.doc|**.rtf=/path/to/cgi-bin/handle_doc.cgi`" will serve all URLs that start with "`/config`" from the "`/etc`" directory, and call `handle_doc.cgi` script for `.doc` and `.rtf` file requests.
+      If some pattern matches, no further matching/substitution is performed (first matching pattern wins). Use full paths in substitutions. Default: ""
 
 *     `-x hide_files_patterns`
       A prefix pattern for the files to hide. Files that match the pattern will not show up in directory listing and return 404 Not Found if requested. Default: ""

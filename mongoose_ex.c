@@ -192,19 +192,19 @@ int mg_FD_ISSET(struct mg_connection *conn, fd_set *set)
 
 void mg_set_request_uri(struct mg_connection *conn, const char *uri, const char *query_string)
 {
-	if (conn)
-	{
-		conn->request_info.uri = (is_empty(uri) ? "" : uri);
-		conn->request_info.query_string = (is_empty(query_string) ? "" : query_string);
-	}
+    if (conn)
+    {
+        conn->request_info.uri = (is_empty(uri) ? "" : uri);
+        conn->request_info.query_string = (is_empty(query_string) ? "" : query_string);
+    }
 }
 
 void mg_set_request_method(struct mg_connection *conn, const char *method)
 {
-	if (conn)
-	{
-		conn->request_info.request_method = (is_empty(method) ? "" : method);
-	}
+    if (conn)
+    {
+        conn->request_info.request_method = (is_empty(method) ? "" : method);
+    }
 }
 
 

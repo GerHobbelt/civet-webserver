@@ -28,7 +28,7 @@
 #define PASSWORDS_FILE_NAME             ".htpasswd"
 #define CGI_ENVIRONMENT_SIZE            MG_MAX(MG_BUF_LEN, 4096)
 #define MAX_CGI_ENVIR_VARS              64
-#define MAX_REQUEST_SIZE                16384		// Must be larger than 128 (heuristic lower bound)
+#define MAX_REQUEST_SIZE                16384       // Must be larger than 128 (heuristic lower bound)
 
 
 /* buffer size used when copying data to/from file/socket/... */
@@ -1434,7 +1434,7 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
   // adjust size for NUL and set it up so the fallback loop further below does not cycle
   size = _vscprintf(fmt, aq) + 2;
   if (size < 2)
-	size = MG_BUF_LEN;
+    size = MG_BUF_LEN;
   va_end(aq);
 #endif
   if (size > (int)max_buflen)
@@ -1469,20 +1469,20 @@ int mg_vasprintf(UNUSED_PARAMETER(struct mg_connection *unused), char **buf_ref,
     n = (int)strlen(buf);
   } else if (n >= size) {
     // truncated output:
-	// mark the string as clipped and take optional line ending from fmt string
-	char *d;
-	const char *le = fmt + strlen(fmt) - 1;
-	n = size - 1;
-	d = buf + n - 6;
-	assert(le > fmt);
-	assert(d > buf);
-	while (le > fmt && d > buf && strchr("\r\n", *le)) {
-	  le--;
-	  d--;
-	}
+    // mark the string as clipped and take optional line ending from fmt string
+    char *d;
+    const char *le = fmt + strlen(fmt) - 1;
+    n = size - 1;
+    d = buf + n - 6;
+    assert(le > fmt);
+    assert(d > buf);
+    while (le > fmt && d > buf && strchr("\r\n", *le)) {
+      le--;
+      d--;
+    }
     strcpy(d, " (...)");
-	d += 6;
-	strcpy(d, le);
+    d += 6;
+    strcpy(d, le);
   } else {
     buf[n] = '\0';
   }
@@ -2631,7 +2631,7 @@ static void vsend_http_error(struct mg_connection *conn, int status,
           mg_write_http_response_head(conn, status, reason);
 
           if (len > 0) {
-		    assert(len == (int)strlen(conn->request_info.status_custom_description));
+            assert(len == (int)strlen(conn->request_info.status_custom_description));
             if (mg_write(conn, conn->request_info.status_custom_description, len) != len) {
               conn->must_close = 1;
             }
@@ -2766,7 +2766,7 @@ static unsigned int __stdcall __pthread_starter_func(void *arg) {
   pthread_spin_lock(&__pthread_list_lock);
   l = __pthread_list;
   while (l && l->thread_id != id) {
-	l = l->next;
+    l = l->next;
   }
   pthread_spin_unlock(&__pthread_list_lock);
   assert(l);
@@ -2774,22 +2774,22 @@ static unsigned int __stdcall __pthread_starter_func(void *arg) {
 
   rv = a->func(a->arg);
   if (a->return_value_set)
-	rv = a->return_value;
+    rv = a->return_value;
 
   pthread_spin_lock(&__pthread_list_lock);
   o = NULL;
   l = __pthread_list;
   while (l && l->thread_id != id) {
-	  o = l;
-	  l = l->next;
+      o = l;
+      l = l->next;
   }
   if (o && l) {
-	  o->next = l->next;
-	  l->next = NULL;
+      o->next = l->next;
+      l->next = NULL;
   } else if (l) {
-	  assert(l == __pthread_list);
-	  __pthread_list = l->next;
-	  l->next = NULL;
+      assert(l == __pthread_list);
+      __pthread_list = l->next;
+      l->next = NULL;
   }
   pthread_spin_unlock(&__pthread_list_lock);
 
@@ -2799,27 +2799,27 @@ static unsigned int __stdcall __pthread_starter_func(void *arg) {
   return (unsigned int)rv;
 }
 
-int pthread_create(pthread_t * tid,	UNUSED_PARAMETER(const pthread_attr_t * attr), mg_thread_func_t start, void *arg) {
+int pthread_create(pthread_t * tid, UNUSED_PARAMETER(const pthread_attr_t * attr), mg_thread_func_t start, void *arg) {
   struct __pthread_thread_func_args *a = calloc(1, sizeof(*a));
   unsigned int t;
   uintptr_t rv;
   if (!a)
-	return -1;
+    return -1;
   a->arg = arg;
   a->func = start;
   if (!__pthread_list) {
-	pthread_spin_init(&__pthread_list_lock, PTHREAD_PROCESS_PRIVATE);
+    pthread_spin_init(&__pthread_list_lock, PTHREAD_PROCESS_PRIVATE);
   }
   rv = _beginthreadex(NULL, 0, __pthread_starter_func, a, CREATE_SUSPENDED, &t);
   if (rv != 0) {
-	*tid = t;
-	a->thread_id = t;
-	a->thread_h = (HANDLE)rv;
-	pthread_spin_lock(&__pthread_list_lock);
-	a->next = __pthread_list;
-	__pthread_list = a;
-	pthread_spin_unlock(&__pthread_list_lock);
-	ResumeThread(a->thread_h);
+    *tid = t;
+    a->thread_id = t;
+    a->thread_h = (HANDLE)rv;
+    pthread_spin_lock(&__pthread_list_lock);
+    a->next = __pthread_list;
+    __pthread_list = a;
+    pthread_spin_unlock(&__pthread_list_lock);
+    ResumeThread(a->thread_h);
   }
   return (rv != 0) ? 0 : errno;
 }
@@ -2830,13 +2830,13 @@ void pthread_exit(void *value_ptr) {
   pthread_spin_lock(&__pthread_list_lock);
   l = __pthread_list;
   while (l && l->thread_id != id) {
-	l = l->next;
+    l = l->next;
   }
   pthread_spin_unlock(&__pthread_list_lock);
   assert(l);
   if (!l->return_value_set) {
-	l->return_value = value_ptr;
-	l->return_value_set = 1;
+    l->return_value = value_ptr;
+    l->return_value_set = 1;
   }
 }
 
@@ -3028,7 +3028,7 @@ int mg_mk_fullpath(char *buf, size_t buf_len) {
   assert(pos < ARRAY_SIZE(wnewbuf));
   wnewbuf[pos] = 0;
   if (!WideCharToMultiByte(CP_UTF8, 0, wnewbuf, pos + 1 /* include NUL sentinel */, buf, (int)buf_len, NULL, NULL))
-	return -1;
+    return -1;
   pos = (int)strlen(buf);
   while (pos-- > 0) {
     if (buf[pos] == '\\')
@@ -3060,7 +3060,7 @@ FILE *mg_fopen(const char *path, const char *mode) {
 
   to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
   if (!MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode)))
-	return NULL;
+    return NULL;
 
   // recursively create the included path when the file is to be created / appended to:
   if (wmode[wcscspn(wmode, L"aw")]) {
@@ -3181,8 +3181,8 @@ static struct dirent *readdir(DIR *dir) {
       if (!WideCharToMultiByte(CP_UTF8, 0,
           dir->info.cFileName, -1, result->d_name,
           sizeof(result->d_name), NULL, NULL)) {
-		return 0;
-	  }
+        return 0;
+      }
 
       if (!FindNextFileW(dir->handle, &dir->info)) {
         (void) FindClose(dir->handle);
@@ -3315,7 +3315,7 @@ int mg_mk_fullpath(char *buf, size_t buf_len) {
   char newbuf[PATH_MAX + 1];
 
   if (!realpath(buf, newbuf))
-	return -1;
+    return -1;
   mg_strlcpy(buf, newbuf, buf_len);
   return 0;
 }
@@ -3840,7 +3840,7 @@ int mg_write(struct mg_connection *conn, const void *buf, size_t len) {
 
   // may be called with len == 0 from the mg_printf() family:
   if (len == 0)
-	return 0;
+    return 0;
 
   // chunked I/O only applies to data I/O, NOT to (HTTP) header I/O:
   if (conn->tx_is_in_chunked_mode && conn->num_bytes_sent >= 0) {
@@ -3948,8 +3948,8 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
   } else if (!strcmp(fmt, "%s")) {
-	// This also takes care of the scenario where mg_printf(conn, "%s", "") was called, so the vsnprintf() further below MUST produce a non-zero length!
-	fmt = va_arg(aa, const char *);
+    // This also takes care of the scenario where mg_printf(conn, "%s", "") was called, so the vsnprintf() further below MUST produce a non-zero length!
+    fmt = va_arg(aa, const char *);
     if (!fmt) fmt = "???";
     rv = mg_write(conn, fmt, strlen(fmt));
     return (rv < 0 ? 0 : rv);
@@ -3965,10 +3965,10 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
     mem[sizeof(mem) - 1] = 0;
     va_end(ap);
 
-	// As we took also care above of the scenario where mg_printf(conn, "%s", "") was called, vsnprintf() MUST produce a non-zero length on success!
+    // As we took also care above of the scenario where mg_printf(conn, "%s", "") was called, vsnprintf() MUST produce a non-zero length on success!
     if (len <= 0 || len >= (int) sizeof(mem) - 1) {
       // MSVC produces -1 on printf("%s", str) for very long 'str'!
-	  VA_COPY(ap, aa);
+      VA_COPY(ap, aa);
       len = mg_vasprintf(conn, &buf, 0, fmt, ap);
       va_end(ap);
 
@@ -3978,11 +3978,11 @@ int mg_vprintf(struct mg_connection *conn, const char *fmt, va_list aa) {
         return (rv < len ? 0 : rv);
       } else {
         // Failed to allocate large enough buffer or failed inside mg_vasprintf, give up
-		if (buf) free(buf);
+        if (buf) free(buf);
         mg_cry(conn, "%s(%s, ...): Can't allocate buffer, not printing anything",
                __func__, fmt);
       }
-	} else {
+    } else {
       // Copy to the local buffer succeeded
       rv = mg_write(conn, mem, (size_t) len);
       return (rv < 0 ? 0 : rv);
@@ -6301,7 +6301,7 @@ static void put_file(struct mg_connection *conn, const char *path) {
         send_http_error(conn, 500, NULL,
                     "fseeko(%s, %" PRId64 "): %s", path, r1, mg_strerror(ERRNO));
         (void) mg_fclose(fp);
-		return;
+        return;
       }
     }
     if (forward_body_data(conn, fp, NULL, 1)) {
@@ -7173,8 +7173,8 @@ static int set_ports_option(struct mg_context *ctx) {
           mg_cry(fc(ctx), "%s: cannot bind to port %.*s, port may already be in use by another application: %s", __func__,
                  (int)vec.len, vec.ptr, mg_strerror(ERRNO));
           closesocket(sock);
-		  if (!ignore_occupied_ports)
-			success = 0;
+          if (!ignore_occupied_ports)
+            success = 0;
         } else if ((listener = (struct socket *)
                     calloc(1, sizeof(*listener))) == NULL) {
           mg_cry(fc(ctx), "%s: %s", __func__, mg_strerror(ERRNO));
@@ -7187,7 +7187,7 @@ static int set_ports_option(struct mg_context *ctx) {
           set_timeout(listener, keep_alive_timeout);
           listener->next = ctx->listening_sockets;
           ctx->listening_sockets = listener;
-		  success++;
+          success++;
         }
         so.lsa.len = sizeof(so.lsa.u.sin);
         so.lsa.u.sin.sin_family = AF_INET;
@@ -7200,7 +7200,7 @@ static int set_ports_option(struct mg_context *ctx) {
   // when ignoring occupied ports, we should end up serving at at least ONE port
   if (!success || (ignore_occupied_ports && success < 2)) {
     close_all_listening_sockets(ctx);
-	success = 0;
+    success = 0;
   }
 
   return success;
@@ -7276,11 +7276,11 @@ static int check_acl(struct mg_context *ctx, const struct usa *usa) {
   while ((list = next_option(list, &vec, NULL)) != NULL) {
     char acl_buf[SOCKADDR_NTOA_BUFSIZE * 2 + 10];
 
-	if (vec.len >= sizeof(acl_buf)) {
+    if (vec.len >= sizeof(acl_buf)) {
       mg_cry(fc(ctx), "%s: bad acl ip/mask: [%.*s]", __func__, (int)vec.len, vec.ptr);
       return -1;
-	}
-	mg_strlcpy(acl_buf, vec.ptr, vec.len + 1);
+    }
+    mg_strlcpy(acl_buf, vec.ptr, vec.len + 1);
 
     flag = acl_buf[0];
     if (sscanf(acl_buf, " %c%n", &flag, &i) != 1 && flag != '+' && flag != '-') {
@@ -7436,17 +7436,17 @@ static int set_ssl_option(struct mg_context *ctx) {
     call_user_over_ctx(ctx, ctx->ssl_ctx, MG_INIT_SSL);
   }
 
-  if (ctx->ssl_ctx != NULL && 
+  if (ctx->ssl_ctx != NULL &&
       SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
-  if (ctx->ssl_ctx != NULL && 
+  if (ctx->ssl_ctx != NULL &&
       SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, pem, SSL_FILETYPE_PEM) == 0) {
     mg_cry(fc(ctx), "%s: cannot open private key file %s: %s", __func__, pem, ssl_error());
     return 0;
   }
-  if (ctx->ssl_ctx != NULL && 
+  if (ctx->ssl_ctx != NULL &&
       SSL_CTX_use_certificate_chain_file(ctx->ssl_ctx, pem) == 0) {
     mg_cry(fc(ctx), "%s: cannot open cert chain file %s: %s", __func__, pem, ssl_error());
     return 0;
@@ -8153,7 +8153,7 @@ static void discard_current_request_from_buffer(struct mg_connection *conn) {
 
   // Don't do this for connections which are NOT HTTP/1.1 keep-alive enabled:
   if (!should_keep_alive(conn))
-	return;
+    return;
 
   // make sure we fetch all content (and discard it), if we
   // haven't done so already (f.e.: event callback handler might've
@@ -8774,7 +8774,7 @@ static void * WINCDECL worker_thread(struct mg_context *ctx) {
   conn = (struct mg_connection *) malloc(sizeof(*conn) + MAX_REQUEST_SIZE * 2 + CHUNK_HEADER_BUFSIZ); /* RX headers, TX headers, chunk header space */
   if (conn == NULL) {
     mg_cry(fc(ctx), "Cannot create new connection struct, OOM");
-    goto fail_dramatically; 
+    goto fail_dramatically;
   }
   memset(conn, 0, sizeof(conn[0]));
   conn->client.sock = INVALID_SOCKET;
@@ -9124,8 +9124,8 @@ When you want to signal a FULL STOP condition from any of those, call
 mg_signal_stop() instead.
 */
 void mg_stop(struct mg_context *ctx) {
-  if (!ctx) 
-	return;
+  if (!ctx)
+    return;
 
   mg_signal_stop(ctx); // only set stop=1 when not set already!
 
@@ -9372,20 +9372,20 @@ struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx) {
 
 void *mg_get_request_user_data(struct mg_connection *conn) {
   if (conn) {
-	return conn->request_info.req_user_data;
+    return conn->request_info.req_user_data;
   }
   return NULL;
 }
 
 void mg_set_request_user_data(struct mg_connection *conn, void *user_data) {
   if (conn) {
-	conn->request_info.req_user_data = user_data;
+    conn->request_info.req_user_data = user_data;
   }
 }
 
 void mg_set_http_version(struct mg_connection *conn, const char *http_version_str) {
   if (conn) {
-	conn->request_info.http_version = (is_empty(http_version_str) ? "1.1" : http_version_str);
+    conn->request_info.http_version = (is_empty(http_version_str) ? "1.1" : http_version_str);
   }
 }
 
@@ -9715,7 +9715,7 @@ int mg_is_read_data_available(struct mg_connection *conn) {
 
 int mg_match_prefix(const char *pattern, int pattern_len, const char *str) {
   if (!str || !pattern)
-	return -1;
+    return -1;
 
   return match_prefix(pattern, pattern_len, str);
 }

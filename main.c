@@ -191,15 +191,15 @@ static void process_command_line_arguments(char *argv[], char **options) {
       if (line[0] == '#')
         continue;
 
-	  // MS sscanf() says: The return value is EOF for an error or if the end of the string is reached before the first conversion.
-	  // Hence we make sure we don't feed it an empty line --> -1 will only have one meaning then.
-	  if (line[strspn(line, " \t\r\n")] == 0)
-		continue;
+      // MS sscanf() says: The return value is EOF for an error or if the end of the string is reached before the first conversion.
+      // Hence we make sure we don't feed it an empty line --> -1 will only have one meaning then.
+      if (line[strspn(line, " \t\r\n")] == 0)
+        continue;
 
       if (2 == sscanf(line, "%s %[^\r\n#]", opt, val)) {
         set_option(options, opt, val);
         continue;
-	  } else {
+      } else {
         die("%s: line %d is invalid", config_file, line_no);
         break;
       }
