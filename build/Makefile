@@ -42,8 +42,6 @@ LUA_SQLITE_FLAGS = $(SQLITE_FLAGS) $(LUA_FLAGS)
 
 
 
-all: $(PROG)
-
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
 # "-Wl,--as-needed" turned on by default  in cc command.
