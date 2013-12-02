@@ -99,52 +99,6 @@ static void show_usage_and_exit(void) {
   exit(EXIT_FAILURE);
 }
 
-#if defined(_WIN32) || defined(USE_COCOA)
-static const char *config_file_top_comment =
-"# Mongoose web server configuration file.\n"
-"# For detailed description of every option, visit\n"
-"# https://github.com/valenok/mongoose/blob/master/UserManual.md\n"
-"# Lines starting with '#' and empty lines are ignored.\n"
-"# To make a change, remove leading '#', modify option's value,\n"
-"# save this file and then restart Mongoose.\n\n";
-
-static const char *get_url_to_first_open_port(const struct mg_context *ctx) {
-  static char url[100];
-  const char *open_ports = mg_get_option(ctx, "listening_ports");
-  int a, b, c, d, port, n;
-
-  if (sscanf(open_ports, "%d.%d.%d.%d:%d%n", &a, &b, &c, &d, &port, &n) == 5) {
-    snprintf(url, sizeof(url), "%s://%d.%d.%d.%d:%d",
-             open_ports[n] == 's' ? "https" : "http", a, b, c, d, port);
-  } else if (sscanf(open_ports, "%d%n", &port, &n) == 1) {
-    snprintf(url, sizeof(url), "%s://localhost:%d",
-             open_ports[n] == 's' ? "https" : "http", port);
-  } else {
-    snprintf(url, sizeof(url), "%s", "http://localhost:8080");
-  }
-
-  return url;
-}
-
-static void create_config_file(const char *path) {
-  const char **names, *value;
-  FILE *fp;
-  int i;
-
-  // Create config file if it is not present yet
-  if ((fp = fopen(path, "r")) != NULL) {
-    fclose(fp);
-  } else if ((fp = fopen(path, "a+")) != NULL) {
-    fprintf(fp, "%s", config_file_top_comment);
-    names = mg_get_valid_option_names();
-    for (i = 0; names[i * 2] != NULL; i++) {
-      value = mg_get_option(ctx, names[i * 2]);
-      fprintf(fp, "# %s %s\n", names[i * 2], value ? value : "<value>");
-    }
-    fclose(fp);
-  }
-}
-#endif
 
 static char *sdup(const char *str) {
   char *p;
