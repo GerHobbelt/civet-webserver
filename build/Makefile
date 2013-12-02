@@ -22,6 +22,7 @@
 PROG = mongoose
 EXE_SUFFIX =
 CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
+CFLAGS += -ldl -lm
 VERSION = $(shell perl -lne \
             'print $$1 if /define\s+MONGOOSE_VERSION\s+"(\S+)"/' ../mongoose.c)
 
@@ -39,7 +40,7 @@ SQLITE_FLAGS = -DTHREADSAFE=1 -DSQLITE_ENABLE_FTS3 \
 LUA_FLAGS = -DUSE_LUA -DUSE_LUA_SQLITE3 -DLUA_COMPAT_ALL
 LUA_SQLITE_FLAGS = $(SQLITE_FLAGS) $(LUA_FLAGS)
 
-CFLAGS += -ldl -lm
+
 
 all: $(PROG)
 
