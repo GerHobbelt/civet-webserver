@@ -386,9 +386,7 @@ static void start_mongoose(int argc, char *argv[]) {
   // Setup signal handler: quit on Ctrl-C
   signal(SIGTERM, signal_handler);
   signal(SIGINT, signal_handler);
-#ifndef _WIN32
   signal(SIGCHLD, signal_handler);
-#endif
 
   // Start Mongoose
   ctx = mg_start((const char **) options, event_handler, NULL);
