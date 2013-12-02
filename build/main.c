@@ -18,11 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#if defined(_WIN32)
-#define _CRT_SECURE_NO_WARNINGS  // Disable deprecation warning in VS2005
-#else
 #define _XOPEN_SOURCE 600  // For PATH_MAX on linux
-#endif
 
 #include <sys/stat.h>
 #include <stdio.h>
