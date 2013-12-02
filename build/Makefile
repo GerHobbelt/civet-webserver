@@ -75,10 +75,7 @@ unix_unit_test: $(LUA_SOURCES) Makefile ../test/unit_test.c
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
-$(PROG)-lua: $(LUA_SOURCES)
-	$(CC) $(LUA_SOURCES) -o $@ $(LUA_SQLITE_FLAGS) $(CFLAGS)
-
-unix: $(PROG) $(PROG)-lua
+unix: $(PROG)
 
 # Windows build
 $(PROG).exe: $(LUA_SOURCES)
