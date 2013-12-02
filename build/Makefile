@@ -50,10 +50,7 @@ LINK_FLAGS = /incremental:no /libpath:$(MSVC)/lib /machine:IX86 \
             user32.lib shell32.lib comdlg32.lib ws2_32.lib advapi32.lib
 LINK = $(MSVC)/bin/link $(LINK_FLAGS)
 
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S), Linux)
-  CFLAGS += -ldl -lm
-endif
+CFLAGS += -ldl -lm
 
 all: $(PROG)
 
