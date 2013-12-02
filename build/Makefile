@@ -61,6 +61,9 @@ endif
 
 all: $(PROG)
 
+test:
+	prove 00.t
+
 ../mongoose.c: ../mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
