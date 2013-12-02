@@ -50,13 +50,9 @@ LINK_FLAGS = /incremental:no /libpath:$(MSVC)/lib /machine:IX86 \
             user32.lib shell32.lib comdlg32.lib ws2_32.lib advapi32.lib
 LINK = $(MSVC)/bin/link $(LINK_FLAGS)
 
-ifeq ($(OS), Windows_NT)
-  EXE_SUFFIX = .exe
-else
-  UNAME_S := $(shell uname -s)
-  ifeq ($(UNAME_S), Linux)
-    CFLAGS += -ldl -lm
-  endif
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S), Linux)
+  CFLAGS += -ldl -lm
 endif
 
 all: $(PROG)
@@ -78,26 +74,6 @@ $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
 unix: $(PROG)
-
-# Windows build
-$(PROG).exe: $(LUA_SOURCES)
-	$(MSVC)/bin/rc res.rc
-	$(CL) $(LUA_SOURCES) $(LUA_SQLITE_FLAGS) /link $(LINK_FLAGS) res.res /out:$@
-
-$(PROG)-tiny.exe: $(TINY_SOURCES)
-	$(MSVC)/bin/rc res.rc
-	$(CL) $(TINY_SOURCES) /link $(LINK_FLAGS) res.res /out:$@
-
-$(PROG).dll: $(TINY_SOURCES) Makefile
-	$(CL) ../mongoose.c /Gz /link $(LINK_FLAGS) /DLL /DEF:dll.def /out:$@
-
-# This is broken now due to SSL exclusion
-windows_unit_test.exe: $(LUA_SOURCES) Makefile
-	$(CL) ../test/unit_test.c lua_5.2.1.c -DLUA_COMPAT_ALL \
-          /link /libpath:$(MSVC)/lib advapi32.lib /out:$@
-	./$@
-
-windows: $(PROG).exe $(PROG)-tiny.exe
 
 # MacOS build with Cocoa GUI
 # For codesign to work in non-interactive mode, unlock login keychain:
