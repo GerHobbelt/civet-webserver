@@ -73,8 +73,6 @@ unix_unit_test: $(LUA_SOURCES) Makefile ../test/unit_test.c
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
-unix: $(PROG)
-
 tests:
 	perl ../test/test.pl $(TEST)
 
