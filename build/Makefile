@@ -33,13 +33,9 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mongoose.c src/lua.c
 
 TINY_SOURCES = ../mongoose.c main.c
-LUA_SOURCES = $(TINY_SOURCES) sqlite3.c lsqlite3.c lua_5.2.1.c
 
 SQLITE_FLAGS = -DTHREADSAFE=1 -DSQLITE_ENABLE_FTS3 \
                -DSQLITE_ENABLE_FTS3_PARENTHESIS
-LUA_FLAGS = -DUSE_LUA -DUSE_LUA_SQLITE3 -DLUA_COMPAT_ALL
-LUA_SQLITE_FLAGS = $(SQLITE_FLAGS) $(LUA_FLAGS)
-
 
 
 # Make sure that the compiler flags come last in the compilation string.
@@ -57,9 +53,6 @@ test:
 
 tests:
 	perl ../test/test.pl $(TEST)
-
-unix_unit_test: $(LUA_SOURCES) Makefile ../test/unit_test.c
-	$(CC) ../test/unit_test.c lua_5.2.1.c $(CFLAGS) -g -O0 -o t && ./t
 
 clean:
 	cd ../examples && $(MAKE) clean
