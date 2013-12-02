@@ -59,8 +59,7 @@ else
   endif
 endif
 
-all:
-	@echo "make (unix|windows|macos)"
+all: $(PROG)
 
 ../mongoose.c: ../mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
