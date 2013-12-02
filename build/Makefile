@@ -19,6 +19,7 @@
 # -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 # -DUSE_LUA               - embed Lua in Mongoose (+100kb)
 
+CFLAGS_EXTRA= -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI
 PROG = mongoose
 EXE_SUFFIX =
 CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
