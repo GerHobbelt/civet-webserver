@@ -32,7 +32,7 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mg_printf.c src/ssl.c src/http_client.c \
           src/mongoose.c src/lua.c
 
-TINY_SOURCES = ../mongoose.c main.c
+TINY_SOURCES = ../mongoose.c ../main.c
 
 SQLITE_FLAGS = -DTHREADSAFE=1 -DSQLITE_ENABLE_FTS3 \
                -DSQLITE_ENABLE_FTS3_PARENTHESIS
