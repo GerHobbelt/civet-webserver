@@ -75,12 +75,7 @@ static void die(const char *fmt, ...) {
   vsnprintf(msg, sizeof(msg), fmt, ap);
   va_end(ap);
 
-#if defined(_WIN32)
-  MessageBox(NULL, msg, "Error", MB_OK);
-#else
   fprintf(stderr, "%s\n", msg);
-#endif
-
   exit(EXIT_FAILURE);
 }
 
