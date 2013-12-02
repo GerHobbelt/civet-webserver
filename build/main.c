@@ -206,13 +206,7 @@ static int event_handler(struct mg_event *event) {
 }
 
 static int is_path_absolute(const char *path) {
-#ifdef _WIN32
-  return path != NULL &&
-    ((path[0] == '\\' && path[1] == '\\') ||  // UNC path, e.g. \\server\dir
-     (isalpha(path[0]) && path[1] == ':' && path[2] == '\\'));  // E.g. X:\dir
-#else
   return path != NULL && path[0] == '/';
-#endif
 }
 
 static char *get_option(char **options, const char *option_name) {
