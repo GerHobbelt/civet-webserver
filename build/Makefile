@@ -39,17 +39,6 @@ SQLITE_FLAGS = -DTHREADSAFE=1 -DSQLITE_ENABLE_FTS3 \
 LUA_FLAGS = -DUSE_LUA -DUSE_LUA_SQLITE3 -DLUA_COMPAT_ALL
 LUA_SQLITE_FLAGS = $(SQLITE_FLAGS) $(LUA_FLAGS)
 
-# Using Visual Studio 6.0. To build Mongoose:
-#  Set MSVC variable below to where VS 6.0 is installed on your system
-#  Run "PATH_TO_VC6\bin\nmake windows"
-MSVC = ../../vc6
-#DBG = /Zi /Od
-DBG  = /DNDEBUG /O1
-CL   = $(MSVC)/bin/cl /MD /TC /nologo $(DBG) /W3 /I$(MSVC)/include /I..
-LINK_FLAGS = /incremental:no /libpath:$(MSVC)/lib /machine:IX86 \
-            user32.lib shell32.lib comdlg32.lib ws2_32.lib advapi32.lib
-LINK = $(MSVC)/bin/link $(LINK_FLAGS)
-
 CFLAGS += -ldl -lm
 
 all: $(PROG)
