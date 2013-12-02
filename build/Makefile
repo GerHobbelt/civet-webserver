@@ -63,21 +63,6 @@ $(PROG): $(TINY_SOURCES)
 tests:
 	perl ../test/test.pl $(TEST)
 
-tarball: clean
-	rm -rf mongoose-$(VERSION)
-	mkdir mongoose-$(VERSION)
-	install -m 644 ../{LICENSE,*.[ch]} mongoose-$(VERSION)
-	tar -czf mongoose-$(VERSION).tgz mongoose-$(VERSION)
-
-release: tarball macos
-	wine make windows
-	upx mongoose.exe
-	upx mongoose-tiny.exe
-	cp mongoose.exe mongoose-$(VERSION).exe
-	cp mongoose-tiny.exe mongoose-tiny-$(VERSION).exe
-	cp mongoose.exe mongoose_php_bundle/
-	zip -r mongoose-php-$(VERSION).zip mongoose_php_bundle/
-
 clean:
 	cd ../examples && $(MAKE) clean
 	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz \
