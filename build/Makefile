@@ -49,18 +49,17 @@ LUA_SQLITE_FLAGS = $(SQLITE_FLAGS) $(LUA_FLAGS)
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
+../mongoose.c: ../mongoose.h Makefile $(SOURCES)
+	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test:
 	prove 00.t
 
-../mongoose.c: ../mongoose.h Makefile $(SOURCES)
-	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
+tests:
+	perl ../test/test.pl $(TEST)
 
 unix_unit_test: $(LUA_SOURCES) Makefile ../test/unit_test.c
 	$(CC) ../test/unit_test.c lua_5.2.1.c $(CFLAGS) -g -O0 -o t && ./t
-
-tests:
-	perl ../test/test.pl $(TEST)
 
 clean:
 	cd ../examples && $(MAKE) clean
