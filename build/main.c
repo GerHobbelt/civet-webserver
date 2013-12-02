@@ -56,15 +56,13 @@ static void WINCDECL signal_handler(int sig_num) {
   // Reinstantiate signal handler
   signal(sig_num, signal_handler);
 
-#if !defined(_WIN32)
+
   // Do not do the trick with ignoring SIGCHLD, cause not all OSes (e.g. QNX)
   // reap zombies if SIGCHLD is ignored. On QNX, for example, waitpid()
   // fails if SIGCHLD is ignored, making system() non-functional.
   if (sig_num == SIGCHLD) {
     do {} while (waitpid(-1, &sig_num, WNOHANG) > 0);
-  } else
-#endif
-  { exit_flag = sig_num; }
+  } else { exit_flag = sig_num; }
 }
 
 static void die(const char *fmt, ...) {
