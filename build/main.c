@@ -33,33 +33,12 @@
 
 #include "mongoose.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#include <direct.h>  // For getcwd
-#include <winsvc.h>
-#include <shlobj.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-
-#ifndef S_ISDIR
-#define S_ISDIR(x) ((x) & _S_IFDIR)
-#endif
-
-#define DIRSEP '\\'
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#define sleep(x) Sleep((x) * 1000)
-#define WINCDECL __cdecl
-#define abs_path(rel, abs, abs_size) _fullpath((abs), (rel), (abs_size))
-#else
 #include <sys/wait.h>
 #include <unistd.h>
 #define DIRSEP '/'
 #define WINCDECL
 #define abs_path(rel, abs, abs_size) realpath((rel), (abs))
-#endif // _WIN32
+
 
 #define MAX_OPTIONS 100
 #define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
