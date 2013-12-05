@@ -156,11 +156,6 @@ struct pollfd {
 #endif
 
 
-// Mark required libraries
-#ifdef _MSC_VER
-#pragma comment(lib, "Ws2_32.lib")
-#endif
-
 #else    // UNIX  specific
 #include <sys/wait.h>
 #include <sys/socket.h>
