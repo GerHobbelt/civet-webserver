@@ -1909,14 +1909,6 @@ struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
     conn->client.sock = sock;
     getsockname(sock, &conn->client.rsa.sa, &len);
     conn->client.is_ssl = use_ssl;
-#ifndef NO_SSL
-    if (use_ssl) {
-      // SSL_CTX_set_verify call is needed to switch off server certificate
-      // checking, which is off by default in OpenSSL and on in yaSSL.
-      SSL_CTX_set_verify(conn->client_ssl_ctx, 0, 0);
-      sslize(conn, conn->client_ssl_ctx, SSL_connect);
-    }
-#endif
   }
 
   return conn;
