@@ -21,9 +21,6 @@
 #include <stdio.h>
 #include <stddef.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
 
 struct mg_context;     // Web server instance
 struct mg_connection;  // HTTP request descriptor
@@ -240,10 +237,5 @@ int mg_url_decode(const char *src, int src_len, char *dst,
 //   char buf[33];
 //   mg_md5(buf, "aa", "bb", NULL);
 char *mg_md5(char buf[33], ...);
-
-
-#ifdef __cplusplus
-}
-#endif // __cplusplus
 
 #endif // MONGOOSE_HEADER_INCLUDED
