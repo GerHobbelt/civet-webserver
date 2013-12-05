@@ -32,13 +32,11 @@
 #pragma warning (disable : 4204)
 #endif
 
-#ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
-#endif // !_WIN32_WCE
 
 #include <time.h>
 #include <stdlib.h>
