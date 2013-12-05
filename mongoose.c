@@ -15,22 +15,15 @@
 // Alternatively, you can license this library under a commercial
 // license, as set out in <http://cesanta.com/products.html>.
 
-#if defined(_WIN32)
-#undef _UNICODE
-#define _MBCS
-#if !defined(_CRT_SECURE_NO_WARNINGS)
-#define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
-#endif
-#else
-#ifdef __linux__
 #define _XOPEN_SOURCE 600     // For flockfile() on Linux
-#endif
+
 #if !defined(_LARGEFILE_SOURCE)
 #define _LARGEFILE_SOURCE     // Enable 64-bit file offsets
 #endif
+
 #define __STDC_FORMAT_MACROS  // <inttypes.h> wants this for C++
 #define __STDC_LIMIT_MACROS   // C++ wants that for INT64_MAX
-#endif
+
 
 #if defined (_MSC_VER)
 // conditional expression is constant: introduced by FD_SET(..)
