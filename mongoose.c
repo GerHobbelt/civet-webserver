@@ -1893,14 +1893,6 @@ struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
               calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE)) == NULL) {
     snprintf(ebuf, ebuf_len, "calloc(): %s", strerror(ERRNO));
     closesocket(sock);
-#ifndef NO_SSL
-  } else if (use_ssl && (conn->client_ssl_ctx =
-                         SSL_CTX_new(SSLv23_client_method())) == NULL) {
-    snprintf(ebuf, ebuf_len, "SSL_CTX_new error");
-    closesocket(sock);
-    free(conn);
-    conn = NULL;
-#endif // NO_SSL
   } else {
     socklen_t len = sizeof(struct sockaddr);
     conn->buf_size = MAX_REQUEST_SIZE;
