@@ -68,20 +68,9 @@
 #define SYS2UNIX_TIME(lo, hi) \
   (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
 
-// Visual Studio 6 does not know __func__ or __FUNCTION__
-// The rest of MS compilers use __FUNCTION__, not C99 __func__
-// Also use _strtoui64 on modern M$ compilers
-#if defined(_MSC_VER) && _MSC_VER < 1300
-#define STRX(x) #x
-#define STR(x) STRX(x)
-#define __func__ __FILE__ ":" STR(__LINE__)
-#define strtoull(x, y, z) (unsigned __int64) _atoi64(x)
-#define strtoll(x, y, z) _atoi64(x)
-#else
 #define __func__  __FUNCTION__
 #define strtoull(x, y, z) _strtoui64(x, y, z)
 #define strtoll(x, y, z) _strtoi64(x, y, z)
-#endif // _MSC_VER
 
 #define ERRNO   GetLastError()
 #define NO_SOCKLEN_T
