@@ -4300,29 +4300,6 @@ static int is_put_or_delete_request(const struct mg_connection *conn) {
                        !strcmp(s, "MKCOL"));
 }
 
-static int get_first_ssl_listener_index(const struct mg_context *ctx) {
-  int i, index = -1;
-  for (i = 0; index == -1 && i < ctx->num_listening_sockets; i++) {
-    index = ctx->listening_sockets[i].is_ssl ? i : -1;
-  }
-  return index;
-}
-
-static void redirect_to_https_port(struct mg_connection *conn, int ssl_index) {
-  char host[1025];
-  const char *host_header;
-
-  if ((host_header = mg_get_header(conn, "Host")) == NULL ||
-      sscanf(host_header, "%1024[^:]", host) == 0) {
-    // Cannot get host from the Host: header. Fallback to our IP address.
-    sockaddr_to_string(host, sizeof(host), &conn->client.lsa);
-  }
-
-  mg_printf(conn, "HTTP/1.1 302 Found\r\nLocation: https://%s:%d%s\r\n\r\n",
-            host, (int) ntohs(conn->ctx->listening_sockets[ssl_index].
-                              lsa.sin.sin_port), conn->request_info.uri);
-}
-
 static void handle_delete_request(struct mg_connection *conn,
                                   const char *path) {
   struct file file = STRUCT_FILE_INITIALIZER;
@@ -4366,10 +4343,7 @@ static void handle_request(struct mg_connection *conn) {
 
   // Perform redirect and auth checks before calling begin_request() handler.
   // Otherwise, begin_request() would need to perform auth checks and redirects.
-  if (!conn->client.is_ssl && conn->client.ssl_redir &&
-      (ssl_index = get_first_ssl_listener_index(conn->ctx)) > -1) {
-    redirect_to_https_port(conn, ssl_index);
-  } else if (!is_put_or_delete_request(conn) &&
+  if (!is_put_or_delete_request(conn) &&
              !check_authorization(conn, path)) {
     send_authorization_request(conn);
   } else if (call_user(MG_REQUEST_BEGIN, conn, (void *) ri->uri) == 1) {
