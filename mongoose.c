@@ -5378,11 +5378,10 @@ struct mg_context *mg_start(const char **options,
     return NULL;
   }
 
-#if !defined(_WIN32) && !defined(__SYMBIAN32__)
   // Ignore SIGPIPE signal, so if browser cancels the request, it
   // won't kill the whole process.
   (void) signal(SIGPIPE, SIG_IGN);
-#endif // !_WIN32
+
 
   (void) pthread_mutex_init(&ctx->mutex, NULL);
   (void) pthread_cond_init(&ctx->cond, NULL);
