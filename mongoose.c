@@ -32,13 +32,6 @@
 #pragma warning (disable : 4204)
 #endif
 
-// Disable WIN32_LEAN_AND_MEAN.
-// This makes windows.h always include winsock2.h
-#ifdef WIN32_LEAN_AND_MEAN
-#undef WIN32_LEAN_AND_MEAN
-#endif
-
-
 #ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
 #include <sys/stat.h>
