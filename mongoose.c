@@ -5180,23 +5180,7 @@ struct mg_context *mg_start(const char **options,
 }
 
 #ifdef USE_LUA
-#ifdef _WIN32
-static void *mmap(void *addr, int64_t len, int prot, int flags, int fd,
-                  int offset) {
-  HANDLE fh = (HANDLE) _get_osfhandle(fd);
-  HANDLE mh = CreateFileMapping(fh, 0, PAGE_READONLY, 0, 0, 0);
-  void *p = MapViewOfFile(mh, FILE_MAP_READ, 0, 0, (size_t) len);
-  CloseHandle(mh);
-  return p;
-}
-#define munmap(x, y)  UnmapViewOfFile(x)
-#define MAP_FAILED NULL
-#define MAP_PRIVATE 0
-#define PROT_READ 0
-#else
 #include <sys/mman.h>
-#endif
-
 static const char *LUASOCKET = "luasocket";
 
 // Forward declarations
