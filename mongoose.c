@@ -57,18 +57,9 @@
 #define PATH_MAX MAX_PATH
 #endif
 
-#ifndef _WIN32_WCE
 #include <process.h>
 #include <direct.h>
 #include <io.h>
-#else // _WIN32_WCE
-#define NO_CGI // WinCE has no pipes
-
-typedef long off_t;
-
-#define errno   GetLastError()
-#define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
-#endif // _WIN32_WCE
 
 #define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
       ((uint64_t)((uint32_t)(hi))) << 32))
