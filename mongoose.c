@@ -48,115 +48,6 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0400 // To make it link in VS2005
-#include <windows.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-
-#include <process.h>
-#include <direct.h>
-#include <io.h>
-
-#define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
-      ((uint64_t)((uint32_t)(hi))) << 32))
-#define RATE_DIFF 10000000 // 100 nsecs
-#define EPOCH_DIFF MAKEUQUAD(0xd53e8000, 0x019db1de)
-#define SYS2UNIX_TIME(lo, hi) \
-  (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
-
-#define __func__  __FUNCTION__
-#define strtoull(x, y, z) _strtoui64(x, y, z)
-#define strtoll(x, y, z) _strtoi64(x, y, z)
-
-#define ERRNO   GetLastError()
-#define NO_SOCKLEN_T
-#define SSL_LIB   "ssleay32.dll"
-#define CRYPTO_LIB  "libeay32.dll"
-#define O_NONBLOCK  0
-#if !defined(EWOULDBLOCK)
-#define EWOULDBLOCK  WSAEWOULDBLOCK
-#endif // !EWOULDBLOCK
-#define _POSIX_
-#define INT64_FMT  "I64d"
-
-#define WINCDECL __cdecl
-#define SHUT_WR 1
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#define mg_sleep(x) Sleep(x)
-
-#define pipe(x) _pipe(x, MG_BUF_LEN, _O_BINARY)
-#ifndef popen
-#define popen(x, y) _popen(x, y)
-#endif
-#ifndef pclose
-#define pclose(x) _pclose(x)
-#endif
-#define close(x) _close(x)
-#define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
-#define RTLD_LAZY  0
-#define fseeko(x, y, z) _lseeki64(_fileno(x), (y), (z))
-#define fdopen(x, y) _fdopen((x), (y))
-#define write(x, y, z) _write((x), (y), (unsigned) z)
-#define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile(x)
-#define funlockfile(x)
-#define sleep(x) Sleep((x) * 1000)
-#define rmdir(x) _rmdir(x)
-
-#if !defined(va_copy)
-#define va_copy(x, y) x = y
-#endif // !va_copy MINGW #defines va_copy
-
-#if !defined(fileno)
-#define fileno(x) _fileno(x)
-#endif // !fileno MINGW #defines fileno
-
-typedef HANDLE pthread_mutex_t;
-typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
-typedef DWORD pthread_t;
-#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
-
-static int pthread_mutex_lock(pthread_mutex_t *);
-static int pthread_mutex_unlock(pthread_mutex_t *);
-static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len);
-
-#if defined(HAVE_STDINT)
-#include <stdint.h>
-#else
-typedef unsigned int  uint32_t;
-typedef unsigned short  uint16_t;
-typedef unsigned __int64 uint64_t;
-typedef __int64   int64_t;
-#define INT64_MAX  9223372036854775807
-#endif // HAVE_STDINT
-
-// POSIX dirent interface
-struct dirent {
-  char d_name[PATH_MAX];
-};
-
-typedef struct DIR {
-  HANDLE   handle;
-  WIN32_FIND_DATAW info;
-  struct dirent  result;
-} DIR;
-
-#ifndef HAVE_POLL
-struct pollfd {
-  SOCKET fd;
-  short events;
-  short revents;
-};
-#define POLLIN 1
-#endif
-
-
-#else    // UNIX  specific
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/poll.h>
@@ -197,8 +88,6 @@ struct pollfd {
 #define INT64_FMT PRId64
 typedef int SOCKET;
 #define WINCDECL
-
-#endif // End of Windows and UNIX specific includes
 
 #include "mongoose.h"
 
