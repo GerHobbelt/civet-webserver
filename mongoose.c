@@ -2858,9 +2858,7 @@ static void construct_etag(char *buf, size_t buf_len,
 
 static void fclose_on_exec(FILE *fp) {
   if (fp != NULL) {
-#ifndef _WIN32
     fcntl(fileno(fp), F_SETFD, FD_CLOEXEC);
-#endif
   }
 }
 
