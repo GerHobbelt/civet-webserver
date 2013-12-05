@@ -4322,7 +4322,7 @@ static void handle_delete_request(struct mg_connection *conn,
 static void handle_request(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   char path[PATH_MAX];
-  int uri_len, ssl_index;
+  int uri_len;
   struct file file = STRUCT_FILE_INITIALIZER;
 
   if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
