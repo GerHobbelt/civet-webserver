@@ -2638,29 +2638,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   if ((s = getenv("PATH")) != NULL)
     addenv(blk, "PATH=%s", s);
 
-#if defined(_WIN32)
-  if ((s = getenv("COMSPEC")) != NULL) {
-    addenv(blk, "COMSPEC=%s", s);
-  }
-  if ((s = getenv("SYSTEMROOT")) != NULL) {
-    addenv(blk, "SYSTEMROOT=%s", s);
-  }
-  if ((s = getenv("SystemDrive")) != NULL) {
-    addenv(blk, "SystemDrive=%s", s);
-  }
-  if ((s = getenv("ProgramFiles")) != NULL) {
-    addenv(blk, "ProgramFiles=%s", s);
-  }
-  if ((s = getenv("ProgramFiles(x86)")) != NULL) {
-    addenv(blk, "ProgramFiles(x86)=%s", s);
-  }
-  if ((s = getenv("CommonProgramFiles(x86)")) != NULL) {
-    addenv(blk, "CommonProgramFiles(x86)=%s", s);
-  }
-#else
   if ((s = getenv("LD_LIBRARY_PATH")) != NULL)
     addenv(blk, "LD_LIBRARY_PATH=%s", s);
-#endif // _WIN32
 
   if ((s = getenv("PERLLIB")) != NULL)
     addenv(blk, "PERLLIB=%s", s);
