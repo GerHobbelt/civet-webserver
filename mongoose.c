@@ -4002,10 +4002,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
-#if defined(_WIN32)
-  char buf[MG_BUF_LEN];
-  int n;
-#endif
   struct linger linger;
 
   // Set linger option to avoid socket hanging out after close. This prevent
