@@ -4015,17 +4015,6 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   shutdown(conn->client.sock, SHUT_WR);
   set_non_blocking_mode(conn->client.sock);
 
-#if defined(_WIN32)
-  // Read and discard pending incoming data. If we do not do that and close the
-  // socket, the data in the send buffer may be discarded. This
-  // behaviour is seen on Windows, when client keeps sending data
-  // when server decides to close the connection; then when client
-  // does recv() it gets no data back.
-  do {
-    n = pull(NULL, conn, buf, sizeof(buf));
-  } while (n > 0);
-#endif
-
   // Now we know that our FIN is ACK-ed, safe to close
   closesocket(conn->client.sock);
 }
