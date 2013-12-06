@@ -1122,7 +1122,7 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
 }
 
 
-#if !defined(_WIN32)
+
 static int mg_stat(const char *path, struct file *filep) {
   struct stat st;
 
@@ -1171,7 +1171,7 @@ static int set_non_blocking_mode(SOCKET sock) {
 
   return 0;
 }
-#endif // _WIN32
+
 
 
 // Print message to buffer. If buffer is large enough to hold the message,
