@@ -1206,61 +1206,6 @@ static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len) {
   }
 }
 
-#if defined(_WIN32_WCE)
-static time_t time(time_t *ptime) {
-  time_t t;
-  SYSTEMTIME st;
-  FILETIME ft;
-
-  GetSystemTime(&st);
-  SystemTimeToFileTime(&st, &ft);
-  t = SYS2UNIX_TIME(ft.dwLowDateTime, ft.dwHighDateTime);
-
-  if (ptime != NULL) {
-    *ptime = t;
-  }
-
-  return t;
-}
-
-static struct tm *localtime(const time_t *ptime, struct tm *ptm) {
-  int64_t t = ((int64_t) *ptime) * RATE_DIFF + EPOCH_DIFF;
-  FILETIME ft, lft;
-  SYSTEMTIME st;
-  TIME_ZONE_INFORMATION tzinfo;
-
-  if (ptm == NULL) {
-    return NULL;
-  }
-
-  * (int64_t *) &ft = t;
-  FileTimeToLocalFileTime(&ft, &lft);
-  FileTimeToSystemTime(&lft, &st);
-  ptm->tm_year = st.wYear - 1900;
-  ptm->tm_mon = st.wMonth - 1;
-  ptm->tm_wday = st.wDayOfWeek;
-  ptm->tm_mday = st.wDay;
-  ptm->tm_hour = st.wHour;
-  ptm->tm_min = st.wMinute;
-  ptm->tm_sec = st.wSecond;
-  ptm->tm_yday = 0; // hope nobody uses this
-  ptm->tm_isdst =
-    GetTimeZoneInformation(&tzinfo) == TIME_ZONE_ID_DAYLIGHT ? 1 : 0;
-
-  return ptm;
-}
-
-static struct tm *gmtime(const time_t *ptime, struct tm *ptm) {
-  // FIXME(lsm): fix this.
-  return localtime(ptime, ptm);
-}
-
-static size_t strftime(char *dst, size_t dst_size, const char *fmt,
-                       const struct tm *tm) {
-  (void) snprintf(dst, dst_size, "implement strftime() for WinCE");
-  return 0;
-}
-#endif
 
 // Windows happily opens files with some garbage at the end of file name.
 // For example, fopen("a.cgi    ", "r") on Windows successfully opens
