@@ -1344,16 +1344,7 @@ static FILE *mg_fopen(const char *path, const char *mode) {
 static void sockaddr_to_string(char *buf, size_t len,
                                      const union usa *usa) {
   buf[0] = '\0';
-#if defined(USE_IPV6)
-  inet_ntop(usa->sa.sa_family, usa->sa.sa_family == AF_INET ?
-            (void *) &usa->sin.sin_addr :
-            (void *) &usa->sin6.sin6_addr, buf, len);
-#elif defined(_WIN32)
-  // Only Windoze Vista (and newer) have inet_ntop()
-  strncpy(buf, inet_ntoa(usa->sin.sin_addr), len);
-#else
   inet_ntop(usa->sa.sa_family, (void *) &usa->sin.sin_addr, buf, len);
-#endif
 }
 
 // Print error message to the opened error log stream.
