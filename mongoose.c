@@ -1250,11 +1250,6 @@ static SOCKET conn2(const char *host, int port, int use_ssl,
 
   if (host == NULL) {
     snprintf(ebuf, ebuf_len, "%s", "NULL host");
-#ifndef NO_SSL
-  } else if (use_ssl && SSLv23_client_method == NULL) {
-    snprintf(ebuf, ebuf_len, "%s", "SSL is not initialized");
-    // TODO(lsm): use something threadsafe instead of gethostbyname()
-#endif
   } else if ((he = gethostbyname(host)) == NULL) {
     snprintf(ebuf, ebuf_len, "gethostbyname(%s): %s", host, strerror(ERRNO));
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
