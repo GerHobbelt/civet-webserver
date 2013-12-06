@@ -3957,7 +3957,6 @@ static int check_acl(struct mg_context *ctx, uint32_t remote_ip) {
   return allowed == '+';
 }
 
-#if !defined(_WIN32)
 static int set_uid_option(struct mg_context *ctx) {
   struct passwd *pw;
   const char *uid = ctx->config[RUN_AS_USER];
@@ -3979,7 +3978,7 @@ static int set_uid_option(struct mg_context *ctx) {
 
   return success;
 }
-#endif // !_WIN32
+
 
 static int set_gpass_option(struct mg_context *ctx) {
   struct file file = STRUCT_FILE_INITIALIZER;
