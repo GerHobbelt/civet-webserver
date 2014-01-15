@@ -329,7 +329,7 @@ void *pthread_getspecific(pthread_key_t key)
 #endif /* _WIN32 */
 
 #define MD5_STATIC static
-#include "md5.inl"
+#include "md5.h"
 
 #ifdef DEBUG_TRACE
 #undef DEBUG_TRACE
