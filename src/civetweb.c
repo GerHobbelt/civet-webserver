@@ -28,7 +28,9 @@
 #define _XOPEN_SOURCE 600     /* For flockfile() on Linux */
 #endif
 #define _LARGEFILE_SOURCE     /* Enable 64-bit file offsets */
-#define __STDC_FORMAT_MACROS  /* <inttypes.h> wants this for C++ */
+#ifndef __STDC_FORMAT_MACROS
+# define __STDC_FORMAT_MACROS  /* <inttypes.h> wants this for C++ */
+#endif
 #define __STDC_LIMIT_MACROS   /* C++ wants that for INT64_MAX */
 #endif
 
