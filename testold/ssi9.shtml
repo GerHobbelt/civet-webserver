@@ -1,0 +1,3 @@
+ssi_begin
+<!--#include file="../build/Makefile" -->
+ssi_end
