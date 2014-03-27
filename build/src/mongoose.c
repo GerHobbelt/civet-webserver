@@ -18,29 +18,13 @@ static int call_user(int type, struct mg_connection *conn, void *p) {
 }
 
 static FILE *mg_fopen(const char *path, const char *mode) {
-#ifdef _WIN32
-  wchar_t wbuf[PATH_MAX], wmode[20];
-  to_unicode(path, wbuf, ARRAY_SIZE(wbuf));
-  MultiByteToWideChar(CP_UTF8, 0, mode, -1, wmode, ARRAY_SIZE(wmode));
-  return _wfopen(wbuf, wmode);
-#else
   return fopen(path, mode);
-#endif
 }
 
 static void sockaddr_to_string(char *buf, size_t len,
                                      const union usa *usa) {
   buf[0] = '\0';
-#if defined(USE_IPV6)
-  inet_ntop(usa->sa.sa_family, usa->sa.sa_family == AF_INET ?
-            (void *) &usa->sin.sin_addr :
-            (void *) &usa->sin6.sin6_addr, buf, len);
-#elif defined(_WIN32)
-  // Only Windoze Vista (and newer) have inet_ntop()
-  strncpy(buf, inet_ntoa(usa->sin.sin_addr), len);
-#else
   inet_ntop(usa->sa.sa_family, (void *) &usa->sin.sin_addr, buf, len);
-#endif
 }
 
 // Print error message to the opened error log stream.
