@@ -24,8 +24,6 @@ PROG = mongoose
 EXE_SUFFIX =
 CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
-VERSION = $(shell perl -lne \
-            'print $$1 if /define\s+MONGOOSE_VERSION\s+"(\S+)"/' ../allconcat.c)
 
 # The order in which files are listed is important
 SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
