@@ -1,6 +1,5 @@
 #include "internal.h"
 
-#if !defined(_WIN32)
 static int mg_stat(const char *path, struct file *filep) {
   struct stat st;
 
@@ -53,5 +52,3 @@ static int set_non_blocking_mode(SOCKET sock) {
 
   return 0;
 }
-#endif // _WIN32
-
