@@ -35,10 +35,6 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
 
 TINY_SOURCES = ../mongoose.c ../main.c
 
-SQLITE_FLAGS = -DTHREADSAFE=1 -DSQLITE_ENABLE_FTS3 \
-               -DSQLITE_ENABLE_FTS3_PARENTHESIS
-
-
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
 # "-Wl,--as-needed" turned on by default  in cc command.
