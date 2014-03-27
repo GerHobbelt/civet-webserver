@@ -914,9 +914,7 @@ static void construct_etag(char *buf, size_t buf_len,
 
 static void fclose_on_exec(FILE *fp) {
   if (fp != NULL) {
-#ifndef _WIN32
     fcntl(fileno(fp), F_SETFD, FD_CLOEXEC);
-#endif
   }
 }
 
@@ -1325,29 +1323,8 @@ static void prepare_cgi_environment(struct mg_connection *conn,
   if ((s = getenv("PATH")) != NULL)
     addenv(blk, "PATH=%s", s);
 
-#if defined(_WIN32)
-  if ((s = getenv("COMSPEC")) != NULL) {
-    addenv(blk, "COMSPEC=%s", s);
-  }
-  if ((s = getenv("SYSTEMROOT")) != NULL) {
-    addenv(blk, "SYSTEMROOT=%s", s);
-  }
-  if ((s = getenv("SystemDrive")) != NULL) {
-    addenv(blk, "SystemDrive=%s", s);
-  }
-  if ((s = getenv("ProgramFiles")) != NULL) {
-    addenv(blk, "ProgramFiles=%s", s);
-  }
-  if ((s = getenv("ProgramFiles(x86)")) != NULL) {
-    addenv(blk, "ProgramFiles(x86)=%s", s);
-  }
-  if ((s = getenv("CommonProgramFiles(x86)")) != NULL) {
-    addenv(blk, "CommonProgramFiles(x86)=%s", s);
-  }
-#else
   if ((s = getenv("LD_LIBRARY_PATH")) != NULL)
     addenv(blk, "LD_LIBRARY_PATH=%s", s);
-#endif // _WIN32
 
   if ((s = getenv("PERLLIB")) != NULL)
     addenv(blk, "PERLLIB=%s", s);
@@ -2358,29 +2335,6 @@ static int is_put_or_delete_request(const struct mg_connection *conn) {
                        !strcmp(s, "MKCOL"));
 }
 
-static int get_first_ssl_listener_index(const struct mg_context *ctx) {
-  int i, index = -1;
-  for (i = 0; index == -1 && i < ctx->num_listening_sockets; i++) {
-    index = ctx->listening_sockets[i].is_ssl ? i : -1;
-  }
-  return index;
-}
-
-static void redirect_to_https_port(struct mg_connection *conn, int ssl_index) {
-  char host[1025];
-  const char *host_header;
-
-  if ((host_header = mg_get_header(conn, "Host")) == NULL ||
-      sscanf(host_header, "%1024[^:]", host) == 0) {
-    // Cannot get host from the Host: header. Fallback to our IP address.
-    sockaddr_to_string(host, sizeof(host), &conn->client.lsa);
-  }
-
-  mg_printf(conn, "HTTP/1.1 302 Found\r\nLocation: https://%s:%d%s\r\n\r\n",
-            host, (int) ntohs(conn->ctx->listening_sockets[ssl_index].
-                              lsa.sin.sin_port), conn->request_info.uri);
-}
-
 static void handle_delete_request(struct mg_connection *conn,
                                   const char *path) {
   struct file file = STRUCT_FILE_INITIALIZER;
@@ -2408,7 +2362,7 @@ static void handle_delete_request(struct mg_connection *conn,
 static void handle_request(struct mg_connection *conn) {
   struct mg_request_info *ri = &conn->request_info;
   char path[PATH_MAX];
-  int uri_len, ssl_index;
+  int uri_len;
   struct file file = STRUCT_FILE_INITIALIZER;
 
   if ((conn->request_info.query_string = strchr(ri->uri, '?')) != NULL) {
@@ -2424,10 +2378,7 @@ static void handle_request(struct mg_connection *conn) {
 
   // Perform redirect and auth checks before calling begin_request() handler.
   // Otherwise, begin_request() would need to perform auth checks and redirects.
-  if (!conn->client.is_ssl && conn->client.ssl_redir &&
-      (ssl_index = get_first_ssl_listener_index(conn->ctx)) > -1) {
-    redirect_to_https_port(conn, ssl_index);
-  } else if (!is_put_or_delete_request(conn) &&
+  if (!is_put_or_delete_request(conn) &&
              !check_authorization(conn, path)) {
     send_authorization_request(conn);
   } else if (call_user(MG_REQUEST_BEGIN, conn, (void *) ri->uri) == 1) {
@@ -2670,7 +2621,6 @@ static int check_acl(struct mg_context *ctx, uint32_t remote_ip) {
   return allowed == '+';
 }
 
-#if !defined(_WIN32)
 static int set_uid_option(struct mg_context *ctx) {
   struct passwd *pw;
   const char *uid = ctx->config[RUN_AS_USER];
@@ -2692,7 +2642,7 @@ static int set_uid_option(struct mg_context *ctx) {
 
   return success;
 }
-#endif // !_WIN32
+
 
 static int set_gpass_option(struct mg_context *ctx) {
   struct file file = STRUCT_FILE_INITIALIZER;
@@ -2716,10 +2666,6 @@ static void reset_per_request_attributes(struct mg_connection *conn) {
 }
 
 static void close_socket_gracefully(struct mg_connection *conn) {
-#if defined(_WIN32)
-  char buf[MG_BUF_LEN];
-  int n;
-#endif
   struct linger linger;
 
   // Set linger option to avoid socket hanging out after close. This prevent
@@ -2732,17 +2678,6 @@ static void close_socket_gracefully(struct mg_connection *conn) {
   // Send FIN to the client
   shutdown(conn->client.sock, SHUT_WR);
   set_non_blocking_mode(conn->client.sock);
-
-#if defined(_WIN32)
-  // Read and discard pending incoming data. If we do not do that and close the
-  // socket, the data in the send buffer may be discarded. This
-  // behaviour is seen on Windows, when client keeps sending data
-  // when server decides to close the connection; then when client
-  // does recv() it gets no data back.
-  do {
-    n = pull(NULL, conn, buf, sizeof(buf));
-  } while (n > 0);
-#endif
 
   // Now we know that our FIN is ACK-ed, safe to close
   closesocket(conn->client.sock);
@@ -3194,11 +3129,9 @@ struct mg_context *mg_start(const char **options,
     return NULL;
   }
 
-#if !defined(_WIN32) && !defined(__SYMBIAN32__)
   // Ignore SIGPIPE signal, so if browser cancels the request, it
   // won't kill the whole process.
   (void) signal(SIGPIPE, SIG_IGN);
-#endif // !_WIN32
 
   (void) pthread_mutex_init(&ctx->mutex, NULL);
   (void) pthread_cond_init(&ctx->cond, NULL);
