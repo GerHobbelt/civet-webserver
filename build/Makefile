@@ -33,7 +33,7 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mg_printf.c src/http_client.c \
           src/mongoose.c
 
-TINY_SOURCES = ../allconcat.c ../main.c
+TINY_SOURCES = ../allconcat.c src/main.c
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
