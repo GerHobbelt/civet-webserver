@@ -43,7 +43,7 @@ $(PROG): $(TINY_SOURCES)
 src/allconcat.c: mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
-test_:
+test:
 	prove t/00.t
 
 tests:
