@@ -44,7 +44,7 @@ src/allconcat.c: mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test_:
-	prove build/00.t
+	prove t/00.t
 
 tests:
 	perl testold/test.pl $(TEST)

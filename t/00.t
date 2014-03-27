@@ -8,7 +8,7 @@ use Cwd;
 
 chdir $FindBin::Bin;
 
-`./mongoose 1>/dev/null 2>&1 &`;
+`../build/mongoose 1>/dev/null 2>&1 &`;
 
 my $res = get "http://localhost:8080";
 #warn $res;
