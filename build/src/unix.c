@@ -44,54 +44,6 @@ int mg_start_thread(mg_thread_func_t func, void *param) {
   return result;
 }
 
-#ifndef NO_CGI
-static pid_t spawn_process(struct mg_connection *conn, const char *prog,
-                           char *envblk, char *envp[], int fdin,
-                           int fdout, const char *dir) {
-  pid_t pid;
-  const char *interp;
-
-  (void) envblk;
-
-  if ((pid = fork()) == -1) {
-    // Parent
-    send_http_error(conn, 500, http_500_error, "fork(): %s", strerror(ERRNO));
-  } else if (pid == 0) {
-    // Child
-    if (chdir(dir) != 0) {
-      cry(conn, "%s: chdir(%s): %s", __func__, dir, strerror(ERRNO));
-    } else if (dup2(fdin, 0) == -1) {
-      cry(conn, "%s: dup2(%d, 0): %s", __func__, fdin, strerror(ERRNO));
-    } else if (dup2(fdout, 1) == -1) {
-      cry(conn, "%s: dup2(%d, 1): %s", __func__, fdout, strerror(ERRNO));
-    } else {
-      // Not redirecting stderr to stdout, to avoid output being littered
-      // with the error messages.
-      (void) close(fdin);
-      (void) close(fdout);
-
-      // After exec, all signal handlers are restored to their default values,
-      // with one exception of SIGCHLD. According to POSIX.1-2001 and Linux's
-      // implementation, SIGCHLD's handler will leave unchanged after exec
-      // if it was set to be ignored. Restore it to default action.
-      signal(SIGCHLD, SIG_DFL);
-
-      interp = conn->ctx->config[CGI_INTERPRETER];
-      if (interp == NULL) {
-        (void) execle(prog, prog, NULL, envp);
-        cry(conn, "%s: execle(%s): %s", __func__, prog, strerror(ERRNO));
-      } else {
-        (void) execle(interp, interp, prog, NULL, envp);
-        cry(conn, "%s: execle(%s %s): %s", __func__, interp, prog,
-            strerror(ERRNO));
-      }
-    }
-    exit(EXIT_FAILURE);
-  }
-
-  return pid;
-}
-#endif // !NO_CGI
 
 static int set_non_blocking_mode(SOCKET sock) {
   int flags;
