@@ -31,7 +31,7 @@ VERSION = $(shell perl -lne \
 SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/options.c src/crypto.c src/auth.c src/unix.c \
           src/mg_printf.c src/http_client.c \
-          src/mongoose.c src/lua.c
+          src/mongoose.c
 
 TINY_SOURCES = ../mongoose.c ../main.c
 
