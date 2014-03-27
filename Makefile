@@ -47,7 +47,7 @@ test_:
 	prove build/00.t
 
 tests:
-	perl ../test/test.pl $(TEST)
+	perl testold/test.pl $(TEST)
 
 clean:
 	cd examples && $(MAKE) clean
