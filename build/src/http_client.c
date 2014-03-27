@@ -10,11 +10,6 @@ static SOCKET conn2(const char *host, int port, int use_ssl,
 
   if (host == NULL) {
     snprintf(ebuf, ebuf_len, "%s", "NULL host");
-#ifndef NO_SSL
-  } else if (use_ssl && SSLv23_client_method == NULL) {
-    snprintf(ebuf, ebuf_len, "%s", "SSL is not initialized");
-    // TODO(lsm): use something threadsafe instead of gethostbyname()
-#endif
   } else if ((he = gethostbyname(host)) == NULL) {
     snprintf(ebuf, ebuf_len, "gethostbyname(%s): %s", host, strerror(ERRNO));
   } else if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
@@ -45,14 +40,6 @@ struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
               calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE)) == NULL) {
     snprintf(ebuf, ebuf_len, "calloc(): %s", strerror(ERRNO));
     closesocket(sock);
-#ifndef NO_SSL
-  } else if (use_ssl && (conn->client_ssl_ctx =
-                         SSL_CTX_new(SSLv23_client_method())) == NULL) {
-    snprintf(ebuf, ebuf_len, "SSL_CTX_new error");
-    closesocket(sock);
-    free(conn);
-    conn = NULL;
-#endif // NO_SSL
   } else {
     socklen_t len = sizeof(struct sockaddr);
     conn->buf_size = MAX_REQUEST_SIZE;
@@ -61,14 +48,6 @@ struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
     conn->client.sock = sock;
     getsockname(sock, &conn->client.rsa.sa, &len);
     conn->client.is_ssl = use_ssl;
-#ifndef NO_SSL
-    if (use_ssl) {
-      // SSL_CTX_set_verify call is needed to switch off server certificate
-      // checking, which is off by default in OpenSSL and on in yaSSL.
-      SSL_CTX_set_verify(conn->client_ssl_ctx, 0, 0);
-      sslize(conn, conn->client_ssl_ctx, SSL_connect);
-    }
-#endif
   }
 
   return conn;
