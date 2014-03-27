@@ -40,7 +40,7 @@ TINY_SOURCES = src/allconcat.c src/main.c
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
-src/allconcat.c: mongoose.h Makefile $(SOURCES)
+src/allconcat.c: src/mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test:
