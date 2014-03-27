@@ -29,7 +29,7 @@ VERSION = $(shell perl -lne \
 
 # The order in which files are listed is important
 SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
-          src/options.c src/crypto.c src/auth.c src/win32.c src/unix.c \
+          src/options.c src/crypto.c src/auth.c src/unix.c \
           src/mg_printf.c src/http_client.c \
           src/mongoose.c src/lua.c
 
