@@ -31,14 +31,12 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mg_printf.c src/http_client.c \
           src/mongoose.c
 
-TINY_SOURCES = src/_all_.c src/main.c
-
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
 # "-Wl,--as-needed" turned on by default  in cc command.
 # Also, this is turned in many other distros in static linkage builds.
-$(PROG): $(TINY_SOURCES)
-	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
+$(PROG): src/_all_.c src/main.c
+	$(CC) src/_all_.c src/main.c -o $@ $(CFLAGS)
 
 src/_all_.c: src/mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
