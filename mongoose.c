@@ -1121,8 +1121,6 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   return 1;
 }
 
-
-
 static int mg_stat(const char *path, struct file *filep) {
   struct stat st;
 
@@ -1175,8 +1173,6 @@ static int set_non_blocking_mode(SOCKET sock) {
 
   return 0;
 }
-
-
 
 // Print message to buffer. If buffer is large enough to hold the message,
 // return buffer. If buffer is to small, allocate large enough buffer on heap,
@@ -4452,7 +4448,6 @@ struct mg_context *mg_start(const char **options,
   // won't kill the whole process.
   (void) signal(SIGPIPE, SIG_IGN);
 
-
   (void) pthread_mutex_init(&ctx->mutex, NULL);
   (void) pthread_cond_init(&ctx->cond, NULL);
   (void) pthread_cond_init(&ctx->sq_empty, NULL);
@@ -4472,4 +4467,3 @@ struct mg_context *mg_start(const char **options,
 
   return ctx;
 }
-
