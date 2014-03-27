@@ -25,7 +25,7 @@ EXE_SUFFIX =
 CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
 VERSION = $(shell perl -lne \
-            'print $$1 if /define\s+MONGOOSE_VERSION\s+"(\S+)"/' ../mongoose.c)
+            'print $$1 if /define\s+MONGOOSE_VERSION\s+"(\S+)"/' ../allconcat.c)
 
 # The order in which files are listed is important
 SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
@@ -33,7 +33,7 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mg_printf.c src/http_client.c \
           src/mongoose.c
 
-TINY_SOURCES = ../mongoose.c ../main.c
+TINY_SOURCES = ../allconcat.c ../main.c
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -42,7 +42,7 @@ TINY_SOURCES = ../mongoose.c ../main.c
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
-../mongoose.c: ../mongoose.h Makefile $(SOURCES)
+../allconcat.c: ../mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test:
