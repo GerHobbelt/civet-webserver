@@ -50,7 +50,4 @@ tests:
 	perl testold/test.pl $(TEST)
 
 clean:
-	cd examples && $(MAKE) clean
-	rm -rf *.o *.core $(PROG) *.obj *.so $(PROG).txt *.dSYM *.tgz \
-	*.lib res.o res.RES *.dSYM *.zip *.pdb \
-	*dmg* $(PROG)-* unix_unit_test
+	rm -rf *.o $(PROG) src/_all_.c
