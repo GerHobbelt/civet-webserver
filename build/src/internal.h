@@ -32,25 +32,11 @@
 #pragma warning (disable : 4204)
 #endif
 
-// Disable WIN32_LEAN_AND_MEAN.
-// This makes windows.h always include winsock2.h
-#ifdef WIN32_LEAN_AND_MEAN
-#undef WIN32_LEAN_AND_MEAN
-#endif
-
-#if defined(__SYMBIAN32__)
-#define NO_SSL // SSL is not supported
-#define NO_CGI // CGI is not supported
-#define PATH_MAX FILENAME_MAX
-#endif // __SYMBIAN32__
-
-#ifndef _WIN32_WCE // Some ANSI #includes are not available on Windows CE
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>
-#endif // !_WIN32_WCE
 
 #include <time.h>
 #include <stdlib.h>
@@ -62,140 +48,6 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__) // Windows specific
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0400 // To make it link in VS2005
-#include <windows.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-
-#ifndef _WIN32_WCE
-#include <process.h>
-#include <direct.h>
-#include <io.h>
-#else // _WIN32_WCE
-#define NO_CGI // WinCE has no pipes
-
-typedef long off_t;
-
-#define errno   GetLastError()
-#define strerror(x)  _ultoa(x, (char *) _alloca(sizeof(x) *3 ), 10)
-#endif // _WIN32_WCE
-
-#define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
-      ((uint64_t)((uint32_t)(hi))) << 32))
-#define RATE_DIFF 10000000 // 100 nsecs
-#define EPOCH_DIFF MAKEUQUAD(0xd53e8000, 0x019db1de)
-#define SYS2UNIX_TIME(lo, hi) \
-  (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
-
-// Visual Studio 6 does not know __func__ or __FUNCTION__
-// The rest of MS compilers use __FUNCTION__, not C99 __func__
-// Also use _strtoui64 on modern M$ compilers
-#if defined(_MSC_VER) && _MSC_VER < 1300
-#define STRX(x) #x
-#define STR(x) STRX(x)
-#define __func__ __FILE__ ":" STR(__LINE__)
-#define strtoull(x, y, z) (unsigned __int64) _atoi64(x)
-#define strtoll(x, y, z) _atoi64(x)
-#else
-#define __func__  __FUNCTION__
-#define strtoull(x, y, z) _strtoui64(x, y, z)
-#define strtoll(x, y, z) _strtoi64(x, y, z)
-#endif // _MSC_VER
-
-#define ERRNO   GetLastError()
-#define NO_SOCKLEN_T
-#define SSL_LIB   "ssleay32.dll"
-#define CRYPTO_LIB  "libeay32.dll"
-#define O_NONBLOCK  0
-#if !defined(EWOULDBLOCK)
-#define EWOULDBLOCK  WSAEWOULDBLOCK
-#endif // !EWOULDBLOCK
-#define _POSIX_
-#define INT64_FMT  "I64d"
-
-#define WINCDECL __cdecl
-#define SHUT_WR 1
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#define mg_sleep(x) Sleep(x)
-
-#define pipe(x) _pipe(x, MG_BUF_LEN, _O_BINARY)
-#ifndef popen
-#define popen(x, y) _popen(x, y)
-#endif
-#ifndef pclose
-#define pclose(x) _pclose(x)
-#endif
-#define close(x) _close(x)
-#define dlsym(x,y) GetProcAddress((HINSTANCE) (x), (y))
-#define RTLD_LAZY  0
-#define fseeko(x, y, z) _lseeki64(_fileno(x), (y), (z))
-#define fdopen(x, y) _fdopen((x), (y))
-#define write(x, y, z) _write((x), (y), (unsigned) z)
-#define read(x, y, z) _read((x), (y), (unsigned) z)
-#define flockfile(x)
-#define funlockfile(x)
-#define sleep(x) Sleep((x) * 1000)
-#define rmdir(x) _rmdir(x)
-
-#if !defined(va_copy)
-#define va_copy(x, y) x = y
-#endif // !va_copy MINGW #defines va_copy
-
-#if !defined(fileno)
-#define fileno(x) _fileno(x)
-#endif // !fileno MINGW #defines fileno
-
-typedef HANDLE pthread_mutex_t;
-typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
-typedef DWORD pthread_t;
-#define pid_t HANDLE // MINGW typedefs pid_t to int. Using #define here.
-
-static int pthread_mutex_lock(pthread_mutex_t *);
-static int pthread_mutex_unlock(pthread_mutex_t *);
-static void to_unicode(const char *path, wchar_t *wbuf, size_t wbuf_len);
-
-#if defined(HAVE_STDINT)
-#include <stdint.h>
-#else
-typedef unsigned int  uint32_t;
-typedef unsigned short  uint16_t;
-typedef unsigned __int64 uint64_t;
-typedef __int64   int64_t;
-#define INT64_MAX  9223372036854775807
-#endif // HAVE_STDINT
-
-// POSIX dirent interface
-struct dirent {
-  char d_name[PATH_MAX];
-};
-
-typedef struct DIR {
-  HANDLE   handle;
-  WIN32_FIND_DATAW info;
-  struct dirent  result;
-} DIR;
-
-#ifndef HAVE_POLL
-struct pollfd {
-  SOCKET fd;
-  short events;
-  short revents;
-};
-#define POLLIN 1
-#endif
-
-
-// Mark required libraries
-#ifdef _MSC_VER
-#pragma comment(lib, "Ws2_32.lib")
-#endif
-
-#else    // UNIX  specific
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/poll.h>
@@ -236,8 +88,6 @@ struct pollfd {
 #define INT64_FMT PRId64
 typedef int SOCKET;
 #define WINCDECL
-
-#endif // End of Windows and UNIX specific includes
 
 #include "mongoose.h"
 
@@ -301,55 +151,8 @@ typedef int socklen_t;
 
 static const char *http_500_error = "Internal Server Error";
 
-#if defined(NO_SSL_DL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#else
-// SSL loaded dynamically from DLL.
-// I put the prototypes here to be independent from OpenSSL source installation.
-typedef struct ssl_st SSL;
-typedef struct ssl_method_st SSL_METHOD;
-typedef struct ssl_ctx_st SSL_CTX;
-
-struct ssl_func {
-  const char *name;   // SSL function name
-  void  (*ptr)(void); // Function pointer
-};
-
-#define SSL_free (* (void (*)(SSL *)) ssl_sw[0].ptr)
-#define SSL_accept (* (int (*)(SSL *)) ssl_sw[1].ptr)
-#define SSL_connect (* (int (*)(SSL *)) ssl_sw[2].ptr)
-#define SSL_read (* (int (*)(SSL *, void *, int)) ssl_sw[3].ptr)
-#define SSL_write (* (int (*)(SSL *, const void *,int)) ssl_sw[4].ptr)
-#define SSL_get_error (* (int (*)(SSL *, int)) ssl_sw[5].ptr)
-#define SSL_set_fd (* (int (*)(SSL *, SOCKET)) ssl_sw[6].ptr)
-#define SSL_new (* (SSL * (*)(SSL_CTX *)) ssl_sw[7].ptr)
-#define SSL_CTX_new (* (SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[8].ptr)
-#define SSLv23_server_method (* (SSL_METHOD * (*)(void)) ssl_sw[9].ptr)
-#define SSL_library_init (* (int (*)(void)) ssl_sw[10].ptr)
-#define SSL_CTX_use_PrivateKey_file (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[11].ptr)
-#define SSL_CTX_use_certificate_file (* (int (*)(SSL_CTX *, \
-        const char *, int)) ssl_sw[12].ptr)
-#define SSL_CTX_set_default_passwd_cb \
-  (* (void (*)(SSL_CTX *, mg_event_handler_t)) ssl_sw[13].ptr)
-#define SSL_CTX_free (* (void (*)(SSL_CTX *)) ssl_sw[14].ptr)
-#define SSL_load_error_strings (* (void (*)(void)) ssl_sw[15].ptr)
-#define SSL_CTX_use_certificate_chain_file \
-  (* (int (*)(SSL_CTX *, const char *)) ssl_sw[16].ptr)
-#define SSLv23_client_method (* (SSL_METHOD * (*)(void)) ssl_sw[17].ptr)
-#define SSL_pending (* (int (*)(SSL *)) ssl_sw[18].ptr)
-#define SSL_CTX_set_verify (* (void (*)(SSL_CTX *, int, int)) ssl_sw[19].ptr)
-#define SSL_shutdown (* (int (*)(SSL *)) ssl_sw[20].ptr)
-
-#define CRYPTO_num_locks (* (int (*)(void)) crypto_sw[0].ptr)
-#define CRYPTO_set_locking_callback \
-  (* (void (*)(void (*)(int, int, const char *, int))) crypto_sw[1].ptr)
-#define CRYPTO_set_id_callback \
-  (* (void (*)(unsigned long (*)(void))) crypto_sw[2].ptr)
-#define ERR_get_error (* (unsigned long (*)(void)) crypto_sw[3].ptr)
-#define ERR_error_string (* (char * (*)(unsigned long,char *)) crypto_sw[4].ptr)
-#endif // NO_SSL_DL
 
 // Unified socket address. For IPv6 support, add IPv6 address structure
 // in the union u.
