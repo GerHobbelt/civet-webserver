@@ -43,7 +43,7 @@ $(PROG): $(TINY_SOURCES)
 src/_all_.c: src/mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
-test:
+test:	$(PROG)
 	prove t/00.t
 
 tests:
