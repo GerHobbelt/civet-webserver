@@ -31,7 +31,7 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/mg_printf.c src/http_client.c \
           src/mongoose.c
 
-TINY_SOURCES = src/allconcat.c src/main.c
+TINY_SOURCES = src/_all_.c src/main.c
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -40,7 +40,7 @@ TINY_SOURCES = src/allconcat.c src/main.c
 $(PROG): $(TINY_SOURCES)
 	$(CC) $(TINY_SOURCES) -o $@ $(CFLAGS)
 
-src/allconcat.c: src/mongoose.h Makefile $(SOURCES)
+src/_all_.c: src/mongoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test:
