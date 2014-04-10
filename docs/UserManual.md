@@ -2,54 +2,62 @@
 Overview
 =====
 
-Civetweb is small and easy to use web server. It is self-contained, and does
-not require any external software to run.
+Civetweb is small and easy to use web server.
+It may be embedded into C/C++ host applications or used as a stand-alone
+server. See `Embedding.md` for information on embedding civetweb into
+host applications.
+
+The stand-alone server is self-contained, and does not require any external
+software to run. Some Windows users may need to install the
+[Visual C++ Redistributable](http://www.microsoft.com/en-us/download/details.aspx?id=30679).
 
 Installation
 ----
 
-### Some Windows users may be the install the
-[Visual C++ Redistributable for Visual Studio 2012](http://www.microsoft.com/en-us/download/details.aspx?id=30679)
+On Windows, UNIX and Mac, the civetweb stand-alone executable may be started 
+from the command line.
+Running `civetweb` in a terminal, optionally followed by configuration parameters
+(`civetweb [OPTIONS]`) or a configuration file name (`civetweb [config_file_name]`),
+starts the web server.
+
+For UNIX and Mac, civetweb does not detach from the terminal.
+Pressing `Ctrl-C` keys will stop the server.
 
 On Windows, civetweb iconifies itself to the system tray icon when started.
 Right-click on the icon pops up a menu, where it is possible to stop
-civetweb, or configure it, or install it as Windows service. The easiest way
-to share a folder on Windows is to copy `civetweb.exe` to a folder,
-double-click the exe, and launch a browser at
+civetweb, or configure it, or install it as Windows service.
+
+When started without options, the server exposes the local directory at
+[http](http://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol) port 8080.
+Thus, the easiest way to share a folder on Windows is to copy `civetweb.exe`
+to this folder, double-click the exe, and launch a browser at
 [http://localhost:8080](http://localhost:8080). Note that 'localhost' should
 be changed to a machine's name if a folder is accessed from other computer.
-
-On UNIX and Mac, civetweb is a command line utility. Running `civetweb` in
-terminal, optionally followed by configuration parameters
-(`civetweb [OPTIONS]`) or configuration file name
-(`civetweb [config_file_name]`) starts the
-web server. Civetweb does not detach from terminal. Pressing `Ctrl-C` keys
-would stop the server.
 
 When started, civetweb first searches for the configuration file.
 If configuration file is specified explicitly in the command line, i.e.
 `civetweb path_to_config_file`, then specified configuration file is used.
 Otherwise, civetweb would search for file `civetweb.conf` in the same directory
-where binary is located, and use it. Configuration file can be absent.
+the executable is located, and use it. This configuration file is optional.
 
-
-Configuration file is a sequence of lines, each line containing
-command line argument name and it's value. Empty lines, and lines beginning
-with `#`, are ignored. Here is the example of `civetweb.conf` file:
+The configuration file is a sequence of lines, each line containing one
+command line argument name and the corresponding value. 
+Empty lines, and lines beginning with `#`, are ignored. 
+Here is the example of `civetweb.conf` file:
 
     document_root c:\www
-    listening_ports 8080,8043s
+    listening_ports 80,443s
     ssl_certificate c:\civetweb\ssl_cert.pem
 
-When configuration file is processed, civetweb process command line arguments,
-if they are specified. Command line arguments therefore can override
-configuration file settings. Command line arguments must start with `-`.
-For example, if `civetweb.conf` has line
-`document_root /var/www`, and civetweb has been started as
-`civetweb -document_root /etc`, then `/etc` directory will be served as
-document root, because command line options take priority over
-configuration file. Configuration options section below provide a good
-overview of Civetweb features.
+When a configuration file is used, additional command line arguments may
+override the configuration file settings. 
+All command line arguments must start with `-`.
+
+For example: The above `civetweb.conf` file is used, and civetweb started as
+`civetweb -document_root D:\web`. Then the `D:\web` directory will be served
+as document root, because command line options take priority over the
+configuration file. The configuration options section below provides a good
+overview of the Civetweb features.
 
 Note that configuration options on the command line must start with `-`,
 but their names are the same as in the config file. All option names are
@@ -208,12 +216,13 @@ The file has to include the realm set through `authentication_domain` and the pa
 
 (e.g. use [this generator](http://www.askapache.com/online-tools/htpasswd-generator))
 
-### index_files `index.html,index.htm,index.cgi,index.shtml,index.php`
-Comma-separated list of files to be treated as directory index
-files.
+### index_files `index.xhtml,index.html,index.htm,index.cgi,index.shtml,index.php`
+Comma-separated list of files to be treated as directory index files.
+If more than one matching file is present in a directory, the one listed to the left
+is used as a directory index.
 
 In case built-in Lua support has been enabled, `index.lp,index.lsp,index.lua`
-are additional default files.
+are additional default index files, ordered before `index.cgi`.
 
 ### enable\_keep\_alive `no`
 Enable connection keep alive, either `yes` or `no`.
@@ -316,6 +325,13 @@ Timeout for network read and network write operations, in milliseconds.
 If client intends to keep long-running connection, either increase this value
 or use keep-alive messages.
 
+### lua_preload_file
+This configuration option can be used to specify a Lua script file, which
+is executed before the actual web page script (Lua script, Lua server page
+or Lua websocket). It can be used to modify the Lua environment of all web
+page scripts, e.g., by loading additional libraries required by all scripts
+or to achieve backward compatibility by defining obsolete functions.
+
 ### lua_script_pattern `"**.lua$`
 A pattern for files that are interpreted as Lua scripts by the server.
 In contrast to Lua server pages, Lua scripts use plain Lua syntax.
@@ -334,6 +350,18 @@ be used for websockets as well. Since websockets use a different URL scheme
 (ws, wss) than other http pages (http, https), the Lua scripts used for
 websockets may also be served from a different directory. By default,
 the document_root is used as websocket_root as well.
+
+### access_control_allow_origin
+Access-Control-Allow-Origin header field used for cross-origin resource 
+sharing (CORS).
+
+### error_pages
+This option may be used to specify a directory for user defined error pages.
+The error pages may be specified for an individual http status code (e.g.,
+404 - page requested by the client not found), a group of http status codes 
+(e.g., 4xx - all client errors) or all errors. The corresponding error pages 
+must be called error404.ext, error4xx.ext or error.ext, whereas the file
+extention may be one of the extentions specified for the index_files option.
 
 
 # Lua Scripts and Lua Server Pages
@@ -392,14 +420,38 @@ in Lua. An example is given in
 
 Civetweb exports the following functions to Lua:
 
-    mg.read()         -- reads a chunk from POST data, returns it as a string
-    mg.write(str)     -- writes string to the client
-    mg.include(path)  -- sources another Lua file
-    mg.redirect(uri)  -- internal redirect to a given URI
-    mg.onerror(msg)   -- error handler, can be overridden
-    mg.version        -- a string that holds Civetweb version
-    mg.request_info   -- a table with request information
+mg (table):
+    mg.read()                  -- reads a chunk from POST data, returns it as a string
+    mg.write(str)              -- writes string to the client
+    mg.include(path)           -- sources another Lua file
+    mg.redirect(uri)           -- internal redirect to a given URI
+    mg.onerror(msg)            -- error handler, can be overridden
+    mg.version                 -- a string that holds Civetweb version
+    mg.document_root           -- a string that holds the document root directory
+    mg.auth_domain             -- a string that holds the HTTP authentication domain
+    mg.get_var(str, varname)   -- extract variable from (query) string
+    mg.get_cookie(str, cookie) -- extract cookie from a string
+    mg.get_mime_type(filename) -- get MIME type of a file
+    mg.send_file(filename)     -- send a file, including MIME type
+    mg.url_encode(str)         -- URL encode a string
+    mg.url_decode(str)         -- URL decode a string
+    mg.base64_encode(str)      -- BASE64 encode a string
+    mg.base64_decode(str)      -- BASE64 decode a string
+    mg.md5(str)                -- return the MD5 hash of a string
+    mg.keep_alive(bool)        -- allow/forbid to use http keep-alive for this request
+    mg.request_info            -- a table with the following request information
+         .remote_addr          -- IP address of the client as string
+         .remote_port          -- remote port number
+         .server_port          -- server port number
+         .request_method       -- HTTP method (e.g.: GET, POST)
+         .http_version         -- HTTP protocol version (e.g.: 1.1)
+         .uri                  -- resource name
+         .query_string         -- query string if present, nil otherwise
+         .script_name          -- name of the Lua script
+         .https                -- true if accessed by https://, false otherwise
+         .remote_user          -- user name if authenticated, nil otherwise
 
+connect (function):
     -- Connect to the remote TCP server. This function is an implementation
     -- of simple socket interface. It returns a socket object with three
     -- methods: send, recv, close, which are synchronous (blocking).

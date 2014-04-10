@@ -1,5 +1,6 @@
-/*
+/* Copyright (c) 2013-2014 the Civetweb developers
  * Copyright (c) 2013 No Face Press, LLC
+ *
  * License http://opensource.org/licenses/mit-license.php MIT License
  */
 
@@ -44,7 +45,10 @@ bool CivetHandler::handleDelete(CivetServer *server, struct mg_connection *conn)
 int CivetServer::requestHandler(struct mg_connection *conn, void *cbdata)
 {
     struct mg_request_info *request_info = mg_get_request_info(conn);
+    assert(request_info != NULL);
     CivetServer *me = (CivetServer*) (request_info->user_data);
+    assert(me != NULL);
+
     CivetHandler *handler = (CivetHandler *)cbdata;
 
     if (handler) {
@@ -53,34 +57,49 @@ int CivetServer::requestHandler(struct mg_connection *conn, void *cbdata)
         } else if (strcmp(request_info->request_method, "POST") == 0) {
             return handler->handlePost(me, conn) ? 1 : 0;
         } else if (strcmp(request_info->request_method, "PUT") == 0) {
-            return !handler->handlePut(me, conn) ? 1 : 0;
+            return handler->handlePut(me, conn) ? 1 : 0;
         } else if (strcmp(request_info->request_method, "DELETE") == 0) {
-            return !handler->handleDelete(me, conn) ? 1 : 0;
+            return handler->handleDelete(me, conn) ? 1 : 0;
         }
     }
 
     return 0; // No handler found
-
 }
 
 CivetServer::CivetServer(const char **options,
                          const struct mg_callbacks *_callbacks) :
-    context(0)
+    context(0), postData(0)
 {
-
-
+    struct mg_callbacks callbacks;
+    memset(&callbacks, 0, sizeof(callbacks));
     if (_callbacks) {
-        context = mg_start(_callbacks, this, options);
+        callbacks = *_callbacks;
+        userCloseHandler = _callbacks->connection_close;
     } else {
-        struct mg_callbacks callbacks;
-        memset(&callbacks, 0, sizeof(callbacks));
-        context = mg_start(&callbacks, this, options);
+        userCloseHandler = NULL;
     }
+    callbacks.connection_close = closeHandler;
+
+    context = mg_start(&callbacks, this, options);
 }
 
 CivetServer::~CivetServer()
 {
     close();
+}
+
+void CivetServer::closeHandler(struct mg_connection *conn)
+{
+    struct mg_request_info *request_info = mg_get_request_info(conn);
+    assert(request_info != NULL);
+    CivetServer *me = (CivetServer*) (request_info->user_data);
+    assert(me != NULL);
+
+    if (me->userCloseHandler) me->userCloseHandler(conn);
+    if (me->postData) {
+        free(me->postData);
+        me->postData = 0;
+    }
 }
 
 void CivetServer::addHandler(const std::string &uri, CivetHandler *handler)
@@ -150,8 +169,38 @@ bool
 CivetServer::getParam(struct mg_connection *conn, const char *name,
                       std::string &dst, size_t occurrence)
 {
-    const char *query = mg_get_request_info(conn)->query_string;
-    return getParam(query, strlen(query), name, dst, occurrence);
+    const char *formParams = NULL;
+    struct mg_request_info *ri = mg_get_request_info(conn);
+    assert(ri != NULL);
+    CivetServer *me = (CivetServer*) (ri->user_data);
+    assert(me != NULL);
+
+    if (me->postData != NULL) {
+        formParams = me->postData;
+    } else {
+        const char * con_len_str = mg_get_header(conn, "Content-Length");
+        if (con_len_str) {
+            unsigned long con_len = atoi(con_len_str);
+            if (con_len>0) {
+                me->postData = (char*)malloc(con_len);
+                if (me->postData != NULL) {
+                    /* malloc may fail for huge requests */
+                    mg_read(conn, me->postData, con_len);
+                    formParams = me->postData;
+                }
+            }
+        }
+    }
+    if (formParams == NULL) {
+        // get requests do store html <form> field values in the http query_string
+        formParams = ri->query_string;
+    }
+
+    if (formParams != NULL) {
+        return getParam(formParams, strlen(formParams), name, dst, occurrence);
+    }
+
+    return false;
 }
 
 bool

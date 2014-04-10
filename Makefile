@@ -1,4 +1,4 @@
-# 
+#
 # Copyright (c) 2013 No Face Press, LLC
 # License http://opensource.org/licenses/mit-license.php MIT License
 #
@@ -11,6 +11,7 @@ include resources/Makefile.in-os
 
 CPROG = civetweb
 #CXXPROG = civetweb
+UNIT_TEST_PROG = civetweb_test
 
 BUILD_DIR = out
 
@@ -24,6 +25,8 @@ DOCDIR = $(DATAROOTDIR)/doc/$(CPROG)
 SYSCONFDIR = $(PREFIX)/etc
 HTMLDIR = $(DOCDIR)
 
+UNAME := $(shell uname)
+
 # desired configuration of the document root
 # never assume that the document_root actually
 # exists on the build machine.  When building
@@ -35,10 +38,21 @@ PORTS = 8080
 BUILD_DIRS += $(BUILD_DIR) $(BUILD_DIR)/src
 
 LIB_SOURCES = src/civetweb.c
+LIB_INLINE  = src/mod_lua.inl src/md5.inl
 APP_SOURCES = src/main.c
+UNIT_TEST_SOURCES = test/unit_test.c
 SOURCE_DIRS =
 
 OBJECTS = $(LIB_SOURCES:.c=.o) $(APP_SOURCES:.c=.o)
+
+# The unit tests include the source files directly to get visibility to the
+# static functions.  So we clear OBJECTS so that we don't try to build or link
+# with any external object.  Later if we find WITH_LUA=1, we'll add lua objects
+# to this variable so we can run lua-specific unit tests.
+ifeq ($(MAKECMDGOALS), unit_test)
+OBJECTS =
+BUILD_DIRS += $(BUILD_DIR)/test
+endif
 
 # only set main compile options if none were chosen
 CFLAGS += -W -Wall -O2 -D$(TARGET_OS) -Iinclude $(COPT)
@@ -92,12 +106,19 @@ LIB_OBJECTS = $(filter-out $(MAIN_OBJECTS), $(BUILD_OBJECTS))
 
 LIBS = -lpthread -lm
 
-ifeq ($(TARGET_OS),LINUX) 
+ifeq ($(TARGET_OS),LINUX)
 	LIBS += -ldl
 endif
 
 ifeq ($(TARGET_OS),LINUX)
 	CAN_INSTALL = 1
+endif
+
+ifneq (, $(findstring MINGW32, $(UNAME)))
+   LIBS += -lws2_32 -lcomdlg32
+   SHARED_LIB=dll
+else
+   SHARED_LIB=so
 endif
 
 all: build
@@ -109,6 +130,7 @@ help:
 	@echo "make clean               clean up the mess"
 	@echo "make lib                 build a static library"
 	@echo "make slib                build a shared library"
+	@echo "make unit_test           build unit tests executable"
 	@echo ""
 	@echo " Make Options"
 	@echo "   WITH_LUA=1            build with Lua support"
@@ -143,6 +165,8 @@ help:
 
 build: $(CPROG) $(CXXPROG)
 
+unit_test: $(UNIT_TEST_PROG)
+
 ifeq ($(CAN_INSTALL),1)
 install: $(HTMLDIR)/index.html $(SYSCONFDIR)/civetweb.conf
 	install -d -m 755  "$(DOCDIR)"
@@ -174,7 +198,7 @@ endif
 
 lib: lib$(CPROG).a
 
-slib: lib$(CPROG).so
+slib: lib$(CPROG).$(SHARED_LIB)
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -182,15 +206,24 @@ clean:
 distclean: clean
 	@rm -rf VS2012/Debug VS2012/*/Debug  VS2012/*/*/Debug
 	@rm -rf VS2012/Release VS2012/*/Release  VS2012/*/*/Release
-	rm -f $(CPROG) lib$(CPROG).so lib$(CPROG).a *.dmg *.msi *.exe
+	rm -f $(CPROG) lib$(CPROG).so lib$(CPROG).a *.dmg *.msi *.exe lib$(CPROG).dll lib$(CPROG).dll.a
+	rm -f $(UNIT_TEST_PROG)
 
 lib$(CPROG).a: $(LIB_OBJECTS)
-	@rm -f $@ 
+	@rm -f $@
 	ar cq $@ $(LIB_OBJECTS)
 
 lib$(CPROG).so: CFLAGS += -fPIC
 lib$(CPROG).so: $(LIB_OBJECTS)
 	$(LCC) -shared -o $@ $(CFLAGS) $(LDFLAGS) $(LIB_OBJECTS)
+
+lib$(CPROG).dll: CFLAGS += -fPIC
+lib$(CPROG).dll: $(LIB_OBJECTS)
+	$(LCC) -shared -o $@ $(CFLAGS) $(LDFLAGS) $(LIB_OBJECTS) $(LIBS) -Wl,--out-implib,lib$(CPROG).dll.a
+
+$(UNIT_TEST_PROG): CFLAGS += -Isrc
+$(UNIT_TEST_PROG): $(LIB_SOURCES) $(LIB_INLINE) $(UNIT_TEST_SOURCES) $(BUILD_OBJECTS)
+	$(LCC) -o $@ $(CFLAGS) $(LDFLAGS) $(UNIT_TEST_SOURCES) $(BUILD_OBJECTS) $(LIBS)
 
 $(CPROG): $(BUILD_OBJECTS)
 	$(LCC) -o $@ $(CFLAGS) $(LDFLAGS) $(BUILD_OBJECTS) $(LIBS)
