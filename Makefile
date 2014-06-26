@@ -29,7 +29,7 @@ CFLAGS += -ldl -lm
 SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
           src/options.c src/crypto.c src/auth.c src/unix.c \
           src/mg_printf.c src/http_client.c \
-          src/mongoose.c
+          src/mingoose.c
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
@@ -38,7 +38,7 @@ SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
 $(PROG): src/_all_.c src/main.c
 	$(CC) src/_all_.c src/main.c -o $@ $(CFLAGS)
 
-src/_all_.c: src/mongoose.h Makefile $(SOURCES)
+src/_all_.c: src/mingoose.h Makefile $(SOURCES)
 	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
 
 test:	$(PROG)
