@@ -255,7 +255,10 @@ static void set_absolute_path(char *options[], const char *option_name,
   }
 }
 
-static void start_mongoose(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
+  snprintf(server_name, sizeof(server_name), "Mingoose web server v.%s",
+           mg_version());
+
   char *options[MAX_OPTIONS];
   int i;
 
@@ -308,13 +311,7 @@ static void start_mongoose(int argc, char *argv[]) {
   if (ctx == NULL) {
     die("%s", "Failed to start Mongoose.");
   }
-}
 
-int main(int argc, char *argv[]) {
-  snprintf(server_name, sizeof(server_name), "Mingoose web server v.%s",
-           mg_version());
-
-  start_mongoose(argc, argv);
   printf("%s started on port(s) %s with web root [%s]\n",
          server_name, mg_get_option(ctx, "listening_ports"),
          mg_get_option(ctx, "document_root"));
