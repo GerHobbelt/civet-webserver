@@ -42,9 +42,3 @@ compiled in:
 Questions can be asked at
 [mongoose-users@googlegroups.com](http://groups.google.com/group/mongoose-users)
 mailing list.
-
-# Licensing
-
-Mingoose is licensed under the terms of
-[GNU GPLv.2](http://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
-license.
