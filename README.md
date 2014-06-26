@@ -33,12 +33,3 @@ simplicity by carefully selected list of features:
   [websocket.c](https://github.com/cesanta/mongoose/blob/master/examples/websocket.c)
 - HTTP client capable of sending arbitrary HTTP/HTTPS requests
 
-Note that Windows and MacOS binaries have following 3rd party software
-compiled in:
-  <a href="http://wolfssl.com">WolfSSL lightweight SSL library</a>,
-  <a href="http://sqlite.org">SQLite embedded database</a>,
-  <a href="http://lua.org">Lua embedded scripting engine</a>.
-
-Questions can be asked at
-[mongoose-users@googlegroups.com](http://groups.google.com/group/mongoose-users)
-mailing list.
