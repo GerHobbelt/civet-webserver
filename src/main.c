@@ -191,11 +191,6 @@ static void process_command_line_arguments(char *argv[], char **options) {
   }
 }
 
-static void init_server_name(void) {
-  snprintf(server_name, sizeof(server_name), "Mingoose web server v.%s",
-           mg_version());
-}
-
 static int event_handler(struct mg_event *event) {
   if (event->type == MG_EVENT_LOG) {
     printf("%s\n", (const char *) event->event_param);
@@ -316,7 +311,9 @@ static void start_mongoose(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
-  init_server_name();
+  snprintf(server_name, sizeof(server_name), "Mingoose web server v.%s",
+           mg_version());
+
   start_mongoose(argc, argv);
   printf("%s started on port(s) %s with web root [%s]\n",
          server_name, mg_get_option(ctx, "listening_ports"),
