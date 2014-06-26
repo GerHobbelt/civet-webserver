@@ -1,4 +1,4 @@
-# This Makefile is part of Mongoose web server project,
+# This Makefile is part of Mingoose web server project,
 # https://github.com/valenok/mongoose
 #
 # This Makefile is GNU make compatible. You can get GNU Make from
@@ -20,7 +20,7 @@
 # -DUSE_LUA               - embed Lua in Mongoose (+100kb)
 
 CFLAGS_EXTRA= -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI
-PROG = mongoose
+PROG = mingoose
 EXE_SUFFIX =
 CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
