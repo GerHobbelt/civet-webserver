@@ -1,8 +1,4 @@
 # This Makefile is part of Mingoose web server project,
-# https://github.com/valenok/mongoose
-#
-# This Makefile is GNU make compatible. You can get GNU Make from
-# http://gnuwin32.sourceforge.net/packages/make.htm
 #
 # Example custom build:
 # CFLAGS_EXTRA="-g -O0 -DNO_SSL_DL -DUSE_LUA -llua -lcrypto -lssl" make linux
