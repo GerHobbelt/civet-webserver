@@ -64,12 +64,6 @@ F.Morenius, and 10 others.
 
 # Licensing
 
-Mongoose is licensed under the terms of
+Mingoose is licensed under the terms of
 [GNU GPLv.2](http://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
-license. Businesses have an option to get a non-restrictive,
-royalty-free license and professional support from
-[Cesanta Software](http://cesanta.com/products.html).
-
-[Super Light Regular Expression library](https://github.com/cesanta/slre) is
-another project by Cesanta Software, developed with the same philosophy
-of functionality and simplicity.
+license.
