@@ -8,16 +8,16 @@ use Cwd;
 
 chdir $FindBin::Bin;
 
-`../mongoose 1>/dev/null 2>&1 &`;
+`../mingoose 1>/dev/null 2>&1 &`;
 
 my $res = get "http://localhost:8080";
 #warn $res;
 
 ok $res =~ m|^<html><head><title>Index of /</title><style>|;
 
-`pkill -f mongoose`;
+`pkill -f mingoose`;
 
-`pgrep -f mongoose`;
+`pgrep -f mingoose`;
 is $?, 0, 'ok pgrep';
 
 done_testing();
