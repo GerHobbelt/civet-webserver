@@ -1,7 +1,7 @@
 # This Makefile is part of Mingoose web server project,
 #
 # Example custom build:
-# CFLAGS_EXTRA="-g -O0 -DNO_SSL_DL -DUSE_LUA -llua -lcrypto -lssl" make linux
+# CFLAGS_EXTRA="-g -O0 -DNO_SSL_DL -llua -lcrypto -lssl" make linux
 #
 # Flags are:
 # -DHAVE_MD5              - use system md5 library (-2kb)
@@ -13,7 +13,6 @@
 # -DCONFIG_FILE=\"file\"  - use `file' as the default config file
 # -DSSL_LIB=\"libssl.so.<version>\"   - use system versioned SSL shared object
 # -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
-# -DUSE_LUA               - embed Lua in Mongoose (+100kb)
 
 CFLAGS_EXTRA= -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI
 PROG = mingoose
