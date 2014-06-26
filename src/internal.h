@@ -89,7 +89,7 @@
 typedef int SOCKET;
 #define WINCDECL
 
-#include "mongoose.h"
+#include "mingoose.h"
 
 #define MONGOOSE_VERSION "4.2"
 #define PASSWORDS_FILE_NAME ".htpasswd"

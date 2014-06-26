@@ -31,7 +31,7 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-#include "mongoose.h"
+#include "mingoose.h"
 
 #include <sys/wait.h>
 #include <unistd.h>
