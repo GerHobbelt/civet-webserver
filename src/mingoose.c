@@ -133,11 +133,6 @@ static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
     // How many bytes we send in this iteration
     k = len - sent > INT_MAX ? INT_MAX : (int) (len - sent);
 
-#if !defined(NO_SSL)
-    if (ssl != NULL) {
-      n = SSL_write(ssl, buf + sent, k);
-    } else
-#endif
     if (fp != NULL) {
       n = (int) fwrite(buf + sent, 1, (size_t) k, fp);
       if (ferror(fp))
@@ -166,10 +161,6 @@ static int pull(FILE *fp, struct mg_connection *conn, char *buf, int len) {
     // pipe, fread() may block until IO buffer is filled up. We cannot afford
     // to block and must pass all read bytes immediately to the client.
     nread = read(fileno(fp), buf, (size_t) len);
-#ifndef NO_SSL
-  } else if (conn->ssl != NULL) {
-    nread = SSL_read(conn->ssl, buf, len);
-#endif
   } else {
     nread = recv(conn->client.sock, buf, (size_t) len, 0);
   }
@@ -2510,9 +2501,6 @@ static int set_ports_option(struct mg_context *ctx) {
       cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
           __func__, (int) vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|r]");
       success = 0;
-    } else if (so.is_ssl && ctx->ssl_ctx == NULL) {
-      cry(fc(ctx), "Cannot add SSL socket, is -ssl_certificate option set?");
-      success = 0;
     } else if ((so.sock = socket(so.lsa.sa.sa_family, SOCK_STREAM, 6)) ==
                INVALID_SOCKET ||
                // On Windows, SO_REUSEADDR is recommended only for
@@ -2686,14 +2674,6 @@ static void close_socket_gracefully(struct mg_connection *conn) {
 static void close_connection(struct mg_connection *conn) {
   conn->must_close = 1;
 
-#ifndef NO_SSL
-  if (conn->ssl != NULL) {
-    // Run SSL_shutdown twice to ensure completly close SSL connection
-    SSL_shutdown(conn->ssl);
-    SSL_free(conn->ssl);
-    conn->ssl = NULL;
-  }
-#endif
   if (conn->client.sock != INVALID_SOCKET) {
     close_socket_gracefully(conn);
     conn->client.sock = INVALID_SOCKET;
@@ -2701,11 +2681,6 @@ static void close_connection(struct mg_connection *conn) {
 }
 
 void mg_close_connection(struct mg_connection *conn) {
-#ifndef NO_SSL
-  if (conn->client_ssl_ctx != NULL) {
-    SSL_CTX_free((SSL_CTX *) conn->client_ssl_ctx);
-  }
-#endif
   close_connection(conn);
   free(conn);
 }
@@ -2869,9 +2844,6 @@ static void *worker_thread(void *thread_func_param) {
       conn->request_info.is_ssl = conn->client.is_ssl;
 
       if (!conn->client.is_ssl
-#ifndef NO_SSL
-          || sslize(conn, conn->ctx->ssl_ctx, SSL_accept)
-#endif
          ) {
         process_new_connection(conn);
       }
@@ -3039,17 +3011,6 @@ static void free_context(struct mg_context *ctx) {
       free(ctx->config[i]);
   }
 
-#ifndef NO_SSL
-  // Deallocate SSL context
-  if (ctx->ssl_ctx != NULL) {
-    SSL_CTX_free(ctx->ssl_ctx);
-  }
-  if (ssl_mutexes != NULL) {
-    free(ssl_mutexes);
-    ssl_mutexes = NULL;
-  }
-#endif // !NO_SSL
-
   // Deallocate context itself
   free(ctx);
 }
@@ -3117,9 +3078,6 @@ struct mg_context *mg_start(const char **options,
   // NOTE(lsm): order is important here. SSL certificates must
   // be initialized before listening ports. UID must be set last.
   if (!set_gpass_option(ctx) ||
-#if !defined(NO_SSL)
-      !set_ssl_option(ctx) ||
-#endif
       !set_ports_option(ctx) ||
 #if !defined(_WIN32)
       !set_uid_option(ctx) ||

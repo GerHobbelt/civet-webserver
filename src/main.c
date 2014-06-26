@@ -290,12 +290,10 @@ int main(int argc, char *argv[]) {
   set_absolute_path(options, "access_log_file", argv[0]);
   set_absolute_path(options, "error_log_file", argv[0]);
   set_absolute_path(options, "global_auth_file", argv[0]);
-  set_absolute_path(options, "ssl_certificate", argv[0]);
 
   // Make extra verification for certain options
   verify_existence(options, "document_root", 1);
   verify_existence(options, "cgi_interpreter", 0);
-  verify_existence(options, "ssl_certificate", 0);
 
   // Setup signal handler: quit on Ctrl-C
   signal(SIGTERM, signal_handler);
