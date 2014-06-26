@@ -21,10 +21,7 @@ CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
 
 # The order in which files are listed is important
-SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c \
-          src/options.c src/crypto.c src/auth.c src/unix.c \
-          src/mg_printf.c src/http_client.c \
-          src/mingoose.c
+SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c src/options.c src/crypto.c src/auth.c src/unix.c src/mg_printf.c src/http_client.c src/mingoose.c
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
