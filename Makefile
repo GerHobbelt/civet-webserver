@@ -31,7 +31,7 @@ $(PROG): src/_all_.c src/main.c
 	$(CC) src/_all_.c src/main.c -o $@ $(CFLAGS)
 
 src/_all_.c: src/mingoose.h Makefile $(SOURCES)
-	cat $(SOURCES) | sed '/#include "internal.h"/d' > $@
+	cat $(SOURCES) > $@
 
 test:	$(PROG)
 	prove t/00.t
