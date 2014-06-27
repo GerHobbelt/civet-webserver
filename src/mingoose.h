@@ -266,4 +266,33 @@ int mg_url_decode(const char *src, int src_len, char *dst,
 //   mg_md5(buf, "aa", "bb", NULL);
 char *mg_md5(char buf[33], ...);
 
+
+#define MONGOOSE_VERSION "0.0.1"
+#define PASSWORDS_FILE_NAME ".htpasswd"
+#define CGI_ENVIRONMENT_SIZE 4096
+#define MAX_CGI_ENVIR_VARS 64
+#define MG_BUF_LEN 8192
+#define MAX_REQUEST_SIZE 16384
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+
+#ifdef DEBUG_TRACE
+#undef DEBUG_TRACE
+#define DEBUG_TRACE(x)
+#else
+#if defined(DEBUG)
+#define DEBUG_TRACE(x) do { \
+  flockfile(stdout); \
+  printf("*** %lu.%p.%s.%d: ", \
+         (unsigned long) time(NULL), (void *) pthread_self(), \
+         __func__, __LINE__); \
+  printf x; \
+  putchar('\n'); \
+  fflush(stdout); \
+  funlockfile(stdout); \
+} while (0)
+#else
+#define DEBUG_TRACE(x)
+#endif // DEBUG
+#endif // DEBUG_TRACE
+
 #endif // MONGOOSE_HEADER_INCLUDED
