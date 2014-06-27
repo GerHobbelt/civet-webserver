@@ -49,7 +49,6 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stddef.h>
-#include <stdio.h>
 
 #include <sys/wait.h>
 #include <sys/socket.h>
