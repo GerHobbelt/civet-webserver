@@ -17,7 +17,7 @@
 CFLAGS_EXTRA= -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI
 PROG = mingoose
 EXE_SUFFIX =
-CFLAGS = -std=c99 -O2 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
+CFLAGS = -std=c99 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
 
 # The order in which files are listed is important
