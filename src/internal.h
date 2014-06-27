@@ -1,3 +1,5 @@
+#ifndef INTERNAL_HEADER_INCLUDED
+#define INTERNAL_HEADER_INCLUDED
 // Copyright (c) 2004-2013 Sergey Lyubka <valenok@gmail.com>
 // Copyright (c) 2013 Cesanta Software Limited
 // All rights reserved
@@ -266,3 +268,6 @@ static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len);
 static int handle_lsp_request(struct mg_connection *, const char *,
                               struct file *, struct lua_State *);
 #endif
+
+#endif // INTERNAL_HEADER_INCLUDED
+
