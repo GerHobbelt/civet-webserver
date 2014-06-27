@@ -20,19 +20,8 @@
 
 #define _XOPEN_SOURCE 600  // For PATH_MAX on linux
 
-#include <stdlib.h>
-#include <signal.h>
-#include <string.h>
-#include <errno.h>
-#include <limits.h>
-#include <stddef.h>
-#include <stdarg.h>
-#include <ctype.h>
-
 #include "mingoose.h"
 
-#include <sys/wait.h>
-#include <unistd.h>
 #define DIRSEP '/'
 #define WINCDECL
 #define abs_path(rel, abs, abs_size) realpath((rel), (abs))

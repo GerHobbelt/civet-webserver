@@ -36,20 +36,11 @@
 #endif
 
 #include <sys/types.h>
-#include <errno.h>
-#include <signal.h>
 #include <fcntl.h>
 
 #include <time.h>
-#include <stdlib.h>
-#include <stdarg.h>
 #include <assert.h>
-#include <string.h>
-#include <ctype.h>
-#include <limits.h>
-#include <stddef.h>
 
-#include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <netinet/in.h>
@@ -60,7 +51,6 @@
 #include <netdb.h>
 
 #include <pwd.h>
-#include <unistd.h>
 #include <dirent.h>
 #if !defined(NO_SSL_DL) && !defined(NO_SSL)
 #include <dlfcn.h>

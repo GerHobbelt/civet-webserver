@@ -21,6 +21,16 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <sys/stat.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <limits.h>
+#include <stddef.h>
+#include <ctype.h>
+#include <stdarg.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 
 struct mg_context;     // Web server instance
