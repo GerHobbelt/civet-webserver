@@ -35,23 +35,6 @@
 #pragma warning (disable : 4204)
 #endif
 
-#include <sys/types.h>
-#include <fcntl.h>
-
-#include <time.h>
-#include <assert.h>
-
-#include <sys/socket.h>
-#include <sys/poll.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <netdb.h>
-
-#include <pwd.h>
-#include <dirent.h>
 #if !defined(NO_SSL_DL) && !defined(NO_SSL)
 #include <dlfcn.h>
 #endif

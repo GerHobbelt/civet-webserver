@@ -31,6 +31,23 @@
 #include <stdarg.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+
+#include <time.h>
+#include <assert.h>
+
+#include <sys/socket.h>
+#include <sys/poll.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <netdb.h>
+
+#include <pwd.h>
+#include <dirent.h>
 
 
 struct mg_context;     // Web server instance
