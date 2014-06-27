@@ -295,4 +295,42 @@ char *mg_md5(char buf[33], ...);
 #endif // DEBUG
 #endif // DEBUG_TRACE
 
+#define DIRSEP '/'
+#define WINCDECL
+#define abs_path(rel, abs, abs_size) realpath((rel), (abs))
+
+
+#define MAX_OPTIONS 100
+#define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
+
+// Darwin prior to 7.0 and Win32 do not have socklen_t
+#ifdef NO_SOCKLEN_T
+typedef int socklen_t;
+#endif // NO_SOCKLEN_T
+#define _DARWIN_UNLIMITED_SELECT
+
+#define IP_ADDR_STR_LEN 50  // IPv6 hex string is 46 chars
+
+#if !defined(MSG_NOSIGNAL)
+#define MSG_NOSIGNAL 0
+#endif
+
+#if !defined(SOMAXCONN)
+#define SOMAXCONN 100
+#endif
+
+#if !defined(PATH_MAX)
+#define PATH_MAX 4096
+#endif
+
+// Size of the accepted socket queue
+#if !defined(MGSQLEN)
+#define MGSQLEN 20
+#endif
+
+// Extra HTTP headers to send in every static file reply
+#if !defined(EXTRA_HTTP_HEADERS)
+#define EXTRA_HTTP_HEADERS ""
+#endif
+
 #endif // MONGOOSE_HEADER_INCLUDED

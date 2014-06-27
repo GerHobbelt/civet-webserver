@@ -22,13 +22,6 @@
 
 #include "mingoose.h"
 
-#define DIRSEP '/'
-#define WINCDECL
-#define abs_path(rel, abs, abs_size) realpath((rel), (abs))
-
-
-#define MAX_OPTIONS 100
-#define MAX_CONF_FILE_LINE_SIZE (8 * 1024)
 
 static int exit_flag;
 static char server_name[40];        // Set by init_server_name()
