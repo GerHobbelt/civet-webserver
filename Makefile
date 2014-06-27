@@ -20,18 +20,12 @@ EXE_SUFFIX =
 CFLAGS = -std=c99 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
 CFLAGS += -ldl -lm
 
-# The order in which files are listed is important
-SOURCES = src/internal.h src/util.c src/string.c src/parse_date.c src/options.c src/crypto.c src/auth.c src/unix.c src/mg_printf.c src/http_client.c src/mingoose.c
-
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
 # "-Wl,--as-needed" turned on by default  in cc command.
 # Also, this is turned in many other distros in static linkage builds.
 $(PROG): src/_all_.c src/main.c
 	$(CC) src/_all_.c src/main.c -o $@ $(CFLAGS)
-
-src/_all_.c: src/mingoose.h Makefile $(SOURCES)
-	cat $(SOURCES) > $@
 
 test:	$(PROG)
 	prove t/00.t
@@ -40,4 +34,4 @@ tests:
 	perl testold/test.pl $(TEST)
 
 clean:
-	rm -rf *.o $(PROG) src/_all_.c
+	rm -rf *.o $(PROG)
