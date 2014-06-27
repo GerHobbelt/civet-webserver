@@ -36,7 +36,6 @@
 #endif
 
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <errno.h>
 #include <signal.h>
 #include <fcntl.h>

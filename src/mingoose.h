@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <stddef.h>
+#include <sys/stat.h>
 
 
 struct mg_context;     // Web server instance

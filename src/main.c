@@ -20,7 +20,6 @@
 
 #define _XOPEN_SOURCE 600  // For PATH_MAX on linux
 
-#include <sys/stat.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
