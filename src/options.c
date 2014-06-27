@@ -1,4 +1,3 @@
-#include "internal.h"
 
 // This array must be in sync with enum in internal.h
 static const char *config_options[] = {

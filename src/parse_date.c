@@ -1,4 +1,3 @@
-#include "internal.h"
 
 static const char *month_names[] = {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",

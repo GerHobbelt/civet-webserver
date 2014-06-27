@@ -1,4 +1,3 @@
-#include "internal.h"
 
 // Stringify binary data. Output buffer must be twice as big as input,
 // because each byte takes 2 bytes in string representation

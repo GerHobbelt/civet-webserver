@@ -1,4 +1,3 @@
-#include "internal.h"
 
 static SOCKET conn2(const char *host, int port, int use_ssl,
                     char *ebuf, size_t ebuf_len) {

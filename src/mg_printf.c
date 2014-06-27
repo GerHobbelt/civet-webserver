@@ -1,4 +1,3 @@
-#include "internal.h"
 
 // Print message to buffer. If buffer is large enough to hold the message,
 // return buffer. If buffer is to small, allocate large enough buffer on heap,

@@ -1,4 +1,3 @@
-#include "internal.h"
 
 // Return number of bytes left to read for this connection
 static int64_t left_to_read(const struct mg_connection *conn) {

@@ -1,4 +1,3 @@
-#include "internal.h"
 
 static int mg_stat(const char *path, struct file *filep) {
   struct stat st;
