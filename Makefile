@@ -24,8 +24,8 @@ CFLAGS += -ldl -lm
 # If not so, this can break some on some Linux distros which use
 # "-Wl,--as-needed" turned on by default  in cc command.
 # Also, this is turned in many other distros in static linkage builds.
-$(PROG): src/_all_.c src/main.c
-	$(CC) src/_all_.c src/main.c -o $@ $(CFLAGS)
+$(PROG): src/_all_.c
+	$(CC) src/_all_.c  -o $@ $(CFLAGS)
 
 test:	$(PROG)
 	prove t/00.t
