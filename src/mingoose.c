@@ -4163,6 +4163,7 @@ struct mg_context *mg_start(const char **options,
 }
 //-- end of src/mingoose.c --
 
+// src/main.c
 static int exit_flag;
 static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
