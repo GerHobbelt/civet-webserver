@@ -19,33 +19,6 @@
 #pragma warning (disable : 4204)
 #endif
 
-#if !defined(NO_SSL_DL) && !defined(NO_SSL)
-#include <dlfcn.h>
-#endif
-#include <pthread.h>
-#if defined(__MACH__)
-#define SSL_LIB   "libssl.dylib"
-#define CRYPTO_LIB  "libcrypto.dylib"
-#else
-#if !defined(SSL_LIB)
-#define SSL_LIB   "libssl.so"
-#endif
-#if !defined(CRYPTO_LIB)
-#define CRYPTO_LIB  "libcrypto.so"
-#endif
-#endif
-#ifndef O_BINARY
-#define O_BINARY  0
-#endif // O_BINARY
-#define closesocket(a) close(a)
-#define mg_mkdir(x, y) mkdir(x, y)
-#define mg_remove(x) remove(x)
-#define mg_sleep(x) usleep((x) * 1000)
-#define ERRNO errno
-#define INVALID_SOCKET (-1)
-#define INT64_FMT PRId64
-typedef int SOCKET;
-#define WINCDECL
 
 #include "mingoose.h"
 
