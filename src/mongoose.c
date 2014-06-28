@@ -4101,10 +4101,6 @@ void mg_stop(struct mg_context *ctx) {
     (void) mg_sleep(10);
   }
   free_context(ctx);
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-  (void) WSACleanup();
-#endif // _WIN32
 }
 
 struct mg_context *mg_start(const char **options,
@@ -4113,11 +4109,6 @@ struct mg_context *mg_start(const char **options,
   struct mg_context *ctx;
   const char *name, *value, *default_value;
   int i;
-
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
-  WSADATA data;
-  WSAStartup(MAKEWORD(2,2), &data);
-#endif // _WIN32
 
   // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
