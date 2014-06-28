@@ -18,6 +18,8 @@
 #ifndef MONGOOSE_HEADER_INCLUDED
 #define  MONGOOSE_HEADER_INCLUDED
 
+#define _XOPEN_SOURCE 600  // For PATH_MAX on linux
+
 #include <stdio.h>
 #include <stddef.h>
 #include <sys/stat.h>

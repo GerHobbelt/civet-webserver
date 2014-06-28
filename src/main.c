@@ -18,8 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#define _XOPEN_SOURCE 600  // For PATH_MAX on linux
-
 #include "mingoose.h"
 
 

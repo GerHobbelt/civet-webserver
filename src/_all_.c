@@ -2,8 +2,6 @@
 #ifndef INTERNAL_HEADER_INCLUDED
 #define INTERNAL_HEADER_INCLUDED
 
-#define _XOPEN_SOURCE 600     // For flockfile() on Linux
-
 #include "mingoose.h"
 
 static const char *http_500_error = "Internal Server Error";
