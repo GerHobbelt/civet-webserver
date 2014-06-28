@@ -4305,7 +4305,6 @@ int main(int argc, char *argv[]) {
   char *options[MAX_OPTIONS];
   int i;
   const char **localoptions;
-  mg_event_handler_t func;
   const char *name, *value, *default_value;
 
   // Edit passwords file if -A option is specified
@@ -4350,13 +4349,12 @@ int main(int argc, char *argv[]) {
 
 
   localoptions = (const char **)options;
-  func = event_handler;
     // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
   if ((ctx = (struct mg_context *) calloc(1, sizeof(*ctx))) == NULL) {
     die("%s", "Failed to start Mongoose.");
   }
-  ctx->event_handler = func;
+  ctx->event_handler = event_handler;
   ctx->user_data = NULL;
 
   while (localoptions && (name = *localoptions++) != NULL) {
