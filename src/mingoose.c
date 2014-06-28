@@ -4092,7 +4092,7 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 }
 
-struct mg_context *mg_start(const char **options,
+struct mg_context *mg_start(const char **localoptions,
                             mg_event_handler_t func,
                             void *user_data) {
   const char *name, *value, *default_value;
@@ -4106,12 +4106,12 @@ struct mg_context *mg_start(const char **options,
   ctx->event_handler = func;
   ctx->user_data = user_data;
 
-  while (options && (name = *options++) != NULL) {
+  while (localoptions && (name = *localoptions++) != NULL) {
     if ((i = get_option_index(name)) == -1) {
       cry(fc(ctx), "Invalid option: %s", name);
       free_context(ctx);
       return NULL;
-    } else if ((value = *options++) == NULL) {
+    } else if ((value = *localoptions++) == NULL) {
       cry(fc(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       return NULL;
