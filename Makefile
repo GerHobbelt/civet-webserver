@@ -14,11 +14,8 @@
 # -DSSL_LIB=\"libssl.so.<version>\"   - use system versioned SSL shared object
 # -DCRYPTO_LIB=\"libcrypto.so.<version>\" - use system versioned CRYPTO so
 
-CFLAGS_EXTRA= -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI
 PROG = mingoose
-EXE_SUFFIX =
-CFLAGS = -std=c99 -W -Wall -pedantic -pthread -pipe -I. -I.. $(CFLAGS_EXTRA)
-CFLAGS += -ldl -lm
+CFLAGS = -std=c99 -W -Wall -pedantic -pthread -pipe -I. -I.. -g -O0 -DNO_SSL_DL -DNO_SSL -DNO_CGI -ldl -lm
 
 # Make sure that the compiler flags come last in the compilation string.
 # If not so, this can break some on some Linux distros which use
