@@ -4304,6 +4304,9 @@ int main(int argc, char *argv[]) {
 
   char *options[MAX_OPTIONS];
   int i;
+  const char **localoptions;
+  mg_event_handler_t func;
+  const char *name, *value, *default_value;
 
   // Edit passwords file if -A option is specified
   if (argc > 1 && !strcmp(argv[1], "-A")) {
@@ -4345,10 +4348,7 @@ int main(int argc, char *argv[]) {
 
   // Start Mongoose
 
-  const char **localoptions;
-  mg_event_handler_t func;
   void *user_data;
-  const char *name, *value, *default_value;
 
   localoptions = (const char **)options;
   func = event_handler;
