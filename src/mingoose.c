@@ -10,6 +10,11 @@ static void cry(struct mg_connection *conn,
                 PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len);
 
+static int exit_flag;
+static char server_name[40];        // Set by init_server_name()
+static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
+static struct mg_context *ctx;      // Set by start_mongoose()
+
 //-- end of src/internal.h --
 //-- src/util.c --
 
@@ -4164,10 +4169,6 @@ struct mg_context *mg_start(const char **options,
 //-- end of src/mingoose.c --
 
 // src/main.c
-static int exit_flag;
-static char server_name[40];        // Set by init_server_name()
-static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
-static struct mg_context *ctx;      // Set by start_mongoose()
 
 
 static void WINCDECL signal_handler(int sig_num) {
