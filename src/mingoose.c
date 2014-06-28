@@ -20,7 +20,7 @@ static struct mg_context *ctx;      // Set by start_mongoose()
 
 // Return fake connection structure. Used for logging, if connection
 // is not applicable at the moment of logging.
-static struct mg_connection *fc(struct mg_context *ctx) {
+static struct mg_connection *create_fake_connection(struct mg_context *ctx) {
   static struct mg_connection fake_connection;
   fake_connection.ctx = ctx;
   // See https://github.com/cesanta/mongoose/issues/236
@@ -3574,7 +3574,7 @@ static int set_ports_option(struct mg_context *ctx) {
 
   while (success && (list = next_option(list, &vec, NULL)) != NULL) {
     if (!parse_port_string(&vec, &so)) {
-      cry(fc(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
+      cry(create_fake_connection(ctx), "%s: %.*s: invalid port spec. Expecting list of: %s",
           __func__, (int) vec.len, vec.ptr, "[IP_ADDRESS:]PORT[s|r]");
       success = 0;
     } else if ((so.sock = socket(so.lsa.sa.sa_family, SOCK_STREAM, 6)) ==
@@ -3591,7 +3591,7 @@ static int set_ports_option(struct mg_context *ctx) {
                bind(so.sock, &so.lsa.sa, so.lsa.sa.sa_family == AF_INET ?
                     sizeof(so.lsa.sin) : sizeof(so.lsa)) != 0 ||
                listen(so.sock, SOMAXCONN) != 0) {
-      cry(fc(ctx), "%s: cannot bind to %.*s: %d (%s)", __func__,
+      cry(create_fake_connection(ctx), "%s: cannot bind to %.*s: %d (%s)", __func__,
           (int) vec.len, vec.ptr, ERRNO, strerror(errno));
       closesocket(so.sock);
       success = 0;
@@ -3673,7 +3673,7 @@ static int check_acl(struct mg_context *ctx, uint32_t remote_ip) {
     flag = vec.ptr[0];
     if ((flag != '+' && flag != '-') ||
         parse_net(&vec.ptr[1], &net, &mask) == 0) {
-      cry(fc(ctx), "%s: subnet must be [+|-]x.x.x.x[/x]", __func__);
+      cry(create_fake_connection(ctx), "%s: subnet must be [+|-]x.x.x.x[/x]", __func__);
       return -1;
     }
 
@@ -3694,11 +3694,11 @@ static int set_uid_option(struct mg_context *ctx) {
     success = 1;
   } else {
     if ((pw = getpwnam(uid)) == NULL) {
-      cry(fc(ctx), "%s: unknown user [%s]", __func__, uid);
+      cry(create_fake_connection(ctx), "%s: unknown user [%s]", __func__, uid);
     } else if (setgid(pw->pw_gid) == -1) {
-      cry(fc(ctx), "%s: setgid(%s): %s", __func__, uid, strerror(errno));
+      cry(create_fake_connection(ctx), "%s: setgid(%s): %s", __func__, uid, strerror(errno));
     } else if (setuid(pw->pw_uid) == -1) {
-      cry(fc(ctx), "%s: setuid(%s): %s", __func__, uid, strerror(errno));
+      cry(create_fake_connection(ctx), "%s: setuid(%s): %s", __func__, uid, strerror(errno));
     } else {
       success = 1;
     }
@@ -3712,7 +3712,7 @@ static int set_gpass_option(struct mg_context *ctx) {
   struct file file = STRUCT_FILE_INITIALIZER;
   const char *path = ctx->config[GLOBAL_PASSWORDS_FILE];
   if (path != NULL && !mg_stat(path, &file)) {
-    cry(fc(ctx), "Cannot open %s: %s", path, strerror(ERRNO));
+    cry(create_fake_connection(ctx), "Cannot open %s: %s", path, strerror(ERRNO));
     return 0;
   }
   return 1;
@@ -3895,7 +3895,7 @@ static void *worker_thread(void *thread_func_param) {
 
   conn = (struct mg_connection *) calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE);
   if (conn == NULL) {
-    cry(fc(ctx), "%s", "Cannot create new connection struct, OOM");
+    cry(create_fake_connection(ctx), "%s", "Cannot create new connection struct, OOM");
   } else {
     conn->buf_size = MAX_REQUEST_SIZE;
     conn->buf = (char *) (conn + 1);
@@ -3980,7 +3980,7 @@ static void accept_new_connection(const struct socket *listener,
   if ((so.sock = accept(listener->sock, &so.rsa.sa, &len)) == INVALID_SOCKET) {
   } else if (!check_acl(ctx, ntohl(* (uint32_t *) &so.rsa.sin.sin_addr))) {
     sockaddr_to_string(src_addr, sizeof(src_addr), &so.rsa);
-    cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
+    cry(create_fake_connection(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
     closesocket(so.sock);
   } else {
     // Put so socket structure into the queue
@@ -4012,7 +4012,7 @@ static void *master_thread(void *thread_func_param) {
   pthread_setschedparam(pthread_self(), SCHED_RR, &sched_param);
 #endif
 
-  call_user(MG_THREAD_BEGIN, fc(ctx), NULL);
+  call_user(MG_THREAD_BEGIN, create_fake_connection(ctx), NULL);
 
   pfd = (struct pollfd *) calloc(ctx->num_listening_sockets, sizeof(pfd[0]));
   while (pfd != NULL && ctx->stop_flag == 0) {
@@ -4060,7 +4060,7 @@ static void *master_thread(void *thread_func_param) {
 #endif
   DEBUG_TRACE(("exiting"));
 
-  call_user(MG_THREAD_END, fc(ctx), NULL);
+  call_user(MG_THREAD_END, create_fake_connection(ctx), NULL);
 
   // Signal mg_stop() that we're done.
   // WARNING: This must be the very last thing this
@@ -4360,19 +4360,19 @@ int main(int argc, char *argv[]) {
 
   while (localoptions && (name = *localoptions++) != NULL) {
     if ((i = get_option_index(name)) == -1) {
-      cry(fc(ctx), "Invalid option: %s", name);
+      cry(create_fake_connection(ctx), "Invalid option: %s", name);
       free_context(ctx);
       die("%s", "Failed to start Mongoose.");
     }
 
     if ((value = *localoptions++) == NULL) {
-      cry(fc(ctx), "%s: option value cannot be NULL", name);
+      cry(create_fake_connection(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       die("%s", "Failed to start Mongoose.");
     }
 
     if (ctx->config[i] != NULL) {
-      cry(fc(ctx), "warning: %s: duplicate option", name);
+      cry(create_fake_connection(ctx), "warning: %s: duplicate option", name);
       free(ctx->config[i]);
     }
     ctx->config[i] = mg_strdup(value);
@@ -4412,7 +4412,7 @@ int main(int argc, char *argv[]) {
   // Start worker threads
   for (i = 0; i < atoi(ctx->config[NUM_THREADS]); i++) {
     if (mg_start_thread(worker_thread, ctx) != 0) {
-      cry(fc(ctx), "Cannot start worker thread: %ld", (long) ERRNO);
+      cry(create_fake_connection(ctx), "Cannot start worker thread: %ld", (long) ERRNO);
     } else {
       ctx->num_threads++;
     }
