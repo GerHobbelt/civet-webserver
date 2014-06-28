@@ -51,34 +51,6 @@ typedef int SOCKET;
 
 static const char *http_500_error = "Internal Server Error";
 
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-
-// Unified socket address. For IPv6 support, add IPv6 address structure
-// in the union u.
-union usa {
-  struct sockaddr sa;
-  struct sockaddr_in sin;
-#if defined(USE_IPV6)
-  struct sockaddr_in6 sin6;
-#endif
-};
-
-// Describes a string (chunk of memory).
-struct vec {
-  const char *ptr;
-  size_t len;
-};
-
-struct file {
-  int is_directory;
-  time_t modification_time;
-  int64_t size;
-  // set to 1 if the content is gzipped
-  // in which case we need a content-encoding: gzip header
-  int gzipped;
-};
-#define STRUCT_FILE_INITIALIZER { 0, 0, 0, 0 }
 
 // Describes listening socket, or socket which was accept()-ed by the master
 // thread and queued for future handling by the worker thread.
