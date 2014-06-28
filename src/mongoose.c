@@ -3965,13 +3965,9 @@ static void produce_socket(struct mg_context *ctx, const struct socket *sp) {
 }
 
 static int set_sock_timeout(SOCKET sock, int milliseconds) {
-#ifdef _WIN32
-  DWORD t = milliseconds;
-#else
   struct timeval t;
   t.tv_sec = milliseconds / 1000;
   t.tv_usec = (milliseconds * 1000) % 1000000;
-#endif
   return setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (void *) &t, sizeof(t)) ||
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (void *) &t, sizeof(t));
 }
@@ -4011,11 +4007,6 @@ static void *master_thread(void *thread_func_param) {
   struct mg_context *ctx = (struct mg_context *) thread_func_param;
   struct pollfd *pfd;
   int i;
-
-  // Increase priority of the master thread
-#if defined(_WIN32)
-  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-#endif
 
 #if defined(ISSUE_317)
   struct sched_param sched_param;
@@ -4148,9 +4139,7 @@ struct mg_context *mg_start(const char **options,
   // be initialized before listening ports. UID must be set last.
   if (!set_gpass_option(ctx) ||
       !set_ports_option(ctx) ||
-#if !defined(_WIN32)
       !set_uid_option(ctx) ||
-#endif
       !set_acl_option(ctx)) {
     free_context(ctx);
     return NULL;
