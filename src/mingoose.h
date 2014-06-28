@@ -386,9 +386,6 @@ typedef int socklen_t;
 union usa {
   struct sockaddr sa;
   struct sockaddr_in sin;
-#if defined(USE_IPV6)
-  struct sockaddr_in6 sin6;
-#endif
 };
 
 
