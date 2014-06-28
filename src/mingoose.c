@@ -4095,7 +4095,6 @@ void mg_stop(struct mg_context *ctx) {
 struct mg_context *mg_start(const char **options,
                             mg_event_handler_t func,
                             void *user_data) {
-  struct mg_context *ctx;
   const char *name, *value, *default_value;
   int i;
 
