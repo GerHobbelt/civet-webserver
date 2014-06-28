@@ -342,7 +342,7 @@ static const char *config_options[] = {
   "extra_mime_types", NULL,
   "listening_ports", "8080",
   "document_root",  NULL,
-  "ssl_certificate", NULL,
+  "void", NULL,
   "num_threads", "50",
   "run_as_user", NULL,
   "url_rewrite_patterns", NULL,
