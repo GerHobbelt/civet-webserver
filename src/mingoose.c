@@ -4362,11 +4362,14 @@ int main(int argc, char *argv[]) {
       cry(fc(ctx), "Invalid option: %s", name);
       free_context(ctx);
       die("%s", "Failed to start Mongoose.");
-    } else if ((value = *localoptions++) == NULL) {
+    }
+
+    if ((value = *localoptions++) == NULL) {
       cry(fc(ctx), "%s: option value cannot be NULL", name);
       free_context(ctx);
       die("%s", "Failed to start Mongoose.");
     }
+
     if (ctx->config[i] != NULL) {
       cry(fc(ctx), "warning: %s: duplicate option", name);
       free(ctx->config[i]);
