@@ -4195,7 +4195,6 @@ static void die(const char *fmt, ...) {
 }
 
 static void show_usage_and_exit(void) {
-  const char **names;
   int i;
 
   fprintf(stderr, "Mingoose version %s (c) DQNEO, built on %s\n",
@@ -4206,10 +4205,9 @@ static void show_usage_and_exit(void) {
   fprintf(stderr, "  mingoose [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
-  names = config_options;
-  for (i = 0; names[i] != NULL; i += 2) {
+  for (i = 0; config_options[i] != NULL; i += 2) {
     fprintf(stderr, "  -%s %s\n",
-            names[i], names[i + 1] == NULL ? "<empty>" : names[i + 1]);
+            config_options[i], config_options[i + 1] == NULL ? "<empty>" : config_options[i + 1]);
   }
   exit(EXIT_FAILURE);
 }
