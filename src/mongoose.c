@@ -1,9 +1,6 @@
 //-- src/internal.h --
 #include "mingoose.h"
 
-static const char *http_500_error = "Internal Server Error";
-
-
 static FILE *mg_fopen(const char *path, const char *mode);
 static int mg_stat(const char *path, struct file *filep);
 static void send_http_error(struct mg_connection *, int, const char *,

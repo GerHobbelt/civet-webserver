@@ -486,5 +486,6 @@ struct de {
 #define CONFIG_FILE "mongoose.conf"
 #endif /* !CONFIG_FILE */
 
+const char *http_500_error = "Internal Server Error";
 
 #endif // MONGOOSE_HEADER_INCLUDED
