@@ -28,9 +28,6 @@ static char server_name[40];        // Set by init_server_name()
 static char config_file[PATH_MAX];  // Set by process_command_line_arguments()
 static struct mg_context *ctx;      // Set by start_mongoose()
 
-#if !defined(CONFIG_FILE)
-#define CONFIG_FILE "mongoose.conf"
-#endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num) {
   // Reinstantiate signal handler

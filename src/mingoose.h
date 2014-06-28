@@ -480,5 +480,9 @@ struct de {
   struct file file;
 };
 
+#if !defined(CONFIG_FILE)
+#define CONFIG_FILE "mongoose.conf"
+#endif /* !CONFIG_FILE */
+
 
 #endif // MONGOOSE_HEADER_INCLUDED
