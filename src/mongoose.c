@@ -4225,12 +4225,12 @@ static void show_usage_and_exit(void) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built on %s\n",
+  fprintf(stderr, "Mingoose version %s (c) DQNEO, built on %s\n",
           mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
-  fprintf(stderr, "  mongoose [config_file]\n");
-  fprintf(stderr, "  mongoose [-option value ...]\n");
+  fprintf(stderr, "  mingoose -A <htpasswd_file> <realm> <user> <passwd>\n");
+  fprintf(stderr, "  mingoose [config_file]\n");
+  fprintf(stderr, "  mingoose [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
