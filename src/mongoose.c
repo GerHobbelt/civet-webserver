@@ -13,12 +13,6 @@ static void cry(struct mg_connection *conn,
                 PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len);
 
-#ifdef USE_LUA
-#include "lua_5.2.1.h"
-static int handle_lsp_request(struct mg_connection *, const char *,
-                              struct file *, struct lua_State *);
-#endif
-
 //-- end of src/internal.h --
 //-- src/util.c --
 
@@ -3491,10 +3485,6 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
-#ifdef USE_LUA
-  } else if (match_prefix("**.lp$", 6, path) > 0) {
-    handle_lsp_request(conn, path, &file, NULL);
-#endif
 #if !defined(NO_CGI)
   } else if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
                           strlen(conn->ctx->config[CGI_EXTENSIONS]),
