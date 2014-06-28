@@ -4348,18 +4348,16 @@ int main(int argc, char *argv[]) {
 
   // Start Mongoose
 
-  void *user_data;
 
   localoptions = (const char **)options;
   func = event_handler;
-  user_data = NULL;
     // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
   if ((ctx = (struct mg_context *) calloc(1, sizeof(*ctx))) == NULL) {
     die("%s", "Failed to start Mongoose.");
   }
   ctx->event_handler = func;
-  ctx->user_data = user_data;
+  ctx->user_data = NULL;
 
   while (localoptions && (name = *localoptions++) != NULL) {
     if ((i = get_option_index(name)) == -1) {
