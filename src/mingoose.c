@@ -4304,6 +4304,8 @@ int main(int argc, char *argv[]) {
 
   char *options[MAX_OPTIONS];
   const char **localoptions;
+  localoptions = (const char **)options;
+
   int i;
   const char *name, *value, *default_value;
 
@@ -4348,7 +4350,6 @@ int main(int argc, char *argv[]) {
   // Start Mongoose
 
 
-  localoptions = (const char **)options;
     // Allocate context and initialize reasonable general case defaults.
   // TODO(lsm): do proper error handling here.
   if ((ctx = (struct mg_context *) calloc(1, sizeof(*ctx))) == NULL) {
