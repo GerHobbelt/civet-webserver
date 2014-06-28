@@ -4417,7 +4417,7 @@ int main(int argc, char *argv[]) {
   signal(SIGCHLD, signal_handler);
 
   // Start Mongoose
-  ctx = mg_start((const char **) options, event_handler, NULL);
+  mg_start((const char **) options, event_handler, NULL);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
