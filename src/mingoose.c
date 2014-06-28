@@ -4303,8 +4303,8 @@ int main(int argc, char *argv[]) {
            mg_version());
 
   char *options[MAX_OPTIONS];
-  int i;
   const char **localoptions;
+  int i;
   const char *name, *value, *default_value;
 
   // Edit passwords file if -A option is specified
