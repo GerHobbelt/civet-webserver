@@ -4092,79 +4092,6 @@ void mg_stop(struct mg_context *ctx) {
   free_context(ctx);
 }
 
-struct mg_context *mg_start(const char **localoptions,
-                            mg_event_handler_t func,
-                            void *user_data) {
-  const char *name, *value, *default_value;
-  int i;
-
-  // Allocate context and initialize reasonable general case defaults.
-  // TODO(lsm): do proper error handling here.
-  if ((ctx = (struct mg_context *) calloc(1, sizeof(*ctx))) == NULL) {
-    return NULL;
-  }
-  ctx->event_handler = func;
-  ctx->user_data = user_data;
-
-  while (localoptions && (name = *localoptions++) != NULL) {
-    if ((i = get_option_index(name)) == -1) {
-      cry(fc(ctx), "Invalid option: %s", name);
-      free_context(ctx);
-      return NULL;
-    } else if ((value = *localoptions++) == NULL) {
-      cry(fc(ctx), "%s: option value cannot be NULL", name);
-      free_context(ctx);
-      return NULL;
-    }
-    if (ctx->config[i] != NULL) {
-      cry(fc(ctx), "warning: %s: duplicate option", name);
-      free(ctx->config[i]);
-    }
-    ctx->config[i] = mg_strdup(value);
-    DEBUG_TRACE(("[%s] -> [%s]", name, value));
-  }
-
-  // Set default value if needed
-  for (i = 0; config_options[i * 2] != NULL; i++) {
-    default_value = config_options[i * 2 + 1];
-    if (ctx->config[i] == NULL && default_value != NULL) {
-      ctx->config[i] = mg_strdup(default_value);
-    }
-  }
-
-  // NOTE(lsm): order is important here. SSL certificates must
-  // be initialized before listening ports. UID must be set last.
-  if (!set_gpass_option(ctx) ||
-      !set_ports_option(ctx) ||
-      !set_uid_option(ctx) ||
-      !set_acl_option(ctx)) {
-    free_context(ctx);
-    return NULL;
-  }
-
-  // Ignore SIGPIPE signal, so if browser cancels the request, it
-  // won't kill the whole process.
-  (void) signal(SIGPIPE, SIG_IGN);
-
-  (void) pthread_mutex_init(&ctx->mutex, NULL);
-  (void) pthread_cond_init(&ctx->cond, NULL);
-  (void) pthread_cond_init(&ctx->sq_empty, NULL);
-  (void) pthread_cond_init(&ctx->sq_full, NULL);
-
-  // Start master (listening) thread
-  mg_start_thread(master_thread, ctx);
-
-  // Start worker threads
-  for (i = 0; i < atoi(ctx->config[NUM_THREADS]); i++) {
-    if (mg_start_thread(worker_thread, ctx) != 0) {
-      cry(fc(ctx), "Cannot start worker thread: %ld", (long) ERRNO);
-    } else {
-      ctx->num_threads++;
-    }
-  }
-
-  return ctx;
-}
 //-- end of src/mingoose.c --
 
 // src/main.c
@@ -4417,7 +4344,80 @@ int main(int argc, char *argv[]) {
   signal(SIGCHLD, signal_handler);
 
   // Start Mongoose
-  mg_start((const char **) options, event_handler, NULL);
+
+  const char **localoptions;
+  mg_event_handler_t func;
+  void *user_data;
+  const char *name, *value, *default_value;
+
+  localoptions = (const char **)options;
+  func = event_handler;
+  user_data = NULL;
+    // Allocate context and initialize reasonable general case defaults.
+  // TODO(lsm): do proper error handling here.
+  if ((ctx = (struct mg_context *) calloc(1, sizeof(*ctx))) == NULL) {
+    die("%s", "Failed to start Mongoose.");
+  }
+  ctx->event_handler = func;
+  ctx->user_data = user_data;
+
+  while (localoptions && (name = *localoptions++) != NULL) {
+    if ((i = get_option_index(name)) == -1) {
+      cry(fc(ctx), "Invalid option: %s", name);
+      free_context(ctx);
+      die("%s", "Failed to start Mongoose.");
+    } else if ((value = *localoptions++) == NULL) {
+      cry(fc(ctx), "%s: option value cannot be NULL", name);
+      free_context(ctx);
+      die("%s", "Failed to start Mongoose.");
+    }
+    if (ctx->config[i] != NULL) {
+      cry(fc(ctx), "warning: %s: duplicate option", name);
+      free(ctx->config[i]);
+    }
+    ctx->config[i] = mg_strdup(value);
+    DEBUG_TRACE(("[%s] -> [%s]", name, value));
+  }
+
+  // Set default value if needed
+  for (i = 0; config_options[i * 2] != NULL; i++) {
+    default_value = config_options[i * 2 + 1];
+    if (ctx->config[i] == NULL && default_value != NULL) {
+      ctx->config[i] = mg_strdup(default_value);
+    }
+  }
+
+  // NOTE(lsm): order is important here. SSL certificates must
+  // be initialized before listening ports. UID must be set last.
+  if (!set_gpass_option(ctx) ||
+      !set_ports_option(ctx) ||
+      !set_uid_option(ctx) ||
+      !set_acl_option(ctx)) {
+    free_context(ctx);
+    die("%s", "Failed to start Mongoose.");
+  }
+
+  // Ignore SIGPIPE signal, so if browser cancels the request, it
+  // won't kill the whole process.
+  (void) signal(SIGPIPE, SIG_IGN);
+
+  (void) pthread_mutex_init(&ctx->mutex, NULL);
+  (void) pthread_cond_init(&ctx->cond, NULL);
+  (void) pthread_cond_init(&ctx->sq_empty, NULL);
+  (void) pthread_cond_init(&ctx->sq_full, NULL);
+
+  // Start master (listening) thread
+  mg_start_thread(master_thread, ctx);
+
+  // Start worker threads
+  for (i = 0; i < atoi(ctx->config[NUM_THREADS]); i++) {
+    if (mg_start_thread(worker_thread, ctx) != 0) {
+      cry(fc(ctx), "Cannot start worker thread: %ld", (long) ERRNO);
+    } else {
+      ctx->num_threads++;
+    }
+  }
+
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
