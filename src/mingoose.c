@@ -351,10 +351,6 @@ static const char *config_options[] = {
   NULL
 };
 
-const char **mg_get_valid_option_names(void) {
-  return config_options;
-}
-
 static int get_option_index(const char *name) {
   int i;
 
@@ -4210,7 +4206,7 @@ static void show_usage_and_exit(void) {
   fprintf(stderr, "  mingoose [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
-  names = mg_get_valid_option_names();
+  names = config_options;
   for (i = 0; names[i] != NULL; i += 2) {
     fprintf(stderr, "  -%s %s\n",
             names[i], names[i + 1] == NULL ? "<empty>" : names[i + 1]);
