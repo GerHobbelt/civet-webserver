@@ -1,7 +1,4 @@
 //-- src/internal.h --
-#ifndef INTERNAL_HEADER_INCLUDED
-#define INTERNAL_HEADER_INCLUDED
-
 #include "mingoose.h"
 
 static const char *http_500_error = "Internal Server Error";
@@ -21,8 +18,6 @@ static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len);
 static int handle_lsp_request(struct mg_connection *, const char *,
                               struct file *, struct lua_State *);
 #endif
-
-#endif // INTERNAL_HEADER_INCLUDED
 
 //-- end of src/internal.h --
 //-- src/util.c --
