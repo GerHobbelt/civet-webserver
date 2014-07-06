@@ -2107,6 +2107,7 @@ static int is_valid_http_method(const char *method) {
 // Parse HTTP request, fill in mg_request_info structure.
 // This function modifies the buffer by NUL-terminating
 // HTTP request components, header names and header values.
+// @return -1 on error
 static int parse_http_message(char *buf, int len, struct mg_request_info *ri) {
   int is_request, request_length = get_request_len(buf, len);
   if (request_length > 0) {
@@ -2142,13 +2143,14 @@ static int parse_http_message(char *buf, int len, struct mg_request_info *ri) {
     is_request = is_valid_http_method(ri->request_method);
     if ((is_request && memcmp(ri->http_version, "HTTP/", 5) != 0) ||
         (!is_request && memcmp(ri->request_method, "HTTP/", 5) != 0)) {
-      request_length = -1;
-    } else {
-      if (is_request) {
-        ri->http_version += 5;
-      }
-      parse_http_headers(&buf, ri);
+      return -1;
     }
+
+    if (is_request) {
+      ri->http_version += 5;
+    }
+    parse_http_headers(&buf, ri);
+
   }
   return request_length;
 }
