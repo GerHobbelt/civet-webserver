@@ -2145,8 +2145,7 @@ static int parse_http_message(char *buf, int len, struct mg_request_info *ri) {
       return -1;
     }
 
-    if ((is_request && memcmp(ri->http_version, "HTTP/", 5) != 0) ||
-        (!is_request && memcmp(ri->request_method, "HTTP/", 5) != 0)) {
+    if (memcmp(ri->http_version, "HTTP/", 5) != 0) {
       return -1;
     }
 
