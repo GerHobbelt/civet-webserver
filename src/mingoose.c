@@ -2120,9 +2120,22 @@ static int parse_http_message(char *buf, int len, struct mg_request_info *ri) {
     while (*buf != '\0' && isspace(* (unsigned char *) buf)) {
       buf++;
     }
-    ri->request_method = skip(&buf, " ");
-    ri->uri = skip(&buf, " ");
-    ri->http_version = skip(&buf, "\r\n");
+
+    char *p;
+    p = strchr(buf, ' ');
+    *p = '\0';
+    ri->request_method = buf;
+
+    buf = p + 1;
+    p = strchr(buf, ' ');
+    *p = '\0';
+    ri->uri = buf;
+
+    buf = p + 1;
+    p = strchr(buf , '\r');
+    *p = '\0';
+    ri->http_version = buf;
+    buf = p + 2;
 
     // HTTP message could be either HTTP request or HTTP response, e.g.
     // "GET / HTTP/1.0 ...." or  "HTTP/1.0 200 OK ..."
