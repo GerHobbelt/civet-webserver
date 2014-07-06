@@ -302,7 +302,6 @@ char *mg_md5(char buf[33], ...);
 #define MAX_CGI_ENVIR_VARS 64
 #define MG_BUF_LEN 8192
 #define MAX_REQUEST_SIZE 16384
-#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
 #ifdef DEBUG_TRACE
 #undef DEBUG_TRACE
@@ -468,5 +467,9 @@ struct de {
 #endif /* !CONFIG_FILE */
 
 const char *http_500_error = "Internal Server Error";
+
+char *skip_quoted(char **buf, const char *delimiters,
+		  const char *whitespace, char quotechar);
+
 
 #endif // MONGOOSE_HEADER_INCLUDED

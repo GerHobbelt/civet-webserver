@@ -1,3 +1,7 @@
+#include <string.h>
+
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   const char *request_method; // "GET", "POST", etc
@@ -16,3 +20,4 @@ struct mg_request_info {
   } http_headers[64];         // Maximum 64 headers
 };
 
+void parse_http_headers(char **buf, struct mg_request_info *ri);
