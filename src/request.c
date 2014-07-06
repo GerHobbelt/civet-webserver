@@ -46,13 +46,6 @@ char *skip_quoted(char **buf, const char *delimiters,
   return begin_word;
 }
 
-
-// Simplified version of skip_quoted without quote char
-// and whitespace == delimiters
-static char *skip(char **buf, const char *delimiters) {
-  return skip_quoted(buf, delimiters, delimiters, 0);
-}
-
 // Parse HTTP headers from the given buffer, advance buffer to the point
 // where parsing stopped.
 void parse_http_headers(char **buf, struct mg_request_info *ri) {
@@ -60,7 +53,7 @@ void parse_http_headers(char **buf, struct mg_request_info *ri) {
 
   for (i = 0; i < (int) ARRAY_SIZE(ri->http_headers); i++) {
     ri->http_headers[i].name = skip_quoted(buf, ":", " ", 0);
-    ri->http_headers[i].value = skip(buf, "\r\n");
+    ri->http_headers[i].value = skip_quoted(buf, "\r\n", "\r\n", 0);
     if (ri->http_headers[i].name[0] == '\0')
       break;
     ri->num_headers = i + 1;
