@@ -1,4 +1,5 @@
 #include <string.h>
+#include <ctype.h>
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
 
@@ -21,3 +22,5 @@ struct mg_request_info {
 };
 
 void parse_http_headers(char **buf, struct mg_request_info *ri);
+int parse_http_message(char *buf, int len, struct mg_request_info *ri);
+int get_request_len(const char *buf, int buf_len);
