@@ -3047,19 +3047,6 @@ static void handle_request(struct mg_connection *conn) {
       send_http_error(conn, 403, "Directory Listing Denied",
           "Directory listing denied");
     }
-#if !defined(NO_CGI)
-  } else if (match_prefix(conn->ctx->config[CGI_EXTENSIONS],
-                          strlen(conn->ctx->config[CGI_EXTENSIONS]),
-                          path) > 0) {
-    if (strcmp(ri->request_method, "POST") &&
-        strcmp(ri->request_method, "HEAD") &&
-        strcmp(ri->request_method, "GET")) {
-      send_http_error(conn, 501, "Not Implemented",
-                      "Method %s is not implemented", ri->request_method);
-    } else {
-      handle_cgi_request(conn, path);
-    }
-#endif // !NO_CGI
   } else if (match_prefix(conn->ctx->config[SSI_EXTENSIONS],
                           strlen(conn->ctx->config[SSI_EXTENSIONS]),
                           path) > 0) {
