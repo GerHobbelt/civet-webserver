@@ -2703,10 +2703,11 @@ static int get_request_len(const char *buf, int buflen)
 {
     const char *s, *e;
     int len = 0;
+    int in_content = 0;
 
-    for (s = buf, e = s + buflen - 1; len <= 0 && s < e; s++)
+    for (s = buf, e = s + buflen - 1; len <= 0 && s < e; s++) {
         /* Control characters are not allowed but >=128 is. */
-        if (!isprint(* (const unsigned char *) s) && *s != '\r' &&
+        if (!in_content && !isprint(* (const unsigned char *) s) && *s != '\r' &&
             *s != '\n' && * (const unsigned char *) s < 128) {
             len = -1;
             break;  /* [i_a] abort scan as soon as one malformed character is
@@ -2717,7 +2718,13 @@ static int get_request_len(const char *buf, int buflen)
         } else if (s[0] == '\n' && &s[1] < e &&
                    s[1] == '\r' && s[2] == '\n') {
             len = (int) (s - buf) + 3;
+	    in_content = 0;
         }
+
+	if (!in_content && *s == ':') {
+	    in_content = 1;
+	}
+    }
 
     return len;
 }
