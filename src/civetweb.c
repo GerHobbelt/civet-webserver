@@ -2254,6 +2254,24 @@ static int pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
     return nread;
 }
 
+static void fast_forward_request(struct mg_connection *conn)
+{
+    char buf[MG_BUF_LEN];
+    int to_read, nread;
+
+    while (conn->consumed_content < conn->content_len) {
+        to_read = sizeof(buf);
+        if ((int64_t) to_read > conn->content_len - conn->consumed_content) {
+            to_read = (int) (conn->content_len - conn->consumed_content);
+        }
+        nread = pull(NULL, conn, buf, to_read);
+        if (nread <= 0) {
+            break;
+        }
+        conn->consumed_content += nread;
+    }
+}
+
 int mg_read(struct mg_connection *conn, void *buf, size_t len)
 {
     int64_t n, buffered_len, nread;
@@ -5713,6 +5731,7 @@ static void handle_request(struct mg_connection *conn)
     } else if (conn->ctx->callbacks.begin_request != NULL &&
                conn->ctx->callbacks.begin_request(conn)) {
         /* Do nothing, callback has served the request */
+	fast_forward_request(conn);
 #if defined(USE_WEBSOCKET)
     } else if (is_websocket_request(conn)) {
         handle_websocket_request(conn, path, is_script_resource);
