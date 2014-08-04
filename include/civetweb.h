@@ -24,7 +24,7 @@
 #define CIVETWEB_HEADER_INCLUDED
 
 #ifndef CIVETWEB_VERSION
-#define CIVETWEB_VERSION "1.6"
+#define CIVETWEB_VERSION "1.7"
 #endif
 
 #ifndef CIVETWEB_API
@@ -77,7 +77,7 @@ struct mg_request_info {
 
 /* This structure needs to be passed to mg_start(), to let civetweb know
    which callbacks to invoke. For detailed description, see
-   https://github.com/sunsetbrew/civetweb/blob/master/docs/UserManual.md */
+   https://github.com/bel2125/civetweb/blob/master/docs/UserManual.md */
 struct mg_callbacks {
     /* Called when civetweb has received new HTTP request.
        If callback returns non-zero,
@@ -176,7 +176,7 @@ struct mg_callbacks {
      };
      struct mg_context *ctx = mg_start(&my_func, NULL, options);
 
-   Refer to https://github.com/sunsetbrew/civetweb/blob/master/docs/UserManual.md
+   Refer to https://github.com/bel2125/civetweb/blob/master/docs/UserManual.md
    for the list of valid option and their possible values.
 
    Return:
@@ -330,8 +330,18 @@ CIVETWEB_API int mg_websocket_write(struct mg_connection* conn, int opcode,
    Invoke this before mg_write or mg_printf when communicating with a
    websocket if your code has server-initiated communication as well as
    communication in direct response to a message. */
-CIVETWEB_API void mg_lock(struct mg_connection* conn);
-CIVETWEB_API void mg_unlock(struct mg_connection* conn);
+CIVETWEB_API void mg_lock_connection(struct mg_connection* conn);
+CIVETWEB_API void mg_unlock_connection(struct mg_connection* conn);
+
+#if defined(MG_LEGACY_INTERFACE)
+#define mg_lock mg_lock_connection
+#define mg_unlock mg_unlock_connection
+#endif
+
+/* Lock server context.  This lock may be used to protect ressources
+   that are shared between different connection/worker threads. */
+CIVETWEB_API void mg_lock_context(struct mg_context* ctx);
+CIVETWEB_API void mg_unlock_context(struct mg_context* ctx);
 
 
 /* Opcodes, from http://tools.ietf.org/html/rfc6455 */

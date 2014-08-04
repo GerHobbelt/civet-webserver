@@ -181,6 +181,10 @@ typedef long off_t;
 #define sleep(x) Sleep((x) * 1000)
 #define rmdir(x) _rmdir(x)
 
+#if defined(USE_LUA) && defined(USE_WEBSOCKET)
+#define USE_TIMERS
+#endif
+
 #if !defined(va_copy)
 #define va_copy(x, y) x = y
 #endif /* !va_copy MINGW #defines va_copy */
@@ -309,156 +313,6 @@ typedef int SOCKET;
 
 #endif /* End of Windows and UNIX specific includes */
 
-#include "civetweb.h"
-
-#define PASSWORDS_FILE_NAME ".htpasswd"
-#define CGI_ENVIRONMENT_SIZE 4096
-#define MAX_CGI_ENVIR_VARS 64
-#define MG_BUF_LEN 8192
-#ifndef MAX_REQUEST_SIZE
-#define MAX_REQUEST_SIZE 16384
-#endif
-#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
-
-#ifdef DEBUG_TRACE
-#undef DEBUG_TRACE
-#define DEBUG_TRACE(x)
-#else
-#if defined(DEBUG)
-#define DEBUG_TRACE(x) do { \
-  flockfile(stdout); \
-  printf("*** %lu.%p.%s.%d: ", \
-         (unsigned long) time(NULL), (void *) pthread_self(), \
-         __func__, __LINE__); \
-  printf x; \
-  putchar('\n'); \
-  fflush(stdout); \
-  funlockfile(stdout); \
-} while (0)
-#else
-#define DEBUG_TRACE(x)
-#endif /* DEBUG */
-#endif /* DEBUG_TRACE */
-
-#if defined(MEMORY_DEBUGGING)
-static unsigned long blockCount = 0;
-static unsigned long totalMemUsed = 0;
-
-static void * mg_malloc_ex(size_t size, const char * file, unsigned line) {
-
-    void * data = malloc(size + sizeof(size_t));
-    void * memory = 0;
-    char mallocStr[256];
-
-    if (data) {
-        *(size_t*)data = size;
-        totalMemUsed += size;
-        blockCount++;
-        memory = (void *)(((char*)data)+sizeof(size_t));
-    }
-
-    sprintf(mallocStr, "MEM: %p %5u alloc   %7u %4u --- %s:%u\n", memory, size, totalMemUsed, blockCount, file, line);
-#if defined(_WIN32)
-    OutputDebugStringA(mallocStr);
-#else
-    DEBUG_TRACE("%s", mallocStr);
-#endif
-
-    return memory;
-}
-
-static void * mg_calloc_ex(size_t count, size_t size, const char * file, unsigned line) {
-
-    void * data = mg_malloc_ex(size*count, file, line);
-    if (data) memset(data, 0, size);
-
-    return data;
-}
-
-static void mg_free_ex(void * memory, const char * file, unsigned line) {
-
-    char mallocStr[256];
-    void * data = (void *)(((char*)memory)-sizeof(size_t));
-    size_t size;
-
-    if (memory) {
-        size = *(size_t*)data;
-        totalMemUsed -= size;
-        blockCount--;
-        sprintf(mallocStr, "MEM: %p %5u free    %7u %4u --- %s:%u\n", memory, size, totalMemUsed, blockCount, file, line);
-#if defined(_WIN32)
-        OutputDebugStringA(mallocStr);
-#else
-        DEBUG_TRACE("%s", mallocStr);
-#endif
-
-        free(data);
-    }
-}
-
-static void * mg_realloc_ex(void * memory, size_t newsize, const char * file, unsigned line) {
-
-    char mallocStr[256];
-    void * data;
-    size_t oldsize;
-
-    if (newsize) {
-        if (memory) {
-            data = (void *)(((char*)memory)-sizeof(size_t));
-            oldsize = *(size_t*)data;
-            data = realloc(data, newsize+sizeof(size_t));
-            if (data) {
-                totalMemUsed -= oldsize;
-                sprintf(mallocStr, "MEM: %p %5u r-free  %7u %4u --- %s:%u\n", memory, oldsize, totalMemUsed, blockCount, file, line);
-#if defined(_WIN32)
-                OutputDebugStringA(mallocStr);
-#else
-                DEBUG_TRACE("%s", mallocStr);
-#endif
-                totalMemUsed += newsize;
-                sprintf(mallocStr, "MEM: %p %5u r-alloc %7u %4u --- %s:%u\n", memory, newsize, totalMemUsed, blockCount, file, line);
-#if defined(_WIN32)
-                OutputDebugStringA(mallocStr);
-#else
-                DEBUG_TRACE("%s", mallocStr);
-#endif
-                *(size_t*)data = newsize;
-                data = (void *)(((char*)data)+sizeof(size_t));
-            } else {
-#if defined(_WIN32)
-                OutputDebugStringA("MEM: realloc failed\n");
-#else
-                DEBUG_TRACE("MEM: realloc failed\n");
-#endif
-            }
-        } else {
-            data = mg_malloc_ex(newsize, file, line);
-        }
-    } else {
-        data = 0;
-        mg_free_ex(memory, file, line);
-    }
-
-    return data;
-}
-
-#define mg_malloc(a)      mg_malloc_ex(a, __FILE__, __LINE__)
-#define mg_calloc(a,b)    mg_calloc_ex(a, b, __FILE__, __LINE__)
-#define mg_realloc(a, b)  mg_realloc_ex(a, b, __FILE__, __LINE__)
-#define mg_free(a)        mg_free_ex(a, __FILE__, __LINE__)
-
-#else
-static __inline void * mg_malloc(size_t a)             {return malloc(a);}
-static __inline void * mg_calloc(size_t a, size_t b)   {return calloc(a, b);}
-static __inline void * mg_realloc(void * a, size_t b)  {return realloc(a, b);}
-static __inline void   mg_free(void * a)               {free(a);}
-#endif
-
-#define malloc  DO_NOT_USE_THIS_FUNCTION__USE_mg_malloc
-#define calloc  DO_NOT_USE_THIS_FUNCTION__USE_mg_calloc
-#define realloc DO_NOT_USE_THIS_FUNCTION__USE_mg_realloc
-#define free    DO_NOT_USE_THIS_FUNCTION__USE_mg_free
-
 #ifdef _WIN32
 static CRITICAL_SECTION global_log_file_lock;
 static DWORD pthread_self(void)
@@ -491,6 +345,181 @@ void *pthread_getspecific(pthread_key_t key)
     return TlsGetValue(key);
 }
 #endif /* _WIN32 */
+
+
+#include "civetweb.h"
+
+#define PASSWORDS_FILE_NAME ".htpasswd"
+#define CGI_ENVIRONMENT_SIZE 4096
+#define MAX_CGI_ENVIR_VARS 64
+#define MG_BUF_LEN 8192
+#ifndef MAX_REQUEST_SIZE
+#define MAX_REQUEST_SIZE 16384
+#endif
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+
+#if !defined(DEBUG_TRACE)
+#if defined(DEBUG)
+
+static void DEBUG_TRACE_FUNC(const char *func, unsigned line, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(3, 4);
+
+static void DEBUG_TRACE_FUNC(const char *func, unsigned line, const char *fmt, ...) {
+
+  va_list args;
+  flockfile(stdout);
+  printf("*** %lu.%p.%s.%u: ",
+         (unsigned long) time(NULL), (void *) pthread_self(),
+         func, line);
+  va_start(args, fmt);
+  vprintf(fmt, args);
+  va_end(args);
+  putchar('\n');
+  fflush(stdout);
+  funlockfile(stdout);
+}
+
+#define DEBUG_TRACE(fmt, ...) DEBUG_TRACE_FUNC(__func__, __LINE__, fmt, __VA_ARGS__)
+
+#else
+#define DEBUG_TRACE(fmt, ...)
+#endif /* DEBUG */
+#endif /* DEBUG_TRACE */
+
+#if defined(MEMORY_DEBUGGING)
+static unsigned long blockCount = 0;
+static unsigned long totalMemUsed = 0;
+
+static void * mg_malloc_ex(size_t size, const char * file, unsigned line) {
+
+    void * data = malloc(size + sizeof(size_t));
+    void * memory = 0;
+    char mallocStr[256];
+
+    if (data) {
+        *(size_t*)data = size;
+        totalMemUsed += size;
+        blockCount++;
+        memory = (void *)(((char*)data)+sizeof(size_t));
+    }
+
+    sprintf(mallocStr, "MEM: %p %5lu alloc   %7lu %4lu --- %s:%u\n", memory, (unsigned long)size, totalMemUsed, blockCount, file, line);
+#if defined(_WIN32)
+    OutputDebugStringA(mallocStr);
+#else
+    DEBUG_TRACE("%s", mallocStr);
+#endif
+
+    return memory;
+}
+
+static void * mg_calloc_ex(size_t count, size_t size, const char * file, unsigned line) {
+
+    void * data = mg_malloc_ex(size*count, file, line);
+    if (data) memset(data, 0, size);
+
+    return data;
+}
+
+static void mg_free_ex(void * memory, const char * file, unsigned line) {
+
+    char mallocStr[256];
+    void * data = (void *)(((char*)memory)-sizeof(size_t));
+    size_t size;
+
+    if (memory) {
+        size = *(size_t*)data;
+        totalMemUsed -= size;
+        blockCount--;
+        sprintf(mallocStr, "MEM: %p %5lu free    %7lu %4lu --- %s:%u\n", memory, (unsigned long)size, totalMemUsed, blockCount, file, line);
+#if defined(_WIN32)
+        OutputDebugStringA(mallocStr);
+#else
+        DEBUG_TRACE("%s", mallocStr);
+#endif
+
+        free(data);
+    }
+}
+
+static void * mg_realloc_ex(void * memory, size_t newsize, const char * file, unsigned line) {
+
+    char mallocStr[256];
+    void * data;
+    void * _realloc;
+    size_t oldsize;
+
+    if (newsize) {
+        if (memory) {
+            data = (void *)(((char*)memory)-sizeof(size_t));
+            oldsize = *(size_t*)data;
+            _realloc = realloc(data, newsize+sizeof(size_t));
+            if (_realloc) {
+                data = _realloc;
+                totalMemUsed -= oldsize;
+                sprintf(mallocStr, "MEM: %p %5lu r-free  %7lu %4lu --- %s:%u\n", memory, (unsigned long)oldsize, totalMemUsed, blockCount, file, line);
+#if defined(_WIN32)
+                OutputDebugStringA(mallocStr);
+#else
+                DEBUG_TRACE("%s", mallocStr);
+#endif
+                totalMemUsed += newsize;
+                sprintf(mallocStr, "MEM: %p %5lu r-alloc %7lu %4lu --- %s:%u\n", memory, (unsigned long)newsize, totalMemUsed, blockCount, file, line);
+#if defined(_WIN32)
+                OutputDebugStringA(mallocStr);
+#else
+                DEBUG_TRACE("%s", mallocStr);
+#endif
+                *(size_t*)data = newsize;
+                data = (void *)(((char*)data)+sizeof(size_t));
+            } else {
+#if defined(_WIN32)
+                OutputDebugStringA("MEM: realloc failed\n");
+#else
+                DEBUG_TRACE("MEM: realloc failed\n");
+#endif
+                return _realloc;
+            }
+        } else {
+            data = mg_malloc_ex(newsize, file, line);
+        }
+    } else {
+        data = 0;
+        mg_free_ex(memory, file, line);
+    }
+
+    return data;
+}
+
+#define mg_malloc(a)      mg_malloc_ex(a, __FILE__, __LINE__)
+#define mg_calloc(a,b)    mg_calloc_ex(a, b, __FILE__, __LINE__)
+#define mg_realloc(a, b)  mg_realloc_ex(a, b, __FILE__, __LINE__)
+#define mg_free(a)        mg_free_ex(a, __FILE__, __LINE__)
+
+#else
+static __inline void * mg_malloc(size_t a)             {return malloc(a);}
+static __inline void * mg_calloc(size_t a, size_t b)   {return calloc(a, b);}
+static __inline void * mg_realloc(void * a, size_t b)  {return realloc(a, b);}
+static __inline void   mg_free(void * a)               {free(a);}
+#endif
+
+/* This following lines are just meant as a reminder to use the mg-functions for memory management */
+#ifdef malloc
+    #undef malloc
+#endif
+#ifdef calloc
+    #undef calloc
+#endif
+#ifdef realloc
+    #undef realloc
+#endif
+#ifdef free
+    #undef free
+#endif
+#define malloc  DO_NOT_USE_THIS_FUNCTION__USE_mg_malloc
+#define calloc  DO_NOT_USE_THIS_FUNCTION__USE_mg_calloc
+#define realloc DO_NOT_USE_THIS_FUNCTION__USE_mg_realloc
+#define free    DO_NOT_USE_THIS_FUNCTION__USE_mg_free
+
 
 #define MD5_STATIC static
 #include "md5.h"
@@ -668,6 +697,7 @@ enum {
     GLOBAL_PASSWORDS_FILE, INDEX_FILES, ENABLE_KEEP_ALIVE, ACCESS_CONTROL_LIST,
     EXTRA_MIME_TYPES, LISTENING_PORTS, DOCUMENT_ROOT, SSL_CERTIFICATE,
     NUM_THREADS, RUN_AS_USER, REWRITE, HIDE_FILES, REQUEST_TIMEOUT,
+    DECODE_URL,
 
 #if defined(USE_LUA)
     LUA_PRELOAD_FILE, LUA_SCRIPT_EXTENSIONS, LUA_SERVER_PAGE_EXTENSIONS,
@@ -714,6 +744,7 @@ static struct mg_option config_options[] = {
     {"url_rewrite_patterns",        12345,                     NULL},
     {"hide_files_patterns",         12345,                     NULL},
     {"request_timeout_ms",          CONFIG_TYPE_NUMBER,        "30000"},
+    {"decode_url",                  CONFIG_TYPE_BOOLEAN,       "yes"},
 
 #if defined(USE_LUA)
     {"lua_preload_file",            CONFIG_TYPE_FILE,          NULL},
@@ -753,59 +784,62 @@ struct mg_context {
     in_port_t *listening_ports;
     int num_listening_sockets;
 
-    volatile int num_threads;  /* Number of threads */
-    pthread_mutex_t mutex;     /* Protects (max|num)_threads */
-    pthread_cond_t  cond;      /* Condvar for tracking workers terminations */
+    volatile int num_threads;       /* Number of threads */
+    pthread_mutex_t thread_mutex;   /* Protects (max|num)_threads */
+    pthread_cond_t thread_cond;     /* Condvar for tracking workers terminations */
 
     struct socket queue[MGSQLEN];   /* Accepted sockets */
-    volatile int sq_head;      /* Head of the socket queue */
-    volatile int sq_tail;      /* Tail of the socket queue */
-    pthread_cond_t sq_full;    /* Signaled when socket is produced */
-    pthread_cond_t sq_empty;   /* Signaled when socket is consumed */
-    pthread_t masterthreadid;  /* The master thread ID. */
-    int workerthreadcount;     /* The amount of worker threads. */
-    pthread_t *workerthreadids;/* The worker thread IDs. */
+    volatile int sq_head;           /* Head of the socket queue */
+    volatile int sq_tail;           /* Tail of the socket queue */
+    pthread_cond_t sq_full;         /* Signaled when socket is produced */
+    pthread_cond_t sq_empty;        /* Signaled when socket is consumed */
+    pthread_t masterthreadid;       /* The master thread ID */
+    int workerthreadcount;          /* The amount of worker threads. */
+    pthread_t *workerthreadids;     /* The worker thread IDs */
 
-    unsigned long start_time;  /* Server start time, used for authentication */
-    unsigned long nonce_count; /* Used nonces, used for authentication */
+    unsigned long start_time;       /* Server start time, used for authentication */
+    pthread_mutex_t nonce_mutex;    /* Protects nonce_count */
+    unsigned long nonce_count;      /* Used nonces, used for authentication */
 
-    char *systemName;          /* What operating system is running */
+    char *systemName;               /* What operating system is running */
 
     /* linked list of uri handlers */
     struct mg_request_handler_info *request_handlers;
 
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     /* linked list of shared lua websockets */
-    struct mg_shared_lua_websocket *shared_lua_websockets;
+    struct mg_shared_lua_websocket_list *shared_lua_websockets;
+#endif
+
+#ifdef USE_TIMERS
+    struct timers * timers;
 #endif
 };
 
 struct mg_connection {
     struct mg_request_info request_info;
     struct mg_context *ctx;
-    SSL *ssl;                   /* SSL descriptor */
-    SSL_CTX *client_ssl_ctx;    /* SSL context for client connections */
-    struct socket client;       /* Connected client */
-    time_t birth_time;          /* Time when request was received */
-    int64_t num_bytes_sent;     /* Total bytes sent to client */
-    int64_t content_len;        /* Content-Length header value */
-    int64_t consumed_content;   /* How many bytes of content have been read */
-    char *buf;                  /* Buffer for received data */
-    char *path_info;            /* PATH_INFO part of the URL */
-    int must_close;             /* 1 if connection must be closed */
-    int in_error_handler;       /* 1 if in handler for user defined error pages */
-    int buf_size;               /* Buffer size */
-    int request_len;            /* Size of the request + headers in a buffer */
-    int data_len;               /* Total size of data in a buffer */
-    int status_code;            /* HTTP reply status code, e.g. 200 */
-    int throttle;               /* Throttling, bytes/sec. <= 0 means no
-                                   throttle */
-    time_t last_throttle_time;  /* Last time throttled data was sent */
-    int64_t last_throttle_bytes;/* Bytes sent this second */
-    pthread_mutex_t mutex;      /* Used by mg_lock/mg_unlock to ensure atomic
-                                   transmissions for websockets */
+    SSL *ssl;                       /* SSL descriptor */
+    SSL_CTX *client_ssl_ctx;        /* SSL context for client connections */
+    struct socket client;           /* Connected client */
+    time_t birth_time;              /* Time when request was received */
+    int64_t num_bytes_sent;         /* Total bytes sent to client */
+    int64_t content_len;            /* Content-Length header value */
+    int64_t consumed_content;       /* How many bytes of content have been read */
+    char *buf;                      /* Buffer for received data */
+    char *path_info;                /* PATH_INFO part of the URL */
+    int must_close;                 /* 1 if connection must be closed */
+    int in_error_handler;           /* 1 if in handler for user defined error pages */
+    int buf_size;                   /* Buffer size */
+    int request_len;                /* Size of the request + headers in a buffer */
+    int data_len;                   /* Total size of data in a buffer */
+    int status_code;                /* HTTP reply status code, e.g. 200 */
+    int throttle;                   /* Throttling, bytes/sec. <= 0 means no throttle */
+    time_t last_throttle_time;      /* Last time throttled data was sent */
+    int64_t last_throttle_bytes;    /* Bytes sent this second */
+    pthread_mutex_t mutex;          /* Used by mg_lock_connection/mg_unlock_connection to ensure atomic transmissions for websockets */
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
-    void * lua_websocket_state; /* Lua_State for a websocket connection */
+    void * lua_websocket_state;     /* Lua_State for a websocket connection */
 #endif
 };
 
@@ -1253,7 +1287,6 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str)
     }
 
     i = j = 0;
-    res = -1;
     for (; i < pattern_len; i++, j++) {
         if (pattern[i] == '?' && str[j] != '\0') {
             continue;
@@ -1296,6 +1329,11 @@ static int should_keep_alive(const struct mg_connection *conn)
         return 0;
     }
     return 1;
+}
+
+static int should_decode_url(const struct mg_connection *conn)
+{
+    return (mg_strcasecmp(conn->ctx->config[DECODE_URL], "yes") == 0);
 }
 
 static const char *suggest_connection_header(const struct mg_connection *conn)
@@ -1381,7 +1419,7 @@ static void send_http_error(struct mg_connection *conn, int status,
             len += mg_vsnprintf(conn, buf + len, sizeof(buf) - len, fmt, ap);
             va_end(ap);
         }
-        DEBUG_TRACE(("[%s]", buf));
+        DEBUG_TRACE("[%s]", buf);
 
         mg_printf(conn, "HTTP/1.1 %d %s\r\n"
                         "Content-Length: %d\r\n"
@@ -1408,7 +1446,18 @@ static int pthread_mutex_destroy(pthread_mutex_t *mutex)
 
 static int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
-    return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0? 0 : -1;
+    return WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0 ? 0 : -1;
+}
+
+static int pthread_mutex_trylock(pthread_mutex_t *mutex)
+{
+    switch (WaitForSingleObject(*mutex, 0)) {
+        case WAIT_OBJECT_0:
+            return 0;
+        case WAIT_TIMEOUT:
+            return -2; /* EBUSY */
+    }
+    return -1;
 }
 
 static int pthread_mutex_unlock(pthread_mutex_t *mutex)
@@ -1853,7 +1902,7 @@ static int mg_join_thread(pthread_t threadid)
         int err;
 
         err = GetLastError();
-        DEBUG_TRACE(("WaitForSingleObject() failed, error %d", err));
+        DEBUG_TRACE("WaitForSingleObject() failed, error %d", err);
     } else {
         if (dwevent == WAIT_OBJECT_0) {
             CloseHandle(threadid);
@@ -1959,7 +2008,7 @@ static pid_t spawn_process(struct mg_connection *conn, const char *prog,
     mg_snprintf(conn, cmdline, sizeof(cmdline), "%s%s\"%s\\%s\"",
                 interp, interp[0] == '\0' ? "" : " ", full_dir, prog);
 
-    DEBUG_TRACE(("Running [%s]", cmdline));
+    DEBUG_TRACE("Running [%s]", cmdline);
     if (CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
                        CREATE_NEW_PROCESS_GROUP, envblk, NULL, &si, &pi) == 0) {
         mg_cry(conn, "%s: CreateProcess(%s): %ld",
@@ -2002,9 +2051,9 @@ static int mg_stat(struct mg_connection *conn, const char *path,
 static void set_close_on_exec(int fd, struct mg_connection *conn /* may be null */)
 {
     if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
-        if (conn)
-            mg_cry(conn, "%s: fcntl(F_SETFD FD_CLOEXEC) failed: %s",
-                   __func__, strerror(ERRNO));
+        if (conn) {
+            mg_cry(conn, "%s: fcntl(F_SETFD FD_CLOEXEC) failed: %s", __func__, strerror(ERRNO));
+        }
     }
 }
 
@@ -2031,8 +2080,7 @@ int mg_start_thread(mg_thread_func_t func, void *param)
 
 /* Start a thread storing the thread context. */
 
-static int mg_start_thread_with_id(mg_thread_func_t func, void *param,
-                                   pthread_t *threadidptr)
+static int mg_start_thread_with_id(mg_thread_func_t func, void *param, pthread_t *threadidptr)
 {
     pthread_t thread_id;
     pthread_attr_t attr;
@@ -2128,8 +2176,7 @@ static int set_non_blocking_mode(SOCKET sock)
 
 /* Write data to the IO channel - opened file descriptor, socket or SSL
    descriptor. Return number of bytes written. */
-static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf,
-                    int64_t len)
+static int64_t push(FILE *fp, SOCKET sock, SSL *ssl, const char *buf, int64_t len)
 {
     int64_t sent;
     int n, k;
@@ -2381,7 +2428,7 @@ int mg_url_decode(const char *src, int src_len, char *dst,
 #define HEXTOI(x) (isdigit(x) ? x - '0' : x - 'W')
 
     for (i = j = 0; i < src_len && j < dst_len - 1; i++, j++) {
-        if (src[i] == '%' && i < src_len - 2 &&
+        if (i < src_len - 2 && src[i] == '%' &&
             isxdigit(* (const unsigned char *) (src + i + 1)) &&
             isxdigit(* (const unsigned char *) (src + i + 2))) {
             a = tolower(* (const unsigned char *) (src + i + 1));
@@ -2976,9 +3023,11 @@ static void open_auth_file(struct mg_connection *conn, const char *path,
         }
     } else {
         /* Try to find .htpasswd in requested directory. */
-        for (p = path, e = p + strlen(p) - 1; e > p; e--)
-            if (e[0] == '/')
+        for (p = path, e = p + strlen(p) - 1; e > p; e--) {
+            if (e[0] == '/') {
                 break;
+            }
+        }
         mg_snprintf(conn, name, sizeof(name), "%.*s%c%s",
                     (int) (e - p), p, '/', PASSWORDS_FILE_NAME);
         if (!mg_fopen(conn, name, "r", filep)) {
@@ -3108,33 +3157,98 @@ static char *mg_fgets(char *buf, size_t size, struct file *filep, char **p)
     }
 }
 
-/* Authorize against the opened passwords file. Return 1 if authorized. */
-static int authorize(struct mg_connection *conn, struct file *filep)
-{
+struct read_auth_file_struct {
+    struct mg_connection *conn;
     struct ah ah;
-    char line[256], f_user[256] = "", ha1[256] = "", f_domain[256] = "", buf[MG_BUF_LEN], *p;
+    char *domain;
+    char buf[256+256+40];
+    char *f_user;
+    char *f_domain;
+    char *f_ha1;
+};
 
-    if (!parse_auth_header(conn, buf, sizeof(buf), &ah)) {
-        return 0;
-    }
+static int read_auth_file(struct file *filep, struct read_auth_file_struct * workdata)
+{
+    char *p;
+    int is_authorized = 0;
+    struct file fp;
+    int l;
 
     /* Loop over passwords file */
     p = (char *) filep->membuf;
-    while (mg_fgets(line, sizeof(line), filep, &p) != NULL) {
-        if (sscanf(line, "%255[^:]:%255[^:]:%255s", f_user, f_domain, ha1) != 3) {
+    while (mg_fgets(workdata->buf, sizeof(workdata->buf), filep, &p) != NULL) {
+
+        l = strlen(workdata->buf);
+        while (l>0) {
+            if (isspace(workdata->buf[l-1]) || iscntrl(workdata->buf[l-1])) {
+                l--;
+                workdata->buf[l] = 0;
+            } else break;
+        }
+        if (l<1) continue;
+
+        workdata->f_user = workdata->buf;
+
+        if (workdata->f_user[0]==':') {
+            /* user names may not contain a ':' and may not be empty,
+               so lines starting with ':' may be used for a special purpose */
+            if (workdata->f_user[1]=='#') {
+                /* :# is a comment */
+                continue;
+            } else if (!strncmp(workdata->f_user+1,"include=",8)) {
+                if (mg_fopen(workdata->conn, workdata->f_user+9, "r", &fp)) {
+                    is_authorized = read_auth_file(&fp, workdata);
+                    mg_fclose(&fp);
+                } else {
+                    mg_cry(workdata->conn, "%s: cannot open authorization file: %s", __func__, workdata->buf);
+                }
+                continue;
+            }
+            /* everything is invalid for the moment (might change in the future) */
+            mg_cry(workdata->conn, "%s: syntax error in authorization file: %s", __func__, workdata->buf);
             continue;
         }
-        f_user[255]=0;
-        f_domain[255]=0;
-        ha1[255]=0;
 
-        if (!strcmp(ah.user, f_user) &&
-            !strcmp(conn->ctx->config[AUTHENTICATION_DOMAIN], f_domain))
-            return check_password(conn->request_info.request_method, ha1, ah.uri,
-                                  ah.nonce, ah.nc, ah.cnonce, ah.qop, ah.response);
+        workdata->f_domain = strchr(workdata->f_user, ':');
+        if (workdata->f_domain == NULL) {
+            mg_cry(workdata->conn, "%s: syntax error in authorization file: %s", __func__, workdata->buf);
+            continue;
+        }
+        *(workdata->f_domain) = 0;
+        (workdata->f_domain)++;
+
+        workdata->f_ha1 = strchr(workdata->f_domain, ':');
+        if (workdata->f_ha1 == NULL) {
+            mg_cry(workdata->conn, "%s: syntax error in authorization file: %s", __func__, workdata->buf);
+            continue;
+        }
+        *(workdata->f_ha1) = 0;
+        (workdata->f_ha1)++;
+
+        if (!strcmp(workdata->ah.user, workdata->f_user) && !strcmp(workdata->domain, workdata->f_domain)) {
+            return check_password(workdata->conn->request_info.request_method, workdata->f_ha1, workdata->ah.uri,
+                                  workdata->ah.nonce, workdata->ah.nc, workdata->ah.cnonce, workdata->ah.qop, workdata->ah.response);
+        }
     }
 
-    return 0;
+    return is_authorized;
+}
+
+/* Authorize against the opened passwords file. Return 1 if authorized. */
+static int authorize(struct mg_connection *conn, struct file *filep)
+{
+    struct read_auth_file_struct workdata;
+    char buf[MG_BUF_LEN];
+
+    memset(&workdata,0,sizeof(workdata));
+    workdata.conn = conn;
+
+    if (!parse_auth_header(conn, buf, sizeof(buf), &workdata.ah)) {
+        return 0;
+    }
+    workdata.domain = conn->ctx->config[AUTHENTICATION_DOMAIN];
+
+    return read_auth_file(filep, &workdata);
 }
 
 /* Return 1 if request is authorised, 0 otherwise. */
@@ -3176,10 +3290,10 @@ static void send_authorization_request(struct mg_connection *conn)
     time_t curtime = time(NULL);
     unsigned long nonce = (unsigned long)(conn->ctx->start_time);
 
-    (void)pthread_mutex_lock(&conn->ctx->mutex);
+    (void)pthread_mutex_lock(&conn->ctx->nonce_mutex);
     nonce += conn->ctx->nonce_count;
     ++conn->ctx->nonce_count;
-    (void)pthread_mutex_unlock(&conn->ctx->mutex);
+    (void)pthread_mutex_unlock(&conn->ctx->nonce_mutex);
 
     nonce ^= (unsigned long)(conn->ctx);
     conn->status_code = 401;
@@ -3215,8 +3329,8 @@ static int is_authorized_for_put(struct mg_connection *conn)
 int mg_modify_passwords_file(const char *fname, const char *domain,
                              const char *user, const char *pass)
 {
-    int found;
-    char line[512], u[512] = "", d[512] ="", ha1[33], tmp[PATH_MAX+1];
+    int found, i;
+    char line[512], u[512] = "", d[512] ="", ha1[33], tmp[PATH_MAX+8];
     FILE *fp, *fp2;
 
     found = 0;
@@ -3227,6 +3341,25 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
         pass = NULL;
     }
 
+    /* Other arguments must not be empty */
+    if (fname == NULL || domain == NULL || user == NULL) return 0;
+
+    /* Using the given file format, user name and domain must not contain ':' */
+    if (strchr(user, ':') != NULL) return 0;
+    if (strchr(domain, ':') != NULL) return 0;
+
+    /* Do not allow control characters like newline in user name and domain.
+       Do not allow excessively long names either. */
+    for (i=0; i<255 && user[i]!=0; i++) {
+        if (iscntrl(user[i])) return 0;
+    }
+    if (user[i]) return 0;
+    for (i=0; i<255 && domain[i]!=0; i++) {
+        if (iscntrl(domain[i])) return 0;
+    }
+    if (domain[i]) return 0;
+
+    /* Create a temporary file name */
     (void) snprintf(tmp, sizeof(tmp) - 1, "%s.tmp", fname);
     tmp[sizeof(tmp) - 1] = 0;
 
@@ -4235,7 +4368,7 @@ static void handle_cgi_request(struct mg_connection *conn, const char *prog)
        Do not send anything back to client, until we buffer in all
        HTTP headers. */
     data_len = 0;
-    buf = mg_malloc(buflen);
+    buf = (char *)mg_malloc(buflen);
     if (buf == NULL) {
         send_http_error(conn, 500, http_500_error,
                         "Not enough memory for buffer (%u bytes)",
@@ -4343,7 +4476,7 @@ static int put_dir(struct mg_connection *conn, const char *path)
         buf[len] = '\0';
 
         /* Try to create intermediate directory */
-        DEBUG_TRACE(("mkdir(%s)", buf));
+        DEBUG_TRACE("mkdir(%s)", buf);
         if (!mg_stat(conn, buf, &file) && mg_mkdir(buf, 0755) != 0) {
             res = -1;
             break;
@@ -4717,15 +4850,29 @@ static void handle_propfind(struct mg_connection *conn, const char *path,
     conn->num_bytes_sent += mg_printf(conn, "%s\n", "</d:multistatus>");
 }
 
-void mg_lock(struct mg_connection* conn)
+void mg_lock_connection(struct mg_connection* conn)
 {
     (void) pthread_mutex_lock(&conn->mutex);
 }
 
-void mg_unlock(struct mg_connection* conn)
+void mg_unlock_connection(struct mg_connection* conn)
 {
     (void) pthread_mutex_unlock(&conn->mutex);
 }
+
+void mg_lock_context(struct mg_context* ctx)
+{
+    (void) pthread_mutex_lock(&ctx->nonce_mutex);
+}
+
+void mg_unlock_context(struct mg_context* ctx)
+{
+    (void) pthread_mutex_unlock(&ctx->nonce_mutex);
+}
+
+#if defined(USE_TIMERS)
+#include "timer.inl"
+#endif /* USE_TIMERS */
 
 #ifdef USE_LUA
 #include "mod_lua.inl"
@@ -5015,9 +5162,9 @@ static void read_websocket(struct mg_connection *conn)
 
             /* Copy the mask before we shift the queue and destroy it */
             if (mask_len > 0) {
-                *(uint32_t*)mask = *(uint32_t*)(buf + header_len - mask_len);
+                memcpy(mask, buf + header_len - mask_len, sizeof(mask));
             } else {
-                *(uint32_t*)mask = 0;
+                memset(mask, 0, sizeof(mask));
             }
 
             /* Read frame payload from the first message in the queue into
@@ -5075,7 +5222,7 @@ static void read_websocket(struct mg_connection *conn)
                  !conn->ctx->callbacks.websocket_data(conn, mop, data, data_len)) ||
 #ifdef USE_LUA
                 (conn->lua_websocket_state &&
-                 !lua_websocket_data(conn, mop, data, data_len)) ||
+                 !lua_websocket_data(conn, conn->lua_websocket_state, mop, data, data_len)) ||
 #endif
                 (buf[0] & 0xf) == WEBSOCKET_OPCODE_CONNECTION_CLOSE) {  /* Opcode == 8, connection close */
                 break;
@@ -5130,10 +5277,10 @@ int mg_websocket_write(struct mg_connection* conn, int opcode, const char* data,
        but mongoose's mg_printf/mg_write is not (because of the loop in
        push(), although that is only a problem if the packet is large or
        outgoing buffer is full). */
-    (void) mg_lock(conn);
+    (void) mg_lock_connection(conn);
     retval = mg_write(conn, header, headerLen);
     retval = mg_write(conn, data, dataLen);
-    mg_unlock(conn);
+    mg_unlock_connection(conn);
 
     return retval;
 }
@@ -5142,7 +5289,7 @@ static void handle_websocket_request(struct mg_connection *conn, const char *pat
 {
     const char *version = mg_get_header(conn, "Sec-WebSocket-Version");
 #ifdef USE_LUA
-    int lua_websock, shared_lua_websock = 0;
+    int lua_websock = 0;
     /* TODO: A websocket script may be shared between several clients, allowing them to communicate
              directly instead of writing to a data base and polling the data base. */
 #endif
@@ -5155,17 +5302,17 @@ static void handle_websocket_request(struct mg_connection *conn, const char *pat
         /* The C callback is called before Lua and may prevent Lua from handling the websocket. */
     } else {
 #ifdef USE_LUA
-        lua_websock = conn->ctx->config[LUA_WEBSOCKET_EXTENSIONS] ?
-                          match_prefix(conn->ctx->config[LUA_WEBSOCKET_EXTENSIONS],
+        if (conn->ctx->config[LUA_WEBSOCKET_EXTENSIONS]) {
+            lua_websock = match_prefix(conn->ctx->config[LUA_WEBSOCKET_EXTENSIONS],
                                        (int)strlen(conn->ctx->config[LUA_WEBSOCKET_EXTENSIONS]),
-                                       path) : 0;
+                                       path);
+        }
 
-        if (lua_websock || shared_lua_websock) {
-            /* TODO */ shared_lua_websock = 0;
-            conn->lua_websocket_state = lua_websocket_new(path, conn, !!shared_lua_websock);
+        if (lua_websock) {
+            conn->lua_websocket_state = lua_websocket_new(path, conn);
             if (conn->lua_websocket_state) {
                 send_websocket_handshake(conn);
-                if (lua_websocket_ready(conn)) {
+                if (lua_websocket_ready(conn, conn->lua_websocket_state)) {
                     read_websocket(conn);
                 }
             }
@@ -5295,6 +5442,7 @@ int mg_upload(struct mg_connection *conn, const char *destination_dir)
         assert(len >= 0 && len <= (int) sizeof(buf));
         while ((n = mg_read(conn, buf + len, sizeof(buf) - len)) > 0) {
             len += n;
+            assert(len <= (int) sizeof(buf));
         }
         if ((headers_len = get_request_len(buf, len)) <= 0) {
             break;
@@ -5422,7 +5570,7 @@ static void redirect_to_https_port(struct mg_connection *conn, int ssl_index)
 
 void mg_set_request_handler(struct mg_context *ctx, const char *uri, mg_request_handler handler, void *cbdata)
 {
-    struct mg_request_handler_info *tmp_rh, *lastref = 0;
+    struct mg_request_handler_info *tmp_rh, *lastref = NULL;
     size_t urilen = strlen(uri);
 
     /* first see it the uri exists */
@@ -5535,14 +5683,17 @@ static void handle_request(struct mg_connection *conn)
         * ((char *) conn->request_info.query_string++) = '\0';
     }
     uri_len = (int) strlen(ri->uri);
-    mg_url_decode(ri->uri, uri_len, (char *) ri->uri, uri_len + 1, 0);
+
+    if (should_decode_url(conn)) {
+      mg_url_decode(ri->uri, uri_len, (char *) ri->uri, uri_len + 1, 0);
+    }
     remove_double_dots_and_double_slashes((char *) ri->uri);
     path[0] = '\0';
     convert_uri_to_file_name(conn, path, sizeof(path), &file, &is_script_resource);
     conn->throttle = set_throttle(conn->ctx->config[THROTTLE],
                                   get_remote_ip(conn), ri->uri);
 
-    DEBUG_TRACE(("%s", ri->uri));
+    DEBUG_TRACE("%s", ri->uri);
     /* Perform redirect and auth checks before calling begin_request() handler.
        Otherwise, begin_request() would need to perform auth checks and
        redirects. */
@@ -5630,7 +5781,7 @@ static void handle_file_based_request(struct mg_connection *conn, const char *pa
                             (int)strlen(conn->ctx->config[LUA_SERVER_PAGE_EXTENSIONS]),
                             path) > 0) {
         /* Lua server page: an SSI like page containing mostly plain html code plus some tags with server generated contents. */
-        handle_lsp_request(conn, path, &file, NULL);
+        handle_lsp_request(conn, path, file, NULL);
     } else if (match_prefix(conn->ctx->config[LUA_SCRIPT_EXTENSIONS],
                             (int)strlen(conn->ctx->config[LUA_SCRIPT_EXTENSIONS]),
                             path) > 0) {
@@ -5663,9 +5814,9 @@ static void close_all_listening_sockets(struct mg_context *ctx)
         ctx->listening_sockets[i].sock = INVALID_SOCKET;
     }
     mg_free(ctx->listening_sockets);
-    ctx->listening_sockets=0;
+    ctx->listening_sockets = NULL;
     mg_free(ctx->listening_ports);
-    ctx->listening_ports=0;
+    ctx->listening_ports = NULL;
 }
 
 static int is_valid_port(unsigned int port)
@@ -5695,7 +5846,7 @@ static int parse_port_string(const struct vec *vec, struct socket *so)
         so->lsa.sin.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
         so->lsa.sin.sin_port = htons((uint16_t) port);
 #if defined(USE_IPV6)
-    } else if (sscanf(vec->ptr, "[%49[^]]]:%d%n", buf, &port, &len) == 2 &&
+    } else if (sscanf(vec->ptr, "[%49[^]]]:%u%n", buf, &port, &len) == 2 &&
                inet_pton(AF_INET6, buf, &so->lsa.sin6.sin6_addr)) {
         /* IPv6 address, e.g. [3ffe:2a00:100:7031::1]:8080 */
         so->lsa.sin6.sin6_family = AF_INET6;
@@ -5776,6 +5927,7 @@ static int set_ports_option(struct mg_context *ctx)
                           sizeof(ctx->listening_ports[0]))) == NULL) {
             closesocket(so.sock);
             so.sock = INVALID_SOCKET;
+            mg_free(ptr);
             success = 0;
         }
         else {
@@ -6116,7 +6268,8 @@ static void close_connection(struct mg_connection *conn)
 {
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     if (conn->lua_websocket_state) {
-        lua_websocket_close(conn);
+        lua_websocket_close(conn, conn->lua_websocket_state);
+        conn->lua_websocket_state = NULL;
     }
 #endif
 
@@ -6124,7 +6277,7 @@ static void close_connection(struct mg_connection *conn)
     if (conn->ctx->callbacks.connection_close != NULL)
         conn->ctx->callbacks.connection_close(conn);
 
-    mg_lock(conn);
+    mg_lock_connection(conn);
 
     conn->must_close = 1;
 
@@ -6141,7 +6294,7 @@ static void close_connection(struct mg_connection *conn)
         conn->client.sock = INVALID_SOCKET;
     }
 
-    mg_unlock(conn);
+    mg_unlock_connection(conn);
 }
 
 void mg_close_connection(struct mg_connection *conn)
@@ -6156,7 +6309,7 @@ void mg_close_connection(struct mg_connection *conn)
     mg_free(conn);
 }
 
-struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
+static struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
                                  char *ebuf, size_t ebuf_len)
 {
     static struct mg_context fake_ctx;
@@ -6169,13 +6322,11 @@ struct mg_connection *mg_connect(const char *host, int port, int use_ssl,
                        mg_calloc(1, sizeof(*conn) + MAX_REQUEST_SIZE)) == NULL) {
         snprintf(ebuf, ebuf_len, "calloc(): %s", strerror(ERRNO));
         closesocket(sock);
-        sock = INVALID_SOCKET;
 #ifndef NO_SSL
     } else if (use_ssl && (conn->client_ssl_ctx =
                                SSL_CTX_new(SSLv23_client_method())) == NULL) {
         snprintf(ebuf, ebuf_len, "SSL_CTX_new error");
         closesocket(sock);
-        sock = INVALID_SOCKET;
         mg_free(conn);
         conn = NULL;
 #endif /* NO_SSL */
@@ -6282,7 +6433,6 @@ static void process_new_connection(struct mg_connection *conn)
     char ebuf[100];
 
     keep_alive_enabled = !strcmp(conn->ctx->config[ENABLE_KEEP_ALIVE], "yes");
-    keep_alive = 0;
 
     /* Important: on new connection, reset the receiving buffer. Credit goes
        to crule42. */
@@ -6336,12 +6486,12 @@ static void process_new_connection(struct mg_connection *conn)
 /* Worker threads take accepted socket from the queue */
 static int consume_socket(struct mg_context *ctx, struct socket *sp)
 {
-    (void) pthread_mutex_lock(&ctx->mutex);
-    DEBUG_TRACE(("going idle"));
+    (void) pthread_mutex_lock(&ctx->thread_mutex);
+    DEBUG_TRACE("going idle");
 
     /* If the queue is empty, wait. We're idle at this point. */
     while (ctx->sq_head == ctx->sq_tail && ctx->stop_flag == 0) {
-        pthread_cond_wait(&ctx->sq_full, &ctx->mutex);
+        pthread_cond_wait(&ctx->sq_full, &ctx->thread_mutex);
     }
 
     /* If we're stopping, sq_head may be equal to sq_tail. */
@@ -6349,7 +6499,7 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp)
         /* Copy socket from the queue and increment tail */
         *sp = ctx->queue[ctx->sq_tail % ARRAY_SIZE(ctx->queue)];
         ctx->sq_tail++;
-        DEBUG_TRACE(("grabbed socket %d, going busy", sp->sock));
+        DEBUG_TRACE("grabbed socket %d, going busy", sp->sock);
 
         /* Wrap pointers if needed */
         while (ctx->sq_tail > (int) ARRAY_SIZE(ctx->queue)) {
@@ -6359,7 +6509,7 @@ static int consume_socket(struct mg_context *ctx, struct socket *sp)
     }
 
     (void) pthread_cond_signal(&ctx->sq_empty);
-    (void) pthread_mutex_unlock(&ctx->mutex);
+    (void) pthread_mutex_unlock(&ctx->thread_mutex);
 
     return !ctx->stop_flag;
 }
@@ -6417,19 +6567,19 @@ static void *worker_thread_run(void *thread_func_param)
     }
 
     /* Signal master that we're done with connection and exiting */
-    (void) pthread_mutex_lock(&ctx->mutex);
+    (void) pthread_mutex_lock(&ctx->thread_mutex);
     ctx->num_threads--;
-    (void) pthread_cond_signal(&ctx->cond);
+    (void) pthread_cond_signal(&ctx->thread_cond);
     assert(ctx->num_threads >= 0);
-    (void) pthread_mutex_unlock(&ctx->mutex);
+    (void) pthread_mutex_unlock(&ctx->thread_mutex);
 
-    pthread_setspecific(sTlsKey, 0);
+    pthread_setspecific(sTlsKey, NULL);
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
     CloseHandle(tls.pthread_cond_helper_mutex);
 #endif
     mg_free(conn);
 
-    DEBUG_TRACE(("exiting"));
+    DEBUG_TRACE("exiting");
     return NULL;
 }
 
@@ -6452,23 +6602,23 @@ static void *worker_thread(void *thread_func_param)
 /* Master thread adds accepted socket to a queue */
 static void produce_socket(struct mg_context *ctx, const struct socket *sp)
 {
-    (void) pthread_mutex_lock(&ctx->mutex);
+    (void) pthread_mutex_lock(&ctx->thread_mutex);
 
     /* If the queue is full, wait */
     while (ctx->stop_flag == 0 &&
            ctx->sq_head - ctx->sq_tail >= (int) ARRAY_SIZE(ctx->queue)) {
-        (void) pthread_cond_wait(&ctx->sq_empty, &ctx->mutex);
+        (void) pthread_cond_wait(&ctx->sq_empty, &ctx->thread_mutex);
     }
 
     if (ctx->sq_head - ctx->sq_tail < (int) ARRAY_SIZE(ctx->queue)) {
         /* Copy socket to the queue and increment head */
         ctx->queue[ctx->sq_head % ARRAY_SIZE(ctx->queue)] = *sp;
         ctx->sq_head++;
-        DEBUG_TRACE(("queued socket %d", sp->sock));
+        DEBUG_TRACE("queued socket %d", sp->sock);
     }
 
     (void) pthread_cond_signal(&ctx->sq_full);
-    (void) pthread_mutex_unlock(&ctx->mutex);
+    (void) pthread_mutex_unlock(&ctx->thread_mutex);
 }
 
 static int set_sock_timeout(SOCKET sock, int milliseconds)
@@ -6500,7 +6650,7 @@ static void accept_new_connection(const struct socket *listener,
         so.sock = INVALID_SOCKET;
     } else {
         /* Put so socket structure into the queue */
-        DEBUG_TRACE(("Accepted socket %d", (int) so.sock));
+        DEBUG_TRACE("Accepted socket %d", (int) so.sock);
         set_close_on_exec(so.sock, fc(ctx));
         so.is_ssl = listener->is_ssl;
         so.ssl_redir = listener->ssl_redir;
@@ -6581,7 +6731,7 @@ static void master_thread_run(void *thread_func_param)
         }
     }
     mg_free(pfd);
-    DEBUG_TRACE(("stopping workers"));
+    DEBUG_TRACE("stopping workers");
 
     /* Stop signal received: somebody called mg_stop. Quit. */
     close_all_listening_sockets(ctx);
@@ -6590,11 +6740,11 @@ static void master_thread_run(void *thread_func_param)
     pthread_cond_broadcast(&ctx->sq_full);
 
     /* Wait until all threads finish */
-    (void) pthread_mutex_lock(&ctx->mutex);
+    (void) pthread_mutex_lock(&ctx->thread_mutex);
     while (ctx->num_threads > 0) {
-        (void) pthread_cond_wait(&ctx->cond, &ctx->mutex);
+        (void) pthread_cond_wait(&ctx->thread_cond, &ctx->thread_mutex);
     }
-    (void) pthread_mutex_unlock(&ctx->mutex);
+    (void) pthread_mutex_unlock(&ctx->thread_mutex);
 
     /* Join all worker threads to avoid leaking threads. */
     workerthreadcount = ctx->workerthreadcount;
@@ -6605,12 +6755,12 @@ static void master_thread_run(void *thread_func_param)
 #if !defined(NO_SSL)
     uninitialize_ssl(ctx);
 #endif
-    DEBUG_TRACE(("exiting"));
+    DEBUG_TRACE("exiting");
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
     CloseHandle(tls.pthread_cond_helper_mutex);
 #endif
-    pthread_setspecific(sTlsKey, 0);
+    pthread_setspecific(sTlsKey, NULL);
 
     /* Signal mg_stop() that we're done.
        WARNING: This must be the very last thing this
@@ -6619,7 +6769,6 @@ static void master_thread_run(void *thread_func_param)
 }
 
 /* Threads have different return types on Windows and Unix. */
-
 #ifdef _WIN32
 static unsigned __stdcall master_thread(void *thread_func_param)
 {
@@ -6642,11 +6791,18 @@ static void free_context(struct mg_context *ctx)
     if (ctx == NULL)
         return;
 
-    /* All threads exited, no sync is needed. Destroy mutex and condvars */
-    (void) pthread_mutex_destroy(&ctx->mutex);
-    (void) pthread_cond_destroy(&ctx->cond);
+    /* All threads exited, no sync is needed. Destroy thread mutex and condvars */
+    (void) pthread_mutex_destroy(&ctx->thread_mutex);
+    (void) pthread_cond_destroy(&ctx->thread_cond);
     (void) pthread_cond_destroy(&ctx->sq_empty);
     (void) pthread_cond_destroy(&ctx->sq_full);
+
+    /* Destroy other context global data structures mutex */
+    (void) pthread_mutex_destroy(&ctx->nonce_mutex);
+
+#if defined(USE_TIMERS)
+    timers_exit(ctx);
+#endif
 
     /* Deallocate config parameters */
     for (i = 0; i < NUM_OPTIONS; i++) {
@@ -6710,7 +6866,7 @@ void mg_stop(struct mg_context *ctx)
 #endif /* _WIN32 && !__SYMBIAN32__ */
 }
 
-void get_system_name(char **sysName)
+static void get_system_name(char **sysName)
 {
 #if defined(_WIN32)
 #if !defined(__SYMBIAN32__)
@@ -6745,7 +6901,7 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
 {
     struct mg_context *ctx;
     const char *name, *value, *default_value;
-    int i;
+    int i, ok;
     int workerthreadcount;
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
@@ -6767,6 +6923,7 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
 
     if (sTlsInit==0) {
         if (0 != pthread_key_create(&sTlsKey, NULL)) {
+            /* Fatal error - abort start. However, this situation should never occur in practice. */
             mg_cry(fc(ctx), "Cannot initialize thread local storage");
             mg_free(ctx);
             return NULL;
@@ -6774,11 +6931,23 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
         sTlsInit++;
     }
 
+    ok =  0==pthread_mutex_init(&ctx->thread_mutex, NULL);
+    ok &= 0==pthread_cond_init(&ctx->thread_cond, NULL);
+    ok &= 0==pthread_cond_init(&ctx->sq_empty, NULL);
+    ok &= 0==pthread_cond_init(&ctx->sq_full, NULL);
+    ok &= 0==pthread_mutex_init(&ctx->nonce_mutex, NULL);
+    if (!ok) {
+        /* Fatal error - abort start. However, this situation should never occur in practice. */
+        mg_cry(fc(ctx), "Cannot initialize thread synchronization objects");
+        mg_free(ctx);
+        return NULL;
+    }
+
     if (callbacks) {
         ctx->callbacks = *callbacks;
     }
     ctx->user_data = user_data;
-    ctx->request_handlers = 0;
+    ctx->request_handlers = NULL;
 
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     ctx->shared_lua_websockets = 0;
@@ -6799,7 +6968,7 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
             mg_free(ctx->config[i]);
         }
         ctx->config[i] = mg_strdup(value);
-        DEBUG_TRACE(("[%s] -> [%s]", name, value));
+        DEBUG_TRACE("[%s] -> [%s]", name, value);
     }
 
     /* Set default value if needed */
@@ -6833,11 +7002,6 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
     (void) signal(SIGPIPE, SIG_IGN);
 #endif /* !_WIN32 && !__SYMBIAN32__ */
 
-    (void) pthread_mutex_init(&ctx->mutex, NULL);
-    (void) pthread_cond_init(&ctx->cond, NULL);
-    (void) pthread_cond_init(&ctx->sq_empty, NULL);
-    (void) pthread_cond_init(&ctx->sq_full, NULL);
-
     workerthreadcount = atoi(ctx->config[NUM_THREADS]);
 
     if (workerthreadcount > MAX_WORKER_THREADS) {
@@ -6848,7 +7012,7 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
 
     if (workerthreadcount > 0) {
         ctx->workerthreadcount = workerthreadcount;
-        ctx->workerthreadids = mg_calloc(workerthreadcount, sizeof(pthread_t));
+        ctx->workerthreadids = (pthread_t *)mg_calloc(workerthreadcount, sizeof(pthread_t));
         if (ctx->workerthreadids == NULL) {
             mg_cry(fc(ctx), "Not enough memory for worker thread ID array");
             free_context(ctx);
@@ -6856,19 +7020,27 @@ struct mg_context *mg_start(const struct mg_callbacks *callbacks,
         }
     }
 
+#if defined(USE_TIMERS)
+    if (timers_init(ctx) != 0) {
+        mg_cry(fc(ctx), "Error creating timers");
+        free_context(ctx);
+        return NULL;
+    }
+#endif
+
     /* Start master (listening) thread */
     mg_start_thread_with_id(master_thread, ctx, &ctx->masterthreadid);
 
     /* Start worker threads */
     for (i = 0; i < workerthreadcount; i++) {
-        (void) pthread_mutex_lock(&ctx->mutex);
+        (void) pthread_mutex_lock(&ctx->thread_mutex);
         ctx->num_threads++;
-        (void) pthread_mutex_unlock(&ctx->mutex);
+        (void) pthread_mutex_unlock(&ctx->thread_mutex);
         if (mg_start_thread_with_id(worker_thread, ctx,
                                     &ctx->workerthreadids[i]) != 0) {
-            (void) pthread_mutex_lock(&ctx->mutex);
+            (void) pthread_mutex_lock(&ctx->thread_mutex);
             ctx->num_threads--;
-            (void) pthread_mutex_unlock(&ctx->mutex);
+            (void) pthread_mutex_unlock(&ctx->thread_mutex);
             mg_cry(fc(ctx), "Cannot start worker thread: %ld", (long) ERRNO);
         }
     }
