@@ -2798,6 +2798,7 @@ static time_t parse_date_string(const char *datetime)
     return result;
 }
 
+#ifndef RGW
 /* Protect against directory disclosure attack by removing '..',
    excessive '/' and '\' characters */
 static void remove_double_dots_and_double_slashes(char *s)
@@ -2821,6 +2822,7 @@ static void remove_double_dots_and_double_slashes(char *s)
     }
     *p = '\0';
 }
+#endif
 
 static const struct {
     const char *extension;
@@ -5726,7 +5728,11 @@ static void handle_request(struct mg_connection *conn)
     if (should_decode_url(conn)) {
       mg_url_decode(ri->uri, uri_len, (char *) ri->uri, uri_len + 1, 0);
     }
+
+#ifndef RGW
     remove_double_dots_and_double_slashes((char *) ri->uri);
+#endif
+
     path[0] = '\0';
     convert_uri_to_file_name(conn, path, sizeof(path), &file, &is_script_resource);
     conn->throttle = set_throttle(conn->ctx->config[THROTTLE],
