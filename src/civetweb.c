@@ -843,6 +843,7 @@ struct mg_connection {
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     void * lua_websocket_state;     /* Lua_State for a websocket connection */
 #endif
+    int is_chunked;                 /* transfer-encoding is chunked */
 };
 
 static pthread_key_t sTlsKey;  /* Thread local storage index */
@@ -2274,7 +2275,7 @@ static void fast_forward_request(struct mg_connection *conn)
     }
 }
 
-int mg_read(struct mg_connection *conn, void *buf, size_t len)
+int mg_read_inner(struct mg_connection *conn, void *buf, size_t len)
 {
     int64_t n, buffered_len, nread;
     const char *body;
@@ -2314,6 +2315,43 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len)
     }
     return nread;
 }
+
+static int mg_getc(struct mg_connection *conn) {
+    char c;
+    conn->content_len++;
+    if ( mg_read_inner(conn,&c,1) <= 0 ) return EOF;
+    return c;
+}
+
+int mg_read(struct mg_connection *conn, void *buf, size_t len) {
+    if ( conn->is_chunked ) {
+        if (conn->content_len <= 0 ) conn->content_len = 0;
+        if (conn->consumed_content < conn->content_len) return mg_read_inner(conn,buf,len);
+        int i = 0;
+        char str[64];
+        while (1) {
+            int c = mg_getc(conn);
+	    if (c == EOF) return EOF;
+            if ( ! ( c == '\n' || c == '\r' ) ) {
+                str[i++] = c;
+                break;
+            }
+        }
+        for (; i < (int)sizeof(str); i++) {
+            int c = mg_getc(conn);
+            if ( c == EOF ) return -1;
+            str[i] = (char) c;
+            if ( i > 0 && str[i] == '\n' && str[i-1] == '\r' ) break;
+        }
+        char *end = 0;
+        long chunkSize = strtol(str,&end,16);
+        if ( end != str+(i-1) ) return -1;
+        if ( chunkSize == 0 ) return 0;
+        conn->content_len += chunkSize;
+    }
+    return mg_read_inner(conn,buf,len);
+}
+
 
 int mg_write(struct mg_connection *conn, const void *buf, size_t len)
 {
@@ -4102,7 +4140,7 @@ static int forward_body_data(struct mg_connection *conn, FILE *fp,
     expect = mg_get_header(conn, "Expect");
     assert(fp != NULL);
 
-    if (conn->content_len == -1) {
+    if (conn->content_len == -1 && !conn->is_chunked) {
         send_http_error(conn, 411, "Length Required", "%s", "");
     } else if (expect != NULL && mg_strcasecmp(expect, "100-continue")) {
         send_http_error(conn, 417, "Expectation Failed", "%s", "");
@@ -6270,6 +6308,7 @@ static void reset_per_request_attributes(struct mg_connection *conn)
     conn->num_bytes_sent = conn->consumed_content = 0;
     conn->status_code = -1;
     conn->must_close = conn->request_len = conn->throttle = 0;
+    conn->is_chunked = 0;
 }
 
 static void close_socket_gracefully(struct mg_connection *conn)
@@ -6435,9 +6474,13 @@ static int getreq(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *
 	return 0;
     } else {
         /* Message is a valid request or response */
-        if ((cl = get_header(&conn->request_info, "Content-Length")) != NULL) {
+        if (( cl = get_header(&conn->request_info, "Transfer-encoding")) != NULL && strcmp(cl,"chunked") == 0) {
+            conn->is_chunked = 1;
+	} else if ((cl = get_header(&conn->request_info, "Content-Length")) != NULL) {
             /* Request/response has content length set */
             conn->content_len = strtoll(cl, NULL, 10);
+        } else if (( cl = get_header(&conn->request_info, "Transfer-encoding")) != NULL && strcmp(cl,"chunked") == 0) {
+            conn->is_chunked = 1;
         } else if (!mg_strcasecmp(conn->request_info.request_method, "POST") ||
                    !mg_strcasecmp(conn->request_info.request_method, "PUT")) {
             /* POST or PUT request without content length set */
