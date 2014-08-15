@@ -20,6 +20,8 @@
  * THE SOFTWARE.
  */
 
+#define RGW 1
+
 #if defined(_WIN32)
 #if !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS /* Disable deprecation warning in VS2005 */
@@ -3980,6 +3982,7 @@ static int parse_http_message(char *buf, int len, struct mg_request_info *ri)
 
         /* HTTP message could be either HTTP request or HTTP response, e.g.
            "GET / HTTP/1.0 ...." or  "HTTP/1.0 200 OK ..." */
+#ifndef RGW
         is_request = is_valid_http_method(ri->request_method);
         if ((is_request && memcmp(ri->http_version, "HTTP/", 5) != 0) ||
             (!is_request && memcmp(ri->request_method, "HTTP/", 5) != 0)) {
@@ -3990,6 +3993,17 @@ static int parse_http_message(char *buf, int len, struct mg_request_info *ri)
             }
             parse_http_headers(&buf, ri);
         }
+#else
+	is_request = (memcmp(ri->http_version, "HTTP/", 5) == 0);
+	if (is_request) {
+	    ri->http_version += 5;
+	}
+	if (is_request || memcmp(ri->request_method, "HTTP/", 5) == 0) {
+            parse_http_headers(&buf, ri);
+	} else {
+            request_length = -1;
+	}
+#endif
     }
     return request_length;
 }
