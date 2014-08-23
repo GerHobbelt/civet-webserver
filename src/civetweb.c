@@ -2267,11 +2267,11 @@ static void fast_forward_request(struct mg_connection *conn)
         if ((int64_t) to_read > conn->content_len - conn->consumed_content) {
             to_read = (int) (conn->content_len - conn->consumed_content);
         }
-        nread = pull(NULL, conn, buf, to_read);
+
+	nread = mg_read(conn, buf, to_read);
         if (nread <= 0) {
             break;
         }
-        conn->consumed_content += nread;
     }
 }
 
