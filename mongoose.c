@@ -4334,7 +4334,9 @@ static const struct {
   {NULL,        0, NULL}
 };
 
-const char *mg_get_builtin_mime_type(const char *path) {
+// Look at the "path" extension and figure what mime type it has.
+// Return the default MIME type string when the MIME type is not known.
+static const char *get_builtin_mime_type(const char *path, const char *default_mime_type) {
   const char *ext;
   size_t i, path_len;
 
@@ -4348,13 +4350,20 @@ const char *mg_get_builtin_mime_type(const char *path) {
     }
   }
 
-  return "text/plain";
+  return NULL;
+}
+
+// Look at the "path" extension and figure what mime type it has.
+// Always return a valid MIME type string.
+const char *mg_get_builtin_mime_type(const char *path) {
+  return get_builtin_mime_type(path, "text/plain");
 }
 
 // Look at the "path" extension and figure what mime type it has.
 // Store mime type in the vector.
+// Return the default MIME type string when the MIME type is not known.
 static void get_mime_type(struct mg_context *ctx, const char *path,
-                          struct vec *vec) {
+                          const char *default_mime_type, struct vec *vec) {
   struct vec ext_vec, mime_vec;
   const char *list, *ext;
   size_t path_len;
@@ -4373,8 +4382,8 @@ static void get_mime_type(struct mg_context *ctx, const char *path,
     }
   }
 
-  vec->ptr = mg_get_builtin_mime_type(path);
-  vec->len = strlen(vec->ptr);
+  vec->ptr = get_builtin_mime_type(path, default_mime_type);
+  vec->len = (vec->ptr ? strlen(vec->ptr) : 0);
 }
 
 #ifndef HAVE_MD5
@@ -5273,7 +5282,7 @@ static int handle_file_request(struct mg_connection *conn, const char *path,
   FILE *fp;
   int n;
 
-  get_mime_type(conn->ctx, path, &mime_vec);
+  get_mime_type(conn->ctx, path, "text/plain", &mime_vec);
   cl = stp->size;
   mg_set_response_code(conn, 200);
 

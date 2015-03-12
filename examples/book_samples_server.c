@@ -857,10 +857,19 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     } else
 #endif
     {
+      struct mg_mime_vec mime_vec;
+
 	  // allow default error processing chain:
       if (!strncmp(uri, "/error/", 7)) {
 	    return 0;
 	  }
+
+	  // default error processing chain for JS/CSS/JSON/LESS/MD/TXT/COFFEE/COFFEESCRIPT/FONT/SVG/PDF/AI/PS/JPG/PNG/GIF/AVI/MKV/MOV/etc. files,
+	  // i.e. handle all file requests which have a MIME type as 'standard' UNLESS the requested file is a HTML file.
+      mg_get_mime_type(ctx, uri, NULL, &mime_vec);
+      if (mime_vec.ptr && mime_vec.len && !mg_vec_matches_string(&mime_vec, "text/html")) {
+        return 0; // let mongoose handle the default of 'file exists'...
+      }
 
       content_length = mg_snprintf(conn, content, sizeof(content),
                                    "<html><body><p>Hello from mongoose! Remote port: %d."

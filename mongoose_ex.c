@@ -240,6 +240,24 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 
 
 
+void mg_get_mime_type(struct mg_context *ctx, const char *path, const char *default_mime_type, struct mg_mime_vec *vec) {
+	struct vec rv;
+	get_mime_type(ctx, path, default_mime_type, &rv);
+	vec->ptr = rv.ptr;
+	vec->len = rv.len;
+}
+
+int mg_vec_matches_string(const struct mg_mime_vec *vec, const char *str) {
+	if (vec->ptr && vec->len) {
+		size_t sl = strlen(str);
+		return vec->len == sl && !memcmp(vec->ptr, str, sl);
+	}
+	return FALSE;
+}
+
+
+
+
 int mg_get_lasterror(void)
 {
     return ERRNO;

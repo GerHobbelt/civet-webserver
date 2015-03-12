@@ -126,6 +126,20 @@ void mg_set_connection_abort_mode(struct mg_connection *conn, int mode);
 struct mg_connection *mg_get_fake_printf_conn(struct mg_context *ctx);
 
 
+// Describes a string (chunk of memory).
+struct mg_mime_vec {
+  const char *ptr;		// WARNING: the string need not be terminated by a NUL character!
+  size_t len;
+};
+
+// Look at the "path" extension and figure what mime type it has.
+// Store mime type in the vector.
+// Return the default MIME type string when the MIME type is not known.
+void mg_get_mime_type(struct mg_context *ctx, const char *path, const char *default_mime_type, struct mg_mime_vec *vec);
+
+// Return TRUE when the given 'vector' (string) matches the given string; return FALSE otherwise.
+int mg_vec_matches_string(const struct mg_mime_vec *vec, const char *str);
+
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 #if !defined(HAVE_PTHREAD)
