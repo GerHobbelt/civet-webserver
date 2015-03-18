@@ -26,6 +26,9 @@ win32/msvc2010/ipch/
 win32/msvc2012/bin/
 win32/msvc2012/obj/
 win32/msvc2012/ipch/
+win32/msvc2013/bin/
+win32/msvc2013/obj/
+win32/msvc2013/ipch/
 
 *.suo
 *.sdf
