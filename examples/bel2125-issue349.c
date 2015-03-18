@@ -177,7 +177,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
     // Loop over the lines in config file
     while (fgets(line, sizeof(line), fp) != NULL) {
 
-      if (!line_no && !memcmp(line,"\xEF\xBB\xBF",3)) {
+      if (!line_no && !memcmp(line,"\xEF\xBB\xBF", 3)) {
         // strip UTF-8 BOM
         p = line+3;
       } else {
