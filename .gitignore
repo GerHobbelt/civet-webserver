@@ -10,8 +10,6 @@
 .libs
 Makefile.in
 
-*.exe
-*.dll
 *.depend
 *.layout
 *.res
