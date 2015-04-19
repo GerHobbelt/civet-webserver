@@ -1224,7 +1224,7 @@ void mg_vsend_http_error(struct mg_connection *conn, int status, const char *rea
 //             'one directory' when used to match paths
 // **        - matches the remainder of the string
 // |         - a|b matches either pattern a or pattern b
-int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
+int mg_match_string(const char *pattern, int pattern_len, const char *str);
 
 // Parse the UTC date string and return the decoded timestamp as UNIX time_t value in seconds since epoch 1/1/1970
 time_t mg_parse_date_string(const char *datetime);

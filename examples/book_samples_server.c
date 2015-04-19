@@ -482,7 +482,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
          request_info->local_ip.ip_addr.v4[2] == 0 &&
          request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
         /* Name-based Virtual Hosting */
-        0 < mg_match_prefix("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
+        0 < mg_match_string("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
     {
       static char docu_site_docroot[PATH_MAX] = "";
 
@@ -569,7 +569,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
     if (file_found) {
       // are we looking for HTML output of MarkDown file?
-      if (mg_match_prefix("**.md$|**.mkd$|**.markdown$|**.wiki$", -1, request_info->phys_path) > 0) {
+      if (mg_match_string("**.md$|**.mkd$|**.markdown$|**.wiki$", -1, request_info->phys_path) > 0) {
         serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
         return "";
       }
