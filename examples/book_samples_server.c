@@ -480,9 +480,9 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
          request_info->local_ip.ip_addr.v4[0] == 127 &&
          request_info->local_ip.ip_addr.v4[1] == 0 &&
          request_info->local_ip.ip_addr.v4[2] == 0 &&
-         request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
+         request_info->local_ip.ip_addr.v4[3] >= 2 /* 127.0.0.x where x >= 2 */) ||
         /* Name-based Virtual Hosting */
-        0 < mg_match_string("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
+        0 < mg_match_string("*.lan$|.gov$", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan' or 'fifi.lan'; MacOSX et al may use the .gov root doamin to create localhost alternative names as Mac doesn't accept 'lan' as a root domain before it checks the local hosts file :-( */)
     {
       static char docu_site_docroot[PATH_MAX] = "";
 
