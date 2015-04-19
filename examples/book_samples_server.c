@@ -858,6 +858,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 #endif
     {
       struct mg_mime_vec mime_vec;
+	  char ip_addr_strbuf[128];
 
 	  // allow default error processing chain:
       if (!strncmp(uri, "/error/", 7)) {
@@ -872,12 +873,16 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       }
 
       content_length = mg_snprintf(conn, content, sizeof(content),
-                                   "<html><body><p>Hello from mongoose! Remote port: %d."
+								   "<html><body>"
+								   "<h1>404 - File not found!</h1>"
+								   "<p>Hello from mongoose! Your browser's IP address & port: %s : %d. You requested the file: '<code>%s</code>'."
                                    "<p><a href=\"/restart\">Click here</a> to restart "
                                    "the server."
                                    "<p><a href=\"/quit\">Click here</a> to stop "
                                    "the server.",
-                                   request_info->remote_port);
+								   mg_sockaddr_to_string(ip_addr_strbuf, ARRAY_SIZE(ip_addr_strbuf), conn, TRUE),
+                                   request_info->remote_port,
+								   request_info->uri);		// <-- known issue: we echo user data back to them without sanitizing it first; we don't mind in this sample/test server!
 
       //mg_set_response_code(conn, 200); -- not needed any longer
       mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
@@ -897,6 +902,36 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 
 #if defined(_WIN32)
 
+static void report_possible_vhosts(void)
+{
+	char hosts_path[PATH_MAX];
+	char line[512];
+	unsigned int ip_lsb;
+	char domainname[128];
+	const char *sysdir = getenv("WINDIR");
+	FILE *hf;
+
+	mg_snprintf(NULL, hosts_path, ARRAY_SIZE(hosts_path), "%s/system32/drivers/etc/hosts", sysdir);
+	hf = mg_fopen(hosts_path, "r");
+	if (!hf) {
+		return;
+	}
+	while (fgets(line, sizeof(line), hf) != NULL) {
+		if (sscanf(line, "127.0.0.%u %128[^# \r\n]", &ip_lsb, domainname) != 2) {
+			continue;
+		}
+
+		// Only accept valid entries which point at 127.0.0.2 and above:
+		if (strlen(domainname) == 0 || ip_lsb < 2)
+			continue;
+		
+		append_log("\nPossible VHost: http://%s:%s/", domainname, mg_get_option(ctx, "listening_ports"));
+	}
+
+	// Close file
+	(void) mg_fclose(hf);
+}
+
 static void report_server_started(void)
 {
   char root_url[256];
@@ -910,6 +945,7 @@ static void report_server_started(void)
 			 server_name, mg_get_option(ctx, "listening_ports"),
 			 mg_get_option(ctx, "document_root"),
 			 root_url + 11);
+  report_possible_vhosts();
   if (IsWindow(app_hwnd)) {
 	SetDlgItemTextA(app_hwnd, IDC_BUTTON_VISIT_URL, root_url);
 	mg_strlcpy(server_url, root_url + 11, ARRAY_SIZE(server_url));

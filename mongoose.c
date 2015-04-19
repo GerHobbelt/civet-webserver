@@ -4949,12 +4949,6 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   return 1;
 }
 
-struct de {
-  struct mg_connection *conn;
-  char *file_name;
-  struct mgstat st;
-};
-
 static void url_encode(const char *src, char *dst, size_t dst_len) {
   static const char *dont_escape = "._-$,;~()";
   static const char *hex = "0123456789abcdef";
@@ -4975,7 +4969,7 @@ static void url_encode(const char *src, char *dst, size_t dst_len) {
   *dst = '\0';
 }
 
-static void print_dir_entry(struct de *de) {
+static void print_dir_entry(struct mg_direntry *de) {
   char size[64], mod[64], href[PATH_MAX];
 
   if (de->st.is_directory) {
@@ -5011,7 +5005,7 @@ static void print_dir_entry(struct de *de) {
 // On windows, __cdecl specification is needed in case if project is built
 // with __stdcall convention. qsort always requires __cdecl callback.
 static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
-  const struct de *a = (const struct de *) p1, *b = (const struct de *) p2;
+  const struct mg_direntry *a = (const struct mg_direntry *) p1, *b = (const struct mg_direntry *) p2;
   const char *query_string = a->conn->request_info.query_string;
   int cmp_result = 0;
 
@@ -5043,12 +5037,11 @@ static int must_hide_file(struct mg_connection *conn, const char *path) {
     (!is_empty(pattern) && match_string(pattern, strlen(pattern), path) > 0);
 }
 
-static int scan_directory(struct mg_connection *conn, const char *dir,
-                          void *data, void (*cb)(struct de *, void *)) {
+int mg_scan_directory(struct mg_connection *conn, const char *dir, void *data, mg_process_direntry_cb *cb) {
   char path[PATH_MAX];
   struct dirent *dp;
   DIR *dirp;
-  struct de de;
+  struct mg_direntry de;
 
   if ((dirp = opendir(dir)) == NULL) {
     return 0;
@@ -5083,17 +5076,17 @@ static int scan_directory(struct mg_connection *conn, const char *dir,
 }
 
 struct dir_scan_data {
-  struct de *entries;
+  struct mg_direntry *entries;
   int num_entries;
   int arr_size;
 };
 
-static void dir_scan_callback(struct de *de, void *data) {
+static void dir_scan_callback(struct mg_direntry *de, void *data) {
   struct dir_scan_data *dsd = (struct dir_scan_data *) data;
 
   if (dsd->entries == NULL || dsd->num_entries >= dsd->arr_size) {
     dsd->arr_size *= 2;
-    dsd->entries = (struct de *) realloc(dsd->entries, dsd->arr_size *
+    dsd->entries = (struct mg_direntry *) realloc(dsd->entries, dsd->arr_size *
                                          sizeof(dsd->entries[0]));
   }
   if (dsd->entries == NULL) {
@@ -5114,7 +5107,7 @@ static void handle_directory_request(struct mg_connection *conn,
 
   if (mg_is_producing_nested_page(conn))
     return;
-  if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
+  if (!mg_scan_directory(conn, dir, &data, dir_scan_callback)) {
     send_http_error(conn, 500, "Cannot open directory",
                     "Error: opendir(%s): %s", dir, strerror(ERRNO));
     return;
@@ -6653,7 +6646,7 @@ static void print_props(struct mg_connection *conn, const char* uri,
             mtime);
 }
 
-static void print_dav_dir_entry(struct de *de, void *data) {
+static void print_dav_dir_entry(struct mg_direntry *de, void *data) {
   char href[PATH_MAX];
   struct mg_connection *conn = (struct mg_connection *) data;
   mg_snprintf(conn, href, sizeof(href), "%s%s",
@@ -6688,7 +6681,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   if (st->is_directory &&
       !mg_strcasecmp(get_conn_option(conn, ENABLE_DIRECTORY_LISTING), "yes") &&
       (depth == NULL || strcmp(depth, "0") != 0)) {
-    scan_directory(conn, path, conn, &print_dav_dir_entry);
+    mg_scan_directory(conn, path, conn, &print_dav_dir_entry);
   }
 
   mg_printf(conn, "%s\n", "</d:multistatus>");
