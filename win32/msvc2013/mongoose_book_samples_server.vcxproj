@@ -516,10 +516,12 @@
   <ItemGroup>
     <None Include="..\..\test\error\404.shtml" />
     <None Include="..\..\test\error\error.shtml" />
-    <None Include="..\..\test\images\biohazard-red-bg.ai" />
-    <None Include="..\..\test\images\biohazard-red-bg.svg" />
     <None Include="..\examples\mongoose_book_samples_server.favicon.ico" />
     <None Include="..\examples\mongoose_book_samples_server.systray.ico" />
+    <None Include="..\examples\mongoose_book_samples_server\_help\developer_info.html" />
+    <None Include="..\examples\mongoose_book_samples_server\_help\help_overview.html" />
+    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.ai" />
+    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.svg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

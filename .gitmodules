@@ -13,3 +13,6 @@
 [submodule "documentation/wiki-vanilla"]
 	path = documentation/wiki-vanilla
 	url = git@github.com:GerHobbelt/mongoose-vanilla.wiki.git
+[submodule "extra-support-libs/popt"]
+	path = extra-support-libs/popt
+	url = git@github.com:GerHobbelt/POPT.git

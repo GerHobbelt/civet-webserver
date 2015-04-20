@@ -320,7 +320,7 @@ static int report_markdown_failure(struct mg_connection *conn, int is_inline_pro
 }
 
 
-int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, int is_inline_production)
+static int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, int is_inline_production)
 {
 #define SD_READ_UNIT 1024
 #define SD_OUTPUT_UNIT 64
@@ -441,6 +441,65 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
   return ret;
 }
 
+static int send_requested_resource(struct mg_context *ctx, struct mg_connection *conn,
+	const struct mg_request_info *request_info, struct t_user_arg * udata) {
+	// Send the resource matching the given name
+	struct res_def {
+		LPCTSTR id;
+		LPCTSTR category;
+		const char *path;
+		const char *mime;
+	};
+	static const struct res_def res_defs[] = {
+		{
+			MAKEINTRESOURCE(IDR_HTML_HELP_OVERVIEW),
+			RT_HTML,
+			"/_help/help_overview.html",
+			"text/html"
+		},
+		{
+			MAKEINTRESOURCE(IDR_HTML_DEVELOPER_INFO),
+			RT_HTML,
+			"/_help/developer_info.html",
+			"text/html"
+		},
+		{
+			MAKEINTRESOURCE(IDR_RC_BIOHAZARD_RED_BG_SVG),
+			RT_RCDATA,
+			"/_help/images/biohazard-red-bg.svg",
+			"image/svg+xml"
+		},
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(res_defs); i++) {
+		const struct res_def *def = &res_defs[i];
+		if (!strcmp(def->path, request_info->uri)) {
+			HMODULE module;
+			HRSRC icon;
+			DWORD len;
+			void *data;
+
+			module = GetModuleHandle(NULL);
+
+			icon = FindResource(module, def->id, def->category);
+			data = LockResource(LoadResource(module, icon));
+			len = SizeofResource(module, icon);
+
+			mg_add_response_header(conn, 0, "Content-Type", def->mime);
+			mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+			mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
+			mg_write_http_response_head(conn, 200, NULL);
+
+			if ((int)len != mg_write(conn, data, len)) {
+				mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
+			}
+
+			return 1;
+		}
+	}
+	return 0;
+}
 
 /*
 Ths bit of code shows how one can go about providing something very much like
@@ -475,25 +534,33 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
   {
     const struct mg_request_info *request_info = mg_get_request_info(conn);
 
-    if (/* IP-based Virtual Hosting */
-        (!request_info->local_ip.is_ip6 &&
+    static char docu_site_docroot[PATH_MAX] = "";
+
+	/* IP-based Virtual Hosting */
+    if (!request_info->local_ip.is_ip6 &&
          request_info->local_ip.ip_addr.v4[0] == 127 &&
          request_info->local_ip.ip_addr.v4[1] == 0 &&
          request_info->local_ip.ip_addr.v4[2] == 0 &&
-         request_info->local_ip.ip_addr.v4[3] == 2 /* 127.0.0.x where x == 2 */) ||
-        /* Name-based Virtual Hosting */
-        0 < mg_match_prefix("localhost-9.lan*|fifi.lan*", -1, mg_get_header(conn, "Host")) /* e.g. 'localhost-9.lan:8081' or 'fifi.lan:8081' */)
+         request_info->local_ip.ip_addr.v4[3] >= 2)
     {
-      static char docu_site_docroot[PATH_MAX] = "";
+      /* 127.0.0.x where x >= 2 */
 
-      if (!*docu_site_docroot)
-      {
-        // use the CTX-based get-option call so our recursive invocation
-        // skips this bit of code as 'conn == NULL' then:
-        mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../documentation", mg_get_option(ctx, name));
-      }
-      return docu_site_docroot;
+      // use the CTX-based get-option call so our recursive invocation
+      // skips this bit of code as 'conn == NULL' then:
+      mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../localhost-%u", mg_get_option(ctx, name), (unsigned int)request_info->local_ip.ip_addr.v4[3]);
+
+	  return docu_site_docroot;
     }
+	/* Name-based Virtual Hosting */
+	int prefix_len = mg_match_prefix("*.gov|*.lan", -1, mg_get_header(conn, "Host")); /* e.g. 'nameless.gov:8081' or 'fifi.lan:8081' */
+	if (0 < prefix_len)
+	{
+	  // use the CTX-based get-option call so our recursive invocation
+	  // skips this bit of code as 'conn == NULL' then:
+	  mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../%.*s", mg_get_option(ctx, name), prefix_len, mg_get_header(conn, "Host"));
+
+	  return docu_site_docroot;
+	}
   }
   return NULL; // let mongoose handle it by himself
 }
@@ -636,7 +703,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 
     pthread_mutex_lock(&udata->mutex);
 
-    for (i=0;i<sizeof(udata->uris)/sizeof(udata->uris[0]);i++) {
+    for (i = 0; i < sizeof(udata->uris) / sizeof(udata->uris[0]); i++) {
       st = &udata->uris[i];
       while (*st) {
         mg_printf(conn, "<tr><td>%s</td><td>%8u</td><td>%8u</td></tr>\r\n",
@@ -854,7 +921,10 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
         mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
       }
       return (void *)1;
-    } else
+	}
+	else if (send_requested_resource(ctx, conn, request_info, udata)) {
+	  return (void *)1;
+	} else
 #endif
     {
       struct mg_mime_vec mime_vec;
@@ -910,6 +980,10 @@ static void report_server_started(void)
 			 server_name, mg_get_option(ctx, "listening_ports"),
 			 mg_get_option(ctx, "document_root"),
 			 root_url + 11);
+  append_log("\nThis server supports both IP-based and name-based VirtualHosts, e.g.\n"
+			 "URL: http://hobbelt.gov:%s @ path: ../hobbelt.gov/\n"
+			 "URL: http://127.0.0.2:%s @ path: ../localhost-2/\n\n",
+			 ports, ports);
   if (IsWindow(app_hwnd)) {
 	SetDlgItemTextA(app_hwnd, IDC_BUTTON_VISIT_URL, root_url);
 	mg_strlcpy(server_url, root_url + 11, ARRAY_SIZE(server_url));

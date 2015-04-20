@@ -39,10 +39,16 @@
     <None Include="..\..\test\error\error.shtml">
       <Filter>HTML Files\error</Filter>
     </None>
-    <None Include="..\..\test\images\biohazard-red-bg.ai">
+    <None Include="..\examples\mongoose_book_samples_server\_help\developer_info.html">
+      <Filter>HTML Files</Filter>
+    </None>
+    <None Include="..\examples\mongoose_book_samples_server\_help\help_overview.html">
+      <Filter>HTML Files</Filter>
+    </None>
+    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.ai">
       <Filter>HTML Files\images</Filter>
     </None>
-    <None Include="..\..\test\images\biohazard-red-bg.svg">
+    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.svg">
       <Filter>HTML Files\images</Filter>
     </None>
   </ItemGroup>
