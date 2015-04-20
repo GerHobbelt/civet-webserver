@@ -1118,6 +1118,19 @@ int mg_mk_fullpath(char *buf, size_t buf_len);
 // If the file is found, it's stats are returned in stp and path has been augmented to point at the index file.
 int mg_substitute_index_file(struct mg_connection *conn, char *path, size_t path_len, struct mgstat *stp);
 
+// The info produced by the mg_scan_directory() API for each file/subdirectory:
+struct mg_direntry {
+  struct mg_connection *conn;
+  char *file_name;
+  struct mgstat st;
+};
+
+// Type definition for the callback invoked by the mg_scan_directory() API for each file/subdirectory entry
+typedef void mg_process_direntry_cb(struct mg_direntry *info, void *user_data);
+
+// Scan a directory and call the user-defined callback for each file/subdirectory in there.
+int mg_scan_directory(struct mg_connection *conn, const char *dir, void *user_data, mg_process_direntry_cb *cb);
+
 
 // Print error message to the opened error log stream.
 //
@@ -1224,7 +1237,7 @@ void mg_vsend_http_error(struct mg_connection *conn, int status, const char *rea
 //             'one directory' when used to match paths
 // **        - matches the remainder of the string
 // |         - a|b matches either pattern a or pattern b
-int mg_match_prefix(const char *pattern, int pattern_len, const char *str);
+int mg_match_string(const char *pattern, int pattern_len, const char *str);
 
 // Parse the UTC date string and return the decoded timestamp as UNIX time_t value in seconds since epoch 1/1/1970
 time_t mg_parse_date_string(const char *datetime);

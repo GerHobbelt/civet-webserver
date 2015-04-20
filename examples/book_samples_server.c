@@ -541,7 +541,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
          request_info->local_ip.ip_addr.v4[0] == 127 &&
          request_info->local_ip.ip_addr.v4[1] == 0 &&
          request_info->local_ip.ip_addr.v4[2] == 0 &&
-         request_info->local_ip.ip_addr.v4[3] >= 2)
+         request_info->local_ip.ip_addr.v4[3] >= 2 /* 127.0.0.x where x >= 2 */)
     {
       /* 127.0.0.x where x >= 2 */
 
@@ -552,7 +552,7 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
 	  return docu_site_docroot;
     }
 	/* Name-based Virtual Hosting */
-	int prefix_len = mg_match_prefix("*.gov|*.lan", -1, mg_get_header(conn, "Host")); /* e.g. 'nameless.gov:8081' or 'fifi.lan:8081' */
+	int prefix_len = mg_match_string("*.gov$|*.lan$", -1, mg_get_header(conn, "Host")); /* e.g. 'nameless.gov:8081' or 'fifi.lan:8081' */
 	if (0 < prefix_len)
 	{
 	  // use the CTX-based get-option call so our recursive invocation
@@ -636,7 +636,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
     if (file_found) {
       // are we looking for HTML output of MarkDown file?
-      if (mg_match_prefix("**.md$|**.mkd$|**.markdown$|**.wiki$", -1, request_info->phys_path) > 0) {
+      if (mg_match_string("**.md$|**.mkd$|**.markdown$|**.wiki$", -1, request_info->phys_path) > 0) {
         serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
         return "";
       }
@@ -928,6 +928,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 #endif
     {
       struct mg_mime_vec mime_vec;
+	  char ip_addr_strbuf[128];
 
 	  // allow default error processing chain:
       if (!strncmp(uri, "/error/", 7)) {
@@ -942,12 +943,16 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
       }
 
       content_length = mg_snprintf(conn, content, sizeof(content),
-                                   "<html><body><p>Hello from mongoose! Remote port: %d."
+								   "<html><body>"
+								   "<h1>404 - File not found!</h1>"
+								   "<p>Hello from mongoose! Your browser's IP address & port: %s : %d. You requested the file: '<code>%s</code>'."
                                    "<p><a href=\"/restart\">Click here</a> to restart "
                                    "the server."
                                    "<p><a href=\"/quit\">Click here</a> to stop "
                                    "the server.",
-                                   request_info->remote_port);
+								   mg_sockaddr_to_string(ip_addr_strbuf, ARRAY_SIZE(ip_addr_strbuf), conn, TRUE),
+                                   request_info->remote_port,
+								   request_info->uri);		// <-- known issue: we echo user data back to them without sanitizing it first; we don't mind in this sample/test server!
 
       //mg_set_response_code(conn, 200); -- not needed any longer
       mg_add_response_header(conn, 0, "Content-Length", "%d", content_length);
@@ -967,6 +972,36 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
 
 #if defined(_WIN32)
 
+static void report_possible_vhosts(void)
+{
+	char hosts_path[PATH_MAX];
+	char line[512];
+	unsigned int ip_lsb;
+	char domainname[128];
+	const char *sysdir = getenv("WINDIR");
+	FILE *hf;
+
+	mg_snprintf(NULL, hosts_path, ARRAY_SIZE(hosts_path), "%s/system32/drivers/etc/hosts", sysdir);
+	hf = mg_fopen(hosts_path, "r");
+	if (!hf) {
+		return;
+	}
+	while (fgets(line, sizeof(line), hf) != NULL) {
+		if (sscanf(line, "127.0.0.%u %128[^# \r\n]", &ip_lsb, domainname) != 2) {
+			continue;
+		}
+
+		// Only accept valid entries which point at 127.0.0.2 and above:
+		if (strlen(domainname) == 0 || ip_lsb < 2)
+			continue;
+		
+		append_log("\nPossible VHost: http://%s:%s/", domainname, mg_get_option(ctx, "listening_ports"));
+	}
+
+	// Close file
+	(void) mg_fclose(hf);
+}
+
 static void report_server_started(void)
 {
   char root_url[256];
@@ -980,10 +1015,15 @@ static void report_server_started(void)
 			 server_name, mg_get_option(ctx, "listening_ports"),
 			 mg_get_option(ctx, "document_root"),
 			 root_url + 11);
+			 
+  // TODO: clean up the next 'report / log' part:
+  report_possible_vhosts();
   append_log("\nThis server supports both IP-based and name-based VirtualHosts, e.g.\n"
 			 "URL: http://hobbelt.gov:%s @ path: ../hobbelt.gov/\n"
 			 "URL: http://127.0.0.2:%s @ path: ../localhost-2/\n\n",
 			 ports, ports);
+  // /TODO
+  
   if (IsWindow(app_hwnd)) {
 	SetDlgItemTextA(app_hwnd, IDC_BUTTON_VISIT_URL, root_url);
 	mg_strlcpy(server_url, root_url + 11, ARRAY_SIZE(server_url));

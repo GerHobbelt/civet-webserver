@@ -1927,16 +1927,16 @@ static const char *next_option(const char *list, struct vec *val,
   return list;
 }
 
-static int match_prefix(const char *pattern, int pattern_len, const char *str) {
+static int match_string(const char *pattern, int pattern_len, const char *str) {
   const char *or_str;
   int i, j, len, res;
 
   if (pattern_len == -1)
     pattern_len = (int)strlen(pattern);
   if ((or_str = (const char *) memchr(pattern, '|', pattern_len)) != NULL) {
-    res = match_prefix(pattern, or_str - pattern, str);
+    res = match_string(pattern, or_str - pattern, str);
     return res > 0 ? res :
-           match_prefix(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
+           match_string(or_str + 1, (pattern + pattern_len) - (or_str + 1), str);
   }
 
   i = j = 0;
@@ -1958,7 +1958,7 @@ static int match_prefix(const char *pattern, int pattern_len, const char *str) {
         return j + len;
       }
       do {
-        res = match_prefix(pattern + i, pattern_len - i, str + j + len);
+        res = match_string(pattern + i, pattern_len - i, str + j + len);
       } while (res == -1 && len-- > 0);
       return res == -1 ? -1 : j + res + len;
     } else if (pattern[i] != str[j]) {
@@ -4137,7 +4137,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
 
   rewrite = get_conn_option(conn, REWRITE);
   while ((rewrite = next_option(rewrite, &a, &b)) != NULL) {
-    if ((match_len = match_prefix(a.ptr, (int)a.len, uri)) > 0) {
+    if ((match_len = match_string(a.ptr, (int)a.len, uri)) > 0) {
       mg_snprintf(conn, buf, buf_len, "%.*s%s", (int)b.len, b.ptr, uri + match_len);
       break;
     }
@@ -4157,7 +4157,7 @@ static int convert_uri_to_file_name(struct mg_connection *conn, char *buf,
     for (p = buf + strlen(buf); p > buf + 1; p--) {
       if (*p == '/') {
         *p = '\0';
-        if (match_prefix(cgi_exts, cgi_exts_len, buf) > 0 &&
+        if (match_string(cgi_exts, cgi_exts_len, buf) > 0 &&
             (stat_result = mg_stat(buf, st)) == 0) {
           // Shift PATH_INFO block one character right, e.g.
           //  "/x.cgi/foo/bar\x00" => "/x.cgi\x00/foo/bar\x00"
@@ -4949,12 +4949,6 @@ int mg_modify_passwords_file(const char *fname, const char *domain,
   return 1;
 }
 
-struct de {
-  struct mg_connection *conn;
-  char *file_name;
-  struct mgstat st;
-};
-
 static void url_encode(const char *src, char *dst, size_t dst_len) {
   static const char *dont_escape = "._-$,;~()";
   static const char *hex = "0123456789abcdef";
@@ -4975,7 +4969,7 @@ static void url_encode(const char *src, char *dst, size_t dst_len) {
   *dst = '\0';
 }
 
-static void print_dir_entry(struct de *de) {
+static void print_dir_entry(struct mg_direntry *de) {
   char size[64], mod[64], href[PATH_MAX];
 
   if (de->st.is_directory) {
@@ -5011,7 +5005,7 @@ static void print_dir_entry(struct de *de) {
 // On windows, __cdecl specification is needed in case if project is built
 // with __stdcall convention. qsort always requires __cdecl callback.
 static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
-  const struct de *a = (const struct de *) p1, *b = (const struct de *) p2;
+  const struct mg_direntry *a = (const struct mg_direntry *) p1, *b = (const struct mg_direntry *) p2;
   const char *query_string = a->conn->request_info.query_string;
   int cmp_result = 0;
 
@@ -5039,16 +5033,15 @@ static int WINCDECL compare_dir_entries(const void *p1, const void *p2) {
 static int must_hide_file(struct mg_connection *conn, const char *path) {
   const char *pw_pattern = "**" PASSWORDS_FILE_NAME "$";
   const char *pattern = get_conn_option(conn, HIDE_FILES);
-  return match_prefix(pw_pattern, strlen(pw_pattern), path) > 0 ||
-    (!is_empty(pattern) && match_prefix(pattern, strlen(pattern), path) > 0);
+  return match_string(pw_pattern, strlen(pw_pattern), path) > 0 ||
+    (!is_empty(pattern) && match_string(pattern, strlen(pattern), path) > 0);
 }
 
-static int scan_directory(struct mg_connection *conn, const char *dir,
-                          void *data, void (*cb)(struct de *, void *)) {
+int mg_scan_directory(struct mg_connection *conn, const char *dir, void *data, mg_process_direntry_cb *cb) {
   char path[PATH_MAX];
   struct dirent *dp;
   DIR *dirp;
-  struct de de;
+  struct mg_direntry de;
 
   if ((dirp = opendir(dir)) == NULL) {
     return 0;
@@ -5083,17 +5076,17 @@ static int scan_directory(struct mg_connection *conn, const char *dir,
 }
 
 struct dir_scan_data {
-  struct de *entries;
+  struct mg_direntry *entries;
   int num_entries;
   int arr_size;
 };
 
-static void dir_scan_callback(struct de *de, void *data) {
+static void dir_scan_callback(struct mg_direntry *de, void *data) {
   struct dir_scan_data *dsd = (struct dir_scan_data *) data;
 
   if (dsd->entries == NULL || dsd->num_entries >= dsd->arr_size) {
     dsd->arr_size *= 2;
-    dsd->entries = (struct de *) realloc(dsd->entries, dsd->arr_size *
+    dsd->entries = (struct mg_direntry *) realloc(dsd->entries, dsd->arr_size *
                                          sizeof(dsd->entries[0]));
   }
   if (dsd->entries == NULL) {
@@ -5114,7 +5107,7 @@ static void handle_directory_request(struct mg_connection *conn,
 
   if (mg_is_producing_nested_page(conn))
     return;
-  if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
+  if (!mg_scan_directory(conn, dir, &data, dir_scan_callback)) {
     send_http_error(conn, 500, "Cannot open directory",
                     "Error: opendir(%s): %s", dir, strerror(ERRNO));
     return;
@@ -6392,7 +6385,7 @@ faulty_tag_value:
       rv = 2;
     } else {
       set_close_on_exec(fileno(fp));
-      if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS),
+      if (match_string(get_conn_option(conn, SSI_EXTENSIONS),
                        -1,
                        conn->request_info.phys_path) > 0) {
         if (send_ssi_file(conn, conn->request_info.phys_path, fp, include_level + 1) < 0)
@@ -6653,7 +6646,7 @@ static void print_props(struct mg_connection *conn, const char* uri,
             mtime);
 }
 
-static void print_dav_dir_entry(struct de *de, void *data) {
+static void print_dav_dir_entry(struct mg_direntry *de, void *data) {
   char href[PATH_MAX];
   struct mg_connection *conn = (struct mg_connection *) data;
   mg_snprintf(conn, href, sizeof(href), "%s%s",
@@ -6688,7 +6681,7 @@ static void handle_propfind(struct mg_connection *conn, const char* path,
   if (st->is_directory &&
       !mg_strcasecmp(get_conn_option(conn, ENABLE_DIRECTORY_LISTING), "yes") &&
       (depth == NULL || strcmp(depth, "0") != 0)) {
-    scan_directory(conn, path, conn, &print_dav_dir_entry);
+    mg_scan_directory(conn, path, conn, &print_dav_dir_entry);
   }
 
   mg_printf(conn, "%s\n", "</d:multistatus>");
@@ -6771,7 +6764,7 @@ static void handle_request(struct mg_connection *conn) {
                       "Directory listing denied");
     }
 #if !defined(NO_CGI)
-  } else if (match_prefix(get_conn_option(conn, CGI_EXTENSIONS),
+  } else if (match_string(get_conn_option(conn, CGI_EXTENSIONS),
                           -1,
                           path) > 0) {
     if (strcmp(ri->request_method, "POST") &&
@@ -6782,7 +6775,7 @@ static void handle_request(struct mg_connection *conn) {
       handle_cgi_request(conn, path);
     }
 #endif // !NO_CGI
-  } else if (match_prefix(get_conn_option(conn, SSI_EXTENSIONS),
+  } else if (match_string(get_conn_option(conn, SSI_EXTENSIONS),
                           -1,
                           path) > 0) {
     handle_ssi_file_request(conn, path);
@@ -9722,11 +9715,11 @@ int mg_is_read_data_available(struct mg_connection *conn) {
 }
 
 
-int mg_match_prefix(const char *pattern, int pattern_len, const char *str) {
+int mg_match_string(const char *pattern, int pattern_len, const char *str) {
   if (!str || !pattern)
     return -1;
 
-  return match_prefix(pattern, pattern_len, str);
+  return match_string(pattern, pattern_len, str);
 }
 
 time_t mg_parse_date_string(const char *datetime) {
