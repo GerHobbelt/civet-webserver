@@ -74,8 +74,8 @@ CAPTION "xxx"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
     GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
-    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,76,29,296,10
-    ICON            IDI_ICON,IDC_STATIC,22,23,20,20
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
     GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
     CONTROL         "",IDC_RICHEDIT4LOG,"RICHEDIT60W",WS_BORDER | WS_VSCROLL | WS_TABSTOP | 0x844,9,86,394,143
     PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
@@ -90,8 +90,8 @@ CAPTION "xxx"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
     GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
-    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,76,29,296,10
-    ICON            IDI_ICON,IDC_STATIC,22,23,20,20
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
     GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
     CONTROL         "",IDC_RICHEDIT4LOG,"RICHEDIT50W",WS_BORDER | WS_VSCROLL | WS_TABSTOP | 0x844,9,86,394,143
     PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
@@ -106,10 +106,10 @@ CAPTION "xxx"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
     GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
-    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,76,29,296,10
-    ICON            IDI_ICON,IDC_STATIC,22,23,20,20
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
     GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
-    CONTROL         "",IDC_RICHEDIT4LOG,"RICHEDIT20W",WS_BORDER | WS_VSCROLL | WS_TABSTOP | 0x844,9,86,394,143
+    CONTROL         "",IDC_RICHEDIT4LOG,"RichEdit20W",ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER | WS_VSCROLL | WS_TABSTOP,9,86,394,143
     PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
     PUSHBUTTON      "Clear Log",IDC_BUTTON_CLEAR_LOG,6,233,114,16
     PUSHBUTTON      "Generate the VHosts' directories now",IDC_BUTTON_CREATE_VHOSTS_DIRS,236,233,170,16
@@ -127,6 +127,10 @@ BEGIN
     IDD_FORMVIEW60, DIALOG
     BEGIN
         BOTTOMMARGIN, 252
+    END
+
+    IDD_FORMVIEW20, DIALOG
+    BEGIN
     END
 END
 #endif    // APSTUDIO_INVOKED

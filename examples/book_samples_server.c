@@ -1311,6 +1311,7 @@ typedef enum child_control_move_mode_t {
 static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, MOVE_MODE mode)
 {
 	int l, r, t, b, w, h;
+	// Retrieve the child-window identifier. Use it to get at the matching OFFSETS struct in the meta store to help us resize the bugger. 
 	LONG ctrl_id = GetWindowLong(hControl, GWL_ID);
 	OFFSETS *offsets = getControlOffsets(ctrl_id);
 
@@ -1377,6 +1378,65 @@ static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, MOVE_MODE 
 		MoveWindow(hControl, l, t, w, h, TRUE);
 		break;
 	}
+	return TRUE;
+}
+
+typedef struct {
+	HWND parent_hwnd;
+	RECT parent_wrect;
+	RECT parent_clrect;
+} CalcInfoClosureData;
+
+BOOL CALLBACK EnumControlsToCalculateOffsets(HWND hWndChild, LPARAM lParam)
+{ 
+	CalcInfoClosureData *meta = (CalcInfoClosureData *)lParam;
+
+	// Retrieve the child-window identifier. Use it to check and, if necessary, re-assign a fresh ID to the control.
+	// This reassign activity is required to ensure that *all* child controls have unique IDs, including the
+	// IDC_STATIC ones!
+	LONG idChild = GetWindowLong(hWndChild, GWL_ID);
+	if (idChild == IDC_STATIC) {
+		static int new_index = IDC_STATIC_START_ID;
+		new_index++;
+		SetWindowLong(hWndChild, GWL_ID, new_index);
+		idChild = GetWindowLong(hWndChild, GWL_ID);
+	}
+
+	calculateOffsets(hWndChild, &meta->parent_clrect);
+
+	return TRUE;
+}
+
+BOOL CALLBACK EnumControlsToResizeThem(HWND hWndChild, LPARAM lParam)
+{ 
+	CalcInfoClosureData *meta = (CalcInfoClosureData *)lParam;
+
+	// Retrieve the child-window identifier. Use it to get at the matching OFFSETS struct in the meta store to help us resize the bugger. 
+	LONG idChild = GetWindowLong(hWndChild, GWL_ID);
+
+	switch (idChild) {
+	default:
+		MoveChildControl(hWndChild, &meta->parent_clrect, STICK_TO_TOP | RESIZE_WIDTH);
+		break;
+
+	case IDC_STATIC_LOGO:
+		MoveChildControl(hWndChild, &meta->parent_clrect, STICK_TO_TOP | STICK_TO_LEFT);
+		break;
+
+	case IDC_EDIT_WRAPPER:
+	case IDC_RICHEDIT4LOG:
+		MoveChildControl(hWndChild, &meta->parent_clrect, RESIZE_BOTH);
+		break;
+
+	case IDC_BUTTON_CLEAR_LOG:
+		MoveChildControl(hWndChild, &meta->parent_clrect, STICK_TO_BOTTOM | STICK_TO_LEFT);
+		break;
+
+	case IDC_BUTTON_CREATE_VHOSTS_DIRS:
+		MoveChildControl(hWndChild, &meta->parent_clrect, STICK_TO_BOTTOM | STICK_TO_RIGHT);
+		break;
+	}
+
 	return TRUE;
 }
 
@@ -1514,43 +1574,31 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
 	case WM_SIZE:
 		if (wParam == SIZE_RESTORED) {
-			int resize_w = LOWORD(lParam);
-			int resize_h = HIWORD(lParam);
-			HWND hEdit = GetDlgItem(hWnd, IDC_RICHEDIT4LOG);
-			HWND hEditWrapper = GetDlgItem(hWnd, IDC_EDIT_WRAPPER);
-			HWND hClearButton = GetDlgItem(hWnd, IDC_BUTTON_CLEAR_LOG);
-			HWND hGenDirsButton = GetDlgItem(hWnd, IDC_BUTTON_CREATE_VHOSTS_DIRS);
-			HWND hParent = GetParent(hEdit);
+			CalcInfoClosureData meta = { 0 };
+			meta.parent_hwnd = hWnd;
 
-			RECT parent_wrect = { 0 };
-			RECT parent_clrect = { 0 };
 			// Get the client rect of the dialog itself to calculate the *relative* positions
 			// of the controls inside.
-			GetWindowRect(hWnd, &parent_wrect);
-			GetClientRect(hWnd, &parent_clrect);
-			ClientRectToScreen(hWnd, &parent_clrect);
+			GetWindowRect(hWnd, &meta.parent_wrect);
+			GetClientRect(hWnd, &meta.parent_clrect);
+			ClientRectToScreen(hWnd, &meta.parent_clrect);
 
-			MG_ASSERT(hParent == hWnd);
 			if (!dlgInfo.is_set_up) {
 				OFFSETS *dlgClientAreaOffsets = &dlgInfo.controlOffsets[0];
 				dlgInfo.control_index_map[0] = 0xFFFFFFFFul;		// mark slot as allocated
-				dlgClientAreaOffsets->left = parent_clrect.left - parent_wrect.left;
-				dlgClientAreaOffsets->right = parent_clrect.right - parent_wrect.right;
-				dlgClientAreaOffsets->top = parent_clrect.top - parent_wrect.top;
-				dlgClientAreaOffsets->bottom = parent_clrect.bottom - parent_wrect.bottom;
+				dlgClientAreaOffsets->left = meta.parent_clrect.left - meta.parent_wrect.left;
+				dlgClientAreaOffsets->right = meta.parent_clrect.right - meta.parent_wrect.right;
+				dlgClientAreaOffsets->top = meta.parent_clrect.top - meta.parent_wrect.top;
+				dlgClientAreaOffsets->bottom = meta.parent_clrect.bottom - meta.parent_wrect.bottom;
 				dlgClientAreaOffsets->width = dlgClientAreaOffsets->left - dlgClientAreaOffsets->right;
 				dlgClientAreaOffsets->height = dlgClientAreaOffsets->top - dlgClientAreaOffsets->bottom;
 
-				calculateOffsets(hEditWrapper, &parent_clrect);
-				calculateOffsets(hEdit, &parent_clrect);
-				calculateOffsets(hClearButton, &parent_clrect);
-				calculateOffsets(hGenDirsButton, &parent_clrect);
+				EnumChildWindows(hWnd, EnumControlsToCalculateOffsets, (LPARAM)&meta);
+
 				dlgInfo.is_set_up = 1;
 			}
-			MoveChildControl(hEditWrapper, &parent_clrect, RESIZE_BOTH);
-			MoveChildControl(hEdit, &parent_clrect, RESIZE_BOTH);
-			MoveChildControl(hClearButton, &parent_clrect, STICK_TO_BOTTOM | STICK_TO_LEFT);
-			MoveChildControl(hGenDirsButton, &parent_clrect, STICK_TO_BOTTOM | STICK_TO_RIGHT);
+
+			EnumChildWindows(hWnd, EnumControlsToResizeThem, (LPARAM)&meta);
 		}
 		return FALSE;
 
