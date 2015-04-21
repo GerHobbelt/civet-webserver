@@ -1252,9 +1252,38 @@ typedef struct {
 	int height;
 } OFFSETS;
 
-static void calculateOffsets(OFFSETS *dst_rc, HWND hControl, LPCRECT parent_client_rc)
+#define MAX_CHILD_COUNT			31			// keep this one prime as it's used as the modulus for a simpl/fast hash too!
+
+typedef struct {
+	unsigned int is_set_up : 1;
+	DWORD control_index_map[MAX_CHILD_COUNT];
+	OFFSETS controlOffsets[1 + MAX_CHILD_COUNT]; // slot 0 stores the dialog edges info
+} dlgInfo_t;
+
+static dlgInfo_t dlgInfo = { 0 };
+
+static OFFSETS *getControlOffsets(DWORD id) {
+	int slot, i;
+	MG_ASSERT(id != 0);
+	for (i = 0; i < MAX_CHILD_COUNT; i++) {
+		slot = (id + i) % MAX_CHILD_COUNT;
+		if (dlgInfo.control_index_map[slot] == id) {
+			return &dlgInfo.controlOffsets[slot];
+		}
+		else if (!dlgInfo.control_index_map[slot]) {
+			dlgInfo.control_index_map[slot] = id;
+			return &dlgInfo.controlOffsets[slot];
+		}
+	}
+	MG_ASSERT(!"Should never get here!");
+	return NULL;
+}
+
+static void calculateOffsets(HWND hControl, LPCRECT parent_client_rc)
 {
 	RECT rc = { 0 };
+	LONG ctrl_id = GetWindowLong(hControl, GWL_ID);
+	OFFSETS *dst_rc = getControlOffsets(ctrl_id);
 	BOOL rv = GetWindowRect(hControl, &rc);
 	//OffsetRect(&rc, -parent_client_rc.left, -parent_client_rc.top);
 	dst_rc->width = rc.right - rc.left;
@@ -1279,9 +1308,11 @@ typedef enum child_control_move_mode_t {
 	RESIZE_BOTH = (RESIZE_WIDTH | RESIZE_HEIGHT),
 } MOVE_MODE;
 
-static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, OFFSETS *offsets, MOVE_MODE mode)
+static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, MOVE_MODE mode)
 {
 	int l, r, t, b, w, h;
+	LONG ctrl_id = GetWindowLong(hControl, GWL_ID);
+	OFFSETS *offsets = getControlOffsets(ctrl_id);
 
 	switch (mode) {
 	default:
@@ -1410,15 +1441,6 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   ENLINK *link;
   CHARRANGE cr;
 
-  static struct {
-	  unsigned int is_set_up : 1;
-	  OFFSETS dlgClientAreaOffsets;
-	  OFFSETS editWrapperOffsets;
-	  OFFSETS editControlOffsets;
-	  OFFSETS clearButtonOffsets;
-	  OFFSETS genDirsButtonOffsets;
-  } dlgInfo = { 0 };
-
   switch (msg) {
     case WM_INITDIALOG:
 	  app_hwnd = hWnd;
@@ -1510,23 +1532,25 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
 			MG_ASSERT(hParent == hWnd);
 			if (!dlgInfo.is_set_up) {
-				dlgInfo.dlgClientAreaOffsets.left = parent_clrect.left - parent_wrect.left;
-				dlgInfo.dlgClientAreaOffsets.right = parent_clrect.right - parent_wrect.right;
-				dlgInfo.dlgClientAreaOffsets.top = parent_clrect.top - parent_wrect.top;
-				dlgInfo.dlgClientAreaOffsets.bottom = parent_clrect.bottom - parent_wrect.bottom;
-				dlgInfo.dlgClientAreaOffsets.width = dlgInfo.dlgClientAreaOffsets.left - dlgInfo.dlgClientAreaOffsets.right;
-				dlgInfo.dlgClientAreaOffsets.height = dlgInfo.dlgClientAreaOffsets.top - dlgInfo.dlgClientAreaOffsets.bottom;
+				OFFSETS *dlgClientAreaOffsets = &dlgInfo.controlOffsets[0];
+				dlgInfo.control_index_map[0] = 0xFFFFFFFFul;		// mark slot as allocated
+				dlgClientAreaOffsets->left = parent_clrect.left - parent_wrect.left;
+				dlgClientAreaOffsets->right = parent_clrect.right - parent_wrect.right;
+				dlgClientAreaOffsets->top = parent_clrect.top - parent_wrect.top;
+				dlgClientAreaOffsets->bottom = parent_clrect.bottom - parent_wrect.bottom;
+				dlgClientAreaOffsets->width = dlgClientAreaOffsets->left - dlgClientAreaOffsets->right;
+				dlgClientAreaOffsets->height = dlgClientAreaOffsets->top - dlgClientAreaOffsets->bottom;
 
-				calculateOffsets(&dlgInfo.editWrapperOffsets, hEditWrapper, &parent_clrect);
-				calculateOffsets(&dlgInfo.editControlOffsets, hEdit, &parent_clrect);
-				calculateOffsets(&dlgInfo.clearButtonOffsets, hClearButton, &parent_clrect);
-				calculateOffsets(&dlgInfo.genDirsButtonOffsets, hGenDirsButton, &parent_clrect);
+				calculateOffsets(hEditWrapper, &parent_clrect);
+				calculateOffsets(hEdit, &parent_clrect);
+				calculateOffsets(hClearButton, &parent_clrect);
+				calculateOffsets(hGenDirsButton, &parent_clrect);
 				dlgInfo.is_set_up = 1;
 			}
-			MoveChildControl(hEditWrapper, &parent_clrect, &dlgInfo.editWrapperOffsets, RESIZE_HEIGHT);
-			MoveChildControl(hEdit, &parent_clrect, &dlgInfo.editControlOffsets, RESIZE_HEIGHT);
-			MoveChildControl(hClearButton, &parent_clrect, &dlgInfo.clearButtonOffsets, STICK_TO_BOTTOM | STICK_TO_LEFT);
-			MoveChildControl(hGenDirsButton, &parent_clrect, &dlgInfo.genDirsButtonOffsets, STICK_TO_BOTTOM | STICK_TO_RIGHT);
+			MoveChildControl(hEditWrapper, &parent_clrect, RESIZE_BOTH);
+			MoveChildControl(hEdit, &parent_clrect, RESIZE_BOTH);
+			MoveChildControl(hClearButton, &parent_clrect, STICK_TO_BOTTOM | STICK_TO_LEFT);
+			MoveChildControl(hGenDirsButton, &parent_clrect, STICK_TO_BOTTOM | STICK_TO_RIGHT);
 		}
 		return FALSE;
 
@@ -1536,10 +1560,14 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 		}
 		else {
 			LPRECT wrc = (LPRECT)lParam;
-			int dlgBorderH = dlgInfo.dlgClientAreaOffsets.height;
-			int dlgBorderW = dlgInfo.dlgClientAreaOffsets.width;
-			int min_h = dlgInfo.editControlOffsets.top - dlgInfo.editControlOffsets.bottom + /* ~ 2 lines of text: */ 32;
-			int min_w = dlgInfo.clearButtonOffsets.left + dlgInfo.clearButtonOffsets.width + dlgInfo.genDirsButtonOffsets.width - dlgInfo.genDirsButtonOffsets.right + /* gutter: */ 4;
+			OFFSETS *dlgClientAreaOffsets = &dlgInfo.controlOffsets[0];
+			OFFSETS *editControlOffsets = getControlOffsets(IDC_EDIT_WRAPPER);
+			OFFSETS *clearButtonOffsets = getControlOffsets(IDC_BUTTON_CLEAR_LOG);
+			OFFSETS *genDirsButtonOffsets = getControlOffsets(IDC_BUTTON_CREATE_VHOSTS_DIRS);
+			int dlgBorderH = dlgClientAreaOffsets->height;
+			int dlgBorderW = dlgClientAreaOffsets->width;
+			int min_h = editControlOffsets->top - editControlOffsets->bottom + /* ~ 2 lines of text: */ 24;
+			int min_w = clearButtonOffsets->left + clearButtonOffsets->width + genDirsButtonOffsets->width - genDirsButtonOffsets->right + /* gutter: */ 4;
 			int w = wrc->right - wrc->left;
 			int h = wrc->bottom - wrc->top;
 			min_w += dlgBorderW;
