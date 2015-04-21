@@ -2,15 +2,16 @@
 // Microsoft Visual C++ generated include file.
 // Used by mongoose_book_samples_server.rc
 //
-#define IDD_FORMVIEW                    101
+#define IDD_FORMVIEW60                  101
+#define IDD_FORMVIEW50                  102
+#define IDD_FORMVIEW20                  103
 #define IDI_ICON                        200
 #define IDR_FAVICON                     201
 #define IDR_HTML_HELP_OVERVIEW          202
 #define IDR_RC_BIOHAZARD_RED_BG_SVG     203
-#define IDR_HTML1                       204
 #define IDR_HTML_DEVELOPER_INFO         204
 #define IDC_RICHEDIT4LOG                1000
-#define IDC_BUTTON_VISIT_URL            1001
+#define IDC_BUTTON_VISIT_URL            1003
 #define IDC_STATIC                      -1
 
 // Next default values for new objects

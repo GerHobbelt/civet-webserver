@@ -30,10 +30,17 @@ when someone visits the '/restart' URL, the server is stopped and restarted afte
 
 #ifdef _WIN32
 #include "win32/examples/mongoose_book_samples_server.resource.h"
-#define _RICHEDIT_VER	0x0300
+#define _RICHEDIT_VER	0x0800
 #include <richedit.h>
 #ifndef AURL_ENABLEURL
-#define AURL_ENABLEURL   TRUE
+#define AURL_ENABLEURL   1
+#endif
+#ifndef AURL_ENABLEEAURLS
+#define AURL_ENABLEEAURLS 0
+#endif
+#include <shlwapi.h>
+#ifndef MIN
+#define MIN(a, b)   ((a) < (b) ? (a) : (b))
 #endif
 #endif // _WIN32
 
@@ -52,6 +59,7 @@ static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
 static struct mg_context *ctx = NULL; // Set by start_mongoose()
 #if defined(_WIN32)
 static HWND app_hwnd = NULL;
+static int edit_control_version = 0;
 #define WM_START_SERVER         (WM_APP + 42)
 #define WM_SERVER_IS_STOPPING   (WM_APP + 43)
 #define WM_RESTART_SERVER       (WM_APP + 44)
@@ -547,12 +555,12 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
 
       // use the CTX-based get-option call so our recursive invocation
       // skips this bit of code as 'conn == NULL' then:
-      mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../localhost-%u", mg_get_option(ctx, name), (unsigned int)request_info->local_ip.ip_addr.v4[3]);
+      mg_snprintf(NULL, docu_site_docroot, sizeof(docu_site_docroot), "%s/../localhost-%03u", mg_get_option(ctx, name), (unsigned int)request_info->local_ip.ip_addr.v4[3]);
 
 	  return docu_site_docroot;
     }
 	/* Name-based Virtual Hosting */
-	int prefix_len = mg_match_string("*.gov$|*.lan$", -1, mg_get_header(conn, "Host")); /* e.g. 'nameless.gov:8081' or 'fifi.lan:8081' */
+	int prefix_len = mg_match_string("*.gov|*.lan", -1, mg_get_header(conn, "Host")); /* e.g. 'nameless.gov:8081' or 'fifi.lan:8081' */
 	if (0 < prefix_len)
 	{
 	  // use the CTX-based get-option call so our recursive invocation
@@ -991,10 +999,16 @@ static void report_possible_vhosts(void)
 			continue;
 		}
 
-		// Only accept valid entries which point at 127.0.0.2 and above:
-		if (strlen(domainname) == 0 || ip_lsb < 2)
+		// Only accept valid entries which point at 127.0.0.1 .. 127.0.0.254 (.255 is a broadcast address)
+		if (strlen(domainname) == 0 || !strcmp(domainname, "localhost") || ip_lsb < 1 || ip_lsb > 254)
 			continue;
-		
+		// Only accept .gov and .lan domins at 127.0.0.1; accept ANY domain at 127.0.0.2 .. 127.0.0.254
+		// --> this ensures we skip most 'loop entries' which may be entered in the hosts file to prevent
+		// browsers visiting those, e.g. 
+		//   127.0.0.1    nasty.ads.com
+		if (ip_lsb == 1 && mg_match_string("*.gov$|*.lan$", -1, domainname) < 0)
+			continue;
+
 		append_log("\nPossible VHost: http://%s:%s/", domainname, mg_get_option(ctx, "listening_ports"));
 	}
 
@@ -1307,7 +1321,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 #endif
 
 	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SETEVENTMASK, 0, ENM_LINK);
-	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_AUTOURLDETECT, AURL_ENABLEURL, 0);
+	  SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_AUTOURLDETECT, AURL_ENABLEURL | (edit_control_version >= 5 ? AURL_ENABLEEAURLS : 0), 0);
 	  SetWindowTextA(hWnd, server_name);
 	  PostMessage(hWnd, DM_REPOSITION, 0, 0);
 	  PostMessage(hWnd, WM_START_SERVER, 0, 0);
@@ -1585,19 +1599,127 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 #endif
 }
 
+HMODULE richedit_h = NULL;
+
+// Here we attempt to load the latest RichEdit control from Microsoft
+// and adjust our resource IDs accordingly as we cannot patch the 
+// resource class in any control defined through the resource compiler. :-(
+HRESULT initRichEditControl(HINSTANCE hInst) 
+{
+	HRESULT rv = E_UNEXPECTED;
+
+	// Initialize RichEdit 4.1 .. 8.0 control
+	//richedit_h = LoadLibrary(_T("msftedit.dll"));
+	// You can find out which version is loaded when you load msftedit.dll:
+	if (richedit_h) {
+		FARPROC f = GetProcAddress(richedit_h, "DllGetVersion");
+		if (f) {
+			typedef HRESULT CALLBACK DllGetVersion_f(DLLVERSIONINFO *pdvi);
+			DllGetVersion_f *getV = (DllGetVersion_f *)f;
+			DLLVERSIONINFO inf = { sizeof(DLLVERSIONINFO) };
+			rv = getV(&inf);
+			if (rv == S_OK) {
+				edit_control_version = inf.dwMajorVersion;
+			}
+		}
+	}
+	// Initialize RichEdit 2.0 control
+	if (richedit_h == NULL) {
+		richedit_h = LoadLibrary(_T("RICHED20.DLL"));
+		rv = S_OK;
+		edit_control_version = 3;
+	}
+	if (richedit_h == NULL) {
+		return E_NOTIMPL;
+	}
+	return rv;
+}
+
+// HRESULT initRichEditControl_Phase2(HINSTANCE hInst, HWND hWnd)
+// {
+// 	HWND test_control = NULL;
+// 	HRESULT dwError = E_UNEXPECTED;
+
+// 	if (richedit_h != NULL && test_control == NULL) {
+// 		test_control = CreateWindowEx(WS_EX_CLIENTEDGE,
+// 			_T("RICHEDIT60W"),
+// 			_T("My Rich Edit"),
+// 			WS_BORDER | WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+// 			2, 2,
+// 			200, 300,
+// 			hWnd,
+// 			0,
+// 			hInst,
+// 			NULL);
+// 		dwError = GetLastError();
+// 		if (dwError && dwError != ERROR_CANNOT_FIND_WND_CLASS) {
+// 			dwError += 0;
+// 		}
+// 		if (dwError == S_OK) {
+// 			IDC_RICHEDIT4LOG = IDC_RICHEDIT4LOG60;
+// 		}
+// 	}
+
+// 	if (richedit_h != NULL && test_control == NULL) {
+// 		test_control = CreateWindowEx(WS_EX_CLIENTEDGE,
+// 			_T("RICHEDIT50W"),
+// 			_T("My Rich Edit"),
+// 			WS_BORDER | WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+// 			2, 2,
+// 			200, 300,
+// 			hWnd,
+// 			0,
+// 			hInst,
+// 			NULL);
+// 		dwError = GetLastError();
+// 		if (dwError && dwError != ERROR_CANNOT_FIND_WND_CLASS) {
+// 			dwError += 0;
+// 		}
+// 		if (dwError == S_OK) {
+// 			IDC_RICHEDIT4LOG = IDC_RICHEDIT4LOG60;
+// 		}
+// 	}
+
+// 	if (richedit_h != NULL && test_control == NULL) {
+// 		test_control = CreateWindowEx(WS_EX_CLIENTEDGE,
+// 			_T("RICHEDIT20W"),
+// 			_T("My Rich Edit 2"),
+// 			WS_BORDER | WS_CHILD | WS_VISIBLE | ES_MULTILINE,
+// 			2, 2,
+// 			200, 300,
+// 			hWnd,
+// 			0,
+// 			hInst,
+// 			NULL);
+// 		dwError = GetLastError();
+// 		if (dwError && dwError != ERROR_CANNOT_FIND_WND_CLASS) {
+// 			dwError += 0;
+// 		}
+// 		if (dwError == S_OK) {
+// 			IDC_RICHEDIT4LOG = IDC_RICHEDIT4LOG60;
+// 		}
+// 	}
+// 	if (test_control) {
+// 		DestroyWindow(test_control);
+// 	}
+// 	if (IDC_RICHEDIT4LOG) {
+// 		return S_OK;
+// 	}
+// 	return dwError;
+// }
+
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   WNDCLASSA cls;
   HWND hWnd;
   MSG msg;
-  HMODULE richedit_h;
+  HRESULT rv;
 
   //WM_SERVER_IS_STOPPING = RegisterWindowMessageA("mongoose_server_stopping");
 
-  // Initialize RichEdit 2.0 control
-  richedit_h = LoadLibrary(_T("RICHED20.DLL"));
-  if (richedit_h == NULL) {
-    MessageBox(NULL, _T("Could not load the RichEdit 2.0/3.0 control DLL.  The file RICHED20.DLL may be missing or corrupt."), _T("Error"), MB_OK | MB_ICONEXCLAMATION);
-	return EXIT_FAILURE;
+  rv = initRichEditControl(hInst);
+  if (rv != S_OK) {
+	  MessageBox(NULL, _T("Could not load the RichEdit control DLL."), _T("Error"), MB_OK | MB_ICONEXCLAMATION);
+	  return EXIT_FAILURE;
   }
 
   init_server_name();
@@ -1606,7 +1728,24 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   cls.hIcon = LoadIcon(NULL, IDI_APPLICATION);
   cls.lpszClassName = server_name;
 
-  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW), NULL, WindowProc);
+  // As CreateDialog() will only succeed when we provide a resource which contains nothing but
+  // valid control classes, we have one resource for every RichEdit version we may have loaded
+  // earlier: here we discover whcihc RichEdit control is available for real:
+  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW60), NULL, WindowProc);
+  if (!hWnd) {
+	  edit_control_version = MIN(6, edit_control_version);
+	  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW50), NULL, WindowProc);
+  }
+  if (!hWnd) {
+	  edit_control_version = MIN(3, edit_control_version);
+	  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW20), NULL, WindowProc);
+  }
+  //rv = initRichEditControl_Phase2(hInst, hWnd);
+  //if (rv != S_OK) ...
+  if (!hWnd) {
+	  MessageBox(NULL, _T("Could not load the RichEdit control DLL."), _T("Error"), MB_OK | MB_ICONEXCLAMATION);
+	  return EXIT_FAILURE;
+  }
 
   TrayIcon.cbSize = sizeof(TrayIcon);
   TrayIcon.uID = ID_TRAYICON;
