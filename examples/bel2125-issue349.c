@@ -269,7 +269,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
             int ie_hack2 = 0;
 
             contentLength = atoi(mg_get_header(conn, "Content-Length"));
-            assert(contentLength <= BUFFER_SIZE);
+            MG_ASSERT(contentLength <= BUFFER_SIZE);
 
             mg_set_response_code(conn, 200);
 
@@ -288,7 +288,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
             dataRead = mg_read(conn, postData, contentLength);
             if (dataRead > 0)
             {
-                assert(dataRead == contentLength);
+                MG_ASSERT(dataRead == contentLength);
 
                 if (!ie_hack)
                 {
@@ -323,7 +323,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     int file_found;
     struct mgstat fst;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
     if (file_found) {
       return NULL; // let mongoose handle the default of 'file exists'...

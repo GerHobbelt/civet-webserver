@@ -26,6 +26,20 @@ when someone visits the '/restart' URL, the server is stopped and restarted afte
 */
 
 
+// Override ASSERT in debug mode
+#ifndef NDEBUG
+#define MG_ASSERT(expr)												\
+	do {															\
+		if (!(expr)) {												\
+			srv_signal_assert(#expr, __FILE__, __LINE__);			\
+		}															\
+	} while (0)
+
+void srv_signal_assert(const char *expr, const char *filepath, unsigned int lineno);
+#endif
+
+
+
 #include "mongoose_ex.h"
 
 #ifdef _WIN32
@@ -39,9 +53,6 @@ when someone visits the '/restart' URL, the server is stopped and restarted afte
 #define AURL_ENABLEEAURLS 0
 #endif
 #include <shlwapi.h>
-#ifndef MIN
-#define MIN(a, b)   ((a) < (b) ? (a) : (b))
-#endif
 #endif // _WIN32
 
 #include <upskirt/src/markdown.h>
@@ -346,7 +357,7 @@ static int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat
   /* opening the file */
   FILE *in;
 
-  assert(ri->phys_path);
+  MG_ASSERT(ri->phys_path);
   /* opening the file */
   in = mg_fopen(ri->phys_path, "r");
   if (!in)
@@ -640,7 +651,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     struct mgstat st;
     int file_found;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
     if (file_found) {
       // are we looking for HTML output of MarkDown file?
@@ -791,7 +802,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
               // clear the handles sets to prevent 'surprises' from processing these a second time (below):
               FD_ZERO(&read_set);
               max_fd = -1;
-              assert(!"Should never get here");
+              MG_ASSERT(!"Should never get here");
               mg_send_http_error(conn, 579, NULL, "select() failure"); // internal error in our custom handler
               break;
             }
@@ -856,7 +867,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
   } else {
     struct mgstat fst;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     if (0 == mg_stat(request_info->phys_path, &fst)) {
       return NULL; // let mongoose handle the default of 'file exists/directory listing'...
 	}
@@ -1220,6 +1231,124 @@ static void show_error(void) {
   MessageBoxA(NULL, buf, "Error", MB_OK);
 }
 
+static void ClientRectToScreen(HWND hWnd, LPRECT rc)
+{
+	POINT p1 = { rc->left, rc->top };
+	POINT p2 = { rc->right, rc->bottom };
+	ClientToScreen(hWnd, &p1);
+	ClientToScreen(hWnd, &p2);
+	rc->left = p1.x;
+	rc->top = p1.y;
+	rc->right = p2.x;
+	rc->bottom = p2.y;
+}
+
+typedef struct {
+	int left;
+	int right;
+	int top;
+	int bottom;
+	int width;
+	int height;
+} OFFSETS;
+
+static void calculateOffsets(OFFSETS *dst_rc, HWND hControl, LPCRECT parent_client_rc)
+{
+	RECT rc = { 0 };
+	BOOL rv = GetWindowRect(hControl, &rc);
+	//OffsetRect(&rc, -parent_client_rc.left, -parent_client_rc.top);
+	dst_rc->width = rc.right - rc.left;
+	dst_rc->height = rc.bottom - rc.top;
+	rc.top -= parent_client_rc->top;
+	rc.left -= parent_client_rc->left;
+	rc.right -= parent_client_rc->right;
+	rc.bottom -= parent_client_rc->bottom;
+	dst_rc->left = rc.left;
+	dst_rc->right = rc.right;
+	dst_rc->top = rc.top;
+	dst_rc->bottom = rc.bottom;
+}
+
+typedef enum child_control_move_mode_t {
+	STICK_TO_TOP = 0x01,
+	STICK_TO_BOTTOM = 0x02,
+	STICK_TO_LEFT = 0x04,
+	STICK_TO_RIGHT = 0x08,
+	RESIZE_WIDTH = (STICK_TO_LEFT | STICK_TO_RIGHT),
+	RESIZE_HEIGHT = (STICK_TO_TOP | STICK_TO_BOTTOM),
+	RESIZE_BOTH = (RESIZE_WIDTH | RESIZE_HEIGHT),
+} MOVE_MODE;
+
+static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, OFFSETS *offsets, MOVE_MODE mode)
+{
+	int l, r, t, b, w, h;
+
+	switch (mode) {
+	default:
+		// do nothing
+		break;
+
+	case STICK_TO_BOTTOM | STICK_TO_LEFT:
+		l = offsets->left;
+		t = parent_client_rc->bottom - parent_client_rc->top + offsets->bottom - offsets->height;
+		w = offsets->width;
+		h = offsets->height;
+		MG_ASSERT(h > 0);
+		MG_ASSERT(w > 0);
+		MoveWindow(hControl, l, t, w, h, TRUE);
+		break;
+
+	case STICK_TO_BOTTOM | STICK_TO_RIGHT:
+		l = parent_client_rc->right - parent_client_rc->left + offsets->right - offsets->width;
+		t = parent_client_rc->bottom - parent_client_rc->top + offsets->bottom - offsets->height;
+		w = offsets->width;
+		h = offsets->height;
+		MG_ASSERT(h > 0);
+		MG_ASSERT(w > 0);
+		MoveWindow(hControl, l, t, w, h, TRUE);
+		break;
+
+	case RESIZE_BOTH:
+		l = offsets->left;
+		r = parent_client_rc->right - parent_client_rc->left + offsets->right;
+		t = offsets->top;
+		b = parent_client_rc->bottom - parent_client_rc->top + offsets->bottom;
+		w = r - l;
+		h = b - t;
+		MG_ASSERT(h > 0);
+		MG_ASSERT(w > 0);
+		MoveWindow(hControl, l, t, w, h, TRUE);
+		break;
+
+	case RESIZE_WIDTH:
+	case RESIZE_WIDTH | STICK_TO_TOP:
+		l = offsets->left;
+		r = parent_client_rc->right - parent_client_rc->left + offsets->right;
+		t = offsets->top;
+		b = offsets->top + offsets->height;
+		w = r - l;
+		h = b - t;
+		MG_ASSERT(h > 0);
+		MG_ASSERT(w > 0);
+		MoveWindow(hControl, l, t, w, h, TRUE);
+		break;
+
+	case RESIZE_HEIGHT:
+	case RESIZE_HEIGHT | STICK_TO_LEFT:
+		l = offsets->left;
+		r = offsets->left + offsets->width;
+		t = offsets->top;
+		b = parent_client_rc->bottom - parent_client_rc->top + offsets->bottom;
+		w = r - l;
+		h = b - t;
+		MG_ASSERT(h > 0);
+		MG_ASSERT(w > 0);
+		MoveWindow(hControl, l, t, w, h, TRUE);
+		break;
+	}
+	return TRUE;
+}
+
 #if defined(MONGOOSE_AS_SERVICE)
 static int manage_service(int action) {
   static const char *service_name = "Mongoose";
@@ -1280,6 +1409,15 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   NMHDR *nm;
   ENLINK *link;
   CHARRANGE cr;
+
+  static struct {
+	  unsigned int is_set_up : 1;
+	  OFFSETS dlgClientAreaOffsets;
+	  OFFSETS editWrapperOffsets;
+	  OFFSETS editControlOffsets;
+	  OFFSETS clearButtonOffsets;
+	  OFFSETS genDirsButtonOffsets;
+  } dlgInfo = { 0 };
 
   switch (msg) {
     case WM_INITDIALOG:
@@ -1351,6 +1489,69 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
         }
 	  }
       break;
+
+	case WM_SIZE:
+		if (wParam == SIZE_RESTORED) {
+			int resize_w = LOWORD(lParam);
+			int resize_h = HIWORD(lParam);
+			HWND hEdit = GetDlgItem(hWnd, IDC_RICHEDIT4LOG);
+			HWND hEditWrapper = GetDlgItem(hWnd, IDC_EDIT_WRAPPER);
+			HWND hClearButton = GetDlgItem(hWnd, IDC_BUTTON_CLEAR_LOG);
+			HWND hGenDirsButton = GetDlgItem(hWnd, IDC_BUTTON_CREATE_VHOSTS_DIRS);
+			HWND hParent = GetParent(hEdit);
+
+			RECT parent_wrect = { 0 };
+			RECT parent_clrect = { 0 };
+			// Get the client rect of the dialog itself to calculate the *relative* positions
+			// of the controls inside.
+			GetWindowRect(hWnd, &parent_wrect);
+			GetClientRect(hWnd, &parent_clrect);
+			ClientRectToScreen(hWnd, &parent_clrect);
+
+			MG_ASSERT(hParent == hWnd);
+			if (!dlgInfo.is_set_up) {
+				dlgInfo.dlgClientAreaOffsets.left = parent_clrect.left - parent_wrect.left;
+				dlgInfo.dlgClientAreaOffsets.right = parent_clrect.right - parent_wrect.right;
+				dlgInfo.dlgClientAreaOffsets.top = parent_clrect.top - parent_wrect.top;
+				dlgInfo.dlgClientAreaOffsets.bottom = parent_clrect.bottom - parent_wrect.bottom;
+				dlgInfo.dlgClientAreaOffsets.width = dlgInfo.dlgClientAreaOffsets.left - dlgInfo.dlgClientAreaOffsets.right;
+				dlgInfo.dlgClientAreaOffsets.height = dlgInfo.dlgClientAreaOffsets.top - dlgInfo.dlgClientAreaOffsets.bottom;
+
+				calculateOffsets(&dlgInfo.editWrapperOffsets, hEditWrapper, &parent_clrect);
+				calculateOffsets(&dlgInfo.editControlOffsets, hEdit, &parent_clrect);
+				calculateOffsets(&dlgInfo.clearButtonOffsets, hClearButton, &parent_clrect);
+				calculateOffsets(&dlgInfo.genDirsButtonOffsets, hGenDirsButton, &parent_clrect);
+				dlgInfo.is_set_up = 1;
+			}
+			MoveChildControl(hEditWrapper, &parent_clrect, &dlgInfo.editWrapperOffsets, RESIZE_HEIGHT);
+			MoveChildControl(hEdit, &parent_clrect, &dlgInfo.editControlOffsets, RESIZE_HEIGHT);
+			MoveChildControl(hClearButton, &parent_clrect, &dlgInfo.clearButtonOffsets, STICK_TO_BOTTOM | STICK_TO_LEFT);
+			MoveChildControl(hGenDirsButton, &parent_clrect, &dlgInfo.genDirsButtonOffsets, STICK_TO_BOTTOM | STICK_TO_RIGHT);
+		}
+		return FALSE;
+
+	case WM_SIZING:
+		if (!dlgInfo.is_set_up) {
+			return FALSE;
+		}
+		else {
+			LPRECT wrc = (LPRECT)lParam;
+			int dlgBorderH = dlgInfo.dlgClientAreaOffsets.height;
+			int dlgBorderW = dlgInfo.dlgClientAreaOffsets.width;
+			int min_h = dlgInfo.editControlOffsets.top - dlgInfo.editControlOffsets.bottom + /* ~ 2 lines of text: */ 32;
+			int min_w = dlgInfo.clearButtonOffsets.left + dlgInfo.clearButtonOffsets.width + dlgInfo.genDirsButtonOffsets.width - dlgInfo.genDirsButtonOffsets.right + /* gutter: */ 4;
+			int w = wrc->right - wrc->left;
+			int h = wrc->bottom - wrc->top;
+			min_w += dlgBorderW;
+			min_h += dlgBorderH;
+			if (w < min_w) {
+				wrc->right = wrc->left + min_w;
+			}
+			if (h < min_h) {
+				wrc->bottom = wrc->top + min_h;
+			}
+		}
+		return TRUE;
 
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
@@ -1733,11 +1934,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
   // earlier: here we discover whcihc RichEdit control is available for real:
   hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW60), NULL, WindowProc);
   if (!hWnd) {
-	  edit_control_version = MIN(6, edit_control_version);
+	  edit_control_version = MG_MIN(6, edit_control_version);
 	  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW50), NULL, WindowProc);
   }
   if (!hWnd) {
-	  edit_control_version = MIN(3, edit_control_version);
+	  edit_control_version = MG_MIN(3, edit_control_version);
 	  hWnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_FORMVIEW20), NULL, WindowProc);
   }
   //rv = initRichEditControl_Phase2(hInst, hWnd);
@@ -1807,3 +2008,49 @@ int main(int argc, char *argv[]) {
 }
 #endif /* _WIN32 */
 
+
+
+static void srv_write_assert_to_logfile(struct mg_connection *conn, const char *expr, const char *filepath, unsigned int lineno)
+{
+	// Also write the assertion failure to the logfile, iff we're able to...
+	if (conn) {
+		const char *logfile = mg_get_default_error_logfile_path(conn);
+		if (logfile) {
+			FILE *fp = mg_fopen(logfile, "a+");
+			if (fp != NULL) {
+				flockfile(fp);
+				fprintf(fp, "[assert] assertion failed: \"%s\" (%s @ line %u)\n", expr, filepath, lineno);
+				fflush(fp);
+				funlockfile(fp);
+				mg_fclose(fp);
+			}
+		}
+	}
+}
+
+void srv_signal_assert(const char *expr, const char *filepath, unsigned int lineno)
+{
+	struct mg_connection *conn = mg_get_fake_printf_conn(NULL);
+	char msg[1024];
+
+	mg_snprintf(conn, msg, sizeof(msg), "[assert] assertion failed: \"%s\" (%s @ line %u)\n", expr, filepath, lineno);
+
+#if defined(_WIN32)
+	MessageBoxA(NULL, msg, "Assertion Failure", MB_OK);
+	error_dialog_shown_previously = 1;
+#else
+	fprintf(stderr, "%s\n", msg);
+#endif
+
+	// Also write the assertion failure to the logfile, iff we're able to...
+	if (conn) {
+		srv_write_assert_to_logfile(conn, expr, filepath, lineno);
+	}
+
+	// Assertion failures are fatal: attempt to abort/stop the server in a sane manner immediately:
+	if (conn && mg_get_context(conn)) {
+		mg_signal_stop(mg_get_context(conn));
+	}
+	// die("Assertion failure");
+	exit(EXIT_FAILURE);
+}

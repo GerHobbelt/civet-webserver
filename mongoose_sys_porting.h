@@ -897,6 +897,28 @@ void mg_freea(void *ptr);
 
 
 
+// Allow the use of a customizable ASSERT instead of the system-defined assert:
+#ifndef MG_ASSERT
+#ifdef NDEBUG
+#define MG_ASSERT(expr)     ((void)0)
+#else
+#define MG_SIGNAL_ASSERT mg_signal_assert			// to help us detect that this particular assert implementation is desired
+#define MG_ASSERT(expr)												\
+	do {															\
+		if (!(expr)) {												\
+			(void)MG_SIGNAL_ASSERT(#expr, __FILE__, __LINE__);		\
+		}															\
+	} while (0)
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+	int mg_signal_assert(const char *expr, const char *filepath, unsigned int lineno);
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+#endif
+#endif
 
 
 #endif // MONGOOSE_SYS_PORTING_INCLUDE

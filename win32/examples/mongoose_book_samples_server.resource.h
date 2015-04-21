@@ -11,7 +11,10 @@
 #define IDR_RC_BIOHAZARD_RED_BG_SVG     203
 #define IDR_HTML_DEVELOPER_INFO         204
 #define IDC_RICHEDIT4LOG                1000
+#define IDC_EDIT_WRAPPER                1001
 #define IDC_BUTTON_VISIT_URL            1003
+#define IDC_BUTTON_CLEAR_LOG            1004
+#define IDC_BUTTON_CREATE_VHOSTS_DIRS   1005
 #define IDC_STATIC                      -1
 
 // Next default values for new objects

@@ -270,7 +270,7 @@ void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx)
     (void) pthread_mutex_lock(&ctx->mutex);
     ctx->num_threads--;
     (void) pthread_cond_signal(&ctx->cond);
-    assert(ctx->num_threads >= 0);
+    MG_ASSERT(ctx->num_threads >= 0);
     (void) pthread_mutex_unlock(&ctx->mutex);
 }
 

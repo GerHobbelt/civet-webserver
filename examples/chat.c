@@ -65,7 +65,7 @@ static struct session *get_session(const struct mg_connection *conn) {
 static void get_qsvar(const struct mg_request_info *request_info,
                       const char *name, char *dst, size_t dst_len) {
   const char *qs = request_info->query_string;
-  assert(qs != NULL); // qs ~ "" when no query string was specified in the request
+  MG_ASSERT(qs != NULL); // qs ~ "" when no query string was specified in the request
   mg_get_var(qs, (size_t)-1, name, dst, dst_len, 1);
 }
 
@@ -107,8 +107,8 @@ static char *messages_to_json(long last_id) {
     len += mg_snq0printf(NULL, buf + len, sizeof(buf) - len,
         "{user: \x01%s\x02, text: \x01%s\x02, timestamp: %lu, id: %lu},",
         message->user, message->text, (unsigned long)message->timestamp, message->id);
-    assert(len > 0);
-    assert((size_t) len < sizeof(buf));
+    MG_ASSERT(len > 0);
+    MG_ASSERT((size_t) len < sizeof(buf));
   }
   pthread_rwlock_unlock(&rwlock);
   if (len > 0)
@@ -153,7 +153,7 @@ static char *messages_to_json(long last_id) {
       case '\'':
       case '"':
         // encode quotes in string
-        assert(in_string);
+        MG_ASSERT(in_string);
         d[j++] = '\\';
         d[j++] = buf[i];
         continue;
@@ -198,7 +198,7 @@ encode_hex:
         continue;
 
       case 0:
-        assert(!"Should never get here");
+        MG_ASSERT(!"Should never get here");
         break;
       }
     }
@@ -281,7 +281,7 @@ static void ajax_send_message(struct mg_connection *conn) {
     message = new_message();
     // TODO(lsm): JSON-encode all text strings
     session = get_session(conn);
-    assert(session != NULL);
+    MG_ASSERT(session != NULL);
     my_strlcpy(message->text, text, sizeof(text));
     my_strlcpy(message->user, session->user, sizeof(message->user));
     pthread_rwlock_unlock(&rwlock);

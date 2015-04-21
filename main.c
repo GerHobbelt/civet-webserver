@@ -255,7 +255,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     int file_found;
     struct mgstat fst;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
     if (file_found) {
       return NULL; // let mongoose handle the default of 'file exists'...

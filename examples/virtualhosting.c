@@ -294,7 +294,7 @@ int serve_a_markdown_page(struct mg_connection *conn, const struct mgstat *st, i
   /* opening the file */
   FILE *in;
 
-  assert(ri->phys_path);
+  MG_ASSERT(ri->phys_path);
   /* opening the file */
   in = mg_fopen(ri->phys_path, "r");
   if (!in)
@@ -496,7 +496,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     struct mgstat st;
     int file_found;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &st) && !st.is_directory);
     if (file_found) {
       // are we looking for HTML output of MarkDown file?
@@ -647,7 +647,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
               // clear the handles sets to prevent 'surprises' from processing these a second time (below):
               FD_ZERO(&read_set);
               max_fd = -1;
-              assert(!"Should never get here");
+              MG_ASSERT(!"Should never get here");
               mg_send_http_error(conn, 579, NULL, "select() failure"); // internal error in our custom handler
               break;
             }
@@ -715,7 +715,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     int file_found;
     struct mgstat fst;
 
-    assert(request_info->phys_path);
+    MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
     if (file_found) {
       return NULL; // let mongoose handle the default of 'file exists'...

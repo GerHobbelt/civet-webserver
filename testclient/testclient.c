@@ -136,14 +136,14 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
   }
 
   ic = ioctlsocket(soc, FIONREAD, &dataReady);
-  assert(dataReady < 2E9);
+  MG_ASSERT(dataReady < 2E9);
   if (ic < 0)
   {
     if (verbose) fputc('@', stdout);
       return -1;
   }
   if (dataReady) {
-    assert(dataReady < 2E9);
+    MG_ASSERT(dataReady < 2E9);
     if (verbose > 1) fputc('+', stdout); // see a bit of action around here...
     // fetch all the pending RX data pronto:
     do
@@ -158,7 +158,7 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
           dataReady -= chunkSize;
         else
           dataReady = 0;
-        assert(dataReady < 2E9);
+        MG_ASSERT(dataReady < 2E9);
         copylen = 3;
         if (copylen > chunkSize) // theoretically, checkSize can be 1 or 2
           copylen = chunkSize;
@@ -173,9 +173,9 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
         if (headEnd) {
           headEnd+=4;
           chunkSize -= (headEnd - buf) - 3;
-          assert(chunkSize >= 0);
-          assert(chunkSize < 2E9);
-          assert((headEnd - buf) - 3 > 0);
+          MG_ASSERT(chunkSize >= 0);
+          MG_ASSERT(chunkSize < 2E9);
+          MG_ASSERT((headEnd - buf) - 3 > 0);
           io->totalHeadersData += (headEnd - buf) - 3;
           if (chunkSize>0) {
             io->totalData += chunkSize;
@@ -196,19 +196,19 @@ static int slurp_data(SOCKET soc, int we_re_writing_too, io_info_t *io)
         if (verbose > 2) printf("R:%d/%d\n", (int)chunkSize, (int)io->totalData);
         //fwrite(buf+3,1,got,STORE);
       }
-      assert(chunkSize >= 0);
+      MG_ASSERT(chunkSize >= 0);
 
       if (dataReady == 0)
       {
         // see if there's more data pending already...
         ic = ioctlsocket(soc, FIONREAD, &dataReady);
-        assert(dataReady < 2E9);
+        MG_ASSERT(dataReady < 2E9);
         if (ic < 0)
         {
           if (verbose) fputc('@', stdout);
           return -1;
         }
-        assert(dataReady < 2E9);
+        MG_ASSERT(dataReady < 2E9);
       }
     } while (dataReady > 0);
     io->lastData = time(0);
@@ -825,3 +825,13 @@ int main(int argc, char * argv[]) {
   WSACleanup();
   return 0;
 }
+
+
+
+
+#ifdef MG_SIGNAL_ASSERT
+int mg_signal_assert(const char *expr, const char *filepath, unsigned int lineno) {
+	fprintf(stderr, "[assert] assertion failed: \"%s\" (%s @ line %u)\n", expr, filepath, lineno);
+	return 1;
+}
+#endif
