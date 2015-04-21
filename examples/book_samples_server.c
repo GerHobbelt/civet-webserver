@@ -2061,7 +2061,7 @@ HRESULT initRichEditControl(HINSTANCE hInst)
   HRESULT rv = E_UNEXPECTED;
 
   // Initialize RichEdit 4.1 .. 8.0 control
-  //richedit_h = LoadLibrary(_T("msftedit.dll"));
+  richedit_h = LoadLibrary(_T("msftedit.dll"));
   // You can find out which version is loaded when you load msftedit.dll:
   if (richedit_h)
   {
