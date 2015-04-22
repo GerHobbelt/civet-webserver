@@ -109,6 +109,7 @@ static const char *default_options[] =
   "ssi_pattern",           "**.html$|**.htm|**.shtml$|**.shtm$",
   //"ssi_marker",          "{!--#,}",
   "keep_alive_timeout",    "5",
+  "enable_keep_alive",	   "no",		// Privoxy plays nasty and causes timeouts when this is set to "yes"
 
   NULL
 };
