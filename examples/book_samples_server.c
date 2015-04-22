@@ -55,6 +55,11 @@ void srv_signal_assert(const char *expr, const char *filepath, unsigned int line
 #define AURL_ENABLEEAURLS 0
 #endif
 #include <shlwapi.h>
+#include <winnls.h>
+#include <winreg.h>
+#ifndef WC_ERR_INVALID_CHARS
+#define WC_ERR_INVALID_CHARS      0 // 0x00000080  // error for invalid chars
+#endif
 #endif // _WIN32
 
 #include <upskirt/src/markdown.h>
@@ -81,7 +86,7 @@ static int edit_control_version = 0;
 static char server_url[256] = "";
 #define _T(text)        TEXT(text)
 #endif
-static char document_root_dir[PATH_MAX] = "./";
+static char document_root_dir[PATH_MAX];		// Set by init_server_name()
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -135,6 +140,79 @@ void append_log(const char *msg, ...)
 }
 
 static int error_dialog_shown_previously = 0;
+
+
+#define WEBSERVER_REGISTRY_KEY   _T("Software\\CivetWebServer\\ForTheBook")
+static void recallDocumentRoot(const char *default_path)
+{
+	int fail = TRUE;
+	HKEY hKey;
+	LONG rv = RegOpenKeyEx(HKEY_CURRENT_USER, WEBSERVER_REGISTRY_KEY, 0, KEY_READ | KEY_WOW64_32KEY, &hKey);
+	if (rv == ERROR_SUCCESS)
+	{
+		DWORD type_code;
+		TCHAR buf[ARRAY_SIZE(document_root_dir)];
+		DWORD buflen = sizeof(buf);			// https://msdn.microsoft.com/en-us/library/windows/desktop/ms724911(v=vs.85).aspx says: number of BYTES!
+		rv = RegQueryValueEx(hKey, _T("DocumentRoot"), 0, &type_code, (LPBYTE)buf, &buflen);
+		if (rv == ERROR_SUCCESS && type_code == REG_SZ)
+		{
+#ifdef UNICODE
+			char intermediate_buf[ARRAY_SIZE(document_root_dir)];
+			if (buflen > 0 && 0 < WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buf, -1, intermediate_buf, ARRAY_SIZE(document_root_dir), NULL, NULL))
+			{
+				intermediate_buf[ARRAY_SIZE(document_root_dir) - 1] = 0;
+				strcpy(document_root_dir, intermediate_buf);
+			}
+#else
+			buf[ARRAY_SIZE(document_root_dir) - 1] = 0;
+			strcpy(document_root_dir, buf);
+#endif
+			fail = FALSE;
+		}
+		RegCloseKey(hKey);
+	}
+	if (fail)
+	{
+		strncpy(document_root_dir, default_path, ARRAY_SIZE(document_root_dir));
+	}
+}
+
+static void rememberDocumentRoot()
+{
+	int fail = TRUE;
+	HKEY hKey;
+	DWORD disposition = 0;
+	LONG rv = RegCreateKeyEx(HKEY_CURRENT_USER, WEBSERVER_REGISTRY_KEY, 0, NULL, 0, KEY_WRITE | KEY_WOW64_32KEY, NULL, &hKey, &disposition);
+	if (rv == ERROR_SUCCESS)
+	{
+		WCHAR buf[ARRAY_SIZE(document_root_dir)];
+		if (0 < MultiByteToWideChar(CP_UTF8, 0, document_root_dir, -1, buf, ARRAY_SIZE(document_root_dir)))
+		{
+			// sizeof(buf) : https://msdn.microsoft.com/en-us/library/windows/desktop/ms724921(v=vs.85).aspx says: number of BYTES!
+			rv = RegSetKeyValueW(hKey, NULL, _T("DocumentRoot"), REG_SZ, buf, sizeof(buf));
+			if (rv == ERROR_SUCCESS)
+			{
+				fail = FALSE;
+			}
+		}
+		RegCloseKey(hKey);
+	}
+	if (fail)
+	{
+		fail += 0;
+	}
+}
+
+#else
+
+static void recallDocumentRoot(const char *default_path)
+{
+}
+
+static void rememberDocumentRoot()
+{
+}
+
 #endif
 
 void die(const char *fmt, ...)
@@ -325,6 +403,8 @@ static void init_server_name(void)
 {
   snprintf(server_name, sizeof(server_name), "Mongoose web server v%s",
            mg_version());
+
+  recallDocumentRoot("./");
 }
 
 // example and test case for a callback
@@ -1560,6 +1640,7 @@ BOOL CALLBACK EnumControlsToResizeThem(HWND hWndChild, LPARAM lParam)
   return TRUE;
 }
 
+
 #if defined(MONGOOSE_AS_SERVICE)
 static int manage_service(int action)
 {
@@ -1798,7 +1879,31 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
     case IDC_BUTTON_VISIT_URL:
       ShellExecuteA(NULL, "open", server_url, NULL, NULL, SW_SHOWNORMAL);
       break;
-    }
+
+	case IDC_BUTTON_CLEAR_LOG:
+	  {
+		// http://msdn.microsoft.com/en-us/library/windows/desktop/bb774195(v=vs.85).aspx
+		//GETTEXTLENGTHEX tex = { GTL_DEFAULT, 1200 /* Unicode */ };
+		//DWORD txtlen = SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_GETTEXTLENGTHEX, (WPARAM)&tex, 0);
+		DWORD txtlen = GetWindowTextLength(GetDlgItem(hWnd, IDC_RICHEDIT4LOG));
+		if (txtlen > 0)
+		{
+			// Throw away all the lines...
+			cr.cpMin = 0;
+			cr.cpMax = -1;
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_EXSETSEL, 0, (LPARAM)&cr);
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_REPLACESEL, FALSE, (LPARAM)_T(""));
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_HIDESELECTION, TRUE, 0);
+			// and make sure the new text is visible: http://stackoverflow.com/questions/2208858/ensure-the-last-character-in-a-richedit-control-is-visible
+			SendDlgItemMessage(hWnd, IDC_RICHEDIT4LOG, EM_SCROLLCARET, 0, 0);
+		}
+  	  }
+	  return TRUE;
+
+	case IDC_BUTTON_CREATE_VHOSTS_DIRS:
+      // TODO
+	  break;
+	}
     break;
 
   case WM_NOTIFY:
@@ -1910,6 +2015,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
           {
             mg_strlcpy(document_root_dir, filepath, ARRAY_SIZE(document_root_dir));
             append_log("[info] Dropped file/directory --> DocumentRoot = [%s]\n", document_root_dir);
+			rememberDocumentRoot();
             should_restart = 1;
             mg_signal_stop(ctx);
             break;
