@@ -167,7 +167,19 @@ static void recallDocumentRoot(const char *default_path)
 			buf[ARRAY_SIZE(document_root_dir) - 1] = 0;
 			strcpy(document_root_dir, buf);
 #endif
-			fail = FALSE;
+			// Make sure the DocumentRoot path is valid:
+			{
+				struct mgstat st;
+				if (mg_stat(document_root_dir, &st) != 0 || !st.is_directory)
+				{
+					// Invalid root directory; use the current directory instead!
+					getcwd(document_root_dir, ARRAY_SIZE(document_root_dir));
+				}
+				else
+				{
+					fail = FALSE;
+				}
+			}
 		}
 		RegCloseKey(hKey);
 	}
@@ -401,10 +413,13 @@ static void process_command_line_arguments(char *argv[], char **options)
 
 static void init_server_name(void)
 {
+  char buf[PATH_MAX];
+
   snprintf(server_name, sizeof(server_name), "Mongoose web server v%s",
            mg_version());
 
-  recallDocumentRoot("./");
+  getcwd(buf, sizeof(buf));
+  recallDocumentRoot(buf);
 }
 
 // example and test case for a callback
