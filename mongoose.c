@@ -4350,7 +4350,7 @@ static const char *get_builtin_mime_type(const char *path, const char *default_m
     }
   }
 
-  return NULL;
+  return default_mime_type;
 }
 
 // Look at the "path" extension and figure what mime type it has.
