@@ -141,8 +141,10 @@ END
 // HTML
 //
 
-IDR_HTML_HELP_OVERVIEW  HTML                    "mongoose_book_samples_server/_help/help_overview.html"
-IDR_HTML_DEVELOPER_INFO HTML                    "mongoose_book_samples_server/_help/developer_info.html"
+IDR_HTML_HELP_OVERVIEW			HTML                    "mongoose_book_samples_server/_help/help_overview.html"
+IDR_HTML_DEVELOPER_INFO			HTML                    "mongoose_book_samples_server/_help/developer_info.html"
+IDR_RC_BIOHAZARD_RED_BG_SVG		RCDATA					"mongoose_book_samples_server/_images/biohazard-red-bg.svg"
+
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
 

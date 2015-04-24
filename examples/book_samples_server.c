@@ -616,19 +616,19 @@ static int send_requested_resource(struct mg_context *ctx, struct mg_connection 
       MAKEINTRESOURCE(IDR_HTML_HELP_OVERVIEW),
       RT_HTML,
       "/_help/help_overview.html",
-      "text/html"
+      NULL
     },
     {
       MAKEINTRESOURCE(IDR_HTML_DEVELOPER_INFO),
       RT_HTML,
       "/_help/developer_info.html",
-      "text/html"
+      NULL
     },
     {
       MAKEINTRESOURCE(IDR_RC_BIOHAZARD_RED_BG_SVG),
       RT_RCDATA,
-      "/_help/images/biohazard-red-bg.svg",
-      "image/svg+xml"
+      "/_images/biohazard-red-bg.svg",
+      NULL
     },
   };
   int i;
@@ -636,21 +636,25 @@ static int send_requested_resource(struct mg_context *ctx, struct mg_connection 
   for (i = 0; i < ARRAY_SIZE(res_defs); i++)
   {
     const struct res_def *def = &res_defs[i];
-    if (!strcmp(def->path, request_info->uri))
+    if (0 == strcmp(def->path, request_info->uri))
     {
       HMODULE module;
       HRSRC icon;
       DWORD len;
       void *data;
+	  struct mg_mime_vec v;
 
       module = GetModuleHandle(NULL);
 
       icon = FindResource(module, def->id, def->category);
       data = LockResource(LoadResource(module, icon));
       len = SizeofResource(module, icon);
+	  MG_ASSERT(data);
+	  MG_ASSERT(len > 0);
 
-      mg_add_response_header(conn, 0, "Content-Type", def->mime);
-      mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
+	  mg_get_mime_type(ctx, def->path, "text/plain", &v);
+	  mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int)v.len, v.ptr);
+	  mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
       mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
       mg_write_http_response_head(conn, 200, NULL);
 
