@@ -552,6 +552,9 @@ CIVETWEB_API char *mg_md5(char buf[33], ...);
 CIVETWEB_API void mg_cry(struct mg_connection *conn,
                          PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 
+/* set connection's http status */
+CIVETWEB_API void mg_set_http_status(struct mg_connection *conn, int status);
+
 
 /* utility method to compare two buffers, case incensitive. */
 CIVETWEB_API int mg_strncasecmp(const char *s1, const char *s2, size_t len);

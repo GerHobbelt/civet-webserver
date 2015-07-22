@@ -1145,6 +1145,11 @@ void mg_cry(struct mg_connection *conn, const char *fmt, ...)
     }
 }
 
+void mg_set_http_status(struct mg_connection *conn, int status)
+{
+    conn->status_code = status;
+}
+
 /* Return fake connection structure. Used for logging, if connection
    is not applicable at the moment of logging. */
 static struct mg_connection *fc(struct mg_context *ctx)
