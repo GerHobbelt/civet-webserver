@@ -4904,7 +4904,7 @@ int mg_url_encode(const char *src, char *dst, size_t dst_len)
 
 static void print_dir_entry(struct de *de)
 {
-	char size[64], mod[64], href[PATH_MAX];
+	char size[64], mod[64], href[PATH_MAX * 3 /* worst case */];
 	struct tm *tm;
 
 	if (de->file.is_directory) {
@@ -6753,7 +6753,7 @@ print_props(struct mg_connection *conn, const char *uri, struct file *filep)
 static void print_dav_dir_entry(struct de *de, void *data)
 {
 	char href[PATH_MAX];
-	char href_encoded[PATH_MAX];
+	char href_encoded[PATH_MAX * 3 /* worst case */];
 	struct mg_connection *conn = (struct mg_connection *)data;
 	if (!de || !conn) {
 		return;
@@ -6764,7 +6764,7 @@ static void print_dav_dir_entry(struct de *de, void *data)
 	            "%s%s",
 	            conn->request_info.uri,
 	            de->file_name);
-	mg_url_encode(href, href_encoded, PATH_MAX - 1);
+	mg_url_encode(href, href_encoded, PATH_MAX * 3);
 	print_props(conn, href_encoded, &de->file);
 }
 
