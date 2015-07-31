@@ -382,6 +382,7 @@ struct pollfd {
 #include <stdint.h>
 #include <inttypes.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 typedef const void *SOCK_OPT_TYPE;
 
 #if defined(ANDROID)
@@ -7312,6 +7313,18 @@ handle_websocket_request(struct mg_connection *conn,
                          mg_websocket_close_handler ws_close_handler,
                          void *cbData)
 {
+	// Disable nagle algorithm for websocket connections
+	int on = 1;
+	if (setsockopt(conn->client.sock,
+				   IPPROTO_TCP,
+				   TCP_NODELAY,
+				   (SOCK_OPT_TYPE)&on,
+				   sizeof(int)) != 0)
+	{
+		mg_cry(conn,
+			   "cannot set socket option TCP_NODELAY");
+	}
+
 	const char *version = mg_get_header(conn, "Sec-WebSocket-Version");
 	int lua_websock = 0;
 
