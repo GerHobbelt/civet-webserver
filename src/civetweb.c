@@ -3768,7 +3768,7 @@ base64_decode(const unsigned char *src, int src_len, char *dst, size_t *dst_len)
 		}
 
 		d = b64reverse(i + 3 >= src_len ? 0 : src[i + 3]);
-		if (c == 254) {
+		if (d == 254) {
 			return i + 3;
 		}
 
