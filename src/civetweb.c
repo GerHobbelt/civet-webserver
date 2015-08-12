@@ -3908,6 +3908,7 @@ interpret_uri(struct mg_connection *conn,   /* in: request */
 				if (mg_stat(conn, gz_path, filep)) {
 					if (filep) {
 						filep->gzipped = 1;
+						*is_found = 1;
 					}
 					/* Currently gz files can not be scripts. */
 					return;
