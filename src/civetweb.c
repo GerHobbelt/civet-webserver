@@ -3145,7 +3145,7 @@ pull(FILE *fp, struct mg_connection *conn, char *buf, int len, double timeout)
 			 * blocking in close_socket_gracefully, so we can not distinguish
 			 * here. We have to wait for the timeout in both cases for now.
 			 */
-			if (err == EAGAIN || err == EWOULDBLOCK) {
+			if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR) {
 				/* standard case if called from close_socket_gracefully
 				 * => should return -1 */
 				/* or timeout occured
