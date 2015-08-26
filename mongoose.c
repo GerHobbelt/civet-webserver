@@ -4331,6 +4331,7 @@ static const struct {
   {".asf",      4, "video/x-ms-asf"},
   {".avi",      4, "video/x-msvideo"},
   {".bmp",      4, "image/bmp"},
+  {".appcache", 9, "text/cache-manifest"},   // http://www.html5rocks.com/en/tutorials/appcache/beginner/
   {NULL,        0, NULL}
 };
 
