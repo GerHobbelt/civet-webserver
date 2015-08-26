@@ -1226,18 +1226,21 @@ static void report_server_started(void)
   p = ports + strcspn(ports, ",sp");
   p[0] = 0;
   mg_snprintf(NULL, root_url, ARRAY_SIZE(root_url), "Visit URL: http://localhost:%s/", ports);
-  append_log("\nRestartable server %s started on port(s) %s with web root [%s]\nroot URL: %s\n\n",
+  append_log("\nRestartable server %s started on port(s) %s with web root directory:\n  [%s]\nroot URL: %s\n\n",
              server_name, mg_get_option(ctx, "listening_ports"),
              mg_get_option(ctx, "document_root"),
              root_url + 11);
 
+#if 0
   // TODO: clean up the next 'report / log' part:
   report_possible_vhosts();
+
   append_log("\nThis server supports both IP-based and name-based VirtualHosts, e.g.\n"
              "URL: http://hobbelt.gov:%s @ path: ../hobbelt.gov/\n"
              "URL: http://127.0.0.2:%s @ path: ../localhost-2/\n\n",
              ports, ports);
   // /TODO
+#endif
 
   if (IsWindow(app_hwnd))
   {
