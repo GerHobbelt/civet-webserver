@@ -1,9 +1,10 @@
 ﻿<!DOCTYPE html>
 <html>
-<meta charset=utf-8>
-<title>Mongoose Doing the B0rk B0rk B0rk In <!--#echo var="REDIRECT_STATUS"--> Time</title>
-<base href="/_help/" />
-<style>
+<head>
+    <meta charset=utf-8>
+    <title>Mongoose Doing the B0rk B0rk B0rk In <!--#echo var="REDIRECT_STATUS"--> Time</title>
+    <base href="/_help/" />
+    <style>
 #biohazard
 {
 	width: 415px;
@@ -14,16 +15,16 @@ div#biohazdiv
 	float: left;
 	margin: 0 1em 1em 0;
 }
-</style>
+    </style>
+</head>
 <body>
-<div id="biohazdiv">            
-<object id="biohazard" data="/_images/biohazard-red-bg.svg" type="image/svg+xml"></object>
-</div>
-<div id="infosec">
+    <div id="biohazdiv">            
+        <img id="biohazard" src="/_images/biohazard-red-bg.svg">
+    </div>
+    <div id="infosec">
+        <h1>Error <!--#echo var="REDIRECT_STATUS" --> - Things went belly up.</h1>
 
-<h1>Error <!--#echo var="REDIRECT_STATUS" --> - Things went belly up.</h1>
-
-<p>All we can say is: <!--#echo var="REDIRECT_ERROR_NOTES" --></p>
-</div>
+        <p>All we can say is: <!--#echo var="REDIRECT_ERROR_NOTES" --></p>
+    </div>
 </body>
 </html>
