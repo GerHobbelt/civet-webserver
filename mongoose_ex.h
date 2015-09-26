@@ -104,6 +104,8 @@ void mg_vlog(struct mg_connection *conn, const char *severity, const char *fmt, 
 
 int mg_get_lasterror(void);
 
+const char *mg_set_option(struct mg_context *ctx, const char *name, const char *value);
+
 
 // Signal master that we're done and exiting
 void mg_signal_mgr_this_thread_is_done(struct mg_context *ctx);

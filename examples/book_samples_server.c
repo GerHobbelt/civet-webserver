@@ -749,7 +749,21 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
 
   if (event == MG_INIT0)
   {
-    verify_document_root(mg_get_conn_option(conn, "document_root"));
+	char *root_dir = mg_get_conn_option(conn, "document_root");
+	// translate the path to an absolute path when it's relative, e.g. '../server/':
+	// we ONLY do this at startup time; any other directory specs are suspicious by design.
+#if defined(_WIN32)
+	char buf[MAX_PATH];
+	DWORD pathlen = GetFullPathNameA(root_dir, MAX_PATH, buf, NULL);
+	if (GetLastError() == ERROR_SUCCESS) {
+	  // now we see this slightly hacky way of circumventing the design of the options list: set once, never touch again!
+	  mg_set_option(ctx, "document_root", buf);
+	  root_dir = mg_get_conn_option(conn, "document_root");
+	}
+	// else: let it fail downstream...
+#endif
+
+    verify_document_root(root_dir);
     return (void *)1;
   }
   if (event == MG_EXIT_MASTER && mg_get_stop_flag(ctx))
@@ -764,8 +778,10 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
      with a minimum of fuss in an event-driven environment such as the
      Windows message loop.
     */
-    PostMessage(app_hwnd, WM_SERVER_IS_STOPPING, 0, 0);
-    return (void *)1;
+#if defined(_WIN32)
+	PostMessage(app_hwnd, WM_SERVER_IS_STOPPING, 0, 0);
+#endif
+	return (void *)1;
   }
 
 #if defined(_WIN32)
@@ -1309,6 +1325,7 @@ static void start_mongoose(int argc, char *argv[])
 
   /* Update config based on command line arguments */
   process_command_line_arguments(argv, options);
+  options[1] = strdup("../../");
 
   /* Setup signal handler: quit on Ctrl-C */
   signal(SIGTERM, signal_handler);

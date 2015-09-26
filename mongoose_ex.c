@@ -390,3 +390,22 @@ int mg_socketpair(struct mg_connection *conns[2], struct mg_context *ctx)
     }
     return rv;
 }
+
+
+const char *mg_set_option(struct mg_context *ctx, const char *name, const char *value) {
+	// ignore `call_user_option_get(ctx, name)` and friends: brutal hack
+	int i = get_option_index(name);
+	if (i == -1) {
+		return NULL;
+	}
+	else if (ctx == NULL) {
+		return NULL;
+	}
+	else {
+		if (ctx->config[i]) {
+			free(ctx->config[i]);
+		}
+		return ctx->config[i] = mg_strdup(value);
+	}
+}
+
