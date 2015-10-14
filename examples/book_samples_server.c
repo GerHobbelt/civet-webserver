@@ -1,5 +1,5 @@
 // Mongoose is Copyright (c) 2004-2012 Sergey Lyubka
-// Book Samples Server code is Copyright (c) 2012-2013 Ger Hobbelt
+// Book Samples Server code is Copyright (c) 2012-2015 Ger Hobbelt
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -110,6 +110,7 @@ static const char *default_options[] =
   //"ssi_marker",          "{!--#,}",
   "keep_alive_timeout",    "5",
   "enable_keep_alive",	   "no",		// Privoxy plays nasty and causes timeouts when this is set to "yes"
+  "error_file",			   "0=/_help/error/$E.shtml",			// '$E' will be replaced by the response code
 
   NULL
 };
@@ -141,6 +142,112 @@ void append_log(const char *msg, ...)
 }
 
 static int error_dialog_shown_previously = 0;
+
+
+struct rc_info
+{
+	unsigned int data_len;
+	void *data;
+
+	LPCTSTR id;
+	LPCTSTR category;
+	char mime[64];
+};
+
+static int load_internal_resource(struct rc_info *dst, struct mg_context *ctx, struct mg_connection *conn,
+	const char *uri)
+{
+	// Send the resource matching the given name
+	struct res_def
+	{
+		LPCTSTR id;
+		LPCTSTR category;
+		const char *path;
+		const char *mime;
+	};
+	static const struct res_def res_defs[] =
+	{
+		// Send the systray icon as favicon
+		{
+			MAKEINTRESOURCE(IDR_FAVICON),
+			RT_RCDATA,
+			"/favicon.ico",
+			"image/x-icon"
+		},
+		{
+			MAKEINTRESOURCE(IDR_HTML_ERROR_404),
+			RT_HTML,
+			"/_help/error/404.shtml",
+			NULL
+		},
+		{
+			MAKEINTRESOURCE(IDR_HTML_ERROR_GENERAL),
+			RT_HTML,
+			"/_help/error/error.shtml",
+			NULL
+		},
+		{
+			MAKEINTRESOURCE(IDR_HTML_HELP_OVERVIEW),
+			RT_HTML,
+			"/_help/help_overview.html",
+			NULL
+		},
+		{
+			MAKEINTRESOURCE(IDR_HTML_DEVELOPER_INFO),
+			RT_HTML,
+			"/_help/developer_info.html",
+			NULL
+		},
+		{
+			MAKEINTRESOURCE(IDR_RC_BIOHAZARD_RED_BG_SVG),
+			RT_RCDATA,
+			"/_help/images/biohazard-red-bg.svg",
+			NULL
+		},
+	};
+	int i;
+
+	memset(dst, 0, sizeof(*dst));
+
+	for (i = 0; i < ARRAY_SIZE(res_defs); i++)
+	{
+		const struct res_def *def = &res_defs[i];
+		if (0 == strcmp(def->path, uri))
+		{
+			HMODULE module;
+			HRSRC icon;
+			DWORD len;
+			void *data;
+
+			module = GetModuleHandle(NULL);
+
+			icon = FindResource(module, def->id, def->category);
+			data = LockResource(LoadResource(module, icon));
+			len = SizeofResource(module, icon);
+			MG_ASSERT(data);
+			MG_ASSERT(len > 0);
+
+			dst->data = data;
+			dst->data_len = len;
+			dst->id = def->id;
+			dst->category = def->category;
+			if (!def->mime) 
+			{
+				struct mg_mime_vec mime_vec;
+
+				mg_get_mime_type(ctx, uri, NULL, &mime_vec);
+				mg_strlcpy(dst->mime, mime_vec.ptr, MG_MIN(mime_vec.len + 1, sizeof(dst->mime)));
+			}
+			else 
+			{
+				mg_strlcpy(dst->mime, def->mime, sizeof(dst->mime));
+			}
+
+			return 1;
+		}
+	}
+	return 0;
+}
 
 
 #define WEBSERVER_REGISTRY_KEY   _T("Software\\CivetWebServer\\ForTheBook")
@@ -186,7 +293,7 @@ static void recallDocumentRoot(const char *default_path)
 	}
 	if (fail)
 	{
-		strncpy(document_root_dir, default_path, ARRAY_SIZE(document_root_dir));
+		mg_strlcpy(document_root_dir, default_path, ARRAY_SIZE(document_root_dir));
 	}
 }
 
@@ -217,6 +324,43 @@ static void rememberDocumentRoot()
 }
 
 #else
+
+void append_log(const char *msg, ...)
+{
+	va_list args;
+	char *buf = NULL;
+	const char *msgbuf = msg;
+
+	va_start(args, msg);
+	if (strchr(msg, '%'))
+	{
+		mg_vasprintf(NULL, &buf, 0, msg, args);
+		msgbuf = buf;
+	}
+	va_end(args);
+	fputs(msgbuf, stderr);
+	free(buf);
+}
+
+
+struct rc_info
+{
+	unsigned int data_len;
+	void *data;
+
+	const void *id;
+	const void *category;
+	const char *mime;
+};
+
+static int load_internal_resource(struct rc_info *dst, struct mg_context *ctx, struct mg_connection *conn,
+	const char *uri)
+{
+	*dst = { 0 };
+
+	return 0;
+}
+
 
 static void recallDocumentRoot(const char *default_path)
 {
@@ -603,68 +747,20 @@ static int send_requested_resource(struct mg_context *ctx, struct mg_connection 
   const struct mg_request_info *request_info, struct t_user_arg * udata)
 {
   // Send the resource matching the given name
-  struct res_def
+  struct rc_info rc_spec = { 0 };
+  if (load_internal_resource(&rc_spec, ctx, conn, request_info->uri))
   {
-    LPCTSTR id;
-    LPCTSTR category;
-    const char *path;
-    const char *mime;
-  };
-  static const struct res_def res_defs[] =
-  {
-    {
-      MAKEINTRESOURCE(IDR_HTML_HELP_OVERVIEW),
-      RT_HTML,
-      "/_help/help_overview.html",
-      NULL
-    },
-    {
-      MAKEINTRESOURCE(IDR_HTML_DEVELOPER_INFO),
-      RT_HTML,
-      "/_help/developer_info.html",
-      NULL
-    },
-    {
-      MAKEINTRESOURCE(IDR_RC_BIOHAZARD_RED_BG_SVG),
-      RT_RCDATA,
-      "/_images/biohazard-red-bg.svg",
-      NULL
-    },
-  };
-  int i;
-
-  for (i = 0; i < ARRAY_SIZE(res_defs); i++)
-  {
-    const struct res_def *def = &res_defs[i];
-    if (0 == strcmp(def->path, request_info->uri))
-    {
-      HMODULE module;
-      HRSRC icon;
-      DWORD len;
-      void *data;
-	  struct mg_mime_vec v;
-
-      module = GetModuleHandle(NULL);
-
-      icon = FindResource(module, def->id, def->category);
-      data = LockResource(LoadResource(module, icon));
-      len = SizeofResource(module, icon);
-	  MG_ASSERT(data);
-	  MG_ASSERT(len > 0);
-
-	  mg_get_mime_type(ctx, def->path, "text/plain", &v);
-	  mg_add_response_header(conn, 0, "Content-Type", "%.*s", (int)v.len, v.ptr);
+	  mg_add_response_header(conn, 0, "Content-Type", "%s", rc_spec.mime);
 	  mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
-      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
+      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)rc_spec.data_len);
       mg_write_http_response_head(conn, 200, NULL);
 
-      if ((int)len != mg_write(conn, data, len))
+      if ((int)rc_spec.data_len != mg_write(conn, rc_spec.data, rc_spec.data_len))
       {
-        mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
+        mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)rc_spec.data_len); // internal error in our custom handler or client closed connection prematurely
       }
 
       return 1;
-    }
   }
   return 0;
 }
@@ -749,7 +845,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
 
   if (event == MG_INIT0)
   {
-	char *root_dir = mg_get_conn_option(conn, "document_root");
+	const char *root_dir = mg_get_conn_option(conn, "document_root");
 	// translate the path to an absolute path when it's relative, e.g. '../server/':
 	// we ONLY do this at startup time; any other directory specs are suspicious by design.
 #if defined(_WIN32)
@@ -830,6 +926,12 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
       }
       return NULL; // let mongoose handle the default of 'file exists'...
     }
+  }
+
+  if (event == MG_HTTP_ERROR)
+  {
+	  // This callback currently only handles new requests
+	  return NULL;
   }
 
   if (event != MG_NEW_REQUEST)
@@ -1116,32 +1218,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
     }
     else
 #ifdef _WIN32
-    // Send the systray icon as favicon
-    if (!strcmp("/favicon.ico", request_info->uri))
-    {
-      HMODULE module;
-      HRSRC icon;
-      DWORD len;
-      void *data;
-
-      module = GetModuleHandle(NULL);
-
-      icon = FindResource(module, MAKEINTRESOURCE(IDR_FAVICON), RT_RCDATA);
-      data = LockResource(LoadResource(module, icon));
-      len = SizeofResource(module, icon);
-
-      mg_add_response_header(conn, 0, "Content-Type", "image/x-icon");
-      mg_add_response_header(conn, 0, "Cache-Control", "no-cache");
-      mg_add_response_header(conn, 0, "Content-Length", "%u", (unsigned int)len);
-      mg_write_http_response_head(conn, 200, NULL);
-
-      if ((int)len != mg_write(conn, data, len))
-      {
-        mg_send_http_error(conn, 580, NULL, "not all data was written to the socket (len: %u)", (unsigned int)len); // internal error in our custom handler or client closed connection prematurely
-      }
-      return (void *)1;
-    }
-    else if (send_requested_resource(ctx, conn, request_info, udata))
+    if (send_requested_resource(ctx, conn, request_info, udata))
     {
       return (void *)1;
     }
@@ -1163,6 +1240,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
       {
         return 0; // let mongoose handle the default of 'file exists'...
       }
+	  return 0; // let mongoose handle the default of 'file exists'...
 
       content_length = mg_snprintf(conn, content, sizeof(content),
                    "<html><body>"
