@@ -72,7 +72,7 @@ void srv_signal_assert(const char *expr, const char *filepath, unsigned int line
 
 static volatile int exit_flag = 0;
 static volatile int should_restart = 0;
-static char server_name[40];          // Set by init_server_name()
+static char server_name[40];          // Set by init_server_name()::recallDocumentRoot()
 static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
 static struct mg_context *ctx = NULL; // Set by start_mongoose()
 #if defined(_WIN32)
@@ -86,7 +86,7 @@ static int edit_control_version = 0;
 static char server_url[256] = "";
 #define _T(text)        TEXT(text)
 #endif
-static char document_root_dir[PATH_MAX];		// Set by init_server_name()
+static char document_root_dir[PATH_MAX];		// Set by init_server_name()::recallDocumentRoot()
 
 #if !defined(CONFIG_FILE)
 #define CONFIG_FILE "mongoose.conf"
@@ -1325,7 +1325,6 @@ static void start_mongoose(int argc, char *argv[])
 
   /* Update config based on command line arguments */
   process_command_line_arguments(argv, options);
-  options[1] = strdup("../../");
 
   /* Setup signal handler: quit on Ctrl-C */
   signal(SIGTERM, signal_handler);
