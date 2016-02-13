@@ -14065,27 +14065,36 @@ free_context(struct mg_context *ctx)
 void
 mg_stop(struct mg_context *ctx)
 {
+	/* Wait until everything has stopped. */
+	while (!mg_check_stop(ctx)) {
+		(void)mg_sleep(10);
+	}
+}
+
+
+int
+mg_check_stop(struct mg_context *ctx)
+{
 	pthread_t mt;
 	if (!ctx) {
-		return;
+		return 1;
 	}
 
 	/* We don't use a lock here. Calling mg_stop with the same ctx from
 	 * two threads is not allowed. */
 	mt = ctx->masterthreadid;
 	if (mt == 0) {
-		return;
+		return 1;
 	}
 
+	if (ctx->stop_flag == 0) {
+		/* Set stop flag, so all threads know they have to exit. */
+		ctx->stop_flag = 1;
+	}
+	if (ctx->stop_flag != 2) {
+		return 0;
+	}
 	ctx->masterthreadid = 0;
-
-	/* Set stop flag, so all threads know they have to exit. */
-	ctx->stop_flag = 1;
-
-	/* Wait until everything has stopped. */
-	while (ctx->stop_flag != 2) {
-		(void)mg_sleep(10);
-	}
 
 	mg_join_thread(mt);
 	free_context(ctx);
@@ -14093,6 +14102,8 @@ mg_stop(struct mg_context *ctx)
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 	(void)WSACleanup();
 #endif /* _WIN32 && !__SYMBIAN32__ */
+
+	return 1;
 }
 
 
