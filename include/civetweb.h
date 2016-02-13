@@ -462,6 +462,14 @@ CIVETWEB_API struct mg_context *mg_start(const struct mg_callbacks *callbacks,
 CIVETWEB_API void mg_stop(struct mg_context *);
 
 
+/* Raise stop flag, then check the web server is stopping/stopped.
+
+   Returns:
+      0: stopping.
+      1: stopped. */
+CIVETWEB_API int mg_check_stop(struct mg_context *);
+
+
 #if defined(MG_EXPERIMENTAL_INTERFACES)
 /* Add an additional domain to an already running web server.
  *
