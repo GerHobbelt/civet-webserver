@@ -10131,15 +10131,23 @@ static void free_context(struct mg_context *ctx)
 
 void mg_stop(struct mg_context *ctx)
 {
+	/* Wait until mg_fini() stops */
+	while (!mg_check_stop(ctx)) {
+		(void)mg_sleep(10);
+	}
+}
+
+int mg_check_stop(struct mg_context *ctx)
+{
 	if (!ctx) {
-		return;
+		return 1;
 	}
 
-	ctx->stop_flag = 1;
-
-	/* Wait until mg_fini() stops */
-	while (ctx->stop_flag != 2) {
-		(void)mg_sleep(10);
+	if (ctx->stop_flag == 0) {
+		ctx->stop_flag = 1;
+	}
+	if (ctx->stop_flag != 2) {
+		return 0;
 	}
 	mg_join_thread(ctx->masterthreadid);
 	free_context(ctx);
@@ -10147,6 +10155,8 @@ void mg_stop(struct mg_context *ctx)
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 	(void)WSACleanup();
 #endif /* _WIN32 && !__SYMBIAN32__ */
+
+	return 1;
 }
 
 static void get_system_name(char **sysName)
