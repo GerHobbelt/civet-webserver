@@ -3493,8 +3493,10 @@ static SOCKET conn2(struct mg_context *ctx  /* may be null */, const char *host,
 
     if (host == NULL) {
         snprintf(ebuf, ebuf_len, "%s", "NULL host");
+#ifndef NO_SSL_DL
     } else if (use_ssl && SSLv23_client_method == NULL) {
         snprintf(ebuf, ebuf_len, "%s", "SSL is not initialized");
+#endif
         /* TODO(lsm): use something threadsafe instead of gethostbyname() */
     } else if ((he = gethostbyname(host)) == NULL) {
         snprintf(ebuf, ebuf_len, "gethostbyname(%s): %s", host, strerror(ERRNO));
