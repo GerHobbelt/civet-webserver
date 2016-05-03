@@ -1145,6 +1145,11 @@ void mg_cry(struct mg_connection *conn, const char *fmt, ...)
     }
 }
 
+void mg_set_http_status(struct mg_connection *conn, int status)
+{
+    conn->status_code = status;
+}
+
 /* Return fake connection structure. Used for logging, if connection
    is not applicable at the moment of logging. */
 static struct mg_connection *fc(struct mg_context *ctx)
@@ -3488,8 +3493,10 @@ static SOCKET conn2(struct mg_context *ctx  /* may be null */, const char *host,
 
     if (host == NULL) {
         snprintf(ebuf, ebuf_len, "%s", "NULL host");
+#ifndef NO_SSL_DL
     } else if (use_ssl && SSLv23_client_method == NULL) {
         snprintf(ebuf, ebuf_len, "%s", "SSL is not initialized");
+#endif
         /* TODO(lsm): use something threadsafe instead of gethostbyname() */
     } else if ((he = gethostbyname(host)) == NULL) {
         snprintf(ebuf, ebuf_len, "gethostbyname(%s): %s", host, strerror(ERRNO));
@@ -3989,6 +3996,7 @@ static void parse_http_headers(char **buf, struct mg_request_info *ri)
     }
 }
 
+#ifndef RGW
 static int is_valid_http_method(const char *method)
 {
     return !strcmp(method, "GET") || !strcmp(method, "POST") ||
@@ -3998,6 +4006,7 @@ static int is_valid_http_method(const char *method)
            || !strcmp(method, "MKCOL")
            ;
 }
+#endif
 
 /* Parse HTTP request, fill in mg_request_info structure.
    This function modifies the buffer by NUL-terminating
