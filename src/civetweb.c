@@ -512,23 +512,12 @@ typedef long off_t;
 
 #define ERRNO ((int)(GetLastError()))
 #define NO_SOCKLEN_T
-
-#if defined(_WIN64) || defined(__MINGW64__)
-#if !defined(SSL_LIB)
-#define SSL_LIB "ssleay64.dll"
-#endif
-#if !defined(CRYPTO_LIB)
-#define CRYPTO_LIB "libeay64.dll"
-#endif
-#else
 #if !defined(SSL_LIB)
 #define SSL_LIB "ssleay32.dll"
 #endif
 #if !defined(CRYPTO_LIB)
 #define CRYPTO_LIB "libeay32.dll"
 #endif
-#endif
-
 #define O_NONBLOCK (0)
 #if !defined(W_OK)
 #define W_OK (2) /* http://msdn.microsoft.com/en-us/library/1w06ktdy.aspx */
