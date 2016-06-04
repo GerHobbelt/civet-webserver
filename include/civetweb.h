@@ -797,6 +797,7 @@ CIVETWEB_API int mg_get_cookie(const char *cookie,
                                size_t buf_len);
 
 
+#if defined(MG_CLIENT_UTIL)
 /* Download data from the remote web server.
      host: host name to connect to, e.g. "foo.com", or "10.12.40.1".
      port: port number, e.g. 80.
@@ -824,6 +825,7 @@ mg_download(const char *host,
 
 /* Close the connection opened by mg_download(). */
 CIVETWEB_API void mg_close_connection(struct mg_connection *conn);
+#endif /* MG_CLIENT_UTIL */
 
 
 #if defined(MG_LEGACY_INTERFACE)
@@ -994,6 +996,7 @@ CIVETWEB_API int mg_strcasecmp(const char *s1, const char *s2);
 CIVETWEB_API int mg_strncasecmp(const char *s1, const char *s2, size_t len);
 
 
+#if defined(MG_CLIENT_UTIL)
 /* Connect to a websocket as a client
    Parameters:
      host: host to connect to, i.e. "echo.websocket.org" or "192.168.1.1" or
@@ -1077,6 +1080,7 @@ CIVETWEB_API int mg_get_response(struct mg_connection *conn,
                                  char *ebuf,
                                  size_t ebuf_len,
                                  int timeout);
+#endif /* MG_CLIENT_UTIL */
 
 
 /* Check which features where set when the civetweb library has been compiled.
