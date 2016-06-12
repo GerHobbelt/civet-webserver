@@ -721,6 +721,7 @@ CIVETWEB_API const char *mg_get_header(const struct mg_connection *,
                                        const char *name);
 
 
+#if defined(MG_CLIENT_UTIL)
 /* Get a value of particular form variable.
 
    Parameters:
@@ -797,7 +798,6 @@ CIVETWEB_API int mg_get_cookie(const char *cookie,
                                size_t buf_len);
 
 
-#if defined(MG_CLIENT_UTIL)
 /* Download data from the remote web server.
      host: host name to connect to, e.g. "foo.com", or "10.12.40.1".
      port: port number, e.g. 80.
