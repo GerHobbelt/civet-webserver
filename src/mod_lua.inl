@@ -1237,6 +1237,104 @@ lwebsocket_set_interval(lua_State *L)
 	return lwebsocket_set_timer(L, 1);
 }
 
+
+static const char *LUA_MG_FUNCTIONS =
+	"mg.get_var="
+	"function (src,v,occ)"
+	" if not src or not v then return nil end"
+	" v=(''..v):lower()..'='"
+	" occ=occ or 0"
+	" for i=1,#src do"
+	"  if (i<2 or src:sub(i-1,i-1)=='&') "
+	"and src:sub(i,i+#v-1):lower()==v then"
+	"   if occ==0 then"
+	"    return mg.url_decode(src:match('^[^&]*',i+#v),true)"
+	"   end"
+	"   occ=occ-1"
+	"  end"
+	" end"
+	" return nil;"
+	"end"
+	";"
+	"mg.get_cookie="
+	"function (src,v)"
+	" if not src or not v or #(''..v)<1 then return nil end"
+	" v=(''..v):lower()"
+	" for i=1,#src do"
+	"  if src:sub(i,i+#v-1):lower()==v then"
+	"   if src:sub(i+#v,i+#v)=='=' then"
+	"    return (src:match('^[^ ]*',i+#v+1):gsub(';$','')"
+	":gsub('^\"(.*)\"$','%1'))"
+	"   end"
+	"   i=i+#v-1"
+	"  end"
+	" end"
+	" return nil;"
+	"end"
+	";"
+	"mg.url_encode="
+	"function (src)"
+	" return src and (src:match('^[^%z]*')"
+	":gsub('[^0-9A-Za-z%._%-%$,;~%(%)]',"
+	" function (c)"
+	"  return string.format('%%%02x',c:byte())"
+	" end)) or nil;"
+	"end"
+	";"
+	"mg.url_decode="
+	"function (src,form)"
+	" return src and (form and src:gsub('%+',' ') or src)"
+	":gsub('%%([0-9A-Fa-f][0-9A-Fa-f])',"
+	" function (x)"
+	"  return string.char(tonumber(x,16))"
+	" end):match('^[^%z]*') or nil;"
+	"end"
+	";"
+	"mg.base64_encode="
+	"function (src)"
+	" if not src then return nil end"
+	" local t="
+	"'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='"
+	" return (src:gsub('..?.?',"
+	" function (s)"
+	"  local a,b,c,x,y,z,w"
+	"  a=s:sub(1,1):byte()"
+	"  b=#s<2 and 0 or s:sub(2,2):byte()"
+	"  c=#s<3 and 0 or s:sub(3,3):byte()"
+	"  x=1+math.floor(a/4)"
+	"  y=1+a%4*16+math.floor(b/16)"
+	"  z=1+b%16*4+math.floor(c/64)"
+	"  w=1+c%64"
+	"  return t:sub(x,x)..t:sub(y,y)"
+	"..(#s<2 and '=' or t:sub(z,z))..(#s<3 and '=' or t:sub(w,w))"
+	" end));"
+	"end"
+	";"
+	"mg.base64_decode="
+	"function (src)"
+	" if not src then return nil end"
+	" local t="
+	"'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='"
+	" local dst=src:gsub('..?.?.?',"
+	" function (s)"
+	"  if t then"
+	"   local a,b,c,d"
+	"   a=(t:find(s:sub(1,1),1,true) or 66)-1"
+	"   b=(#s>1 and t:find(s:sub(2,2),1,true) or 66)-1"
+	"   c=(#s>2 and t:find(s:sub(3,3),1,true) or 66)-1"
+	"   d=(#s>3 and t:find(s:sub(4,4),1,true) or 66)-1"
+	"   if a<64 and b<64 and c<65 and d<65 then"
+	"    return string.char(a*4+math.floor(b/16))"
+	"..(c<64 and string.char((b*16+math.floor(c/4))%256) or '')"
+	"..(c<64 and d<64 and string.char((c*64+d)%256) or '')"
+	"   end"
+	"   t=nil"
+	"  end"
+	" end)"
+	" return t and (dst) or nil;"
+	"end"
+	;
+
 enum {
 	LUA_ENV_TYPE_LUA_SERVER_PAGE = 0,
 	LUA_ENV_TYPE_PLAIN_LUA_PAGE = 1,
@@ -1425,14 +1523,8 @@ prepare_lua_environment(struct mg_context *ctx,
 	}
 
 	reg_function(L, "time", lsp_get_time);
-	reg_function(L, "get_var", lsp_get_var);
 	reg_function(L, "get_mime_type", lsp_get_mime_type);
-	reg_function(L, "get_cookie", lsp_get_cookie);
 	reg_function(L, "md5", lsp_md5);
-	reg_function(L, "url_encode", lsp_url_encode);
-	reg_function(L, "url_decode", lsp_url_decode);
-	reg_function(L, "base64_encode", lsp_base64_encode);
-	reg_function(L, "base64_decode", lsp_base64_decode);
 	reg_function(L, "get_response_code_text", lsp_get_response_code_text);
 	reg_function(L, "random", lsp_random);
 	if (pf_uuid_generate.f) {
@@ -1471,6 +1563,9 @@ prepare_lua_environment(struct mg_context *ctx,
 	    luaL_dostring(L,
 	                  "mg.onerror = function(e) mg.write('\\nLua error:\\n', "
 	                  "debug.traceback(e, 1)) end"));
+
+	/* Register additional mg.* functions */
+	IGNORE_UNUSED_RESULT(luaL_dostring(L, LUA_MG_FUNCTIONS));
 
 	if (ctx != NULL) {
 		/* Preload */
