@@ -14150,8 +14150,8 @@ handle_request(struct mg_connection *conn)
 			 * PUT/DELETE methods are not valid. */
 			mg_send_http_error(conn,
 			                   405,
-			                   "%s method not allowed",
-			                   conn->request_info.request_method);
+			                   "%s",
+			                   "Method not allowed");
 			return;
 		}
 
@@ -14330,8 +14330,8 @@ handle_request(struct mg_connection *conn)
 		 * only for scripts (Lua, CGI) and callbacks. */
 		mg_send_http_error(conn,
 		                   405,
-		                   "%s method not allowed",
-		                   conn->request_info.request_method);
+		                   "%s",
+		                   "Method not allowed");
 		return;
 	}
 
@@ -14382,8 +14382,8 @@ handle_request(struct mg_connection *conn)
 	    && (0 != strcmp(ri->request_method, "HEAD"))) {
 		mg_send_http_error(conn,
 		                   405,
-		                   "%s method not allowed",
-		                   conn->request_info.request_method);
+		                   "%s",
+		                   "Method not allowed");
 		return;
 	}
 
@@ -17924,8 +17924,7 @@ process_new_connection(struct mg_connection *conn)
 			            NULL, /* No truncation check for ebuf */
 			            ebuf,
 			            sizeof(ebuf),
-			            "Bad HTTP version: [%s]",
-			            ri->http_version);
+			            "Bad HTTP version");
 			mg_send_http_error(conn, 505, "%s", ebuf);
 		}
 
