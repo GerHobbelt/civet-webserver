@@ -11119,7 +11119,12 @@ set_ssl_option(struct mg_context *ctx)
 	protocol_ver = atoi(ctx->config[SSL_PROTOCOL_VERSION]);
 	SSL_CTX_set_options(ctx->ssl_ctx, ssl_get_protocol(protocol_ver));
 	SSL_CTX_set_options(ctx->ssl_ctx, SSL_OP_SINGLE_DH_USE);
+#if OPENSSL_VERSION_NUMBER >= 0x1000200fL
 	SSL_CTX_set_ecdh_auto(ctx->ssl_ctx, 1);
+#else
+	SSL_CTX_set_tmp_ecdh(ctx->ssl_ctx, EC_KEY_new_by_curve_name(
+		NID_X9_62_prime256v1));
+#endif
 
 	/* If a callback has been specified, call it. */
 	callback_ret =
