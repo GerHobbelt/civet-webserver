@@ -225,6 +225,7 @@ if (CIVETWEB_ENABLE_LUA)
 endif()
 
 # The web server executable
+if(NOT CIVETWEB_LIBRARIES_ONLY)
 add_executable(c-executable main.c)
 set_target_properties(c-executable PROPERTIES
   OUTPUT_NAME "civetweb"
@@ -244,6 +245,7 @@ target_include_directories(
 target_link_libraries(c-executable c-library)
 if (LIBRT_FOUND)
   target_link_libraries(c-executable LIBRT::LIBRT)
+endif()
 endif()
 
 if (CIVETWEB_ENABLE_LUA)

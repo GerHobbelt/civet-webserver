@@ -48,6 +48,9 @@ endif()
 # C++ wrappers
 option(CIVETWEB_ENABLE_THIRD_PARTY_OUTPUT "Shows the output of third party dependency processing" OFF)
 
+# Option to skip the executable.
+option(CIVETWEB_LIBRARIES_ONLY "Only build the static libraries" OFF)
+
 # Max Request Size
 set(CIVETWEB_MAX_REQUEST_SIZE 16384 CACHE STRING
   "The largest amount of content bytes allowed in a request")
