@@ -11233,8 +11233,12 @@ uninitialize_ssl(struct mg_context *ctx)
 		 */
 		CRYPTO_set_locking_callback(NULL);
 		CRYPTO_set_id_callback(NULL);
+#if defined(ENGINE_cleanup)
 		ENGINE_cleanup();
+#endif /* defined(ENGINE_cleanup) */
+#if defined(CONF_modules_unload)
 		CONF_modules_unload(1);
+#endif /* defined(CONF_modules_unload) */
 		ERR_free_strings();
 		EVP_cleanup();
 		CRYPTO_cleanup_all_ex_data();
