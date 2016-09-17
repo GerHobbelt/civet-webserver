@@ -10849,7 +10849,7 @@ sslize(struct mg_connection *conn, SSL_CTX *s, int (*func)(SSL *))
 		return 0;
 	}
 
-	ret = SSL_set_fd(conn->ssl, conn->client.sock);
+	ret = SSL_set_fd(conn->ssl, (int)conn->client.sock);
 	if (ret != 1) {
 		err = SSL_get_error(conn->ssl, ret);
 		(void)err; /* TODO: set some error message */
