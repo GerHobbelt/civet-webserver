@@ -42,6 +42,7 @@ endif()
 if (CIVETWEB_ENABLE_SLL AND NOT CIVETWEB_ENABLE_OPENSLL_DYNAMIC_LOADING)
   find_package(OpenSSL)
   target_link_libraries(c-library ${OPENSSL_LIBRARIES})
+  target_include_directories(c-library PUBLIC ${OPENSSL_INCLUDE_DIR})
 else()
   find_package(LibDl)
   if (LIBDL_FOUND)
@@ -277,6 +278,9 @@ if (CIVETWEB_ENABLE_CXX)
   if (BUILD_SHARED_LIBS)
     target_compile_definitions(cxx-library PRIVATE CIVETWEB_DLL_EXPORTS)
   endif()
+  target_include_directories(
+    cxx-library PUBLIC
+    ${OPENSSL_INCLUDE_DIR})
   target_include_directories(
     cxx-library PUBLIC
     ${PROJECT_SOURCE_DIR}/include)
