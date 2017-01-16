@@ -1673,7 +1673,7 @@ static struct mg_option config_options[] = {
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     {"lua_websocket_pattern", CONFIG_TYPE_EXT_PATTERN, "**.lua$"},
 #endif
-    {"access_control_allow_origin", CONFIG_TYPE_STRING, "*"},
+    {"access_control_allow_origin", CONFIG_TYPE_STRING, NULL},
     {"error_pages", CONFIG_TYPE_DIRECTORY, NULL},
     {"tcp_nodelay", CONFIG_TYPE_NUMBER, "0"},
 #if !defined(NO_CACHING)
@@ -7375,7 +7375,7 @@ handle_static_file_request(struct mg_connection *conn,
 	}
 
 	hdr = mg_get_header(conn, "Origin");
-	if (hdr) {
+	if (conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN] && hdr) {
 		/* Cross-origin resource sharing (CORS), see
 		 * http://www.html5rocks.com/en/tutorials/cors/,
 		 * http://www.html5rocks.com/static/images/cors_server_flowchart.png -
@@ -9083,7 +9083,8 @@ handle_ssi_file_request(struct mg_connection *conn,
 		return;
 	}
 
-	if (mg_get_header(conn, "Origin")) {
+	if (conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN]
+	    && mg_get_header(conn, "Origin")) {
 		/* Cross-origin resource sharing (CORS). */
 		cors1 = "Access-Control-Allow-Origin: ";
 		cors2 = conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN];
