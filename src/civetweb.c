@@ -13672,7 +13672,8 @@ worker_thread_run(struct worker_thread_args *thread_args)
 			           SSL_accept,
 			           &(conn->ctx->stop_flag))) {
 				/* Get SSL client certificate information (if set) */
-				ssl_get_client_cert_info(conn);
+				conn->request_info.client_cert = NULL;
+				/*ssl_get_client_cert_info(conn);*/
 
 				/* process HTTPS connection */
 				process_new_connection(conn);
