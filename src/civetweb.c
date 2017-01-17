@@ -17821,7 +17821,8 @@ worker_thread_run(struct worker_thread_args *thread_args)
 				/* conn->dom_ctx is set in get_request */
 
 				/* Get SSL client certificate information (if set) */
-				ssl_get_client_cert_info(conn);
+				conn->request_info.client_cert = NULL;
+				/*ssl_get_client_cert_info(conn);*/
 
 				/* process HTTPS connection */
 				process_new_connection(conn);
