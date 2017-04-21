@@ -843,7 +843,7 @@ struct mg_connection {
 #if defined(USE_LUA) && defined(USE_WEBSOCKET)
     void * lua_websocket_state;     /* Lua_State for a websocket connection */
 #endif
-    int is_chunked;                 /* transfer-encoding is chunked */
+    int is_chunked;                 /* transfer-encoding is chunked; 2=and consumed */
 };
 
 static pthread_key_t sTlsKey;  /* Thread local storage index */
@@ -2267,6 +2267,12 @@ static void fast_forward_request(struct mg_connection *conn)
     char buf[MG_BUF_LEN];
     int to_read, nread;
 
+    if (conn->is_chunked) {
+	while (conn->is_chunked == 1 &&
+		mg_read(conn, buf, sizeof buf) > 0)
+	    ;
+	return;
+    }
     while (conn->consumed_content < conn->content_len) {
         to_read = sizeof(buf);
         if ((int64_t) to_read > conn->content_len - conn->consumed_content) {
@@ -2329,14 +2335,17 @@ static int mg_getc(struct mg_connection *conn) {
 }
 
 int mg_read(struct mg_connection *conn, void *buf, size_t len) {
-    if ( conn->is_chunked ) {
+    switch ( conn->is_chunked ) {
+    case 2:
+        return -1;
+    case 1:
         if (conn->content_len <= 0 ) conn->content_len = 0;
         if (conn->consumed_content < conn->content_len) return mg_read_inner(conn,buf,len);
         int i = 0;
         char str[64];
         while (1) {
             int c = mg_getc(conn);
-	    if (c == EOF) return EOF;
+	    if (c == EOF) return 0;
             if ( ! ( c == '\n' || c == '\r' ) ) {
                 str[i++] = c;
                 break;
@@ -2351,7 +2360,10 @@ int mg_read(struct mg_connection *conn, void *buf, size_t len) {
         char *end = 0;
         long chunkSize = strtol(str,&end,16);
         if ( end != str+(i-1) ) return -1;
-        if ( chunkSize == 0 ) return 0;
+        if ( chunkSize == 0 ) {
+	    conn->is_chunked = 2;
+	    return 0;
+	}
         conn->content_len += chunkSize;
     }
     return mg_read_inner(conn,buf,len);
