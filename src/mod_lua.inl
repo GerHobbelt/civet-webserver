@@ -196,6 +196,7 @@ lua_cry(struct mg_connection *conn,
 	}
 }
 
+#if defined(MG_LEGACY_INTERFACE)
 static int
 lsp_sock_close(lua_State *L)
 {
@@ -340,6 +341,7 @@ lsp_connect(lua_State *L)
 	}
 	return 1;
 }
+#endif /* MG_LEGACY_INTERFACE */
 
 static int
 lsp_error(lua_State *L)
@@ -2122,7 +2124,7 @@ prepare_lua_environment(struct mg_context *ctx,
 	}
 #endif
 
-#if LUA_VERSION_NUM == 502
+#if defined(MG_LEGACY_INTERFACE) && LUA_VERSION_NUM == 502
 	/* Keep the "connect" method for compatibility,
 	 * but do not backport it to Lua 5.1.
 	 * TODO: Redesign the interface.
