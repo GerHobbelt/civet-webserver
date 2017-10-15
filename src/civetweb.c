@@ -8801,6 +8801,7 @@ handle_static_file_request(struct mg_connection *conn,
 	int n, truncated;
 	char gz_path[PATH_MAX];
 	const char *encoding = "";
+	const char *cors_orig_cfg = conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN];
 	const char *cors1, *cors2, *cors3;
 	int allow_on_the_fly_compression;
 
@@ -8894,14 +8895,14 @@ handle_static_file_request(struct mg_connection *conn,
 	}
 
 	hdr = mg_get_header(conn, "Origin");
-	if (hdr) {
+	if (cors_orig_cfg && *cors_orig_cfg && hdr) {
 		/* Cross-origin resource sharing (CORS), see
 		 * http://www.html5rocks.com/en/tutorials/cors/,
 		 * http://www.html5rocks.com/static/images/cors_server_flowchart.png
 		 * -
 		 * preflight is not supported for files. */
 		cors1 = "Access-Control-Allow-Origin: ";
-		cors2 = conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN];
+		cors2 = cors_orig_cfg;
 		cors3 = "\r\n";
 	} else {
 		cors1 = cors2 = cors3 = "";
@@ -10904,16 +10905,17 @@ handle_ssi_file_request(struct mg_connection *conn,
 {
 	char date[64];
 	time_t curtime = time(NULL);
+	const char *cors_orig_cfg = conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN];
 	const char *cors1, *cors2, *cors3;
 
 	if ((conn == NULL) || (path == NULL) || (filep == NULL)) {
 		return;
 	}
 
-	if (mg_get_header(conn, "Origin")) {
+	if (cors_orig_cfg && *cors_orig_cfg && mg_get_header(conn, "Origin")) {
 		/* Cross-origin resource sharing (CORS). */
 		cors1 = "Access-Control-Allow-Origin: ";
-		cors2 = conn->ctx->config[ACCESS_CONTROL_ALLOW_ORIGIN];
+		cors2 = cors_orig_cfg;
 		cors3 = "\r\n";
 	} else {
 		cors1 = cors2 = cors3 = "";
