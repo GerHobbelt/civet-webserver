@@ -6991,6 +6991,7 @@ mg_url_decode(const char *src,
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 int
 mg_get_var(const char *data,
            size_t data_len,
@@ -7107,6 +7108,7 @@ mg_get_cookie(const char *cookie_header,
 	}
 	return len;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 #if defined(USE_WEBSOCKET)
@@ -10262,6 +10264,7 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 static int
 parse_http_response(char *buf, int len, struct mg_response_info *ri)
 {
@@ -10362,6 +10365,7 @@ parse_http_response(char *buf, int len, struct mg_response_info *ri)
 
 	return response_length + init_skip;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 /* Keep reading the input (either opened file descriptor fd, or socket sock,
@@ -12860,6 +12864,7 @@ get_remote_ip(const struct mg_connection *conn)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 /* The mg_upload function is superseeded by mg_handle_form_request. */
 #include "handle_form.inl"
 
@@ -12960,6 +12965,7 @@ mg_upload(struct mg_connection *conn, const char *destination_dir)
 	return fud.num_uploaded_files;
 }
 #endif
+#endif /* MG_CLIENT_UTIL */
 
 
 static int
@@ -16290,6 +16296,7 @@ close_connection(struct mg_connection *conn)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 void
 mg_close_connection(struct mg_connection *conn)
 {
@@ -16587,6 +16594,7 @@ mg_connect_client(const char *host,
 	                              error_buffer,
 	                              error_buffer_size);
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 static const struct {
@@ -16974,6 +16982,7 @@ get_request(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 /* conn is assumed to be valid in this internal function */
 static int
 get_response(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
@@ -17368,6 +17377,7 @@ mg_connect_websocket_client(const char *host,
 
 	return conn;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 /* Prepare connection data structure */
