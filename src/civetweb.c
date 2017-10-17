@@ -7154,6 +7154,7 @@ mg_url_decode(const char *src,
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 int
 mg_get_var(const char *data,
            size_t data_len,
@@ -7270,6 +7271,7 @@ mg_get_cookie(const char *cookie_header,
 	}
 	return len;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 #if defined(USE_WEBSOCKET)
@@ -10594,6 +10596,7 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 static int
 parse_http_response(char *buf, int len, struct mg_response_info *ri)
 {
@@ -10694,6 +10697,7 @@ parse_http_response(char *buf, int len, struct mg_response_info *ri)
 
 	return response_length + init_skip;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 /* Keep reading the input (either opened file descriptor fd, or socket sock,
@@ -13124,6 +13128,7 @@ get_remote_ip(const struct mg_connection *conn)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 /* The mg_upload function is superseeded by mg_handle_form_request. */
 #include "handle_form.inl"
 
@@ -13224,6 +13229,7 @@ mg_upload(struct mg_connection *conn, const char *destination_dir)
 	return fud.num_uploaded_files;
 }
 #endif
+#endif /* MG_CLIENT_UTIL */
 
 
 static int
@@ -15342,8 +15348,11 @@ static int
 sslize(struct mg_connection *conn,
        SSL_CTX *s,
        int (*func)(SSL *),
-       volatile int *stop_server,
-       const struct mg_client_options *client_options)
+       volatile int *stop_server
+#if defined(MG_CLIENT_UTIL)
+       , const struct mg_client_options *client_options
+#endif
+       )
 {
 	int ret, err;
 	int short_trust;
@@ -15381,11 +15390,13 @@ sslize(struct mg_connection *conn,
 		return 0;
 	}
 
+#if defined(MG_CLIENT_UTIL)
 	if (client_options) {
 		if (client_options->host_name) {
 			SSL_set_tlsext_host_name(conn->ssl, client_options->host_name);
 		}
 	}
+#endif
 
 	/* Reuse the request timeout for the SSL_Accept/SSL_connect timeout  */
 	if (conn->dom_ctx->config[REQUEST_TIMEOUT]) {
@@ -16661,6 +16672,7 @@ close_connection(struct mg_connection *conn)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 void
 mg_close_connection(struct mg_connection *conn)
 {
@@ -16950,6 +16962,7 @@ mg_connect_client(const char *host,
 	                              error_buffer,
 	                              error_buffer_size);
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 #if defined(MG_EXPERIMENTAL_INTERFACES)
@@ -17421,6 +17434,7 @@ get_request(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
 }
 
 
+#if defined(MG_CLIENT_UTIL)
 /* conn is assumed to be valid in this internal function */
 static int
 get_response(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
@@ -17835,6 +17849,7 @@ mg_connect_websocket_client(const char *host,
 
 	return conn;
 }
+#endif /* MG_CLIENT_UTIL */
 
 
 /* Prepare connection data structure */
@@ -18326,8 +18341,11 @@ worker_thread_run(struct mg_connection *conn)
 			if (sslize(conn,
 			           conn->dom_ctx->ssl_ctx,
 			           SSL_accept,
-			           &(conn->phys_ctx->stop_flag),
-			           NULL)) {
+			           &(conn->phys_ctx->stop_flag)
+#if defined(MG_CLIENT_UTIL)
+			           , NULL
+#endif
+			           )) {
 				/* conn->dom_ctx is set in get_request */
 
 				/* Get SSL client certificate information (if set) */
