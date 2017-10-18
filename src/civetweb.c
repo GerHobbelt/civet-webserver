@@ -15417,6 +15417,7 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 			            __func__,
 			            ssl_error());
 			DEBUG_TRACE("%s", ebuf);
+			mg_atomic_dec(&cryptolib_users);
 			return 0;
 		}
 
@@ -15433,6 +15434,7 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 				            num_locks);
 				DEBUG_TRACE("%s", ebuf);
 				mg_free(ssl_mutexes);
+				mg_atomic_dec(&cryptolib_users);
 				return 0;
 			}
 		}
@@ -15450,6 +15452,7 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 			mg_free(ssl_mutexes);
 #endif
 			DEBUG_TRACE("%s", ebuf);
+			mg_atomic_dec(&cryptolib_users);
 			return 0;
 		}
 	}
@@ -15892,9 +15895,12 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
 		return 0;
 	} else if (callback_ret > 0) {
 		dom_ctx->ssl_ctx = (SSL_CTX *)ssl_ctx;
-		if (!initialize_ssl(ebuf, sizeof(ebuf))) {
-			mg_cry_internal(fc(phys_ctx), "%s", ebuf);
-			return 0;
+		if (!mg_ssl_initialized) {
+			if (!initialize_ssl(ebuf, sizeof(ebuf))) {
+				mg_cry_internal(fc(phys_ctx), "%s", ebuf);
+				return 0;
+			}
+			mg_ssl_initialized = 1;
 		}
 		return 1;
 	}
@@ -15922,9 +15928,12 @@ init_ssl_ctx(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
 		chain = NULL;
 	}
 
-	if (!initialize_ssl(ebuf, sizeof(ebuf))) {
-		mg_cry_internal(fc(phys_ctx), "%s", ebuf);
-		return 0;
+	if (!mg_ssl_initialized) {
+		if (!initialize_ssl(ebuf, sizeof(ebuf))) {
+			mg_cry_internal(fc(phys_ctx), "%s", ebuf);
+			return 0;
+		}
+		mg_ssl_initialized = 1;
 	}
 
 	return init_ssl_ctx_impl(phys_ctx, dom_ctx, pem, chain);
@@ -19841,6 +19850,16 @@ mg_exit_library(void)
 			uninitialize_ssl();
 			mg_ssl_initialized = 0;
 		}
+#if !defined(NO_SSL_DL)
+		if (ssllib_dll_handle) {
+			(void)dlclose(ssllib_dll_handle);
+			ssllib_dll_handle = NULL;
+		}
+		if (cryptolib_dll_handle) {
+			(void)dlclose(cryptolib_dll_handle);
+			cryptolib_dll_handle = NULL;
+		}
+#endif
 #endif
 
 #if defined(_WIN32)
