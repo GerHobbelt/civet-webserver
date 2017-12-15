@@ -1,0 +1,18 @@
+@PACKAGE_INIT@
+
+# Copy-paste from src/CMakeLists.txt {
+
+find_package(md5 CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+
+if("@CIVETWEB_ENABLE_SSL@")
+  if("@CIVETWEB_ENABLE_SSL_DYNAMIC_LOADING@")
+  else()
+    find_package(OpenSSL REQUIRED)
+  endif()
+endif()
+
+# }
+
+include("${CMAKE_CURRENT_LIST_DIR}/@TARGETS_EXPORT_NAME@.cmake")
+check_required_components("@PROJECT_NAME@")
