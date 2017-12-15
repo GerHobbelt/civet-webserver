@@ -31,9 +31,11 @@ find_package(Threads REQUIRED)
 target_link_libraries(c-library PUBLIC Threads::Threads)
 
 # Need the realtime library if we're using timers
-find_package(LibRt)
-if (CIVETWEB_ENABLE_WEBSOCKETS AND CIVETWEB_ENABLE_LUA AND LIBRT_FOUND)
-  target_link_libraries(c-library LIBRT::LIBRT)
+if (CIVETWEB_ENABLE_WEBSOCKETS AND CIVETWEB_ENABLE_LUA)
+  find_package(LibRt)
+  if(LIBRT_FOUND)
+    target_link_libraries(c-library LIBRT::LIBRT)
+  endif()
 endif()
 
 # We need to link OpenSSL if not dynamically loading
