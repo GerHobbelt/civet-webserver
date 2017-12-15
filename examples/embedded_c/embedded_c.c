@@ -318,8 +318,7 @@ FileUploadForm(struct mg_connection *conn, void *cbdata)
 	return 1;
 }
 
-#define MD5_STATIC static
-#include "../src/md5.inl"
+#include <md5/md5.h>
 
 struct tfile_checksum {
 	char name[128];
