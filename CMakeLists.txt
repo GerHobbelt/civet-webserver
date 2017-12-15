@@ -268,10 +268,10 @@ if (NOT CIVETWEB_ALLOW_WARNINGS)
   add_c_compiler_flag(-Werror)
 endif()
 add_c_compiler_flag(/WX)
-add_c_compiler_flag(-pedantic-errors)
+# add_c_compiler_flag(-pedantic-errors) Disabled for GCC build
 add_c_compiler_flag(-fvisibility=hidden)
 add_c_compiler_flag(-fstack-protector-strong RELEASE)
-add_c_compiler_flag(-flto RELEASE)
+# add_c_compiler_flag(-flto RELEASE) Disabled for GCC build
 if (${CIVETWEB_ENABLE_ASAN})
 add_c_compiler_flag(-fsanitize=undefined DEBUG)
 add_c_compiler_flag(-fsanitize=address DEBUG)
