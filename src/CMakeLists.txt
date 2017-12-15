@@ -14,7 +14,7 @@ if (BUILD_SHARED_LIBS)
 endif()
 target_include_directories(
   civetweb-c-library PUBLIC
-  ${PROJECT_SOURCE_DIR}/include)
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 install(
   TARGETS civetweb-c-library
   ARCHIVE DESTINATION lib
