@@ -236,18 +236,6 @@ set(CIVETWEB_CXX_STANDARD auto CACHE STRING
   "The C++ standard to use; auto determines the latest supported by the compiler")
 set_property(CACHE CIVETWEB_CXX_STANDARD PROPERTY STRINGS auto c++14 c++11 c++98)
 
-# Configure the linker
-if ("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
-  find_program(GCC_AR gcc-ar)
-  if (GCC_AR)
-    set(CMAKE_AR ${GCC_AR})
-  endif()
-  find_program(GCC_RANLIB gcc-ranlib)
-  if (GCC_RANLIB)
-    set(CMAKE_RANLIB ${GCC_RANLIB})
-  endif()
-endif()
-
 # Configure the C compiler
 message(STATUS "Configuring C Compiler")
 if ("${CIVETWEB_C_STANDARD}" STREQUAL "auto")
