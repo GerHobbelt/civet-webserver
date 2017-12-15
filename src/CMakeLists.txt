@@ -13,14 +13,21 @@ target_include_directories(
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 install(
   TARGETS c-library
+  EXPORT "${TARGETS_EXPORT_NAME}"
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
-  COMPONENT c-library)
+  COMPONENT c-library
+  INCLUDES DESTINATION "${include_install_dir}"
+)
 install(FILES
   ${PROJECT_SOURCE_DIR}/include/civetweb.h
   DESTINATION include
   COMPONENT c-library)
+
+hunter_add_package(md5)
+find_package(md5 CONFIG REQUIRED)
+target_link_libraries(c-library PUBLIC md5::md5)
 
 if(WIN32)
   target_link_libraries(c-library PUBLIC Ws2_32)
