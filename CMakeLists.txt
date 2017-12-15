@@ -236,20 +236,6 @@ set(CIVETWEB_CXX_STANDARD auto CACHE STRING
   "The C++ standard to use; auto determines the latest supported by the compiler")
 set_property(CACHE CIVETWEB_CXX_STANDARD PROPERTY STRINGS auto c++14 c++11 c++98)
 
-# Configure the C compiler
-message(STATUS "Configuring C Compiler")
-if ("${CIVETWEB_C_STANDARD}" STREQUAL "auto")
-  add_c_compiler_flag(-std=c11)
-  if (NOT HAVE_C_FLAG_STD_C11)
-    add_c_compiler_flag(-std=c99)
-    if (NOT HAVE_C_FLAG_STD_C99)
-      add_c_compiler_flag(-std=c89)
-    endif()
-  endif()
-else()
-  add_c_compiler_flag(-std=${CIVETWEB_C_STANDARD})
-endif()
-
 #Warnings: enable everything
 add_c_compiler_flag(-Wall)
 add_c_compiler_flag(-Wextra)
