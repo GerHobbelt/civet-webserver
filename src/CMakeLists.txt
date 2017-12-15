@@ -27,8 +27,8 @@ if(WIN32)
 endif()
 
 # We need threading
-find_package(Threads)
-target_link_libraries(c-library ${CMAKE_THREAD_LIBS_INIT})
+find_package(Threads REQUIRED)
+target_link_libraries(c-library PUBLIC Threads::Threads)
 
 # Need the realtime library if we're using timers
 find_package(LibRt)
