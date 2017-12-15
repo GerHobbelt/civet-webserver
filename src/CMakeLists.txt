@@ -263,7 +263,7 @@ if (CIVETWEB_ENABLE_SERVER_EXECUTABLE)
         civetweb-c-executable PUBLIC
         ${PROJECT_SOURCE_DIR}/include)
     target_link_libraries(civetweb-c-executable civetweb-c-library)
-    if (LIBRT_FOUND)
+    if (TARGET LIBRT::LIBRT)
         target_link_libraries(civetweb-c-executable LIBRT::LIBRT)
     endif()
 endif()
