@@ -1526,8 +1526,7 @@ DEBUG_TRACE_FUNC(const char *func, unsigned line, const char *fmt, ...)
 #endif /* DEBUG_TRACE */
 
 
-#define MD5_STATIC static
-#include "md5.inl"
+#include <md5/md5.h>
 
 /* Darwin prior to 7.0 and Win32 do not have socklen_t */
 #ifdef NO_SOCKLEN_T
