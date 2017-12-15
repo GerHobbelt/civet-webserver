@@ -267,7 +267,7 @@ endif()
 if (NOT CIVETWEB_ALLOW_WARNINGS)
   add_c_compiler_flag(-Werror)
 endif()
-add_c_compiler_flag(/WX)
+# add_c_compiler_flag(/WX) Disabled for Visual Studio build
 # add_c_compiler_flag(-pedantic-errors) Disabled for GCC build
 add_c_compiler_flag(-fvisibility=hidden)
 add_c_compiler_flag(-fstack-protector-strong RELEASE)
