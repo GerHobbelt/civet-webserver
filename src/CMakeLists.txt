@@ -247,7 +247,7 @@ target_include_directories(
   c-executable PUBLIC
   ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(c-executable c-library)
-if (LIBRT_FOUND)
+if (TARGET LIBRT::LIBRT)
   target_link_libraries(c-executable LIBRT::LIBRT)
 endif()
 
