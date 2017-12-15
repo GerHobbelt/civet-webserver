@@ -26,10 +26,8 @@ install(FILES
   DESTINATION include
   COMPONENT civetweb-c-library)
 
-# Need Windows sockets if available
-find_package(WinSock)
-if (WINSOCK_FOUND)
-  target_link_libraries(civetweb-c-library WINSOCK::WINSOCK)
+if(WIN32)
+  target_link_libraries(civetweb-c-library PUBLIC Ws2_32)
 endif()
 
 # We need threading
