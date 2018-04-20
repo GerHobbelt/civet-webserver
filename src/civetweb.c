@@ -14112,10 +14112,151 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 	return 1;
 }
 
+#ifdef MEMORY_CERTIFICATE
+static int ssl_use_pem_chain_memory(SSL_CTX *ctx, BIO *in)
+{
+    X509 *x = NULL;
+    X509 *ca = NULL;
+    int ret = 0;
+    unsigned long err;
+
+    x = PEM_read_bio_X509_AUX(in, NULL,  NULL,  NULL);
+    if(x == NULL) {
+	mg_cry(fc(ctx),
+	       "%s: read chain certificate error: %s",
+	       __func__,
+	       ssl_error());
+        return 0;
+    }
+
+    ret = SSL_CTX_use_certificate(ctx, x);
+    if(ret == 0) {
+	mg_cry(fc(ctx),
+	       "%s: use certificate error: %s",
+	       __func__,
+	       ssl_error());
+        X509_free(x);
+        return 0;
+    } 
+
+    ret = SSL_CTX_clear_chain_certs(ctx);
+    if(ret == 0) {
+	mg_cry(fc(ctx),
+	       "%s: clear chain certificate error: %s",
+	       __func__,
+	       ssl_error());
+        return 0;
+    } 
+
+    while ((ca = PEM_read_bio_X509(in, NULL, NULL, NULL)) != NULL) {
+        ret = SSL_CTX_add0_chain_cert(ctx, ca);
+        /*
+         * Note that we must not free ca if it was successfully added to
+         * the chain (while we must free the main certificate, since its
+         * reference count is increased by SSL_CTX_use_certificate).
+         */
+        if(ret == 0) {
+	    mg_cry(fc(ctx),
+	        "%s: add chain certificate error: %s",
+	        __func__,
+	        ssl_error());
+            X509_free(ca);
+            return 0;
+        }
+    }
+
+    /* When the while loop ends, it's usually just EOF. */
+    err = ERR_peek_last_error();
+    if (ERR_GET_LIB(err) == ERR_LIB_PEM
+        && ERR_GET_REASON(err) == PEM_R_NO_START_LINE)
+        ERR_clear_error();
+    else 
+        ret = 0;            /* some real error */
+
+    X509_free(x);
+    return ret;
+}
+#endif
 
 static int
 ssl_use_pem_file(struct mg_context *ctx, const char *pem, const char *chain)
 {
+#ifdef MEMORY_CERTIFICATE
+	int ret = 0;
+	BIO *mem = NULL;
+	X509 *x = NULL;
+	RSA *rsa = NULL;
+
+	mem = BIO_new_mem_buf(pem, -1);
+	if(mem == NULL) {
+		mg_cry(fc(ctx),
+		       "%s: pem buffer to BIO memory error: %s",
+		       __func__,
+		       ssl_error());
+		return 0;
+	}
+
+	x = PEM_read_bio_X509(mem, NULL, NULL, NULL); 
+	if(x == NULL) {
+		mg_cry(fc(ctx),
+		       "%s: read BIO X509 certificate error: %s",
+		       __func__,
+		       ssl_error());
+		BIO_free(mem);
+		return 0;
+	}
+
+	if((ret = SSL_CTX_use_certificate(ctx->ssl_ctx, x)) == 0) {
+		mg_cry(fc(ctx),
+		       "%s: get certificate error: %s",
+		       __func__,
+		       ssl_error());
+		X509_free(x);
+		BIO_free(mem);
+		return 0;
+	}
+	X509_free(x);
+
+	rsa = PEM_read_bio_RSAPrivateKey(mem, NULL, NULL, NULL); 
+	if(rsa == NULL) {
+		mg_cry(fc(ctx),
+		       "%s: read BIO read RSAPrivateKey error: %s",
+		       __func__,
+		       ssl_error());
+		BIO_free(mem);
+		return 0;
+	}
+
+	if((ret = SSL_CTX_use_RSAPrivateKey(ctx->ssl_ctx, rsa)) == 0) {
+		mg_cry(fc(ctx),
+		       "%s: get private key error: %s",
+		       __func__,
+		       ssl_error());
+		RSA_free(rsa);
+		BIO_free(mem);
+		return 0;
+	}
+
+	RSA_free(rsa);
+	BIO_free(mem);
+
+        if(chain) {
+                mem = BIO_new_mem_buf(pem, -1);
+                if(mem == NULL) {
+                        mg_cry(fc(ctx),
+                           "%s: pem buffer to BIO memory error: %s",
+                           __func__,
+                           ssl_error());
+                       return 0;
+                }
+
+                ret = ssl_use_pem_chain_memory(ctx->ssl_ctx, mem);
+                BIO_free(mem);
+        }
+
+	return ret;
+#else
+
 	if (SSL_CTX_use_certificate_file(ctx->ssl_ctx, pem, 1) == 0) {
 		mg_cry(fc(ctx),
 		       "%s: cannot open certificate file %s: %s",
@@ -14162,6 +14303,7 @@ ssl_use_pem_file(struct mg_context *ctx, const char *pem, const char *chain)
 		}
 	}
 	return 1;
+#endif   //MEMORY_CERTIFICATE
 }
 
 
