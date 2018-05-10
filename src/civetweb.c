@@ -40,8 +40,12 @@
 #define _LARGEFILE_SOURCE /* For fseeko(), ftello() */
 #endif
 #ifndef _FILE_OFFSET_BITS
-  #if (__ANDROID_API__ < 24)
-    #define _FILE_OFFSET_BITS 32 /* Use 32-bit file offsets for Android api lower than 24 */
+  #if defined(ANDROID)
+    #if (__ANDROID_API__ < 24)
+      #define _FILE_OFFSET_BITS 32 /* Use 32-bit file offsets for Android api lower than 24 */
+    #else
+      #define _FILE_OFFSET_BITS 64 /* Use 64-bit file offsets by default */
+    #endif
   #else
     #define _FILE_OFFSET_BITS 64 /* Use 64-bit file offsets by default */
   #endif
