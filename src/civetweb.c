@@ -14374,8 +14374,8 @@ ssl_info_callback(SSL *ssl, int what, int ret)
 static int
 set_ssl_option(struct mg_context *ctx)
 {
-	const char *pem;
-	const char *chain;
+	const char *pem=NULL;
+	const char *chain=NULL;
 	int callback_ret;
 	int should_verify_peer;
 	int peer_certificate_optional;
