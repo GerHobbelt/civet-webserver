@@ -16585,7 +16585,10 @@ master_thread_run(void *thread_func_param)
 			pfd[i].events = POLLIN;
 		}
 
-		if (poll(pfd, ctx->num_listening_sockets, 200) > 0) {
+                /* change to 5000 ms poll timeout for civetweb-master, than earlier frequent 200ms */
+                #define MASTER_POLL_TIMEOUT_MS 5000
+
+		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
 				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
 				 * successful poll, and POLLIN is defined as
