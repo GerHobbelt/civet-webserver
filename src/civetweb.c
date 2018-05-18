@@ -8695,89 +8695,63 @@ send_file_data(struct mg_connection *conn,
 			off_t sf_offs = (off_t)offset;
 			ssize_t sf_sent = 0 ;
 			int sf_file = fileno(filep->access.fp);
-                        short sftries = 0;
-                        short unavailablecnt = 0;
+			int unavailablecnt = 0;
 
-                        printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
-                          __FUNCTION__,conn->client.sock,len,offset,time(NULL));
+			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
+				__FUNCTION__,conn->client.sock,len,offset,time(NULL));
 
 			do {
 				/* 2147479552 (0x7FFFF000) is a limit found by experiment on
 				 * 64 bit Linux (2^31 minus one memory page of 4k?). */
 				size_t sf_tosend =
 				    (size_t)((len < 0x7FFFF000) ? len : 0x7FFFF000);
-                                errno = 0 ; 
+				errno = 0 ; /* errno reset not necessary, but safer as it is checked */
 				sf_sent =
 				    sendfile(conn->client.sock, sf_file, &sf_offs, sf_tosend);
 				if (sf_sent > 0) {
 					len -= sf_sent;
 					offset += sf_sent;
-                                        sftries = 0 ;
 				}
-                                else
-                                {
-                                   sftries ++;
-                                   #define MAX_SENDFILE_ATTEMPTS 20
-                                   if(sftries > MAX_SENDFILE_ATTEMPTS) {
-                                     /* Have tried reasonable attempt to send using sendfile(),
-                                        Hence break, and  fall back to the classic way of sending */
-			              break ;
-				   }
-				   if(sf_sent < 0) {
+				else if (sf_sent < 0) {
+					/* sendfile returns < 0 */
+					if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+					/* Most Likely: sendfile() EAGAIN or EWOULDBLOCK, wait on poll and try again.
+					  The intent is to maximize the usage of sendfile */
+						struct pollfd p_fd;
+						int prc = 0 ;
+						unavailablecnt++;
+						#define RETRY_POLLWAIT_MS 250
+						p_fd.fd = conn->client.sock ;
+						p_fd.revents = 0 ;
+						p_fd.events = POLLOUT | POLLERR | POLLHUP | POLLNVAL;
+						/* Using poll here to wait for event on sendfile socket */
+						prc = poll(&p_fd, 1, RETRY_POLLWAIT_MS) ;
+						if(prc < 0) {
+							/* poll error, break to try classic way of sending */
+							break;
+						}
+						/* continue loop to try sendfile now */
+						continue;
+					}
+					else {
+						/* printf("%s() sock=%d sf_sent=%ld len=%ld offset=%ld sendfile error=%d , %s\n",
+						__FUNCTION__,conn->client.sock,sf_sent,len,offset, errno, strerror(errno)); */
 
-				     if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-
-                                         /*Most Likely: sendfile() EAGAIN or EWOULDBLOCK, wait on poll and try again.
-                                            The intent is to maximize the usage of sendfile */
-					  struct pollfd p_fd;
-                                          int prc = 0 ;
-                                          unavailablecnt++;
-                                          #define RETRY_POLLWAIT_MS 250
-					  p_fd.fd = conn->client.sock ;
-					  p_fd.revents = 0 ;
-					  p_fd.events = POLLOUT | POLLERR | POLLHUP | POLLNVAL;
-                                          /* Using poll here to wait for event on sendfile socket, with timeout,
-                                             eventually to fall back to the classic way of sending after few attempts */
-					  prc = poll(&p_fd, 1, RETRY_POLLWAIT_MS) ;
-					  if(prc < 0) {
-                                            /* printf("%s() sock=%d sf_sent=%ld len=%ld offset=%ld "
-                                                   "sftries=%d poll error=%d , %s\n",
-                                                    __FUNCTION__,conn->client.sock,sf_sent,len,offset,
-                                                    sftries,errno, strerror(errno)); */
-                                            /* poll error , break to try classic way of sending */
-					    break;
-					  }
-                                          /* continue loop to try sendfile now */
-					  continue;
-                                     }
-				     else if(errno == EINTR) {
-                                        /* sendfile() interrupted, re-try few times, after short ms sleep */ 
-					struct timespec tslp = {0, 10000000};
-					nanosleep(&tslp, NULL);
-					continue;
-				     }
-                                     else {
-                                       /* printf("%s() sock=%d sf_sent=%ld len=%ld offset=%ld"
-                                               " sftries=%d sendfile error=%d , %s\n",
-                                               __FUNCTION__,conn->client.sock,sf_sent,len,
-                                               offset, sftries,errno, strerror(errno)); */
-
-                                        /* sendfile error, break and try classic way of sending */
+						/* sendfile other errors, break and try classic way of sending */
+						break;
+					}
+				}
+				else {
+					/* unlikely: sendfile returns 0, break and try classic way of sending */
 					break;
-                                     }
-				   }
-                                   else {
-                                    /* unlikely: sendfile returns 0, break and try classic way of sending */
-			              break;
-                                   }
-                                }
+				}
 
 			} while (len > 0);
 
-                        printf("%s() sendfile summary: sf_sent(rc)=%ld sock=%d time=%ldsec sftries=%d"
-                               " pending_len=%ld sf_offs=%ld offset=%ld EAGAIN-unavailable count=%d \n",
-                          __FUNCTION__,sf_sent,conn->client.sock,time(NULL),
-                          sftries,len,sf_offs,offset,unavailablecnt);
+			printf("%s() sendfile summary: sf_sent(rc)=%ld sock=%d time=%ld sec "
+				" pending_len=%ld sf_offs=%ld offset=%ld EAGAIN-unavailable count=%d \n",
+				__FUNCTION__,sf_sent,conn->client.sock,time(NULL),
+				len,sf_offs,offset,unavailablecnt);
 
 			if (len <= 0) {
 				return; /* OK */
