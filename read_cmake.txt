@@ -1,0 +1,12 @@
+compile civetweb and unittest using cmake
+
+1.go to src directory
+cd src
+
+2.run cmake as the following
+cmake ..
+
+3.executable binary
+web server civetweb is at src/src
+unit test program main-c-unit-test is at src/test
+or at src/unittest for new version 
