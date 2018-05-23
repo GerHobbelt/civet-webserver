@@ -8698,7 +8698,7 @@ send_file_data(struct mg_connection *conn,
 			int unavailablecnt = 0;
 
 			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
-				__FUNCTION__,conn->client.sock,len,offset,time(NULL));
+				__func__,conn->client.sock,len,offset,time(NULL));
 
 			do {
 				/* 2147479552 (0x7FFFF000) is a limit found by experiment on
@@ -8735,7 +8735,7 @@ send_file_data(struct mg_connection *conn,
 					}
 					else {
 						/* printf("%s() sock=%d sf_sent=%ld len=%ld offset=%ld sendfile error=%d , %s\n",
-						__FUNCTION__,conn->client.sock,sf_sent,len,offset, errno, strerror(errno)); */
+						__func__,conn->client.sock,sf_sent,len,offset, errno, strerror(errno)); */
 
 						/* sendfile other errors, break and try classic way of sending */
 						break;
@@ -8750,7 +8750,7 @@ send_file_data(struct mg_connection *conn,
 
 			printf("%s() sendfile summary: sf_sent(rc)=%ld sock=%d time=%ld sec "
 				" pending_len=%ld sf_offs=%ld offset=%ld EAGAIN-unavailable count=%d \n",
-				__FUNCTION__,sf_sent,conn->client.sock,time(NULL),
+				__func__,sf_sent,conn->client.sock,time(NULL),
 				len,sf_offs,offset,unavailablecnt);
 
 			if (len <= 0) {
