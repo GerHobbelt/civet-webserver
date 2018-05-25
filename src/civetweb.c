@@ -15097,6 +15097,8 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 		return NULL;
 	}
 
+        conn->ctx->config[REQUEST_TIMEOUT]="3000";
+
 #ifndef NO_SSL
 #ifdef OPENSSL_API_1_1
 	if (use_ssl
@@ -16618,7 +16620,7 @@ master_thread_run(void *thread_func_param)
 		}
 
                 /* change to 5000 ms poll timeout for civetweb-master, than earlier frequent 200ms */
-                #define MASTER_POLL_TIMEOUT_MS 5000
+                #define MASTER_POLL_TIMEOUT_MS 1000
 
 		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
