@@ -2297,6 +2297,8 @@ struct mg_context {
 	int context_type;              /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
+	#define MAIN_THREAD_STOP_MSG 1024
+	int listen_ctrl_sd ;
 	struct pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
@@ -13432,10 +13434,10 @@ set_ports_option(struct mg_context *ctx)
 			so.sock = INVALID_SOCKET;
 			continue;
 		}
-
+		/* add 1 more pollfd slot for listen_ctrl_sd socket */
 		if ((pfd = (struct pollfd *)
 		         mg_realloc_ctx(ctx->listening_socket_fds,
-		                        (ctx->num_listening_sockets + 1)
+		                        (ctx->num_listening_sockets + 2)
 		                            * sizeof(ctx->listening_socket_fds[0]),
 		                        ctx)) == NULL) {
 
@@ -16573,6 +16575,7 @@ master_thread_run(void *thread_func_param)
 	struct mg_workerTLS tls;
 	struct pollfd *pfd;
 	unsigned int i;
+	unsigned int ctrlidx = 0 ;
 	unsigned int workerthreadcount;
 
 	if (!ctx) {
@@ -16619,10 +16622,17 @@ master_thread_run(void *thread_func_param)
 			pfd[i].events = POLLIN;
 		}
 
-                /* change to 5000 ms poll timeout for civetweb-master, than earlier frequent 200ms */
-                #define MASTER_POLL_TIMEOUT_MS 1000
+		ctrlidx = 0 ; //reset
+		if(ctx->listen_ctrl_sd > 0){
+			pfd[i].fd = ctx->listen_ctrl_sd ;
+			pfd[i].events = POLLIN;
+			ctrlidx = 1 ;
+		}
 
-		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
+                /* change to 5000 ms poll timeout for civetweb-master, than earlier frequent 200ms */
+                #define MASTER_POLL_TIMEOUT_MS 5000
+
+		if (poll(pfd, ctx->num_listening_sockets + ctrlidx, MASTER_POLL_TIMEOUT_MS) > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
 				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
 				 * successful poll, and POLLIN is defined as
@@ -16632,6 +16642,15 @@ master_thread_run(void *thread_func_param)
 				if ((ctx->stop_flag == 0) && (pfd[i].revents & POLLIN)) {
 					accept_new_connection(&ctx->listening_sockets[i], ctx);
 				}
+			}
+
+			if(ctrlidx && (pfd[i].revents & POLLIN) && (pfd[i].fd == ctx->listen_ctrl_sd)){
+				int rcvd = 0 ;
+				/* At this time not interested in what is recvd,
+				   but rather a way to wake up from poll */
+				recv(ctx->listen_ctrl_sd,&rcvd,sizeof(rcvd),0);
+				close(ctx->listen_ctrl_sd);
+				ctx->listen_ctrl_sd = INVALID_SOCKET ;
 			}
 		}
 	}
@@ -16810,6 +16829,17 @@ mg_stop(struct mg_context *ctx)
 
 	/* Set stop flag, so all threads know they have to exit. */
 	ctx->stop_flag = 1;
+
+	if(ctx->listen_ctrl_sd > 0){
+		struct sockaddr_in to;
+		int l = sizeof(to);
+		memset(&to, 0, sizeof(to));
+		if(!getsockname(ctx->listen_ctrl_sd, (struct sockaddr*)&to, &l)){
+			int d = MAIN_THREAD_STOP_MSG ;
+			sendto(ctx->listen_ctrl_sd, &d, sizeof(d), 0, 
+                              (struct sockaddr *) &to, sizeof(struct sockaddr_in));
+		}
+	}
 
 	/* Wait until everything has stopped. */
 	while (ctx->stop_flag != 2) {
@@ -17058,6 +17088,26 @@ mg_start(const struct mg_callbacks *callbacks,
 		free_context(ctx);
 		pthread_setspecific(sTlsKey, NULL);
 		return NULL;
+	}
+
+	/* listen_ctrl_sd is used by mg_stop to make master thread
+	   break out safely from i/o wait in poll instead of relying on 
+	   frequent poll timeout to wake up and check the stop flag.
+	*/
+	ctx->listen_ctrl_sd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(ctx->listen_ctrl_sd > 0) {
+		struct sockaddr_in saddr;
+		memset(&saddr, 0, sizeof(saddr));
+		saddr.sin_family = AF_INET;
+		saddr.sin_port = htons(0);
+		saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		fcntl(ctx->listen_ctrl_sd, F_SETFD, FD_CLOEXEC);
+		set_non_blocking_mode(ctx->listen_ctrl_sd);
+		if(bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
+                                                   sizeof(saddr)) < 0) {
+			close(ctx->listen_ctrl_sd);
+			ctx->listen_ctrl_sd = INVALID_SOCKET ;
+		}
 	}
 
 #if !defined(_WIN32) && !defined(__SYMBIAN32__)
