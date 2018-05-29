@@ -15097,7 +15097,10 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 		return NULL;
 	}
 
-        conn->ctx->config[REQUEST_TIMEOUT]="3000";
+        conn->ctx->config[REQUEST_TIMEOUT]="20000";
+#if defined(USE_WEBSOCKET)
+        conn->ctx->config[WEBSOCKET_TIMEOUT]="10000";
+#endif
 
 #ifndef NO_SSL
 #ifdef OPENSSL_API_1_1
