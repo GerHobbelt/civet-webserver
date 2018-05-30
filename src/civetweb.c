@@ -16623,7 +16623,7 @@ master_thread_run(void *thread_func_param)
 		}
 
 		ctrlidx = 0 ; //reset
-		if(ctx->listen_ctrl_sd > 0){
+		if (ctx->listen_ctrl_sd > 0) {
 			pfd[i].fd = ctx->listen_ctrl_sd ;
 			pfd[i].events = POLLIN;
 			ctrlidx = 1 ;
@@ -16644,13 +16644,11 @@ master_thread_run(void *thread_func_param)
 				}
 			}
 
-			if(ctrlidx && (pfd[i].revents & POLLIN) && (pfd[i].fd == ctx->listen_ctrl_sd)){
+			if (ctrlidx && (pfd[i].revents & POLLIN) && (pfd[i].fd == ctx->listen_ctrl_sd)) {
 				int rcvd = 0 ;
 				/* At this time not interested in what is recvd,
 				   but rather a way to wake up from poll */
-				recv(ctx->listen_ctrl_sd,&rcvd,sizeof(rcvd),0);
-				close(ctx->listen_ctrl_sd);
-				ctx->listen_ctrl_sd = INVALID_SOCKET ;
+				recv(ctx->listen_ctrl_sd,(char *)&rcvd,sizeof(rcvd),0);
 			}
 		}
 	}
@@ -16830,14 +16828,17 @@ mg_stop(struct mg_context *ctx)
 	/* Set stop flag, so all threads know they have to exit. */
 	ctx->stop_flag = 1;
 
-	if(ctx->listen_ctrl_sd > 0){
+	if (ctx->listen_ctrl_sd > 0) {
 		struct sockaddr_in to;
 		int l = sizeof(to);
 		memset(&to, 0, sizeof(to));
-		if(!getsockname(ctx->listen_ctrl_sd, (struct sockaddr*)&to, &l)){
+                /* get listen_ctrl_sd bound tuple address using getsockname() */
+		if (!getsockname(ctx->listen_ctrl_sd, (struct sockaddr*)&to, &l)) {
 			int d = MAIN_THREAD_STOP_MSG ;
-			sendto(ctx->listen_ctrl_sd, &d, sizeof(d), 0, 
-                              (struct sockaddr *) &to, sizeof(struct sockaddr_in));
+		/* Not interested in errors of sendto, as this is just one time 
+		   attempt to wake master listen thread from timed poll i/o wait. */
+			sendto(ctx->listen_ctrl_sd, (char *)&d, sizeof(d), 0, 
+                               (struct sockaddr *) &to, sizeof(struct sockaddr_in));
 		}
 	}
 
@@ -16847,6 +16848,12 @@ mg_stop(struct mg_context *ctx)
 	}
 
 	mg_join_thread(mt);
+
+	if (ctx && (ctx->listen_ctrl_sd > 0)) {
+		close(ctx->listen_ctrl_sd);
+		ctx->listen_ctrl_sd = INVALID_SOCKET ;
+	}
+
 	free_context(ctx);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
@@ -17095,19 +17102,25 @@ mg_start(const struct mg_callbacks *callbacks,
 	   frequent poll timeout to wake up and check the stop flag.
 	*/
 	ctx->listen_ctrl_sd = socket(AF_INET, SOCK_DGRAM, 0);
-	if(ctx->listen_ctrl_sd > 0) {
+	if (ctx->listen_ctrl_sd > 0) {
 		struct sockaddr_in saddr;
 		memset(&saddr, 0, sizeof(saddr));
 		saddr.sin_family = AF_INET;
 		saddr.sin_port = htons(0);
 		saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		fcntl(ctx->listen_ctrl_sd, F_SETFD, FD_CLOEXEC);
 		set_non_blocking_mode(ctx->listen_ctrl_sd);
-		if(bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
+		if (bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
                                                    sizeof(saddr)) < 0) {
 			close(ctx->listen_ctrl_sd);
 			ctx->listen_ctrl_sd = INVALID_SOCKET ;
 		}
+	}
+        /* The following check and return is not mandatory */
+	if (ctx->listen_ctrl_sd < 0) {
+		mg_cry(fc(ctx), "failed to setup listen_ctrl_sd");
+		free_context(ctx);
+		pthread_setspecific(sTlsKey, NULL);
+		return NULL;
 	}
 
 #if !defined(_WIN32) && !defined(__SYMBIAN32__)
