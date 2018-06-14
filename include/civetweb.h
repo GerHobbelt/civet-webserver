@@ -680,6 +680,11 @@ mg_get_response_info(const struct mg_connection *);
     >0  number of bytes written on success */
 CIVETWEB_API int mg_write(struct mg_connection *, const void *buf, size_t len);
 
+/* Send data to the client when using wstunnel.
+   Return:
+    <0  on error
+    >0  number of bytes written on success */
+CIVETWEB_API int mg_ws_blocked_write(struct mg_connection *, const char *buf, int len);
 
 /* Send data to a websocket client wrapped in a websocket frame.  Uses
    mg_lock_connection to ensure that the transmission is not interrupted,
