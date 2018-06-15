@@ -5648,6 +5648,170 @@ push_inner(struct mg_context *ctx,
 	return -1;
 }
 
+/*
+mg_ws_blocked_write() is adapted from mg_write, push_all and push_inner functions.
+It preserves the original logic -- with fixing issues, and handling corner cases.
+conn->client.sock is expected to be in blocking mode.
+*/
+int
+mg_ws_blocked_write(struct mg_connection *conn, const char *buf, int len)
+{
+	int n = 0 , err = 0 , serr = 0;
+	int nwritten = 0 ;
+	struct mg_context *ctx = NULL ;
+	SOCKET sock = 0 ;
+	SSL *ssl = NULL ;
+
+#ifdef _WIN32
+	typedef int len_t;
+#else
+	typedef size_t len_t;
+#endif
+
+	if ((conn == NULL)||( buf == NULL )||(len <= 0)) {
+		return -2;
+	}
+
+	sock = conn->client.sock ;
+	ctx = conn->ctx ;
+	ssl = conn->ssl ;
+
+	if (ctx == NULL) {
+		return -2;
+	}
+
+#ifdef NO_SSL
+	if (ssl) {
+		return -2;
+	}
+#endif
+        //move this call to set ws socket blocking at connect time
+	//set_blocking_mode(sock, 1);
+
+	while ((len > 0) && (ctx->stop_flag == 0)) {
+		err = 0 ; //reset
+		serr = 0 ;
+		errno = 0 ;
+#ifndef NO_SSL
+		if (ssl != NULL) {
+			n = SSL_write(ssl, buf + nwritten, (int)len);
+			if (n <= 0) {
+				serr = SSL_get_error(ssl, n);
+				err = (n < 0) ? ERRNO : 0;
+				if (serr == SSL_ERROR_SYSCALL) {
+
+					#if defined(_WIN32) || defined(_WIN64)
+					//err = WSAGetLastError();
+					if ((err == WSAEWOULDBLOCK) || (err == WSAEINTR))
+					#else
+					//err = errno;
+					if ((err == EAGAIN) || (err == EWOULDBLOCK) || (err == EINTR))
+					#endif
+					{
+						//unlikley in blocked socket to get EAGAIN/EWOULDBLOCK, but check
+						//need to re-try SSL_write with same arguments, for safeguard
+						struct timespec tslp = {0, 20000000};
+						// may be sleep for 20 ms before trying again
+						nanosleep(&tslp, NULL);
+						printf("%s(ERR1-continue):sock=%d SSL_write() failed,"
+							" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+							__func__,sock,len,n,nwritten,serr,err,strerror(err));
+						continue;
+					}
+					else {
+						printf("%s(ERR2-return):sock=%d SSL_write() failed,"
+							" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+							__func__,sock,len,n,nwritten,serr,err,strerror(err));
+						//TODO: Trigger OnClose closure
+						return -3;
+					}
+
+				} else if ((serr == SSL_ERROR_WANT_READ)
+					|| (serr == SSL_ERROR_WANT_WRITE)) {
+					//unlikely due to SSL_MODE_AUTO_RETRY, and blocked socket but check any how
+					//need to re-try SSL_write with same arguments
+					struct timespec tslp = {0, 20000000};
+					// may be sleep for 20 ms before trying again
+					nanosleep(&tslp, NULL);
+					printf("%s(ERR3-continue):sock=%d SSL_write() failed,"
+						" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+						__func__,sock,len,n,nwritten,serr,err,strerror(err));
+					continue;
+				} else {
+					printf("%s(ERR4-return):sock=%d SSL_write() failed,"
+						" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+						__func__,sock,len,n,nwritten,serr,err,strerror(err));
+						//TODO: Trigger OnClose closure
+					return -3;
+				}
+			} else {
+				//n > 0 case ;
+				nwritten += n;
+				len -= n;
+
+				//printf("%s(): sock=%d SSL_write() complete len=%d n=%d nwritten=%d\n",
+				//      __func__,sock,len,n,nwritten);
+				continue ;
+			}
+		} else
+#endif
+		{
+			n = (int)send(sock, buf + nwritten, (len_t)len, MSG_NOSIGNAL);
+			if (n < 0) {
+					err = ERRNO;
+
+					#if defined(_WIN32) || defined(_WIN64)
+					//err = WSAGetLastError();
+					if ((err == WSAEWOULDBLOCK) || (err == WSAEINTR))
+					#else
+					//err = errno;
+					if ((err == EAGAIN) || (err == EWOULDBLOCK) || (err == EINTR))
+					#endif
+					{
+						//unlikley in blocked socket to get EAGAIN/EWOULDBLOCK, but check
+						//need to re-try send() , for safeguard
+						struct timespec tslp = {0, 20000000};
+						// may be sleep for 20 ms before trying again
+						nanosleep(&tslp, NULL);
+						printf("%s(ERR5-continue):sock=%d send() failed,"
+							" len=%d n=%d  nwritten=%d err=%d %s\n",
+							__func__,sock,len,n,nwritten,err,strerror(err));
+						continue;
+					}
+					else {
+						printf("%s(ERR6-return):sock=%d send() failed,"
+							" len=%d n=%d  nwritten=%d err=%d %s\n",
+							__func__,sock,len,n,nwritten,err,strerror(err));
+						//TODO: Trigger OnClose closure
+						return -3;
+					}
+
+			} else if (n == 0) {
+					printf("%s() send() == 0, sock=%d len=%d n=%d nwritten=%d\n",
+						__func__,sock,len,n,nwritten);
+					//TODO: Trigger OnClose closure
+					return -3;
+			
+			} else {
+				//n > 0 case ;
+				nwritten += n;
+				len -= n;
+
+				//printf("%s(): sock=%d send() complete len=%d n=%d nwritten=%d\n",__func__,sock,len,n,nwritten);
+
+				continue ;
+			}
+		}
+
+	} //end of while(len > 0)
+
+	if (nwritten > 0) {
+		conn->num_bytes_sent += nwritten;
+	}
+
+	return nwritten;
+}
+
 
 static int64_t
 push_all(struct mg_context *ctx,
@@ -8213,12 +8377,9 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	    && (connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin))
 	        == 0)) {
 		/* connected with IPv4 */
-		if (0 == set_non_blocking_mode(*sock)) {
-			/* Ok */
+		//if (0 == set_non_blocking_mode(*sock)) {
 			return 1;
-		}
-		/* failed */
-		/* TODO: specific error message */
+		//}
 	}
 
 #ifdef USE_IPV6
@@ -8226,12 +8387,9 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	    && (connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6))
 	        == 0)) {
 		/* connected with IPv6 */
-		if (0 == set_non_blocking_mode(*sock)) {
-			/* Ok */
+		//if (0 == set_non_blocking_mode(*sock)) {
 			return 1;
-		}
-		/* failed */
-		/* TODO: specific error message */
+		//}
 	}
 #endif
 
@@ -11517,9 +11675,9 @@ mg_websocket_write_exec(struct mg_connection *conn,
 	 * it is a websocket or regular connection. */
 	(void)mg_lock_connection(conn);
 
-	retval = mg_write(conn, header, headerLen);
+	retval = mg_ws_blocked_write(conn, header, headerLen);
 	if (dataLen > 0) {
-		retval = mg_write(conn, data, dataLen);
+		retval = mg_ws_blocked_write(conn, data, dataLen);
 	}
 
 	/* TODO: Remove this unlock as well, when lock is moved. */
@@ -14815,7 +14973,7 @@ close_socket_gracefully(struct mg_connection *conn)
 	/* http://msdn.microsoft.com/en-us/library/ms739165(v=vs.85).aspx:
 	 * "Note that enabling a nonzero timeout on a nonblocking socket
 	 * is not recommended.", so set it to blocking now */
-	set_blocking_mode(conn->client.sock);
+	//set_blocking_mode(conn->client.sock);
 
 	/* Send FIN to the client */
 	shutdown(conn->client.sock, SHUTDOWN_WR);
@@ -15205,13 +15363,20 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 			mg_free(conn);
 			return NULL;
 		}
+
+		if (conn && conn->ssl && (conn->client.sock > 0)) {
+			//SSL_MODE_AUTO_RETRY helps with SSL_ERROR_WANT_READ, if underlying BIO is blocking
+			SSL_set_mode(conn->ssl, SSL_MODE_AUTO_RETRY);
+			//printf("%s() conn=%x sock=%d conn->ssl=%x setting SSL_MODE_AUTO_RETRY \n",
+			//	__func__,conn,conn->client.sock,conn->ssl);
+		}
 	}
 #endif
 
-	if (0 != set_non_blocking_mode(sock)) {
+	//if (0 != set_non_blocking_mode(sock)) {
 		/* TODO: handle error */
-		;
-	}
+	//	;
+	//}
 
 	return conn;
 }
@@ -16563,7 +16728,9 @@ accept_new_connection(const struct socket *listener, struct mg_context *ctx)
 		/* The "non blocking" property should already be
 		 * inherited from the parent socket. Set it for
 		 * non-compliant socket implementations. */
-		set_non_blocking_mode(so.sock);
+		//set_non_blocking_mode(so.sock);
+
+                //NOTE: default blocking socket is prefered due to issues in error handling with non blocking
 
 		so.in_use = 0;
 		produce_socket(ctx, &so);
@@ -17111,7 +17278,7 @@ mg_start(const struct mg_callbacks *callbacks,
 		saddr.sin_family = AF_INET;
 		saddr.sin_port = htons(0);
 		saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		set_non_blocking_mode(ctx->listen_ctrl_sd);
+		//set_non_blocking_mode(ctx->listen_ctrl_sd);
 		if (bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
                                                    sizeof(saddr)) < 0) {
 			close(ctx->listen_ctrl_sd);
