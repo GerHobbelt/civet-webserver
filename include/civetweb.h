@@ -680,9 +680,11 @@ mg_get_response_info(const struct mg_connection *);
     >0  number of bytes written on success */
 CIVETWEB_API int mg_write(struct mg_connection *, const void *buf, size_t len);
 
+#define WS_TUNNEL_TCP_SOCK_ERR (-3)
 /* Send data to the client when using wstunnel.
    Return:
     <0  on error
+        WS_TUNNEL_TCP_SOCK_ERR implies, ws tcp sock err that tunnel should be torn
     >0  number of bytes written on success */
 CIVETWEB_API int mg_ws_blocked_write(struct mg_connection *, const char *buf, int len);
 
