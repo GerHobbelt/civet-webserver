@@ -11722,6 +11722,30 @@ mask_data(const char *in, size_t in_len, uint32_t masking_key, char *out)
 	}
 }
 
+/*
+  mg_ws_get_clinet_sock_bound_addr() returns the ipv4 address 	
+  bounded to the conn->client.socket by the underlying OS, as an
+  unsigned int 32 bit network byte ordered address.
+*/
+unsigned int
+mg_ws_get_client_sock_bound_addr(struct mg_connection *conn)
+{
+	struct sockaddr_in to;
+	int l = sizeof(to);
+	memset(&to, 0, sizeof(to));
+	if((conn) || (conn->client.sock > 0)) {
+		int rc = 0 ;
+		/* get sock bound tuple address using getsockname() */
+		rc = getsockname(conn->client.sock, (struct sockaddr*)&to, &l);
+/*
+		if(rc == 0) {
+			 printf("%s: sock=%d bound[%s : %d] \n",                      
+		        __func__,conn->client.sock,inet_ntoa(to.sin_addr),ntohs(to.sin_port));
+		}
+*/
+	}
+	return to.sin_addr.s_addr;
+}
 
 int
 mg_websocket_client_write(struct mg_connection *conn,
