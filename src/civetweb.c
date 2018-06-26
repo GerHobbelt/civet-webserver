@@ -11676,6 +11676,15 @@ mg_websocket_write_exec(struct mg_connection *conn,
 	(void)mg_lock_connection(conn);
 
 	retval = mg_ws_blocked_write(conn, header, headerLen);
+
+	/* mg_ws_blocked_write() returns only when a sincere attempt to
+	successfully send the header happens. However if it fails, to send
+	the header or fails after sending a partial header, it will return
+	an error(WS_TUNNEL_TCP_SOCK_ERR) less than 0. And we do not write the
+	data in that case.  WS_TUNNEL_TCP_SOCK_ERR error will be handled by
+	the upper layer who is calling this function to tear down the connection.
+        */
+
 	/* send data, only on successfully sending the header */
 	if ((dataLen > 0) && (retval >= headerLen)) {
 		retval = mg_ws_blocked_write(conn, data, dataLen);
