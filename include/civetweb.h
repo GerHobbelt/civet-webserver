@@ -371,6 +371,10 @@ CIVETWEB_API struct mg_context *mg_start(const struct mg_callbacks *callbacks,
    threads are stopped. Context pointer becomes invalid. */
 CIVETWEB_API void mg_stop(struct mg_context *);
 
+#define MG_WS_GET_SOCK_ADDR(c) mg_ws_get_client_sock_bound_addr(c)
+
+unsigned int
+mg_ws_get_client_sock_bound_addr(struct mg_connection *conn) ;
 
 /* mg_request_handler
 
@@ -680,9 +684,11 @@ mg_get_response_info(const struct mg_connection *);
     >0  number of bytes written on success */
 CIVETWEB_API int mg_write(struct mg_connection *, const void *buf, size_t len);
 
+#define WS_TUNNEL_TCP_SOCK_ERR (-3)
 /* Send data to the client when using wstunnel.
    Return:
     <0  on error
+        WS_TUNNEL_TCP_SOCK_ERR implies, ws tcp sock err that tunnel should be torn
     >0  number of bytes written on success */
 CIVETWEB_API int mg_ws_blocked_write(struct mg_connection *, const char *buf, int len);
 
