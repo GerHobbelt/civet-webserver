@@ -11732,28 +11732,30 @@ mask_data(const char *in, size_t in_len, uint32_t masking_key, char *out)
 }
 
 /*
-  mg_ws_get_clinet_sock_bound_addr() returns the ipv4 address 	
-  bounded to the conn->client.socket by the underlying OS, as an
-  unsigned int 32 bit network byte ordered address.
+  mg_ws_get_clinet_sock_bound_addr() gets bounded ipv4 or ipv6 address of conn->client.socket
+  - copies struct sockaddr into passed struct sockaddr * pto, if not NULL
+  - For ipv4 socket, also returns its bounded ipv4 unsigned 32 bit network byte ordered address
 */
 unsigned int
-mg_ws_get_client_sock_bound_addr(struct mg_connection *conn)
+mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto)
 {
-	struct sockaddr_in to;
-	int l = sizeof(to);
-	memset(&to, 0, sizeof(to));
+	struct sockaddr to;
+	int l = sizeof(struct sockaddr);
+	
+        if(!pto) {
+		pto = &to ;
+	}
+	memset(pto, 0, sizeof(struct sockaddr));
 	if((conn) || (conn->client.sock > 0)) {
 		int rc = 0 ;
 		/* get sock bound tuple address using getsockname() */
-		rc = getsockname(conn->client.sock, (struct sockaddr*)&to, &l);
-/*
-		if(rc == 0) {
-			 printf("%s: sock=%d bound[%s : %d] \n",                      
-		        __func__,conn->client.sock,inet_ntoa(to.sin_addr),ntohs(to.sin_port));
+		rc = getsockname(conn->client.sock, (struct sockaddr*)pto, &l);
+                if((rc == 0) && (((struct sockaddr*)pto)->sa_family == AF_INET)) {
+			//returning s_addr if IPV4: for backward compatability of this function usage
+			return ((struct sockaddr_in *)pto)->sin_addr.s_addr;
 		}
-*/
 	}
-	return to.sin_addr.s_addr;
+	return 0 ;
 }
 
 int

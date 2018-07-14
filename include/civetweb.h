@@ -371,10 +371,14 @@ CIVETWEB_API struct mg_context *mg_start(const struct mg_callbacks *callbacks,
    threads are stopped. Context pointer becomes invalid. */
 CIVETWEB_API void mg_stop(struct mg_context *);
 
-#define MG_WS_GET_SOCK_ADDR(c) mg_ws_get_client_sock_bound_addr(c)
+
+#define MG_WS_GET_SOCK_ADDR_IPV4_IPV6(c,pto) mg_ws_get_client_sock_bound_addr(c,pto)
+
+#define MG_WS_GET_SOCK_ADDR(c) mg_ws_get_client_sock_bound_addr(c,NULL)
 
 unsigned int
-mg_ws_get_client_sock_bound_addr(struct mg_connection *conn) ;
+mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto);
+
 
 /* mg_request_handler
 
