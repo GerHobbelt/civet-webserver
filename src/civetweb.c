@@ -62,6 +62,11 @@
 #endif
 #endif
 
+/* for sendfile() usage in MACH */
+#if defined(__MACH__)
+ #include <sys/uio.h>
+#endif
+
 #if defined(USE_LUA)
 #define USE_TIMERS
 #endif
@@ -2122,7 +2127,7 @@ enum {
 #if !defined(NO_SSL)
 	STRICT_HTTPS_MAX_AGE,
 #endif
-#if defined(__linux__)
+#if defined(__linux__) || defined(__MACH__)
 	ALLOW_SENDFILE_CALL,
 #endif
 #if defined(_WIN32)
@@ -2222,7 +2227,7 @@ static struct mg_option config_options[] = {
 #if !defined(NO_SSL)
     {"strict_transport_security_max_age", CONFIG_TYPE_NUMBER, NULL},
 #endif
-#if defined(__linux__)
+#if defined(__linux__) || defined(__MACH__)
     {"allow_sendfile_call", CONFIG_TYPE_BOOLEAN, "yes"},
 #endif
 #if defined(_WIN32)
@@ -8847,18 +8852,24 @@ send_file_data(struct mg_connection *conn,
 		mg_write(conn, filep->access.membuf + offset, (size_t)len);
 	} else if (len > 0 && filep->access.fp != NULL) {
 /* file stored on disk */
-#if defined(__linux__)
-		/* sendfile is only available for Linux */
+#if defined(__linux__) || defined(__MACH__)
+		/* sendfile is only available for Linux and macOS */
 		if ((conn->ssl == 0) && (conn->throttle == 0)
 		    && (!mg_strcasecmp(conn->ctx->config[ALLOW_SENDFILE_CALL],
 		                       "yes"))) {
 			off_t sf_offs = (off_t)offset;
 			ssize_t sf_sent = 0 ;
+			off_t slen = 0 ;
+			int rc2 = 0 ;
 			int sf_file = fileno(filep->access.fp);
 			int unavailablecnt = 0;
 
 			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
 				__func__,conn->client.sock,len,offset,time(NULL));
+			if(len == INT64_MAX){
+				len = (int64_t)(filep->stat.size);
+			}
+			if(len < 0){ return ; }
 
 			do {
 				/* 2147479552 (0x7FFFF000) is a limit found by experiment on
@@ -8866,6 +8877,7 @@ send_file_data(struct mg_connection *conn,
 				size_t sf_tosend =
 				    (size_t)((len < 0x7FFFF000) ? len : 0x7FFFF000);
 				errno = 0 ; /* errno reset not necessary, but safer as it is checked */
+#if defined(__linux__)
 				sf_sent =
 				    sendfile(conn->client.sock, sf_file, &sf_offs, sf_tosend);
 				if (sf_sent > 0) {
@@ -8905,12 +8917,89 @@ send_file_data(struct mg_connection *conn,
 					/* unlikely: sendfile returns 0, break and try classic way of sending */
 					break;
 				}
+#elif defined(__MACH__)
+
+/* The number of bytes sent is returned by sendfile in macOS via slen */
+/* update what has been sent */
+
+#define MAC_SENDFILE_UPDATE(slen){ \
+					sf_sent = slen ; \
+					sf_offs += slen ; \
+				        len -= sf_sent; \
+				        offset += sf_sent; \
+				}
+
+/*
+macOS sendfile() different from linux sendfile() interface
+https://developer.apple.com/legacy/library/documentation/Darwin/Reference/ManPages/man2/sendfile.2.html
+https://man.openbsd.org/FreeBSD-11.1/sendfile.2
+*/
+				rc2 = 0 ;
+				sf_sent = 0 ;
+				slen = sf_tosend ;
+				rc2 = sendfile(sf_file,conn->client.sock,sf_offs,&slen,NULL,0);
+				if(rc2 == 0){
+				/*
+			           The sendfile() in macOS returns 0 if successful; otherwise -1 is returned 
+				*/
+					if(slen > 0){
+						/* The number of bytes sent is returned by sendfile in macOS via slen */
+						/* update what has been sent */
+						MAC_SENDFILE_UPDATE(slen)
+					}
+					else if ( slen == 0 ){
+						/*
+						It is EITHER: All file data has been sent, and EOF is reached.
+						OR: offset was invalid pointing beyond EOF and sendfile did not send anything
+						*/
+						printf("send_file_data() __MACH__ sendfile: sock=%d slen=%d offset=%ld \n",
+						conn->client.sock,slen,offset);
+						return ;
+					}
+				}
+				else if (rc2 < 0) {
+					/* sendfile returns < 0 */
+					if((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+					/* Most Likely: sendfile() EAGAIN or EWOULDBLOCK, wait on poll and try again.
+					  The intent is to maximize the usage of sendfile */
+						struct pollfd p_fd;
+						int prc = 0 ;
+						if(slen > 0){
+							/* The number of bytes sent is returned by sendfile in macOS via slen */
+							/* update what has been sent */
+							MAC_SENDFILE_UPDATE(slen)
+						}
+						unavailablecnt++;
+						#define RETRY_POLLWAIT_MS 250
+						p_fd.fd = conn->client.sock ;
+						p_fd.revents = 0 ;
+						p_fd.events = POLLOUT | POLLERR | POLLHUP | POLLNVAL;
+						/* Using poll here to wait for event on sendfile socket */
+						prc = poll(&p_fd, 1, RETRY_POLLWAIT_MS) ;
+						if(prc < 0) {
+							/* poll error, break to try classic way of sending */
+							break;
+						}
+						/* continue loop to try sendfile now */
+						continue;
+					}
+					else {
+						/* sendfile other errors, break and try classic way of sending */
+						if((slen > 0) && (errno == EINTR)){
+							/* The number of bytes sent is returned by sendfile in macOS via slen */
+							/* update what has been sent */
+							MAC_SENDFILE_UPDATE(slen)
+						}
+						break;
+					}
+				}
+#endif
 
 			} while (len > 0);
 
-			printf("%s() sendfile summary: sf_sent(rc)=%ld sock=%d time=%ld sec "
+			printf("%s() sendfile summary: sf_sent=%ld rc2=%d sock=%d time=%ldsec "
 				" pending_len=%ld sf_offs=%ld offset=%ld EAGAIN-unavailable count=%d \n",
-				__func__,sf_sent,conn->client.sock,time(NULL),
+				__func__,sf_sent,rc2,conn->client.sock,time(NULL),
 				len,sf_offs,offset,unavailablecnt);
 
 			if (len <= 0) {
