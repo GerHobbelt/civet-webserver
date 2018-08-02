@@ -311,7 +311,11 @@ _civet_safe_clock_gettime(int clk_id, struct timespec *t)
 
 
 #ifndef MAX_WORKER_THREADS
-#define MAX_WORKER_THREADS (1024 * 64)
+#define MAX_WORKER_THREADS (256)
+#endif
+
+#ifndef MAX_PERSISTENT_WORKER_THREADS
+#define MAX_PERSISTENT_WORKER_THREADS 2
 #endif
 
 #ifndef SOCKET_TIMEOUT_QUANTUM /* in ms */
@@ -1379,6 +1383,7 @@ static int mg_ssl_initialized = 0;
 
 static pthread_key_t sTlsKey; /* Thread local storage index */
 static int thread_idx_max = 0;
+static int tmp_thread_idx_max = MAX_PERSISTENT_WORKER_THREADS + 1;
 
 
 struct mg_workerTLS {
@@ -2295,6 +2300,7 @@ enum {
 
 struct mg_context {
 	volatile int stop_flag;        /* Should we stop event loop */
+	volatile int cur_tmp_workers; /* current temporary worker threads */
 	SSL_CTX *ssl_ctx;              /* SSL context */
 	char *config[NUM_OPTIONS];     /* Civetweb configuration parameters */
 	struct mg_callbacks callbacks; /* User-defined callback function */
@@ -16486,6 +16492,44 @@ process_new_connection(struct mg_connection *conn)
 #endif
 }
 
+struct tmp_worker_thread_args {
+	struct mg_context *ctx;
+	struct socket client;     
+};
+#ifdef _WIN32
+static unsigned __stdcall tmp_worker_thread(void *thread_func_param) ;
+#else
+static void * tmp_worker_thread(void *thread_func_param) ;
+#endif /* _WIN32 */
+
+static void
+spin_tmp_worker(struct mg_context *ctx, const struct socket *sp)
+{
+	if (ctx && sp && (ctx->cur_tmp_workers < MAX_WORKER_THREADS)) {
+		/* start temporary worker thread with correct sock param. */
+		struct tmp_worker_thread_args *twta =
+		(struct tmp_worker_thread_args *)mg_calloc_ctx(1,
+		sizeof(struct tmp_worker_thread_args), ctx);
+		if (!twta) {
+			mg_cry(fc(ctx),"calloc failed for twta error %ld",(long)ERRNO);
+			closesocket(sp->sock);
+			return ;
+		}
+
+		//populate thread args param with ctx and sock.
+		twta->ctx = ctx;
+		memcpy(&twta->client,sp,sizeof(twta->client));
+
+		if (mg_start_thread(tmp_worker_thread, twta) != 0) {
+		//log thread failure, close sock
+		closesocket(sp->sock);
+		mg_free(twta);
+		mg_cry(fc(ctx),"Cannot create threads: error %ld",(long)ERRNO);
+		printf("Cannot create threads: error %ld",(long)ERRNO);
+		}
+	}
+	return ;
+}
 
 #if defined(ALTERNATIVE_QUEUE)
 
@@ -16494,7 +16538,13 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 {
 	unsigned int i;
 
-	for (;;) {
+	if ((ctx == NULL) || (sp == NULL)) {
+		return ;
+	}
+
+	while (ctx->stop_flag == 0) {
+
+		/* First try limited(2) persistent worker threads */
 		for (i = 0; i < ctx->cfg_worker_threads; i++) {
 			/* find a free worker slot and signal it */
 			if (ctx->client_socks[i].in_use == 0) {
@@ -16504,7 +16554,12 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 				return;
 			}
 		}
-		/* queue is full */
+
+		/* Now try temporary worker threads */
+		if (ctx->cur_tmp_workers < MAX_WORKER_THREADS) {
+			spin_tmp_worker(ctx, sp);
+			return ;
+		}
 		mg_sleep(1);
 	}
 }
@@ -16573,6 +16628,14 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 	}
 	(void)pthread_mutex_lock(&ctx->thread_mutex);
 
+	/* If the queue is full, try temp worker thread*/
+	if ((ctx->stop_flag == 0) && (ctx->cur_tmp_workers < MAX_WORKER_THREADS)
+	       && ((ctx->sq_head - ctx->sq_tail) >= QUEUE_SIZE(ctx))) {
+		(void)pthread_mutex_unlock(&ctx->thread_mutex);
+		spin_tmp_worker(ctx, sp);
+		return ;
+	}
+
 	/* If the queue is full, wait */
 	while ((ctx->stop_flag == 0)
 	       && (ctx->sq_head - ctx->sq_tail >= QUEUE_SIZE(ctx))) {
@@ -16597,7 +16660,6 @@ struct worker_thread_args {
 	struct mg_context *ctx;
 	int index;
 };
-
 
 static void *
 worker_thread_run(struct worker_thread_args *thread_args)
@@ -16752,6 +16814,174 @@ worker_thread_run(struct worker_thread_args *thread_args)
 	return NULL;
 }
 
+/* tmp_worker_thread_run() has been adapted from worker_thread_run() */
+   
+static void *
+tmp_worker_thread_run(struct tmp_worker_thread_args *thread_args)
+{
+	struct mg_context *ctx = NULL ;
+	struct mg_connection *conn = NULL ;
+	struct mg_workerTLS tls;
+#if defined(MG_LEGACY_INTERFACE)
+	uint32_t addr;
+#endif
+
+	if ((!thread_args) || (!thread_args->ctx)) {
+		return NULL ;
+	}
+
+	ctx = thread_args->ctx;
+	mg_set_thread_name("worker");
+
+	tls.is_master = 0;
+
+	/* tls.thread_idx is really not needed, but only in 
+	   mg_current_thread_id, for a specific case. And for that a
+	   a simple counter is enough
+	*/
+	tls.thread_idx = (unsigned)mg_atomic_inc(&tmp_thread_idx_max);
+
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+	tls.pthread_cond_helper_mutex = CreateEvent(NULL, FALSE, FALSE, NULL);
+#endif
+
+	/* Initialize thread local storage before calling any callback */
+	pthread_setspecific(sTlsKey, &tls);
+
+	if (ctx->callbacks.init_thread) {
+		/* call init_thread for a worker thread (type 1) */
+		ctx->callbacks.init_thread(ctx, 1);
+	}
+
+	conn = (struct mg_connection *)mg_calloc_ctx(1,
+	                                          sizeof(struct mg_connection),
+	                                          ctx);
+	if (conn == NULL) {
+		mg_cry(fc(ctx), "Not enough memory for worker thread connection array");
+		pthread_setspecific(sTlsKey, NULL);
+		return NULL;
+	}
+
+	conn->buf = (char *)mg_malloc_ctx(ctx->max_request_size, ctx);
+	if (conn->buf == NULL) {
+		mg_free(conn);
+		mg_cry(fc(ctx),
+		       "Out of memory: Cannot allocate buffer for worker sz=%d",
+		       ctx->max_request_size);
+		pthread_setspecific(sTlsKey, NULL);
+		return NULL;
+	}
+
+	mg_atomic_inc(&ctx->cur_tmp_workers);
+
+	printf("Temp worker thread(%ld) started ... cur_tmp_workers=%d \n",
+			tls.thread_idx,ctx->cur_tmp_workers);
+	
+	conn->buf_size = (int)ctx->max_request_size;
+
+	conn->ctx = ctx;
+	conn->request_info.user_data = ctx->user_data;
+	/* Allocate a mutex for this connection to allow communication both
+	 * within the request handler and from elsewhere in the application
+	 */
+	(void)pthread_mutex_init(&conn->mutex, &pthread_mutex_attr);
+
+#if defined(USE_SERVER_STATS)
+	conn->conn_state = 1; /* not consumed */
+#endif
+
+        //VERY IMPORTANT copy conn->client from thread param.
+	memcpy(&conn->client, &thread_args->client,sizeof(conn->client));
+
+
+	conn->conn_birth_time = time(NULL);
+
+/* Fill in IP, port info early so even if SSL setup below fails,
+ * error handler would have the corresponding info.
+ * Thanks to Johannes Winkelmann for the patch.
+ */
+#if defined(USE_IPV6)
+		if (conn->client.rsa.sa.sa_family == AF_INET6) {
+			conn->request_info.remote_port =
+			    ntohs(conn->client.rsa.sin6.sin6_port);
+		} else
+#endif
+		{
+			conn->request_info.remote_port =
+			    ntohs(conn->client.rsa.sin.sin_port);
+		}
+
+		sockaddr_to_string(conn->request_info.remote_addr,
+		                   sizeof(conn->request_info.remote_addr),
+		                   &conn->client.rsa);
+
+		DEBUG_TRACE("Start processing connection from %s",
+		            conn->request_info.remote_addr);
+
+#if defined(MG_LEGACY_INTERFACE)
+		/* This legacy interface only works for the IPv4 case */
+		addr = ntohl(conn->client.rsa.sin.sin_addr.s_addr);
+		memcpy(&conn->request_info.remote_ip, &addr, 4);
+#endif
+
+		conn->request_info.is_ssl = conn->client.is_ssl;
+
+		if (conn->client.is_ssl) {
+#ifndef NO_SSL
+			/* HTTPS connection */
+			if (sslize(conn,
+			           conn->ctx->ssl_ctx,
+			           SSL_accept,
+			           &(conn->ctx->stop_flag))) {
+				/* Get SSL client certificate information (if set) */
+				ssl_get_client_cert_info(conn);
+
+				/* process HTTPS connection */
+				process_new_connection(conn);
+
+				/* Free client certificate info */
+				if (conn->request_info.client_cert) {
+					mg_free((void *)(conn->request_info.client_cert->subject));
+					mg_free((void *)(conn->request_info.client_cert->issuer));
+					mg_free((void *)(conn->request_info.client_cert->serial));
+					mg_free((void *)(conn->request_info.client_cert->finger));
+					conn->request_info.client_cert->subject = 0;
+					conn->request_info.client_cert->issuer = 0;
+					conn->request_info.client_cert->serial = 0;
+					conn->request_info.client_cert->finger = 0;
+					mg_free(conn->request_info.client_cert);
+					conn->request_info.client_cert = 0;
+				}
+			}
+#endif
+		} else {
+			/* process HTTP connection */
+			process_new_connection(conn);
+		}
+
+		DEBUG_TRACE("%s", "Connection closed");
+
+
+	pthread_setspecific(sTlsKey, NULL);
+#if defined(_WIN32) && !defined(__SYMBIAN32__)
+	CloseHandle(tls.pthread_cond_helper_mutex);
+#endif
+	pthread_mutex_destroy(&conn->mutex);
+
+	/* Free the request buffer. */
+	conn->buf_size = 0;
+	mg_free(conn->buf);
+	conn->buf = NULL;
+
+#if defined(USE_SERVER_STATS)
+	conn->conn_state = 9; /* done */
+#endif
+	mg_free(conn);
+	mg_atomic_dec(&ctx->cur_tmp_workers);
+	printf("Temp worker thread(%ld) finished.  \n",tls.thread_idx);
+	return NULL;
+}
+
 
 /* Threads have different return types on Windows and Unix. */
 #ifdef _WIN32
@@ -16763,6 +16993,16 @@ static unsigned __stdcall worker_thread(void *thread_func_param)
 	mg_free(thread_func_param);
 	return 0;
 }
+static unsigned __stdcall tmp_worker_thread(void *thread_func_param)
+{
+	struct tmp_worker_thread_args *pwta =
+	    (struct tmp_worker_thread_args *)thread_func_param;
+	tmp_worker_thread_run(pwta);
+	if (thread_func_param) {
+		mg_free(thread_func_param);
+	}
+	return 0;
+}
 #else
 static void *
 worker_thread(void *thread_func_param)
@@ -16771,6 +17011,17 @@ worker_thread(void *thread_func_param)
 	    (struct worker_thread_args *)thread_func_param;
 	worker_thread_run(pwta);
 	mg_free(thread_func_param);
+	return NULL;
+}
+static void *
+tmp_worker_thread(void *thread_func_param)
+{
+	struct tmp_worker_thread_args *pwta =
+	    (struct tmp_worker_thread_args *)thread_func_param;
+	tmp_worker_thread_run(pwta);
+	if (thread_func_param) {
+		mg_free(thread_func_param);
+	}
 	return NULL;
 }
 #endif /* _WIN32 */
@@ -17426,6 +17677,12 @@ mg_start(const struct mg_callbacks *callbacks,
 #endif /* !_WIN32 && !__SYMBIAN32__ */
 
 	ctx->cfg_worker_threads = ((unsigned int)(workerthreadcount));
+
+	if (ctx->cfg_worker_threads > MAX_PERSISTENT_WORKER_THREADS) {
+		/* Limit persistent worker threads to MAX_PERSISTENT_WORKER_THREADS 2 */
+		ctx->cfg_worker_threads = MAX_PERSISTENT_WORKER_THREADS ;
+	}
+
 	ctx->worker_threadids = (pthread_t *)mg_calloc_ctx(ctx->cfg_worker_threads,
 	                                                   sizeof(pthread_t),
 	                                                   ctx);
