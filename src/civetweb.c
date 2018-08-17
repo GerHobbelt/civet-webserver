@@ -64,6 +64,7 @@
 
 /* for sendfile() usage in MACH */
 #if defined(__MACH__)
+ #include <TargetConditionals.h>
  #include <sys/uio.h>
 #endif
 
@@ -2132,8 +2133,7 @@ enum {
 #if !defined(NO_SSL)
 	STRICT_HTTPS_MAX_AGE,
 #endif
-//#if defined(__linux__) || defined(__MACH__)
-#if defined(__linux__)
+#if defined(__linux__) || (defined(TARGET_OS_OSX))
 	ALLOW_SENDFILE_CALL,
 #endif
 #if defined(_WIN32)
@@ -2233,8 +2233,7 @@ static struct mg_option config_options[] = {
 #if !defined(NO_SSL)
     {"strict_transport_security_max_age", CONFIG_TYPE_NUMBER, NULL},
 #endif
-//#if defined(__linux__) || defined(__MACH__)
-#if defined(__linux__)
+#if defined(__linux__) || (defined(TARGET_OS_OSX))
     {"allow_sendfile_call", CONFIG_TYPE_BOOLEAN, "yes"},
 #endif
 #if defined(_WIN32)
@@ -8860,8 +8859,7 @@ send_file_data(struct mg_connection *conn,
 		mg_write(conn, filep->access.membuf + offset, (size_t)len);
 	} else if (len > 0 && filep->access.fp != NULL) {
 /* file stored on disk */
-//#if defined(__linux__) || defined(__MACH__)
-#if defined(__linux__)
+#if defined(__linux__) || defined(TARGET_OS_OSX)
 		/* sendfile is only available for Linux and macOS */
 		if ((conn->ssl == 0) && (conn->throttle == 0)
 		    && (!mg_strcasecmp(conn->ctx->config[ALLOW_SENDFILE_CALL],
@@ -8872,14 +8870,39 @@ send_file_data(struct mg_connection *conn,
 			int rc2 = 0 ;
 			int sf_file = fileno(filep->access.fp);
 			int unavailablecnt = 0;
+			int sf_flag =  0 ;
+			#define SF_LEN_LIMIT (16 * 1024 * 1024)
+			size_t sf_limit = 0;
+			time_t t1 = time(NULL);
+			time_t t2 = 0 ;
 
-			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
-				__func__,conn->client.sock,len,offset,time(NULL));
 			if(len == INT64_MAX){
 				len = (int64_t)(filep->stat.size);
 			}
 			if(len < 0){ return ; }
 
+			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
+				__func__,conn->client.sock,len,offset,t1);
+
+#if defined(TARGET_OS_OSX)
+ #if defined F_NOCACHE
+//Disable data caching to free up page cache occupied by file i/o
+	if(fcntl(sf_file,F_NOCACHE,1) < 0) {
+		printf("%s() err setting F_NOCACHE. file=%d len=%d err=%d %s \n",
+		__func__,sf_file,len,errno, strerror(errno));
+	}
+ #endif
+ #if defined SF_NOCACHE
+//Tells the kernel that data is not be cached after sending
+	sf_flag = SF_NOCACHE ;
+	printf("%s() SF_NOCACHE is used for sock=%d sf_file=%d len=%d\n",
+			__func__,conn->client.sock, sf_file,len);
+ #else
+	sf_limit = 0 ;
+	//Enable the following, if sending through sendfile needs to be limited
+	//sf_limit = len > SF_LEN_LIMIT ? SF_LEN_LIMIT : 0 ;
+ #endif
+#endif
 			do {
 				/* 2147479552 (0x7FFFF000) is a limit found by experiment on
 				 * 64 bit Linux (2^31 minus one memory page of 4k?). */
@@ -8926,9 +8949,8 @@ send_file_data(struct mg_connection *conn,
 					/* unlikely: sendfile returns 0, break and try classic way of sending */
 					break;
 				}
-//disable sendfile for iOS and later enable it only for macOS
-#elif 0
-//#elif defined(__MACH__)
+//disable sendfile for iOS and enable it only for macOS
+#elif defined(TARGET_OS_OSX)
 
 /* The number of bytes sent is returned by sendfile in macOS via slen */
 /* update what has been sent */
@@ -8947,8 +8969,16 @@ https://man.openbsd.org/FreeBSD-11.1/sendfile.2
 */
 				rc2 = 0 ;
 				sf_sent = 0 ;
+				if((sf_limit > 0) && (sf_limit < sf_tosend)) {
+					sf_tosend = sf_limit ;
+					if(sf_offs >= sf_limit) {
+						printf("%s() len=%d sf_offs=%d sf_limit=%d reached \n",
+							__func__,len,sf_offs,sf_limit);
+						break ;
+					}
+				}
 				slen = sf_tosend ;
-				rc2 = sendfile(sf_file,conn->client.sock,sf_offs,&slen,NULL,0);
+				rc2 = sendfile(sf_file,conn->client.sock,sf_offs,&slen,NULL,sf_flag);
 				if(rc2 == 0){
 				/*
 			           The sendfile() in macOS returns 0 if successful; otherwise -1 is returned 
@@ -9008,10 +9038,12 @@ https://man.openbsd.org/FreeBSD-11.1/sendfile.2
 
 			} while (len > 0);
 
-			printf("%s() sendfile summary: sf_sent=%ld rc2=%d sock=%d time=%ldsec "
-				" pending_len=%ld sf_offs=%ld offset=%ld EAGAIN-unavailable count=%d \n",
-				__func__,sf_sent,rc2,conn->client.sock,time(NULL),
-				len,sf_offs,offset,unavailablecnt);
+           		t2 = time(NULL);
+			printf("%s() sendfile summary: sf_sent=%ld rc2=%d sock=%d time=%ldsec tdiff => %ld sec"
+				" pending_len=%ld sf_offs=%ld offset=%ld "
+				"sf_limit=%d sf_flag=%d EAGAIN-unavailable count=%d \n",
+				__func__,sf_sent,rc2,conn->client.sock,t2,t2-t1,
+				len,sf_offs,offset,sf_limit,sf_flag,unavailablecnt);
 
 			if (len <= 0) {
 				return; /* OK */
