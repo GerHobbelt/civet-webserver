@@ -116,14 +116,8 @@ mg_static_assert(sizeof(void *) >= sizeof(int), "data type size check");
  * Symbian is no longer maintained since 2014-01-01.
  * Recent versions of CivetWeb are no longer tested for Symbian.
  * It makes no sense, to support an abandoned operating system.
- * All remaining "#ifdef __SYMBIAN__" cases will be droped from
- * the code sooner or later.
  */
-#pragma message                                                                \
-    "Symbian is no longer maintained. CivetWeb will drop Symbian support."
-#define NO_SSL /* SSL is not supported */
-#define NO_CGI /* CGI is not supported */
-#define PATH_MAX FILENAME_MAX
+#error "Symbian is no longer maintained. CivetWeb no longer supports Symbian."
 #endif /* __SYMBIAN32__ */
 
 
@@ -313,8 +307,7 @@ mg_static_assert(MAX_WORKER_THREADS >= 1,
 mg_static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8,
                  "size_t data type size check");
 
-#if defined(_WIN32)                                                            \
-    && !defined(__SYMBIAN32__) /* WINDOWS / UNIX include block */
+#if defined(_WIN32) /* WINDOWS vs UNIX include block */
 #include <windows.h>
 #include <winsock2.h> /* DTL add for SO_EXCLUSIVE */
 #include <ws2tcpip.h>
@@ -600,8 +593,7 @@ struct pollfd {
 #pragma comment(lib, "Ws2_32.lib")
 #endif
 
-#else /* defined(_WIN32) && !defined(__SYMBIAN32__) -                          \
-         WINDOWS / UNIX include block */
+#else /* defined(_WIN32) - WINDOWS vs UNIX include block */
 
 #include <sys/wait.h>
 #include <sys/socket.h>
@@ -675,8 +667,7 @@ typedef int SOCKET;
 #define socklen_t int
 #endif /* hpux */
 
-#endif /* defined(_WIN32) && !defined(__SYMBIAN32__) -                         \
-          WINDOWS / UNIX include block */
+#endif /* defined(_WIN32) - WINDOWS vs UNIX include block */
 
 /* va_copy should always be a macro, C99 and C++11 - DTL */
 #ifndef va_copy
@@ -951,7 +942,7 @@ stat(const char *name, struct stat *st)
 static pthread_mutex_t global_lock_mutex;
 
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 /* Forward declaration for Windows */
 FUNCTION_MAY_BE_UNUSED
 static int pthread_mutex_lock(pthread_mutex_t *mutex);
@@ -982,7 +973,7 @@ static int
 mg_atomic_inc(volatile int *addr)
 {
 	int ret;
-#if defined(_WIN32) && !defined(__SYMBIAN32__) && !defined(NO_ATOMICS)
+#if defined(_WIN32) && !defined(NO_ATOMICS)
 	/* Depending on the SDK, this function uses either
 	 * (volatile unsigned int *) or (volatile LONG *),
 	 * so whatever you use, the other SDK is likely to raise a warning. */
@@ -1005,7 +996,7 @@ static int
 mg_atomic_dec(volatile int *addr)
 {
 	int ret;
-#if defined(_WIN32) && !defined(__SYMBIAN32__) && !defined(NO_ATOMICS)
+#if defined(_WIN32) && !defined(NO_ATOMICS)
 	/* Depending on the SDK, this function uses either
 	 * (volatile unsigned int *) or (volatile LONG *),
 	 * so whatever you use, the other SDK is likely to raise a warning. */
@@ -1028,7 +1019,7 @@ static int64_t
 mg_atomic_add(volatile int64_t *addr, int64_t value)
 {
 	int64_t ret;
-#if defined(_WIN64) && !defined(__SYMBIAN32__) && !defined(NO_ATOMICS)
+#if defined(_WIN64) && !defined(NO_ATOMICS)
 	ret = InterlockedAdd64(addr, value);
 #elif defined(__GNUC__)                                                        \
     && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 0)))           \
@@ -1362,7 +1353,7 @@ static int thread_idx_max = 0;
 struct mg_workerTLS {
 	int is_master;
 	unsigned long thread_idx;
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	HANDLE pthread_cond_helper_mutex;
 	struct mg_workerTLS *next_waiting_thread;
 #endif
@@ -4253,7 +4244,7 @@ mg_send_http_error(struct mg_connection *conn, int status, const char *fmt, ...)
 	}
 }
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 /* Create substitutes for POSIX functions in Win32. */
 
 #if defined(__MINGW32__)
@@ -16113,7 +16104,7 @@ worker_thread_run(struct worker_thread_args *thread_args)
 
 	tls.is_master = 0;
 	tls.thread_idx = (unsigned)mg_atomic_inc(&thread_idx_max);
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	tls.pthread_cond_helper_mutex = CreateEvent(NULL, FALSE, FALSE, NULL);
 #endif
 
@@ -16235,7 +16226,7 @@ worker_thread_run(struct worker_thread_args *thread_args)
 
 
 	pthread_setspecific(sTlsKey, NULL);
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	CloseHandle(tls.pthread_cond_helper_mutex);
 #endif
 	pthread_mutex_destroy(&conn->mutex);
@@ -16389,7 +16380,7 @@ master_thread_run(void *thread_func_param)
 #endif
 
 /* Initialize thread local storage */
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	tls.pthread_cond_helper_mutex = CreateEvent(NULL, FALSE, FALSE, NULL);
 #endif
 	tls.is_master = 1;
@@ -16472,7 +16463,7 @@ master_thread_run(void *thread_func_param)
 
 	DEBUG_TRACE("%s", "exiting");
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	CloseHandle(tls.pthread_cond_helper_mutex);
 #endif
 	pthread_setspecific(sTlsKey, NULL);
@@ -16617,9 +16608,9 @@ mg_check_stop(struct mg_context *ctx)
 	mg_join_thread(mt);
 	free_context(ctx);
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	(void)WSACleanup();
-#endif /* _WIN32 && !__SYMBIAN32__ */
+#endif /* _WIN32 */
 
 	return 1;
 }
@@ -16629,7 +16620,6 @@ static void
 get_system_name(char **sysName)
 {
 #if defined(_WIN32)
-#if !defined(__SYMBIAN32__)
 #if defined(_WIN32_WCE)
 	*sysName = mg_strdup("WinCE");
 #else
@@ -16666,9 +16656,6 @@ get_system_name(char **sysName)
 	*sysName = mg_strdup(name);
 #endif
 #else
-	*sysName = mg_strdup("Symbian");
-#endif
-#else
 	struct utsname name;
 	memset(&name, 0, sizeof(name));
 	uname(&name);
@@ -16691,10 +16678,10 @@ mg_start(const struct mg_callbacks *callbacks,
 
 	struct mg_workerTLS tls;
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	WSADATA data;
 	WSAStartup(MAKEWORD(2, 2), &data);
-#endif /* _WIN32 && !__SYMBIAN32__ */
+#endif /* _WIN32 */
 
 	/* Allocate context and initialize reasonable general case defaults. */
 	if ((ctx = (struct mg_context *)mg_calloc(1, sizeof(*ctx))) == NULL) {
@@ -16713,7 +16700,7 @@ mg_start(const struct mg_callbacks *callbacks,
 
 	tls.is_master = -1;
 	tls.thread_idx = (unsigned)mg_atomic_inc(&thread_idx_max);
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 	tls.pthread_cond_helper_mutex = NULL;
 #endif
 	pthread_setspecific(sTlsKey, &tls);
@@ -16861,11 +16848,11 @@ mg_start(const struct mg_callbacks *callbacks,
 		return NULL;
 	}
 
-#if !defined(_WIN32) && !defined(__SYMBIAN32__)
+#if !defined(_WIN32)
 	/* Ignore SIGPIPE signal, so if browser cancels the request, it
 	 * won't kill the whole process. */
 	(void)signal(SIGPIPE, SIG_IGN);
-#endif /* !_WIN32 && !__SYMBIAN32__ */
+#endif /* !_WIN32 */
 
 	ctx->cfg_worker_threads = ((unsigned int)(workerthreadcount));
 	ctx->worker_threadids = (pthread_t *)mg_calloc_ctx(ctx->cfg_worker_threads,
@@ -17108,7 +17095,6 @@ mg_get_system_info_impl(char *buffer, int buflen)
 	/* System info */
 	{
 #if defined(_WIN32)
-#if !defined(__SYMBIAN32__)
 		DWORD dwVersion = 0;
 		DWORD dwMajorVersion = 0;
 		DWORD dwMinorVersion = 0;
@@ -17155,14 +17141,6 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		if (system_info_length < buflen) {
 			strcat0(buffer, block);
 		}
-
-#else
-		mg_snprintf(NULL, NULL, block, sizeof(block), "%s - Symbian%s", eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
-#endif
 #else
 		struct utsname name;
 		memset(&name, 0, sizeof(name));
@@ -17967,10 +17945,9 @@ mg_init_library(unsigned features)
 			return 0;
 		}
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 		InitializeCriticalSection(&global_log_file_lock);
-#endif /* _WIN32 && !__SYMBIAN32__ */
-#if !defined(_WIN32)
+#else
 		pthread_mutexattr_init(&pthread_mutex_attr);
 		pthread_mutexattr_settype(&pthread_mutex_attr, PTHREAD_MUTEX_RECURSIVE);
 #endif
@@ -17999,10 +17976,10 @@ mg_init_library(unsigned features)
 
 	/* Start WinSock for Windows */
 	if (mg_init_library_called <= 0) {
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 		WSADATA data;
 		WSAStartup(MAKEWORD(2, 2), &data);
-#endif /* _WIN32 && !__SYMBIAN32__ */
+#endif /* _WIN32 */
 		mg_init_library_called = 1;
 	} else {
 		mg_init_library_called++;
@@ -18026,9 +18003,9 @@ mg_exit_library(void)
 
 	mg_init_library_called--;
 	if (mg_init_library_called == 0) {
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 		(void)WSACleanup();
-#endif /* _WIN32 && !__SYMBIAN32__ */
+#endif /* _WIN32 */
 #if !defined(NO_SSL)
 		if (mg_ssl_initialized) {
 			uninitialize_ssl();
@@ -18046,10 +18023,9 @@ mg_exit_library(void)
 #endif
 #endif
 
-#if defined(_WIN32) && !defined(__SYMBIAN32__)
+#if defined(_WIN32)
 		(void)DeleteCriticalSection(&global_log_file_lock);
-#endif /* _WIN32 && !__SYMBIAN32__ */
-#if !defined(_WIN32)
+#else
 		(void)pthread_mutexattr_destroy(&pthread_mutex_attr);
 #endif
 
