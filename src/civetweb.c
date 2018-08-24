@@ -2955,6 +2955,24 @@ mg_fclose(struct mg_file_access *fileacc)
 	int ret = -1;
 	if (fileacc != NULL) {
 		if (fileacc->fp != NULL) {
+#if defined(__linux__)
+			int fd = fileno(fileacc->fp);
+		/*
+			POSIX_FADV_DONTNEED (non binding) requests the kernel to attempt
+			to free, cached pages of a file (referred by its open file descriptor),
+			that has already been used. This helps to free file pages from memory
+			that are no more needed, giving room for much needed pages.
+		*/
+			if (fd > 0) {
+				int rc = 0;
+				//fdatasync(fd);
+				rc = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+				if (rc < 0) {
+					printf("%s() fd=%d posix_fadvise err=%d %s \n",
+					__func__,fd,errno,strerror(errno));
+				}
+			}
+#endif
 			ret = fclose(fileacc->fp);
 		} else if (fileacc->membuf != NULL) {
 			ret = 0;
