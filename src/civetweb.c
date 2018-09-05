@@ -16929,8 +16929,8 @@ tmp_worker_thread_run(struct tmp_worker_thread_args *thread_args)
 
 	mg_atomic_inc(&ctx->cur_tmp_workers);
 
-	printf("Temp worker thread(%ld) started ... cur_tmp_workers=%d \n",
-			tls.thread_idx,ctx->cur_tmp_workers);
+	//printf("Temp worker thread(%ld) started ... cur_tmp_workers=%d \n",
+	//		tls.thread_idx,ctx->cur_tmp_workers);
 	
 	conn->buf_size = (int)ctx->max_request_size;
 
@@ -17033,7 +17033,7 @@ tmp_worker_thread_run(struct tmp_worker_thread_args *thread_args)
 #endif
 	mg_free(conn);
 	mg_atomic_dec(&ctx->cur_tmp_workers);
-	printf("Temp worker thread(%ld) finished.  \n",tls.thread_idx);
+	//printf("Temp worker thread(%ld) finished.  \n",tls.thread_idx);
 	return NULL;
 }
 
