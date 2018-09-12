@@ -2450,6 +2450,7 @@ struct mg_connection {
 	void *lua_websocket_state; /* Lua_State for a websocket connection */
 #endif
 
+	time_t rx_time ;   /* time when data was read from conn->client.sock */
 	int thread_index; /* Thread index within ctx */
 };
 
@@ -6239,6 +6240,10 @@ mg_getc(struct mg_connection *conn)
 	return c;
 }
 
+time_t mg_get_rx_time(struct mg_connection *conn)
+{
+	return conn && (conn->rx_time > 0) ? conn->rx_time : 0 ;
+}
 
 int
 mg_read(struct mg_connection *conn, void *buf, size_t len)
@@ -6336,6 +6341,7 @@ mg_read(struct mg_connection *conn, void *buf, size_t len)
 
 		return (int)all_read;
 	}
+	conn->rx_time = time(NULL);
 	return mg_read_inner(conn, buf, len);
 }
 

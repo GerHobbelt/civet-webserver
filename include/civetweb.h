@@ -47,6 +47,7 @@
 
 #include <stdio.h>
 #include <stddef.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -379,6 +380,9 @@ CIVETWEB_API void mg_stop(struct mg_context *);
 unsigned int
 mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto);
 
+
+#define MG_GET_RX_TIME(c) mg_get_rx_time(c)
+time_t mg_get_rx_time(struct mg_connection *conn);
 
 /* mg_request_handler
 
