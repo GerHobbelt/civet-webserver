@@ -2967,10 +2967,10 @@ mg_fclose(struct mg_file_access *fileacc)
 				int rc = 0;
 				//fdatasync(fd);
 				rc = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-				if (rc < 0) {
-					printf("%s() fd=%d posix_fadvise err=%d %s \n",
-					__func__,fd,errno,strerror(errno));
-				}
+				//if (rc < 0) {
+				//	printf("%s() fd=%d posix_fadvise err=%d %s \n",
+				//	__func__,fd,errno,strerror(errno));
+				//}
 			}
 #endif
 			ret = fclose(fileacc->fp);
@@ -5744,15 +5744,15 @@ mg_ws_blocked_write(struct mg_connection *conn, const char *buf, int len)
 						struct timespec tslp = {0, 20000000};
 						// may be sleep for 20 ms before trying again
 						nanosleep(&tslp, NULL);
-						printf("%s(ERR1-continue):sock=%d SSL_write() failed,"
-							" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
-							__func__,sock,len,n,nwritten,serr,err,strerror(err));
+						//printf("%s(ERR1-continue):sock=%d SSL_write() failed,"
+						//	" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+						//	__func__,sock,len,n,nwritten,serr,err,strerror(err));
 						continue;
 					}
 					else {
-						printf("%s(ERR2-return):sock=%d SSL_write() failed,"
-							" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
-							__func__,sock,len,n,nwritten,serr,err,strerror(err));
+						//printf("%s(ERR2-return):sock=%d SSL_write() failed,"
+						//	" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+						//	__func__,sock,len,n,nwritten,serr,err,strerror(err));
 						//Trigger OnClose closure
 						return WS_TUNNEL_TCP_SOCK_ERR;
 					}
@@ -5764,14 +5764,14 @@ mg_ws_blocked_write(struct mg_connection *conn, const char *buf, int len)
 					struct timespec tslp = {0, 20000000};
 					// may be sleep for 20 ms before trying again
 					nanosleep(&tslp, NULL);
-					printf("%s(ERR3-continue):sock=%d SSL_write() failed,"
-						" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
-						__func__,sock,len,n,nwritten,serr,err,strerror(err));
+					//printf("%s(ERR3-continue):sock=%d SSL_write() failed,"
+					//	" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+					//	__func__,sock,len,n,nwritten,serr,err,strerror(err));
 					continue;
 				} else {
-					printf("%s(ERR4-return):sock=%d SSL_write() failed,"
-						" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
-						__func__,sock,len,n,nwritten,serr,err,strerror(err));
+					//printf("%s(ERR4-return):sock=%d SSL_write() failed,"
+					//	" len=%d n=%d nwritten=%d SSLerr=%d err=%d %s\n",
+					//	__func__,sock,len,n,nwritten,serr,err,strerror(err));
 						//Trigger OnClose closure
 					return WS_TUNNEL_TCP_SOCK_ERR;
 				}
@@ -5804,22 +5804,22 @@ mg_ws_blocked_write(struct mg_connection *conn, const char *buf, int len)
 						struct timespec tslp = {0, 20000000};
 						// may be sleep for 20 ms before trying again
 						nanosleep(&tslp, NULL);
-						printf("%s(ERR5-continue):sock=%d send() failed,"
-							" len=%d n=%d  nwritten=%d err=%d %s\n",
-							__func__,sock,len,n,nwritten,err,strerror(err));
+						//printf("%s(ERR5-continue):sock=%d send() failed,"
+						//	" len=%d n=%d  nwritten=%d err=%d %s\n",
+						//	__func__,sock,len,n,nwritten,err,strerror(err));
 						continue;
 					}
 					else {
-						printf("%s(ERR6-return):sock=%d send() failed,"
-							" len=%d n=%d  nwritten=%d err=%d %s\n",
-							__func__,sock,len,n,nwritten,err,strerror(err));
+						//printf("%s(ERR6-return):sock=%d send() failed,"
+						//	" len=%d n=%d  nwritten=%d err=%d %s\n",
+						//	__func__,sock,len,n,nwritten,err,strerror(err));
 						//Trigger OnClose closure
 						return WS_TUNNEL_TCP_SOCK_ERR;
 					}
 
 			} else if (n == 0) {
-					printf("%s() send() == 0, sock=%d len=%d n=%d nwritten=%d\n",
-						__func__,sock,len,n,nwritten);
+					//printf("%s() send() == 0, sock=%d len=%d n=%d nwritten=%d\n",
+					//	__func__,sock,len,n,nwritten);
 					//Trigger OnClose closure
 					return WS_TUNNEL_TCP_SOCK_ERR;
 			
@@ -8897,30 +8897,31 @@ send_file_data(struct mg_connection *conn,
 			int sf_flag =  0 ;
 			#define SF_LEN_LIMIT (16 * 1024 * 1024)
 			size_t sf_limit = 0;
-			time_t t1 = time(NULL);
-			time_t t2 = 0 ;
+			//time_t t1 = time(NULL);
+			//time_t t2 = 0 ;
 
 			if(len == INT64_MAX){
 				len = (int64_t)(filep->stat.size);
 			}
 			if(len < 0){ return ; }
 
-			printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
-				__func__,conn->client.sock,len,offset,t1);
+			//printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
+			//	__func__,conn->client.sock,len,offset,t1);
 
 #if defined(TARGET_OS_OSX)
  #if defined F_NOCACHE
 //Disable data caching to free up page cache occupied by file i/o
-	if(fcntl(sf_file,F_NOCACHE,1) < 0) {
-		printf("%s() err setting F_NOCACHE. file=%d len=%d err=%d %s \n",
-		__func__,sf_file,len,errno, strerror(errno));
-	}
+	fcntl(sf_file,F_NOCACHE,1) ;
+	//if(fcntl(sf_file,F_NOCACHE,1) < 0) {
+		// printf("%s() err setting F_NOCACHE. file=%d len=%d err=%d %s \n",
+		//__func__,sf_file,len,errno, strerror(errno)) ;
+	//}
  #endif
  #if defined SF_NOCACHE
 //Tells the kernel that data is not be cached after sending
 	sf_flag = SF_NOCACHE ;
-	printf("%s() SF_NOCACHE is used for sock=%d sf_file=%d len=%d\n",
-			__func__,conn->client.sock, sf_file,len);
+	//printf("%s() SF_NOCACHE is used for sock=%d sf_file=%d len=%d\n",
+	//		__func__,conn->client.sock, sf_file,len);
  #else
 	sf_limit = 0 ;
 	//Enable the following, if sending through sendfile needs to be limited
@@ -8996,8 +8997,8 @@ https://man.openbsd.org/FreeBSD-11.1/sendfile.2
 				if((sf_limit > 0) && (sf_limit < sf_tosend)) {
 					sf_tosend = sf_limit ;
 					if(sf_offs >= sf_limit) {
-						printf("%s() len=%d sf_offs=%d sf_limit=%d reached \n",
-							__func__,len,sf_offs,sf_limit);
+						//printf("%s() len=%d sf_offs=%d sf_limit=%d reached \n",
+						//	__func__,len,sf_offs,sf_limit);
 						break ;
 					}
 				}
@@ -9017,8 +9018,8 @@ https://man.openbsd.org/FreeBSD-11.1/sendfile.2
 						It is EITHER: All file data has been sent, and EOF is reached.
 						OR: offset was invalid pointing beyond EOF and sendfile did not send anything
 						*/
-						printf("send_file_data() __MACH__ sendfile: sock=%d slen=%d offset=%ld \n",
-						conn->client.sock,slen,offset);
+						//printf("send_file_data() __MACH__ sendfile: sock=%d slen=%d offset=%ld \n",
+								//conn->client.sock,slen,offset);
 						return ;
 					}
 				}
@@ -9062,12 +9063,12 @@ https://man.openbsd.org/FreeBSD-11.1/sendfile.2
 
 			} while (len > 0);
 
-           		t2 = time(NULL);
-			printf("%s() sendfile summary: sf_sent=%ld rc2=%d sock=%d time=%ldsec tdiff => %ld sec"
-				" pending_len=%ld sf_offs=%ld offset=%ld "
-				"sf_limit=%d sf_flag=%d EAGAIN-unavailable count=%d \n",
-				__func__,sf_sent,rc2,conn->client.sock,t2,t2-t1,
-				len,sf_offs,offset,sf_limit,sf_flag,unavailablecnt);
+           		//t2 = time(NULL);
+			//printf("%s() sendfile summary: sf_sent=%ld rc2=%d sock=%d time=%ldsec tdiff => %ld sec"
+			//	" pending_len=%ld sf_offs=%ld offset=%ld "
+			//	"sf_limit=%d sf_flag=%d EAGAIN-unavailable count=%d \n",
+			//	__func__,sf_sent,rc2,conn->client.sock,t2,t2-t1,
+			//	len,sf_offs,offset,sf_limit,sf_flag,unavailablecnt);
 
 			if (len <= 0) {
 				return; /* OK */
@@ -16171,7 +16172,7 @@ websocket_client_thread(void *data)
 	DEBUG_TRACE("%s", "Websocket client thread exited\n");
 
 	if (cdata->close_handler != NULL) {
-		printf("ws client thread exiting - calling close_handler .\n");
+		//printf("ws client thread exiting - calling close_handler .\n");
 		cdata->close_handler(cdata->conn, cdata->callback_data);
 	}
 
@@ -16582,11 +16583,11 @@ spin_tmp_worker(struct mg_context *ctx, const struct socket *sp)
 		memcpy(&twta->client,sp,sizeof(twta->client));
 
 		if (mg_start_thread(tmp_worker_thread, twta) != 0) {
-		//log thread failure, close sock
-		closesocket(sp->sock);
-		mg_free(twta);
-		mg_cry(fc(ctx),"Cannot create threads: error %ld",(long)ERRNO);
-		printf("Cannot create threads: error %ld",(long)ERRNO);
+			//log thread failure, close sock
+			closesocket(sp->sock);
+			mg_free(twta);
+			mg_cry(fc(ctx),"Cannot create threads: error %ld",(long)ERRNO);
+			//printf("Cannot create threads: error %ld",(long)ERRNO);
 		}
 	}
 	return ;
