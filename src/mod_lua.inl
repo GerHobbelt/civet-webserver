@@ -2357,7 +2357,6 @@ handle_lsp_request(struct mg_connection *conn,
 	lua_State *L = NULL;
 	struct lsp_include_history *include_history;
 	int error = 1;
-	void *file_in_memory; /* TODO(low): remove when removing "file in memory" */
 	int (*run_lsp)(struct mg_connection *,
 	               const char *,
 	               const char *,
@@ -2385,22 +2384,13 @@ handle_lsp_request(struct mg_connection *conn,
 		goto cleanup_handle_lsp_request;
 	}
 
-#if defined(MG_USE_OPEN_FILE)
-	/* The "file in memory" feature is going to be removed. For details see
-	 * https://groups.google.com/forum/#!topic/civetweb/h9HT4CmeYqI */
-	file_in_memory = filep->access.membuf;
-#else
-	file_in_memory = NULL;
-#endif
-
 	/* Map file in memory (size is known). */
-	if (file_in_memory == NULL
-	    && (p = mmap(NULL,
-	                 (size_t)filep->stat.size,
-	                 PROT_READ,
-	                 MAP_PRIVATE,
-	                 fileno(filep->access.fp),
-	                 0))
+	if ((p = mmap(NULL,
+	              (size_t)filep->stat.size,
+	              PROT_READ,
+	              MAP_PRIVATE,
+	              fileno(filep->access.fp),
+	              0))
 	           == MAP_FAILED) {
 
 		/* File was not already in memory, and mmap failed now.
@@ -2426,8 +2416,7 @@ handle_lsp_request(struct mg_connection *conn,
 	}
 
 	/* File content is now memory mapped. Get mapping address */
-	addr = (file_in_memory == NULL) ? (const char *)p
-	                                : (const char *)file_in_memory;
+	addr = (const char *)p;
 
 	/* Get a Lua state */
 	if (ls != NULL) {
