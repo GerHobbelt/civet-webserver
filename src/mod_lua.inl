@@ -1895,9 +1895,11 @@ lua_allocator(void *ud, void *ptr, size_t osize, size_t nsize)
 }
 
 
+#if defined(USE_LUA_SHARED)
 /* In CivetWeb, Lua-Shared is used as *.inl file */
 #define LUA_SHARED_INTERFACE static
 #include "mod_lua_shared.inl"
+#endif
 
 
 static void
@@ -2070,8 +2072,10 @@ prepare_lua_environment(struct mg_context *ctx,
 	/* Store as global table "mg" */
 	lua_setglobal(L, "mg");
 
+#if defined(USE_LUA_SHARED)
 	/* Register "shared" table */
 	lua_shared_register(L);
+#endif
 
 	/* Register default mg.onerror function */
 	IGNORE_UNUSED_RESULT(
@@ -2679,8 +2683,10 @@ static void *lib_handle_uuid = NULL;
 static void
 lua_init_optional_libraries(void)
 {
+#if defined(USE_LUA_SHARED)
 	/* shared Lua state */
 	lua_shared_init();
+#endif
 
 /* UUID library */
 #if !defined(_WIN32)
@@ -2705,8 +2711,10 @@ lua_exit_optional_libraries(void)
 	pf_uuid_generate.p = 0;
 	lib_handle_uuid = NULL;
 
+#if defined(USE_LUA_SHARED)
 	/* shared Lua state */
 	lua_shared_exit();
+#endif
 }
 
 
