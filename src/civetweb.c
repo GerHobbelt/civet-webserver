@@ -86,7 +86,7 @@
 #endif
 
 
-#if defined(USE_LUA)
+#if defined(USE_LUA) && defined(USE_WEBSOCKET)
 #define USE_TIMERS
 #endif
 
