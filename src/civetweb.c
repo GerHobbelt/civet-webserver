@@ -790,7 +790,7 @@ static void path_to_unicode(const struct mg_connection *conn,
 struct mg_file;
 
 static const char *
-mg_fgets(char *buf, size_t size, struct mg_file *filep, char **p);
+mg_fgets(char *buf, size_t size, struct mg_file *filep);
 
 
 /* POSIX dirent interface */
@@ -2325,41 +2325,15 @@ struct mg_file_stat {
 	int location;     /* 0 = nowhere, 1 = on disk, 2 = in memory */
 };
 
-struct mg_file_in_memory {
-	char *p;
-	uint32_t pos;
-	char mode;
-};
-
 struct mg_file_access {
 	/* File properties filled by mg_fopen: */
 	FILE *fp;
-#if defined(MG_USE_OPEN_FILE)
-	/* TODO (low): Remove obsolete "file in memory" implementation.
-	 * In an "early 2017" discussion at Google groups
-	 * https://groups.google.com/forum/#!topic/civetweb/h9HT4CmeYqI
-	 * we decided to get rid of this feature (after some fade-out
-	 * phase). */
-	const char *membuf;
-#endif
 };
 
 struct mg_file {
 	struct mg_file_stat stat;
 	struct mg_file_access access;
 };
-
-#if defined(MG_USE_OPEN_FILE)
-
-#define STRUCT_FILE_INITIALIZER                                                \
-	{                                                                          \
-		{(uint64_t)0, (time_t)0, 0, 0, 0},                                     \
-		{                                                                      \
-			(FILE *)NULL, (const char *)NULL                                   \
-		}                                                                      \
-	}
-
-#else
 
 #define STRUCT_FILE_INITIALIZER                                                \
 	{                                                                          \
@@ -2368,8 +2342,6 @@ struct mg_file {
 			(FILE *)NULL                                                       \
 		}                                                                      \
 	}
-
-#endif
 
 
 /* Describes listening socket, or socket which was accept()-ed by the master
@@ -3159,9 +3131,6 @@ mg_get_valid_options(void)
 }
 
 
-/* Do not open file (used in is_file_in_memory) */
-#define MG_FOPEN_MODE_NONE (0)
-
 /* Open file for read only access */
 #define MG_FOPEN_MODE_READ (1)
 
@@ -3172,89 +3141,13 @@ mg_get_valid_options(void)
 #define MG_FOPEN_MODE_APPEND (4)
 
 
-/* If a file is in memory, set all "stat" members and the membuf pointer of
- * output filep and return 1, otherwise return 0 and don't modify anything.
- */
-static int
-open_file_in_memory(const struct mg_connection *conn,
-                    const char *path,
-                    struct mg_file *filep,
-                    int mode)
-{
-#if defined(MG_USE_OPEN_FILE)
-
-	size_t size = 0;
-	const char *buf = NULL;
-	if (!conn) {
-		return 0;
-	}
-
-	if ((mode != MG_FOPEN_MODE_NONE) && (mode != MG_FOPEN_MODE_READ)) {
-		return 0;
-	}
-
-	if (conn->phys_ctx->callbacks.open_file) {
-		buf = conn->phys_ctx->callbacks.open_file(conn, path, &size);
-		if (buf != NULL) {
-			if (filep == NULL) {
-				/* This is a file in memory, but we cannot store the
-				 * properties
-				 * now.
-				 * Called from "is_file_in_memory" function. */
-				return 1;
-			}
-
-			/* NOTE: override filep->size only on success. Otherwise, it
-			 * might
-			 * break constructs like if (!mg_stat() || !mg_fopen()) ... */
-			filep->access.membuf = buf;
-			filep->access.fp = NULL;
-
-			/* Size was set by the callback */
-			filep->stat.size = size;
-
-			/* Assume the data may change during runtime by setting
-			 * last_modified = now */
-			filep->stat.last_modified = time(NULL);
-
-			filep->stat.is_directory = 0;
-			filep->stat.is_gzipped = 0;
-		}
-	}
-
-	return (buf != NULL);
-
-#else
-	(void)conn;
-	(void)path;
-	(void)filep;
-	(void)mode;
-
-	return 0;
-
-#endif
-}
-
-
-static int
-is_file_in_memory(const struct mg_connection *conn, const char *path)
-{
-	return open_file_in_memory(conn, path, NULL, MG_FOPEN_MODE_NONE);
-}
-
-
 static int
 is_file_opened(const struct mg_file_access *fileacc)
 {
 	if (!fileacc) {
 		return 0;
 	}
-
-#if defined(MG_USE_OPEN_FILE)
-	return (fileacc->membuf != NULL) || (fileacc->fp != NULL);
-#else
 	return (fileacc->fp != NULL);
-#endif
 }
 
 
@@ -3282,11 +3175,8 @@ mg_fopen(const struct mg_connection *conn,
 		return 0;
 	}
 	filep->access.fp = NULL;
-#if defined(MG_USE_OPEN_FILE)
-	filep->access.membuf = NULL;
-#endif
 
-	if (!is_file_in_memory(conn, path)) {
+	{
 
 		/* filep is initialized in mg_stat: all fields with memset to,
 		 * some fields like size and modification date with values */
@@ -3339,18 +3229,7 @@ mg_fopen(const struct mg_connection *conn,
 		/* file is on disk */
 		return (filep->access.fp != NULL);
 
-	} else {
-#if defined(MG_USE_OPEN_FILE)
-		/* is_file_in_memory returned true */
-		if (open_file_in_memory(conn, path, filep, mode)) {
-			/* file is in memory */
-			return (filep->access.membuf != NULL);
-		}
-#endif
 	}
-
-	/* Open failed */
-	return 0;
 }
 
 
@@ -3362,10 +3241,6 @@ mg_fclose(struct mg_file_access *fileacc)
 	if (fileacc != NULL) {
 		if (fileacc->fp != NULL) {
 			ret = fclose(fileacc->fp);
-#if defined(MG_USE_OPEN_FILE)
-		} else if (fileacc->membuf != NULL) {
-			ret = 0;
-#endif
 		}
 		/* reset all members of fileacc */
 		memset(fileacc, 0, sizeof(*fileacc));
@@ -5351,35 +5226,6 @@ mg_stat(const struct mg_connection *conn,
 	}
 	memset(filep, 0, sizeof(*filep));
 
-	if (conn && is_file_in_memory(conn, path)) {
-		/* filep->is_directory = 0; filep->gzipped = 0; .. already done by
-		 * memset */
-
-		/* Quick fix (for 1.9.x): */
-		/* mg_stat must fill all fields, also for files in memory */
-		struct mg_file tmp_file = STRUCT_FILE_INITIALIZER;
-		open_file_in_memory(conn, path, &tmp_file, MG_FOPEN_MODE_NONE);
-		filep->size = tmp_file.stat.size;
-		filep->location = 2;
-		/* TODO: for 1.10: restructure how files in memory are handled */
-
-		/* The "file in memory" feature is a candidate for deletion.
-		 * Please join the discussion at
-		 * https://groups.google.com/forum/#!topic/civetweb/h9HT4CmeYqI
-		 */
-
-		filep->last_modified = time(NULL); /* TODO */
-		/* last_modified = now ... assumes the file may change during
-		 * runtime,
-		 * so every mg_fopen call may return different data */
-		/* last_modified = conn->phys_ctx.start_time;
-		 * May be used it the data does not change during runtime. This
-		 * allows
-		 * browser caching. Since we do not know, we have to assume the file
-		 * in memory may change. */
-		return 1;
-	}
-
 	path_to_unicode(conn, path, wbuf, ARRAY_SIZE(wbuf));
 	/* Windows happily opens files with some garbage at the end of file name.
 	 * For example, fopen("a.cgi    ", "r") on Windows successfully opens
@@ -5777,7 +5623,7 @@ spawn_process(struct mg_connection *conn,
               const char *dir)
 {
 	HANDLE me;
-	char *p, *interp, full_interp[PATH_MAX], full_dir[PATH_MAX],
+	char *interp, full_interp[PATH_MAX], full_dir[PATH_MAX],
 	    cmdline[PATH_MAX], buf[PATH_MAX];
 	int truncated;
 	struct mg_file file = STRUCT_FILE_INITIALIZER;
@@ -5843,12 +5689,7 @@ spawn_process(struct mg_connection *conn,
 		}
 
 		if (mg_fopen(conn, cmdline, MG_FOPEN_MODE_READ, &file)) {
-#if defined(MG_USE_OPEN_FILE)
-			p = (char *)file.access.membuf;
-#else
-			p = (char *)NULL;
-#endif
-			mg_fgets(buf, sizeof(buf), &file, &p);
+			mg_fgets(buf, sizeof(buf), &file);
 			(void)mg_fclose(&file.access); /* ignore error on read only file */
 			buf[sizeof(buf) - 1] = '\0';
 		}
@@ -5949,20 +5790,6 @@ mg_stat(const struct mg_connection *conn,
 		return 0;
 	}
 	memset(filep, 0, sizeof(*filep));
-
-	if (conn && is_file_in_memory(conn, path)) {
-
-		/* Quick fix (for 1.9.x): */
-		/* mg_stat must fill all fields, also for files in memory */
-		struct mg_file tmp_file = STRUCT_FILE_INITIALIZER;
-		open_file_in_memory(conn, path, &tmp_file, MG_FOPEN_MODE_NONE);
-		filep->size = tmp_file.stat.size;
-		filep->last_modified = time(NULL);
-		filep->location = 2;
-		/* TODO: remove legacy "files in memory" feature */
-
-		return 1;
-	}
 
 	if (0 == stat(path, &st)) {
 		filep->size = (uint64_t)(st.st_size);
@@ -8486,39 +8313,13 @@ parse_auth_header(struct mg_connection *conn,
 
 
 static const char *
-mg_fgets(char *buf, size_t size, struct mg_file *filep, char **p)
+mg_fgets(char *buf, size_t size, struct mg_file *filep)
 {
-#if defined(MG_USE_OPEN_FILE)
-	const char *eof;
-	size_t len;
-	const char *memend;
-#else
-	(void)p; /* parameter is unused */
-#endif
-
 	if (!filep) {
 		return NULL;
 	}
 
-#if defined(MG_USE_OPEN_FILE)
-	if ((filep->access.membuf != NULL) && (*p != NULL)) {
-		memend = (const char *)&filep->access.membuf[filep->stat.size];
-		/* Search for \n from p till the end of stream */
-		eof = (char *)memchr(*p, '\n', (size_t)(memend - *p));
-		if (eof != NULL) {
-			eof += 1; /* Include \n */
-		} else {
-			eof = memend; /* Copy remaining data */
-		}
-		len =
-		    ((size_t)(eof - *p) > (size - 1)) ? (size - 1) : (size_t)(eof - *p);
-		memcpy(buf, *p, len);
-		buf[len] = '\0';
-		*p += len;
-		return len ? eof : NULL;
-	} else /* filep->access.fp block below */
-#endif
-	    if (filep->access.fp != NULL) {
+	if (filep->access.fp != NULL) {
 		return fgets(buf, (int)size, filep->access.fp);
 	} else {
 		return NULL;
@@ -8553,7 +8354,6 @@ read_auth_file(struct mg_file *filep,
                struct read_auth_file_struct *workdata,
                int depth)
 {
-	char *p = NULL /* init if MG_USE_OPEN_FILE is not set */;
 	int is_authorized = 0;
 	struct mg_file fp;
 	size_t l;
@@ -8562,11 +8362,8 @@ read_auth_file(struct mg_file *filep,
 		return 0;
 	}
 
-/* Loop over passwords file */
-#if defined(MG_USE_OPEN_FILE)
-	p = (char *)filep->access.membuf;
-#endif
-	while (mg_fgets(workdata->buf, sizeof(workdata->buf), filep, &p) != NULL) {
+	/* Loop over passwords file */
+	while (mg_fgets(workdata->buf, sizeof(workdata->buf), filep) != NULL) {
 		l = strlen(workdata->buf);
 		while (l > 0) {
 			if (isspace((unsigned char)workdata->buf[l - 1])
@@ -9719,16 +9516,7 @@ send_file_data(struct mg_connection *conn,
 	                                      : (int64_t)(filep->stat.size);
 	offset = (offset < 0) ? 0 : ((offset > size) ? size : offset);
 
-#if defined(MG_USE_OPEN_FILE)
-	if ((len > 0) && (filep->access.membuf != NULL) && (size > 0)) {
-		/* file stored in memory */
-		if (len > size - offset) {
-			len = size - offset;
-		}
-		mg_write(conn, filep->access.membuf + offset, (size_t)len);
-	} else /* else block below */
-#endif
-	    if (len > 0 && filep->access.fp != NULL) {
+	if (len > 0 && filep->access.fp != NULL) {
 /* file stored on disk */
 #if defined(__linux__)
 		/* sendfile is only available for Linux */
@@ -11669,18 +11457,6 @@ put_file(struct mg_connection *conn, const char *path)
 			/* File exists and is not a directory. */
 			/* Can it be replaced? */
 
-#if defined(MG_USE_OPEN_FILE)
-			if (file.access.membuf != NULL) {
-				/* This is an "in-memory" file, that can not be replaced */
-				mg_send_http_error(conn,
-				                   405,
-				                   "Error: Put not possible\nReplacing %s "
-				                   "is not supported",
-				                   path);
-				return;
-			}
-#endif
-
 			/* Check if the server may write this file */
 			if (access(path, W_OK) == 0) {
 				/* Access granted */
@@ -11975,20 +11751,12 @@ do_ssi_exec(struct mg_connection *conn, char *tag)
 
 
 static int
-mg_fgetc(struct mg_file *filep, int offset)
+mg_fgetc(struct mg_file *filep)
 {
-	(void)offset; /* unused in case MG_USE_OPEN_FILE is set */
-
 	if (filep == NULL) {
 		return EOF;
 	}
-#if defined(MG_USE_OPEN_FILE)
-	if ((filep->access.membuf != NULL) && (offset >= 0)
-	    && (((unsigned int)(offset)) < filep->stat.size)) {
-		return ((const unsigned char *)filep->access.membuf)[offset];
-	} else /* else block below */
-#endif
-	    if (filep->access.fp != NULL) {
+	if (filep->access.fp != NULL) {
 		return fgetc(filep->access.fp);
 	} else {
 		return EOF;
@@ -12003,17 +11771,17 @@ send_ssi_file(struct mg_connection *conn,
               int include_level)
 {
 	char buf[MG_BUF_LEN];
-	int ch, offset, len, in_tag, in_ssi_tag;
+	int ch, len, in_tag, in_ssi_tag;
 
 	if (include_level > 10) {
 		mg_cry_internal(conn, "SSI #include level is too deep (%s)", path);
 		return;
 	}
 
-	in_tag = in_ssi_tag = len = offset = 0;
+	in_tag = in_ssi_tag = len = 0;
 
 	/* Read file, byte by byte, and look for SSI include tags */
-	while ((ch = mg_fgetc(filep, offset++)) != EOF) {
+	while ((ch = mg_fgetc(filep)) != EOF) {
 
 		if (in_tag) {
 			/* We are in a tag, either SSI tag or html tag */
