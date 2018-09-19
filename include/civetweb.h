@@ -384,6 +384,9 @@ mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto);
 #define MG_GET_RX_TIME(c) mg_get_rx_time(c)
 time_t mg_get_rx_time(struct mg_connection *conn);
 
+#define MG_CONN_SET_IF_ERR(c,v) mg_conn_set_if_err(c,v)
+void mg_conn_set_if_err(struct mg_connection *conn, int val);
+
 /* mg_request_handler
 
    Called when a new request comes in.  This callback is URI based
