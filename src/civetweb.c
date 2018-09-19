@@ -2450,6 +2450,7 @@ struct mg_connection {
 	void *lua_websocket_state; /* Lua_State for a websocket connection */
 #endif
 
+	int if_err ;   /* error in bound network interface for conn->client.sock */
 	time_t rx_time ;   /* time when data was read from conn->client.sock */
 	int thread_index; /* Thread index within ctx */
 };
@@ -5473,7 +5474,7 @@ static int
 mg_poll(struct pollfd *pfd,
         unsigned int n,
         int milliseconds,
-        volatile int *stop_server)
+        volatile int *stop_server, struct mg_connection *conn)
 {
 	/* Call poll, but only for a maximum time of a few seconds.
 	 * This will allow to stop the server after some seconds, instead
@@ -5502,6 +5503,9 @@ mg_poll(struct pollfd *pfd,
 		/* Poll returned timeout (0). */
 		if (milliseconds > 0) {
 			milliseconds -= ms_now;
+			if(conn && (conn->if_err > 0)) {
+				break ;
+			}
 		}
 
 	} while (milliseconds != 0);
@@ -5961,7 +5965,7 @@ pull_inner(FILE *fp,
 		pfd[0].fd = conn->client.sock;
 		pfd[0].events = POLLIN;
 		pollres =
-		    mg_poll(pfd, 1, (int)(timeout * 1000.0), &(conn->ctx->stop_flag));
+		    mg_poll(pfd, 1, (int)(timeout * 1000.0), &(conn->ctx->stop_flag),conn);
 		if (conn->ctx->stop_flag) {
 			return -2;
 		}
@@ -5998,7 +6002,7 @@ pull_inner(FILE *fp,
 		pfd[0].fd = conn->client.sock;
 		pfd[0].events = POLLIN;
 		pollres =
-		    mg_poll(pfd, 1, (int)(timeout * 1000.0), &(conn->ctx->stop_flag));
+		    mg_poll(pfd, 1, (int)(timeout * 1000.0), &(conn->ctx->stop_flag),conn);
 		if (conn->ctx->stop_flag) {
 			return -2;
 		}
@@ -6102,6 +6106,9 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
 			if (timeout >= 0.0) {
 				now = mg_get_current_time_ns();
 				if ((now - start_time) <= timeout_ns) {
+					if(conn && (conn->if_err > 0)) {
+						break ;
+					}
 					continue;
 				}
 			}
@@ -6245,9 +6252,17 @@ time_t mg_get_rx_time(struct mg_connection *conn)
 	return conn && (conn->rx_time > 0) ? conn->rx_time : 0 ;
 }
 
+void mg_conn_set_if_err(struct mg_connection *conn, int val)
+{
+	if(conn) {
+		conn->if_err = val ;
+	}
+}
+
 int
 mg_read(struct mg_connection *conn, void *buf, size_t len)
 {
+	int rc  = 0 ;
 	if (len > INT_MAX) {
 		len = INT_MAX;
 	}
@@ -6342,7 +6357,12 @@ mg_read(struct mg_connection *conn, void *buf, size_t len)
 		return (int)all_read;
 	}
 	conn->rx_time = time(NULL);
-	return mg_read_inner(conn, buf, len);
+	rc = mg_read_inner(conn, buf, len);
+	if ((rc == 0) && (conn->if_err > 0)) {
+		//set rc to -1 on if_err
+		rc = -1 ;
+	}
+	return rc ;
 }
 
 
