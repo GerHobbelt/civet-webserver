@@ -6263,7 +6263,6 @@ int
 mg_read(struct mg_connection *conn, void *buf, size_t len)
 {
 	int rc  = 0 ;
-	time_t tnow = 0 ;
 	if (len > INT_MAX) {
 		len = INT_MAX;
 	}
@@ -6357,26 +6356,19 @@ mg_read(struct mg_connection *conn, void *buf, size_t len)
 
 		return (int)all_read;
 	}
-	conn->rx_time = time(NULL);
+
+	if(conn->rx_time == 0) {
+		conn->rx_time = time(NULL);
+	}
+
 	rc = mg_read_inner(conn, buf, len);
 	if ((rc == 0) && (conn->if_err > 0)) {
 		//set rc to -1 on if_err
 		rc = -1 ;
 	}
-	tnow = time(NULL);
-/*
-	//just for debug logging
-	if (tnow > conn->rx_time) {
-		time_t tdiff = tnow - conn->rx_time ;
-		if(tdiff >= 20) {
-			printf("%s() rx_time = %ld secs, tnow = %ld secs , tdiff = %ld secs, rc = %d bytes\n",
-					__func__,conn->rx_time,tnow,tdiff,rc);
-		}
-	}
-*/
+
 	if (rc > 0) {
-		//update time again if recvd value is greater than 0
-		conn->rx_time = tnow;
+		conn->rx_time = time(NULL);
 	}
 	return rc ;
 }
