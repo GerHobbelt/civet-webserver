@@ -740,14 +740,14 @@ typedef struct DIR {
 	struct dirent result;
 } DIR;
 
-#if defined(_WIN32)
-#if !defined(HAVE_POLL)
-struct pollfd {
+#if defined(HAVE_POLL)
+#define mg_pollfd pollfd
+#else
+struct mg_pollfd {
 	SOCKET fd;
 	short events;
 	short revents;
 };
-#endif
 #endif
 
 /* Mark required libraries */
@@ -828,6 +828,8 @@ typedef int SOCKET;
  */
 #define socklen_t int
 #endif /* hpux */
+
+#define mg_pollfd pollfd
 
 #endif /* defined(_WIN32) - WINDOWS vs UNIX include block */
 
@@ -2580,7 +2582,7 @@ struct mg_context {
 	int context_type; /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
-	struct pollfd *listening_socket_fds;
+	struct mg_pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
 	struct mg_connection *worker_connections; /* The connection struct, pre-
@@ -5369,13 +5371,16 @@ mg_readdir(DIR *dir)
 
 
 #if !defined(HAVE_POLL)
+#undef POLLIN
+#undef POLLPRI
+#undef POLLOUT
 #define POLLIN (1)  /* Data ready - read will not block. */
 #define POLLPRI (2) /* Priority data ready. */
 #define POLLOUT (4) /* Send queue not full - write will not block. */
 
 FUNCTION_MAY_BE_UNUSED
 static int
-poll(struct pollfd *pfd, unsigned int n, int milliseconds)
+poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 {
 	struct timeval tv;
 	fd_set rset;
@@ -6044,7 +6049,7 @@ get_random(void)
 
 
 static int
-mg_poll(struct pollfd *pfd,
+mg_poll(struct mg_pollfd *pfd,
         unsigned int n,
         int milliseconds,
         volatile int *stop_server)
@@ -6208,7 +6213,7 @@ push_inner(struct mg_context *ctx,
 			mg_sleep(5);
 		} else {
 			/* For sockets, wait for the socket using poll */
-			struct pollfd pfd[1];
+			struct mg_pollfd pfd[1];
 			int pollres;
 
 			pfd[0].fd = sock;
@@ -6349,7 +6354,7 @@ pull_inner(FILE *fp,
 
 	} else if (conn->ssl != NULL) {
 
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 
 		pfd[0].fd = conn->client.sock;
@@ -6388,7 +6393,7 @@ pull_inner(FILE *fp,
 #endif
 
 	} else {
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 
 		pfd[0].fd = conn->client.sock;
@@ -8898,7 +8903,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #endif
 
 		/* Data for poll */
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 		int ms_wait = 10000; /* 10 second timeout */
 
@@ -14444,7 +14449,7 @@ set_ports_option(struct mg_context *phys_ctx)
 	struct vec vec;
 	struct socket so, *ptr;
 
-	struct pollfd *pfd;
+	struct mg_pollfd *pfd;
 	union usa usa;
 	socklen_t len;
 	int ip_version;
@@ -14668,7 +14673,7 @@ set_ports_option(struct mg_context *phys_ctx)
 			continue;
 		}
 
-		if ((pfd = (struct pollfd *)
+		if ((pfd = (struct mg_pollfd *)
 		         mg_realloc_ctx(phys_ctx->listening_socket_fds,
 		                        (phys_ctx->num_listening_sockets + 1)
 		                            * sizeof(phys_ctx->listening_socket_fds[0]),
@@ -18043,7 +18048,7 @@ master_thread_run(void *thread_func_param)
 {
 	struct mg_context *ctx = (struct mg_context *)thread_func_param;
 	struct mg_workerTLS tls;
-	struct pollfd *pfd;
+	struct mg_pollfd *pfd;
 	unsigned int i;
 	unsigned int workerthreadcount;
 
