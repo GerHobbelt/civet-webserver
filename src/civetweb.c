@@ -729,14 +729,14 @@ typedef struct DIR {
 	struct dirent result;
 } DIR;
 
-#if defined(_WIN32)
-#if !defined(HAVE_POLL)
-struct pollfd {
+#if defined(HAVE_POLL)
+#define mg_pollfd pollfd
+#else
+struct mg_pollfd {
 	SOCKET fd;
 	short events;
 	short revents;
 };
-#endif
 #endif
 
 /* Mark required libraries */
@@ -819,6 +819,8 @@ typedef int SOCKET;
  */
 #define socklen_t int
 #endif /* hpux */
+
+#define mg_pollfd pollfd
 
 #endif /* defined(_WIN32) - WINDOWS vs UNIX include block */
 
@@ -2241,7 +2243,7 @@ struct socket {
 	unsigned char is_ssl;    /* Is port SSL-ed */
 	unsigned char ssl_redir; /* Is port supposed to redirect everything to SSL
 	                          * port */
-	unsigned char in_use;    /* Is valid */
+	unsigned char in_use;    /* 0: invalid, 1: valid, 2: free */
 };
 
 
@@ -2543,7 +2545,7 @@ struct mg_context {
 	int context_type; /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
-	struct pollfd *listening_socket_fds;
+	struct mg_pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
 	struct mg_connection *worker_connections; /* The connection struct, pre-
@@ -2843,6 +2845,7 @@ event_destroy(void *eventhdl)
 struct posix_event {
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
+	int signaled;
 };
 
 
@@ -2865,6 +2868,7 @@ event_create(void)
 		mg_free(ret);
 		return 0;
 	}
+	ret->signaled = 0;
 	return (void *)ret;
 }
 
@@ -2874,7 +2878,10 @@ event_wait(void *eventhdl)
 {
 	struct posix_event *ev = (struct posix_event *)eventhdl;
 	pthread_mutex_lock(&(ev->mutex));
-	pthread_cond_wait(&(ev->cond), &(ev->mutex));
+	while (!ev->signaled) {
+		pthread_cond_wait(&(ev->cond), &(ev->mutex));
+	}
+	ev->signaled = 0;
 	pthread_mutex_unlock(&(ev->mutex));
 	return 1;
 }
@@ -2886,6 +2893,7 @@ event_signal(void *eventhdl)
 	struct posix_event *ev = (struct posix_event *)eventhdl;
 	pthread_mutex_lock(&(ev->mutex));
 	pthread_cond_signal(&(ev->cond));
+	ev->signaled = 1;
 	pthread_mutex_unlock(&(ev->mutex));
 	return 1;
 }
@@ -5200,13 +5208,16 @@ mg_readdir(DIR *dir)
 
 
 #if !defined(HAVE_POLL)
+#undef POLLIN
+#undef POLLPRI
+#undef POLLOUT
 #define POLLIN (1)  /* Data ready - read will not block. */
 #define POLLPRI (2) /* Priority data ready. */
 #define POLLOUT (4) /* Send queue not full - write will not block. */
 
 FUNCTION_MAY_BE_UNUSED
 static int
-poll(struct pollfd *pfd, unsigned int n, int milliseconds)
+poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 {
 	struct timeval tv;
 	fd_set rset;
@@ -5856,7 +5867,7 @@ get_random(void)
 
 
 static int
-mg_poll(struct pollfd *pfd,
+mg_poll(struct mg_pollfd *pfd,
         unsigned int n,
         int milliseconds,
         volatile int *stop_server)
@@ -6020,7 +6031,7 @@ push_inner(struct mg_context *ctx,
 			mg_sleep(5);
 		} else {
 			/* For sockets, wait for the socket using poll */
-			struct pollfd pfd[1];
+			struct mg_pollfd pfd[1];
 			int pollres;
 
 			pfd[0].fd = sock;
@@ -6161,7 +6172,7 @@ pull_inner(FILE *fp,
 
 	} else if (conn->ssl != NULL) {
 
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 
 		pfd[0].fd = conn->client.sock;
@@ -6200,7 +6211,7 @@ pull_inner(FILE *fp,
 #endif
 
 	} else {
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 
 		pfd[0].fd = conn->client.sock;
@@ -8616,7 +8627,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #endif
 
 		/* Data for poll */
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int pollres;
 		int ms_wait = 10000; /* 10 second timeout */
 
@@ -13181,7 +13192,7 @@ mg_set_websocket_handler_with_subprotocols(
 void
 mg_set_auth_handler(struct mg_context *ctx,
                     const char *uri,
-                    mg_request_handler handler,
+                    mg_authorization_handler handler,
                     void *cbdata)
 {
 	mg_set_handler_type(ctx,
@@ -14202,7 +14213,7 @@ set_ports_option(struct mg_context *phys_ctx)
 	struct vec vec;
 	struct socket so, *ptr;
 
-	struct pollfd *pfd;
+	struct mg_pollfd *pfd;
 	union usa usa;
 	socklen_t len;
 	int ip_version;
@@ -14426,7 +14437,7 @@ set_ports_option(struct mg_context *phys_ctx)
 			continue;
 		}
 
-		if ((pfd = (struct pollfd *)
+		if ((pfd = (struct mg_pollfd *)
 		         mg_realloc_ctx(phys_ctx->listening_socket_fds,
 		                        (phys_ctx->num_listening_sockets + 1)
 		                            * sizeof(phys_ctx->listening_socket_fds[0]),
@@ -17398,16 +17409,25 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 	while (!ctx->stop_flag) {
 		for (i = 0; i < ctx->cfg_worker_threads; i++) {
 			/* find a free worker slot and signal it */
-			if (ctx->client_socks[i].in_use == 0) {
-				ctx->client_socks[i] = *sp;
-				ctx->client_socks[i].in_use = 1;
-				event_signal(ctx->client_wait_events[i]);
-				return;
+			if (ctx->client_socks[i].in_use == 2) {
+				(void)pthread_mutex_lock(&ctx->thread_mutex);
+				if ((ctx->client_socks[i].in_use == 2) && !ctx->stop_flag) {
+					ctx->client_socks[i] = *sp;
+					ctx->client_socks[i].in_use = 1;
+					/* socket has been moved to the consumer */
+					(void)pthread_mutex_unlock(&ctx->thread_mutex);
+					(void)event_signal(ctx->client_wait_events[i]);
+					return;
+				}
+				(void)pthread_mutex_unlock(&ctx->thread_mutex);
 			}
 		}
 		/* queue is full */
 		mg_sleep(1);
 	}
+	/* must consume */
+	set_blocking_mode(sp->sock);
+	closesocket(sp->sock);
 }
 
 
@@ -17415,12 +17435,31 @@ static int
 consume_socket(struct mg_context *ctx, struct socket *sp, int thread_index)
 {
 	DEBUG_TRACE("%s", "going idle");
-	ctx->client_socks[thread_index].in_use = 0;
-	event_wait(ctx->client_wait_events[thread_index]);
-	*sp = ctx->client_socks[thread_index];
-	DEBUG_TRACE("grabbed socket %d, going busy", sp ? sp->sock : -1);
+	(void)pthread_mutex_lock(&ctx->thread_mutex);
+	ctx->client_socks[thread_index].in_use = 2;
+	(void)pthread_mutex_unlock(&ctx->thread_mutex);
 
-	return !ctx->stop_flag;
+	event_wait(ctx->client_wait_events[thread_index]);
+
+	(void)pthread_mutex_lock(&ctx->thread_mutex);
+	*sp = ctx->client_socks[thread_index];
+	if (ctx->stop_flag) {
+		(void)pthread_mutex_unlock(&ctx->thread_mutex);
+		if (sp->in_use == 1) {
+			/* must consume */
+			set_blocking_mode(sp->sock);
+			closesocket(sp->sock);
+		}
+		return 0;
+	}
+	(void)pthread_mutex_unlock(&ctx->thread_mutex);
+	if (sp->in_use == 1) {
+		DEBUG_TRACE("grabbed socket %d, going busy", sp->sock);
+		return 1;
+	}
+	/* must not reach here */
+	DEBUG_ASSERT(0);
+	return 0;
 }
 
 #else /* ALTERNATIVE_QUEUE */
@@ -17568,15 +17607,10 @@ worker_thread_run(struct worker_thread_args *thread_args)
 	conn->conn_state = 1; /* not consumed */
 #endif
 
-#if defined(ALTERNATIVE_QUEUE)
-	while ((ctx->stop_flag == 0)
-	       && consume_socket(ctx, &conn->client, conn->thread_index)) {
-#else
 	/* Call consume_socket() even when ctx->stop_flag > 0, to let it
 	 * signal sq_empty condvar to wake up the master waiting in
 	 * produce_socket() */
 	while (consume_socket(ctx, &conn->client, conn->thread_index)) {
-#endif
 
 		conn->conn_birth_time = time(NULL);
 
@@ -17791,7 +17825,7 @@ master_thread_run(void *thread_func_param)
 {
 	struct mg_context *ctx = (struct mg_context *)thread_func_param;
 	struct mg_workerTLS tls;
-	struct pollfd *pfd;
+	struct mg_pollfd *pfd;
 	unsigned int i;
 	unsigned int workerthreadcount;
 
@@ -17860,20 +17894,15 @@ master_thread_run(void *thread_func_param)
 	close_all_listening_sockets(ctx);
 
 	/* Wakeup workers that are waiting for connections to handle. */
-	(void)pthread_mutex_lock(&ctx->thread_mutex);
 #if defined(ALTERNATIVE_QUEUE)
 	for (i = 0; i < ctx->cfg_worker_threads; i++) {
 		event_signal(ctx->client_wait_events[i]);
-
-		/* Since we know all sockets, we can shutdown the connections. */
-		if (ctx->client_socks[i].in_use) {
-			shutdown(ctx->client_socks[i].sock, SHUTDOWN_BOTH);
-		}
 	}
 #else
+	(void)pthread_mutex_lock(&ctx->thread_mutex);
 	pthread_cond_broadcast(&ctx->sq_full);
-#endif
 	(void)pthread_mutex_unlock(&ctx->thread_mutex);
+#endif
 
 	/* Join all worker threads to avoid leaking threads. */
 	workerthreadcount = ctx->cfg_worker_threads;
