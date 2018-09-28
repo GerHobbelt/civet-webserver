@@ -2133,7 +2133,7 @@ enum {
 #if !defined(NO_SSL)
 	STRICT_HTTPS_MAX_AGE,
 #endif
-#if defined(__linux__) || (defined(TARGET_OS_OSX))
+#if defined(__linux__) || (defined(TARGET_OS_OSX) && defined(MACOS_SENDFILE))
 	ALLOW_SENDFILE_CALL,
 #endif
 #if defined(_WIN32)
@@ -2233,7 +2233,7 @@ static struct mg_option config_options[] = {
 #if !defined(NO_SSL)
     {"strict_transport_security_max_age", CONFIG_TYPE_NUMBER, NULL},
 #endif
-#if defined(__linux__) || (defined(TARGET_OS_OSX))
+#if defined(__linux__) || (defined(TARGET_OS_OSX) && defined(MACOS_SENDFILE))
     {"allow_sendfile_call", CONFIG_TYPE_BOOLEAN, "yes"},
 #endif
 #if defined(_WIN32)
@@ -8911,7 +8911,7 @@ send_file_data(struct mg_connection *conn,
 		mg_write(conn, filep->access.membuf + offset, (size_t)len);
 	} else if (len > 0 && filep->access.fp != NULL) {
 /* file stored on disk */
-#if defined(__linux__) || defined(TARGET_OS_OSX)
+#if defined(__linux__) || (defined(TARGET_OS_OSX) && defined(MACOS_SENDFILE))
 		/* sendfile is only available for Linux and macOS */
 		if ((conn->ssl == 0) && (conn->throttle == 0)
 		    && (!mg_strcasecmp(conn->ctx->config[ALLOW_SENDFILE_CALL],
@@ -8936,7 +8936,7 @@ send_file_data(struct mg_connection *conn,
 			//printf("%s() sendfile start: sock=%d len=%ld offset=%ld time=%ld sec\n",
 			//	__func__,conn->client.sock,len,offset,t1);
 
-#if defined(TARGET_OS_OSX)
+#if (defined(TARGET_OS_OSX) && defined(MACOS_SENDFILE))
  #if defined F_NOCACHE
 //Disable data caching to free up page cache occupied by file i/o
 	fcntl(sf_file,F_NOCACHE,1) ;
@@ -9003,7 +9003,7 @@ send_file_data(struct mg_connection *conn,
 					break;
 				}
 //disable sendfile for iOS and enable it only for macOS
-#elif defined(TARGET_OS_OSX)
+#elif (defined(TARGET_OS_OSX) && defined(MACOS_SENDFILE))
 
 /* The number of bytes sent is returned by sendfile in macOS via slen */
 /* update what has been sent */
