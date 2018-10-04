@@ -15301,6 +15301,9 @@ close_connection(struct mg_connection *conn)
 		conn->lua_websocket_state = NULL;
 	}
 #endif
+	//reset conn->if_err and conn->rx_time
+	conn->if_err = 0 ;
+	conn->rx_time = 0 ;
 
 	mg_lock_connection(conn);
 
@@ -16371,6 +16374,10 @@ init_connection(struct mg_connection *conn)
 	conn->data_len = 0;
 	conn->handled_requests = 0;
 	mg_set_user_connection_data(conn, NULL);
+
+	//reset conn->if_err and conn->rx_time
+	conn->if_err = 0 ;
+	conn->rx_time = 0 ;
 
 #if defined(USE_SERVER_STATS)
 	conn->conn_state = 2; /* init */
