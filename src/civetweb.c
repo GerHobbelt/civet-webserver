@@ -2451,8 +2451,12 @@ struct mg_connection {
 #endif
 
 	int if_err ;   /* error in bound network interface for conn->client.sock */
-	time_t rx_time ;   /* time when data was read from conn->client.sock */
 	int thread_index; /* Thread index within ctx */
+	time_t rx_time ;   /* time when data was read from conn->client.sock */
+	//int rx_partial_ms ;   /* pull_all to return with partial read data, if set and time elapsed */
+	int rx_partial_bytes ;   /* pull_all to return with partial read data, if set */
+	#define RX_SZ_32K 32768
+	char rxfbuf[RX_SZ_32K + 1] ; /* buffer used by mg_handle_form_request */
 };
 
 
@@ -5480,6 +5484,7 @@ mg_poll(struct pollfd *pfd,
 	 * This will allow to stop the server after some seconds, instead
 	 * of having to wait for a long socket timeout. */
 	int ms_now = SOCKET_TIMEOUT_QUANTUM; /* Sleep quantum in ms */
+	//int ms_partial = 0 ;
 
 	do {
 		int result;
@@ -5506,6 +5511,14 @@ mg_poll(struct pollfd *pfd,
 			if(conn && (conn->if_err > 0)) {
 				break ;
 			}
+		/*
+			 //if (conn->rx_partial_ms > 0) {
+				//ms_partial += ms_now ;
+				//if (ms_partial >= conn->rx_partial_ms) {
+				//	break;
+				//}
+			//}
+		*/
 		}
 
 	} while (milliseconds != 0);
@@ -6109,6 +6122,17 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
 					if(conn && (conn->if_err > 0)) {
 						break ;
 					}
+					//break if elasped i/o wait time is more than rx_partial_ms,
+					//and has read rx_partial_bytes if set
+					/*
+					//if ((conn->rx_partial_ms > 0)&&(conn->rx_partial_bytes > 0)&&
+					//				(nread >= conn->rx_partial_bytes)) {
+					//	int ms_partial = (now - start_time) ;
+					//	if (ms_partial >= conn->rx_partial_ms) {
+					//		break;
+					//	}
+					//}
+					*/
 					continue;
 				}
 			}
@@ -6119,6 +6143,9 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
 			conn->consumed_content += n;
 			nread += n;
 			len -= n;
+			if ((conn->rx_partial_bytes > 0) && (nread >= conn->rx_partial_bytes)) {
+				break ; 
+			}
 		}
 	}
 
@@ -6257,6 +6284,17 @@ void mg_conn_set_if_err(struct mg_connection *conn, int val)
 	if(conn) {
 		conn->if_err = val ;
 	}
+}
+
+void mg_set_partial_rx(struct mg_connection *conn, int msec, unsigned int bytes)
+{
+	if (!conn) {
+		return ;
+	}
+	//if(msec >= 0) {
+	//	conn->rx_partial_ms = msec ;
+	//}
+	conn->rx_partial_bytes = bytes ;
 }
 
 int
@@ -15304,6 +15342,8 @@ close_connection(struct mg_connection *conn)
 	//reset conn->if_err and conn->rx_time
 	conn->if_err = 0 ;
 	conn->rx_time = 0 ;
+	//conn->rx_partial_ms = 0 ;
+	conn->rx_partial_bytes = 0 ;
 
 	mg_lock_connection(conn);
 
@@ -16378,6 +16418,8 @@ init_connection(struct mg_connection *conn)
 	//reset conn->if_err and conn->rx_time
 	conn->if_err = 0 ;
 	conn->rx_time = 0 ;
+	//conn->rx_partial_ms = 0 ;
+	conn->rx_partial_bytes = 0 ;
 
 #if defined(USE_SERVER_STATS)
 	conn->conn_state = 2; /* init */
