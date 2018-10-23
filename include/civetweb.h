@@ -387,6 +387,8 @@ time_t mg_get_rx_time(struct mg_connection *conn);
 #define MG_CONN_SET_IF_ERR(c,v) mg_conn_set_if_err(c,v)
 void mg_conn_set_if_err(struct mg_connection *conn, int val);
 
+void mg_set_partial_rx(struct mg_connection *conn, int msec, unsigned int bytes);
+
 /* mg_request_handler
 
    Called when a new request comes in.  This callback is URI based
