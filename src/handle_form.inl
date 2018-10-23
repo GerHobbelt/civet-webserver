@@ -195,11 +195,11 @@ mg_handle_form_request(struct mg_connection *conn,
 	if ((!buf) || (szbuf < 1024)) {
 		return -1 ;
 	}
-	memset(buf,0,szbuf);
+	memset(buf, 0, szbuf);
  	//buf[0] = 0 ;
 
 	//set a minimum partial rx data of 1024 bytes and partial timeout of 4000ms(not used)
-	mg_set_partial_rx(conn,4000,1024);
+	mg_set_partial_rx(conn, 4000, 1024);
 
 	int has_body_data =
 	    (conn->request_info.content_length > 0) || (conn->is_chunked);
