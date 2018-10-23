@@ -2454,7 +2454,7 @@ struct mg_connection {
 	int thread_index; /* Thread index within ctx */
 	time_t rx_time ;   /* time when data was read from conn->client.sock */
 	//int rx_partial_ms ;   /* pull_all to return with partial read data, if set and time elapsed */
-	int rx_partial_bytes ;   /* pull_all to return with partial read data, if set */
+	int rx_partial_bytes ;  /* pull_all to return with partial read data, if set */
 	#define RX_SZ_32K 32768
 	char rxfbuf[RX_SZ_32K + 1] ; /* buffer used by mg_handle_form_request */
 };
@@ -5512,7 +5512,9 @@ mg_poll(struct pollfd *pfd,
 				break ;
 			}
 		/*
-			 //if (conn->rx_partial_ms > 0) {
+			//rx_partial_ms: return when partial timeout expires, if set
+			//so that pull_all can return with partial reads within this interim timeouts.
+			//if (conn->rx_partial_ms > 0) {
 				//ms_partial += ms_now ;
 				//if (ms_partial >= conn->rx_partial_ms) {
 				//	break;
@@ -6122,7 +6124,7 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
 					if(conn && (conn->if_err > 0)) {
 						break ;
 					}
-					//break if elasped i/o wait time is more than rx_partial_ms,
+					//break if elapsed i/o wait time is more than rx_partial_ms,
 					//and has read rx_partial_bytes if set
 					/*
 					//if ((conn->rx_partial_ms > 0)&&(conn->rx_partial_bytes > 0)&&
@@ -6144,7 +6146,7 @@ pull_all(FILE *fp, struct mg_connection *conn, char *buf, int len)
 			nread += n;
 			len -= n;
 			if ((conn->rx_partial_bytes > 0) && (nread >= conn->rx_partial_bytes)) {
-				break ; 
+				break ;
 			}
 		}
 	}
@@ -6291,6 +6293,7 @@ void mg_set_partial_rx(struct mg_connection *conn, int msec, unsigned int bytes)
 	if (!conn) {
 		return ;
 	}
+	//rx_partial_ms logic makes read_all to return with sub interval timeouts
 	//if(msec >= 0) {
 	//	conn->rx_partial_ms = msec ;
 	//}

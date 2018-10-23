@@ -196,9 +196,9 @@ mg_handle_form_request(struct mg_connection *conn,
 		return -1 ;
 	}
 	memset(buf,0,szbuf);
- 	//buf[0] = 0 ; 
+ 	//buf[0] = 0 ;
 
-	//set a partial rx data recv time of 4000 milli sec
+	//set a minimum partial rx data of 1024 bytes and partial timeout of 4000ms(not used)
 	mg_set_partial_rx(conn,4000,1024);
 
 	int has_body_data =
