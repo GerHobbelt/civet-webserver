@@ -5674,7 +5674,7 @@ push_inner(struct mg_context *ctx,
 			FD_ZERO(&wfds);
 			FD_SET(sock, &wfds);
 			tv.tv_sec = (time_t)(ms_wait / 1000);
-			tv.tv_usec = (long)((ms_wait % 1000) * 1000);
+			tv.tv_usec = ((ms_wait % 1000) * 1000);
 
 			sret = select((int)sock + 1, NULL, &wfds, NULL, &tv);
 
@@ -11907,7 +11907,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 	 * it is a websocket or regular connection. */
 	(void)mg_lock_connection(conn);
 
-	retval = mg_ws_blocked_write(conn, (const char *)header, headerLen);
+	retval = mg_ws_blocked_write(conn, (const char *)header, (int)headerLen);
 
 	/* mg_ws_blocked_write() returns only when a sincere attempt to
 	successfully send the header happens. However if it fails, to send
@@ -11919,7 +11919,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 
 	/* send data, only on successfully sending the header */
 	if ((dataLen > 0) && (retval >= headerLen)) {
-		retval = mg_ws_blocked_write(conn, data, dataLen);
+		retval = mg_ws_blocked_write(conn, data, (int)dataLen);
 	}
 
 	/* TODO: Remove this unlock as well, when lock is moved. */
