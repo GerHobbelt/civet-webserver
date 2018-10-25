@@ -118,7 +118,9 @@ mg_static_assert(sizeof(void *) >= sizeof(int), "data type size check");
 #error "Define ALTERNATIVE_QUEUE or NO_ALTERNATIVE_QUEUE or none, but not both"
 #endif
 #else
+#ifndef ALTERNATIVE_QUEUE
 #define ALTERNATIVE_QUEUE
+#endif
 #endif
 
 
@@ -221,8 +223,12 @@ mg_static_assert(sizeof(void *) >= sizeof(int), "data type size check");
 #endif
 #endif
 
+#ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC (1)
+#endif
+#ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME (2)
+#endif
 
 #include <sys/errno.h>
 #include <sys/time.h>
@@ -8340,7 +8346,7 @@ mg_inet_pton(int af, const char *src, void *dst, size_t dstlen)
 
 	while (res) {
 		if (dstlen >= (size_t)res->ai_addrlen) {
-			memcpy(dst, res->ai_addr, res->ai_addrlen);
+			memcpy(dst, res->ai_addr, (size_t)res->ai_addrlen);
 			func_ret = 1;
 		}
 		res = res->ai_next;
@@ -11901,7 +11907,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 	 * it is a websocket or regular connection. */
 	(void)mg_lock_connection(conn);
 
-	retval = mg_ws_blocked_write(conn, header, headerLen);
+	retval = mg_ws_blocked_write(conn, (const char *)header, headerLen);
 
 	/* mg_ws_blocked_write() returns only when a sincere attempt to
 	successfully send the header happens. However if it fails, to send
@@ -11966,7 +11972,7 @@ unsigned int
 mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto)
 {
 	struct sockaddr to;
-	int l = sizeof(struct sockaddr);
+	socklen_t l = sizeof(struct sockaddr);
 	
         if(!pto) {
 		pto = &to ;
@@ -17519,7 +17525,7 @@ mg_stop(struct mg_context *ctx)
 
 	if (ctx->listen_ctrl_sd > 0) {
 		struct sockaddr_in to;
-		int l = sizeof(to);
+		socklen_t l = sizeof(to);
 		memset(&to, 0, sizeof(to));
                 /* get listen_ctrl_sd bound tuple address using getsockname() */
 		if (!getsockname(ctx->listen_ctrl_sd, (struct sockaddr*)&to, &l)) {
@@ -18204,7 +18210,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 #pragma GCC diagnostic push
 /* Disable bogus compiler warning -Wdate-time */
 #pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Werror"
+//#pragma GCC diagnostic ignored "-Werror"
 #endif
 		mg_snprintf(NULL,
 		            NULL,
