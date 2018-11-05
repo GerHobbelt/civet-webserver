@@ -1702,9 +1702,14 @@ struct ssl_func {
 	(*(int (*)(SSL_CTX *, const char *))ssl_sw[30].ptr)
 #define SSL_CTX_set_options                                                    \
 	(*(unsigned long (*)(SSL_CTX *, unsigned long))ssl_sw[31].ptr)
+#ifdef SSL_NONCONST_CALLBACK
 #define SSL_CTX_set_info_callback                                              \
 	(*(void (*)(SSL_CTX * ctx,                                                 \
 	            void (*callback)(SSL * s, int, int)))ssl_sw[32].ptr)
+#else
+	(*(void (*)(SSL_CTX * ctx,                                                 \
+	            void (*callback)(const SSL * s, int, int)))ssl_sw[32].ptr)
+#endif
 #define SSL_get_ex_data (*(char *(*)(SSL *, int))ssl_sw[33].ptr)
 #define SSL_set_ex_data (*(void (*)(SSL *, int, char *))ssl_sw[34].ptr)
 
@@ -1851,9 +1856,15 @@ static struct ssl_func crypto_sw[] = {{"ERR_get_error", NULL},
 #define SSL_CTX_ctrl (*(long (*)(SSL_CTX *, int, long, void *))ssl_sw[30].ptr)
 #define SSL_CTX_set_cipher_list                                                \
 	(*(int (*)(SSL_CTX *, const char *))ssl_sw[31].ptr)
+#ifdef SSL_NONCONST_CALLBACK
 #define SSL_CTX_set_info_callback                                              \
 	(*(void (*)(SSL_CTX * ctx,                                                 \
 	            void (*callback)(SSL * s, int, int)))ssl_sw[32].ptr)
+#else
+#define SSL_CTX_set_info_callback                                              \
+	(*(void (*)(SSL_CTX * ctx,                                                 \
+	            void (*callback)(const SSL * s, int, int)))ssl_sw[32].ptr)
+#endif
 #define SSL_get_ex_data (*(char *(*)(SSL *, int))ssl_sw[33].ptr)
 #define SSL_set_ex_data (*(void (*)(SSL *, int, char *))ssl_sw[34].ptr)
 
@@ -14815,7 +14826,11 @@ ssl_get_protocol(int version_id)
  * https://www.openssl.org/docs/man1.1.0/ssl/SSL_set_info_callback.html
  * https://linux.die.net/man/3/ssl_set_info_callback */
 static void
+#ifdef SSL_NONCONST_CALLBACK
 ssl_info_callback(SSL *ssl, int what, int ret)
+#else
+ssl_info_callback(const SSL *ssl, int what, int ret)
+#endif
 {
 	(void)ret;
 
@@ -14936,6 +14951,7 @@ set_ssl_option(struct mg_context *ctx)
 	 * Alternative would be a version dependent ssl_info_callback and
 	 * a const-cast to call 'char *SSL_get_app_data(SSL *ssl)' there.
 	 */
+        /* the the above original comment was incorrect, the ssl_info_callback()           function for SSL_CTX_set_info_callback() of all openssl versions from           0.9.8e which changed it from a macro to function is always const SSL*           and never uses non const */
 	SSL_CTX_set_info_callback(ctx->ssl_ctx, ssl_info_callback);
 
 #ifdef __clang__
