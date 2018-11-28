@@ -89,10 +89,18 @@ url_encoded_field_get(const struct mg_connection *conn,
                       struct mg_form_data_handler *fdh)
 {
 	char key_dec[1024];
+	char sbuf[3072] = { 0 } ;
 
-	char *value_dec = (char *)mg_malloc_ctx(value_len + 1, conn->ctx);
+	char *value_dec = NULL ;
 	int value_dec_len, ret;
 
+        if (value_len < sizeof(sbuf)) {
+		/* most often value_len is small size and hence avoid malloc */
+		value_dec = sbuf ;
+	}
+	else {
+		value_dec = (char *)mg_malloc_ctx(value_len + 1, conn->ctx);
+	}
 	if (!value_dec) {
 		/* Log error message and stop parsing the form data. */
 		mg_cry(conn,
@@ -112,7 +120,9 @@ url_encoded_field_get(const struct mg_connection *conn,
 	                     (size_t)value_dec_len,
 	                     fdh->user_data);
 
-	mg_free(value_dec);
+	if ((value_dec) && (value_dec != sbuf)) {
+		mg_free(value_dec);
+	}
 
 	return ret;
 }
