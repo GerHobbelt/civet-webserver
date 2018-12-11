@@ -8706,58 +8706,13 @@ mg_url_encode(const char *src, char *dst, size_t dst_len)
 	return (*src == '\0') ? (int)(pos - dst) : -1;
 }
 
-
-static int
-mg_escape_chars(const char *src,
-                char *dst,
-                size_t dst_len,
-                const char *escape,
-                const char *ref)
-{
-	char *pos = dst;
-	const char *q, *r;
-	size_t len;
-
-	for (; *src != '\0' && pos < dst + dst_len - 1; src++, pos++) {
-		*pos = *src;
-		q = strchr(escape, *src);
-		if (q != NULL) {
-			for (r = ref; *r != '\0' && q != escape; r += strlen(r) + 1, q--)
-				;
-			len = strlen(r);
-			if (len > 0) {
-				if ((size_t)(dst + dst_len - pos) > len) {
-					strcpy(pos, r);
-					pos += len - 1;
-				} else {
-					break;
-				}
-			}
-		}
-	}
-
-	*pos = '\0';
-	return (*src == '\0') ? (int)(pos - dst) : -1;
-}
-
-
-static void
-mg_utf8_pop_back(char *dst)
-{
-	size_t len = strlen(dst);
-
-	for (; len > 0 && ((unsigned char)dst[len - 1] & 0xc0) == 0x80; len--)
-		;
-	dst[len > 0 ? len - 1 : 0] = '\0';
-}
-
 /* Return 0 on success, non-zero if an error occurs. */
 
 static int
 print_dir_entry(struct de *de)
 {
 	size_t hrefsize;
-	char *href, *href_content;
+	char *href;
 	char size[64], mod[64];
 #if defined(REENTRANT_TIME)
 	struct tm _tm;
@@ -8767,11 +8722,10 @@ print_dir_entry(struct de *de)
 #endif
 
 	hrefsize = MG_PATH_MAX * 3; /* worst case */
-	href = (char *)mg_malloc(hrefsize * 2);
+	href = (char *)mg_malloc(hrefsize);
 	if (href == NULL) {
 		return -1;
 	}
-	href_content = href + hrefsize;
 	if (de->file.is_directory) {
 		mg_snprintf(de->conn,
 		            NULL, /* Buffer is big enough */
@@ -8828,20 +8782,13 @@ print_dir_entry(struct de *de)
 		mod[sizeof(mod) - 1] = '\0';
 	}
 	mg_url_encode(de->file_name, href, hrefsize);
-
-	if (mg_escape_chars(de->file_name, href_content, hrefsize,
-	                    "<>&", "&lt;\0&gt;\0&amp;\0") < 0) {
-		mg_utf8_pop_back(href_content);
-		strcat(href_content, "~");
-	}
-
 	mg_printf(de->conn,
 	          "<tr><td><a href=\"%s%s%s\">%s%s</a></td>"
 	          "<td>&nbsp;%s</td><td>&nbsp;&nbsp;%s</td></tr>\n",
-	          "./",
+	          de->conn->request_info.local_uri,
 	          href,
 	          de->file.is_directory ? "/" : "",
-	          href_content,
+	          de->file_name,
 	          de->file.is_directory ? "/" : "",
 	          mod,
 	          size);
@@ -9080,7 +9027,6 @@ handle_directory_request(struct mg_connection *conn, const char *dir)
 	struct dir_scan_data data = {NULL, 0, 128};
 	char date[64];
 	time_t curtime = time(NULL);
-	char uri_esc[MG_PATH_MAX];
 
 	if (!scan_directory(conn, dir, &data, dir_scan_callback)) {
 		mg_send_http_error(conn,
@@ -9111,13 +9057,6 @@ handle_directory_request(struct mg_connection *conn, const char *dir)
 	          "Connection: close\r\n"
 	          "Content-Type: text/html; charset=utf-8\r\n\r\n",
 	          date);
-
-	if (mg_escape_chars(conn->request_info.local_uri, uri_esc, sizeof(uri_esc),
-	                    "<>&", "&lt;\0&gt;\0&amp;\0") < 0) {
-		mg_utf8_pop_back(uri_esc);
-		strcat(uri_esc, "~");
-	}
-
 	mg_printf(conn,
 	          "<html><head><title>Index of %s</title>"
 	          "<style>th {text-align: left;}</style></head>"
@@ -9126,8 +9065,8 @@ handle_directory_request(struct mg_connection *conn, const char *dir)
 	          "<th><a href=\"?d%c\">Modified</a></th>"
 	          "<th><a href=\"?s%c\">Size</a></th></tr>"
 	          "<tr><td colspan=\"3\"><hr></td></tr>",
-	          uri_esc,
-	          uri_esc,
+	          conn->request_info.local_uri,
+	          conn->request_info.local_uri,
 	          sort_direction,
 	          sort_direction,
 	          sort_direction);
@@ -9136,7 +9075,7 @@ handle_directory_request(struct mg_connection *conn, const char *dir)
 	mg_printf(conn,
 	          "<tr><td><a href=\"%s%s\">%s</a></td>"
 	          "<td>&nbsp;%s</td><td>&nbsp;&nbsp;%s</td></tr>\n",
-	          "",
+	          conn->request_info.local_uri,
 	          "..",
 	          "Parent directory",
 	          "-",
@@ -9155,7 +9094,7 @@ handle_directory_request(struct mg_connection *conn, const char *dir)
 		mg_free(data.entries);
 	}
 
-	mg_printf(conn, "%s", "</table></pre></body></html>");
+	mg_printf(conn, "%s", "</table></body></html>");
 	conn->status_code = 200;
 }
 
