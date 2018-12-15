@@ -306,13 +306,15 @@ if (CIVETWEB_ENABLE_CXX)
   endif()
   target_include_directories(
     civetweb-cpp PUBLIC
-    ${PROJECT_SOURCE_DIR}/include)
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
   install(
     TARGETS civetweb-cpp
+    EXPORT "${TARGETS_EXPORT_NAME}"
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
-    COMPONENT civetweb-cpp)
+    COMPONENT civetweb-cpp
+    INCLUDES DESTINATION "${include_install_dir}")
   install(FILES
     ${PROJECT_SOURCE_DIR}/include/CivetServer.h
     DESTINATION include
