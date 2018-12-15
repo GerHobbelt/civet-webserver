@@ -341,10 +341,10 @@ if (CIVETWEB_ENABLE_CXX)
     add_cxx_compiler_flag(-Werror)
     add_cxx_compiler_flag(/WX)
   endif()
-  add_cxx_compiler_flag(-pedantic-errors)
+  #add_cxx_compiler_flag(-pedantic-errors) Disabled for GCC Build
   add_cxx_compiler_flag(-fvisibility=hidden)
   add_cxx_compiler_flag(-fstack-protector-strong RELEASE)
-  add_cxx_compiler_flag(-flto RELEASE)
+  #add_cxx_compiler_flag(-flto RELEASE) Disabled for GCC Build
   if (${CIVETWEB_ENABLE_ASAN})
   add_cxx_compiler_flag(-fsanitize=undefined DEBUG)
   add_cxx_compiler_flag(-fsanitize=address DEBUG)
