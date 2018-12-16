@@ -14,32 +14,39 @@ if (BUILD_SHARED_LIBS)
 endif()
 target_include_directories(
   civetweb-c-library PUBLIC
-  ${PROJECT_SOURCE_DIR}/include)
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
 install(
   TARGETS civetweb-c-library
+  EXPORT "${TARGETS_EXPORT_NAME}"
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
-  COMPONENT civetweb-c-library)
+  COMPONENT civetweb-c-library
+  INCLUDES DESTINATION "${include_install_dir}"
+)
 install(FILES
   ${PROJECT_SOURCE_DIR}/include/civetweb.h
   DESTINATION include
   COMPONENT civetweb-c-library)
 
-# Need Windows sockets if available
-find_package(WinSock)
-if (WINSOCK_FOUND)
-  target_link_libraries(civetweb-c-library WINSOCK::WINSOCK)
+hunter_add_package(md5)
+find_package(md5 CONFIG REQUIRED)
+target_link_libraries(civetweb-c-library PUBLIC md5::md5)
+
+if(WIN32)
+  target_link_libraries(civetweb-c-library PUBLIC Ws2_32)
 endif()
 
 # We need threading
-find_package(Threads)
-target_link_libraries(civetweb-c-library ${CMAKE_THREAD_LIBS_INIT})
+find_package(Threads REQUIRED)
+target_link_libraries(civetweb-c-library PUBLIC Threads::Threads)
 
 # Need the realtime library if we're using timers
-find_package(LibRt)
-if (CIVETWEB_ENABLE_WEBSOCKETS AND CIVETWEB_ENABLE_LUA AND LIBRT_FOUND)
-  target_link_libraries(civetweb-c-library LIBRT::LIBRT)
+if (CIVETWEB_ENABLE_WEBSOCKETS AND CIVETWEB_ENABLE_LUA)
+  find_package(LibRt)
+  if(LIBRT_FOUND)
+    target_link_libraries(civetweb-c-library LIBRT::LIBRT)
+  endif()
 endif()
 
 # We need to link OpenSSL if not dynamically loading
@@ -50,10 +57,9 @@ if (CIVETWEB_ENABLE_SSL)
       target_link_libraries(civetweb-c-library -ldl)
     endif()
   else()
-    find_package(OpenSSL)
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    message(STATUS "OpenSSL include directory: ${OPENSSL_INCLUDE_DIR}")
-    target_link_libraries(civetweb-c-library ${OPENSSL_LIBRARIES})
+    hunter_add_package(OpenSSL)
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(civetweb-c-library PUBLIC OpenSSL::SSL OpenSSL::Crypto)
   endif()
 endif()
 
@@ -264,7 +270,7 @@ if (CIVETWEB_ENABLE_SERVER_EXECUTABLE)
         civetweb-c-executable PUBLIC
         ${PROJECT_SOURCE_DIR}/include)
     target_link_libraries(civetweb-c-executable civetweb-c-library)
-    if (LIBRT_FOUND)
+    if (TARGET LIBRT::LIBRT)
         target_link_libraries(civetweb-c-executable LIBRT::LIBRT)
     endif()
 endif()
@@ -300,13 +306,16 @@ if (CIVETWEB_ENABLE_CXX)
   endif()
   target_include_directories(
     civetweb-cpp PUBLIC
-    ${PROJECT_SOURCE_DIR}/include)
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
+  target_link_libraries(civetweb-cpp PUBLIC civetweb-c-library)
   install(
     TARGETS civetweb-cpp
+    EXPORT "${TARGETS_EXPORT_NAME}"
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
-    COMPONENT civetweb-cpp)
+    COMPONENT civetweb-cpp
+    INCLUDES DESTINATION "${include_install_dir}")
   install(FILES
     ${PROJECT_SOURCE_DIR}/include/CivetServer.h
     DESTINATION include

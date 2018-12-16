@@ -1,12 +1,10 @@
-# Determines what CMake APIs we can rely on
-cmake_minimum_required (VERSION 2.8.11)
-if (${CMAKE_VERSION} VERSION_GREATER 3.2.2)
-  cmake_policy(VERSION 3.2.2)
-endif()
-if (${CMAKE_VERSION} VERSION_GREATER 3.1 OR
-    ${CMAKE_VERSION} VERSION_EQUAL 3.1)
-  cmake_policy(SET CMP0054 NEW)
-endif()
+cmake_minimum_required (VERSION 3.2)
+
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/ruslo/hunter/archive/v0.19.194.tar.gz"
+    SHA1 "6551bda6756109032d943d96f6f2f71e815ef64c"
+)
 
 # Do not allow in source builds
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
@@ -257,32 +255,6 @@ set(CIVETWEB_CXX_STANDARD auto CACHE STRING
   "The C++ standard to use; auto determines the latest supported by the compiler")
 set_property(CACHE CIVETWEB_CXX_STANDARD PROPERTY STRINGS auto c++14 c++11 c++98)
 
-# Configure the linker
-if ("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
-  find_program(GCC_AR gcc-ar)
-  if (GCC_AR)
-    set(CMAKE_AR ${GCC_AR})
-  endif()
-  find_program(GCC_RANLIB gcc-ranlib)
-  if (GCC_RANLIB)
-    set(CMAKE_RANLIB ${GCC_RANLIB})
-  endif()
-endif()
-
-# Configure the C compiler
-message(STATUS "Configuring C Compiler")
-if ("${CIVETWEB_C_STANDARD}" STREQUAL "auto")
-  add_c_compiler_flag(-std=c11)
-  if (NOT HAVE_C_FLAG_STD_C11)
-    add_c_compiler_flag(-std=c99)
-    if (NOT HAVE_C_FLAG_STD_C99)
-      add_c_compiler_flag(-std=c89)
-    endif()
-  endif()
-else()
-  add_c_compiler_flag(-std=${CIVETWEB_C_STANDARD})
-endif()
-
 #Warnings: enable everything
 add_c_compiler_flag(-Wall)
 add_c_compiler_flag(-Wextra)
@@ -312,10 +284,10 @@ if (NOT CIVETWEB_ALLOW_WARNINGS)
   add_c_compiler_flag(-Werror)
   add_c_compiler_flag(/WX)
 endif()
-add_c_compiler_flag(-pedantic-errors)
+# add_c_compiler_flag(-pedantic-errors) Disabled for GCC build
 add_c_compiler_flag(-fvisibility=hidden)
 add_c_compiler_flag(-fstack-protector-strong RELEASE)
-#add_c_compiler_flag(-flto RELEASE)
+# add_c_compiler_flag(-flto RELEASE) Disabled for GCC build
 if (${CIVETWEB_ENABLE_ASAN})
 add_c_compiler_flag(-fsanitize=undefined DEBUG)
 add_c_compiler_flag(-fsanitize=address DEBUG)
@@ -352,18 +324,6 @@ add_c_compiler_flag(--coverage COVERAGE)
 
 # Configure the C++ compiler
 if (CIVETWEB_ENABLE_CXX)
-  message(STATUS "Configuring C++ Compiler")
-  if ("${CIVETWEB_CXX_STANDARD}" STREQUAL "auto")
-    add_cxx_compiler_flag(-std=c++14)
-    if (NOT HAVE_CXX_FLAG_STD_CXX14)
-      add_cxx_compiler_flag(-std=c++11)
-      if (NOT HAVE_CXX_FLAG_STD_CXX11)
-        add_cxx_compiler_flag(-std=c++98)
-      endif()
-    endif()
-  else()
-    add_cxx_compiler_flag(-std=${CIVETWEB_CXX_STANDARD})
-  endif()
   add_cxx_compiler_flag(-Wall)
   add_cxx_compiler_flag(-Wextra)
   add_cxx_compiler_flag(-Wshadow)
@@ -381,10 +341,10 @@ if (CIVETWEB_ENABLE_CXX)
     add_cxx_compiler_flag(-Werror)
     add_cxx_compiler_flag(/WX)
   endif()
-  add_cxx_compiler_flag(-pedantic-errors)
+  #add_cxx_compiler_flag(-pedantic-errors) Disabled for GCC Build
   add_cxx_compiler_flag(-fvisibility=hidden)
   add_cxx_compiler_flag(-fstack-protector-strong RELEASE)
-  add_cxx_compiler_flag(-flto RELEASE)
+  #add_cxx_compiler_flag(-flto RELEASE) Disabled for GCC Build
   if (${CIVETWEB_ENABLE_ASAN})
   add_cxx_compiler_flag(-fsanitize=undefined DEBUG)
   add_cxx_compiler_flag(-fsanitize=address DEBUG)
@@ -460,6 +420,48 @@ if (${CMAKE_ARCH} MATCHES "[Xx]64")
 add_c_compiler_flag(-m64)
 endif()
 # TODO: add support for -march
+
+# Installation (https://github.com/forexample/package-example) {
+
+set(config_install_dir "lib/cmake/${PROJECT_NAME}")
+set(include_install_dir "include")
+
+set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
+set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
+set(TARGETS_EXPORT_NAME "${PROJECT_NAME}Targets")
+set(namespace "${PROJECT_NAME}::")
+
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+    "${version_config}"
+    VERSION ${CIVETWEB_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Use variables:
+#   * TARGETS_EXPORT_NAME
+#   * PROJECT_NAME
+configure_package_config_file(
+    "cmake/Config.cmake.in"
+    "${project_config}"
+    INSTALL_DESTINATION "${config_install_dir}"
+)
+
+install(
+    FILES "${project_config}" "${version_config}"
+    DESTINATION "${config_install_dir}"
+)
+
+install(
+    EXPORT "${TARGETS_EXPORT_NAME}"
+    NAMESPACE "${namespace}"
+    DESTINATION "${config_install_dir}"
+)
+
+# }
 
 # Build the targets
 add_subdirectory(src)
