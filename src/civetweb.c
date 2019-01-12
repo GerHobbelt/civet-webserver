@@ -8367,7 +8367,7 @@ mg_inet_pton(int af, const char *src, void *dst, size_t dstlen)
 	return func_ret;
 }
 
-
+#define CONNECT_SELECT_TIMEOUT
 static int
 connect_socket(struct mg_context *ctx /* may be NULL */,
                const char *host,
@@ -8495,6 +8495,69 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 
 	set_close_on_exec(*sock, fc(ctx));
 
+#ifdef CONNECT_SELECT_TIMEOUT
+        struct timeval timeout;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        int iret;
+
+        //set the socket to non blocking mode
+        if((ip_ver == 4) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+            iret = connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin));
+//            printf("connect: iret: %d, errno: %d\n", iret, errno);
+
+            if(iret == 0) {
+//                printf("connected !\n");
+    
+                //set the socket to blocking mode
+                if((iret = set_blocking_mode(*sock)) == 0) {
+                    return 1;
+                }
+                else{
+                    printf("set_blocking_mode error !\n");
+                }
+            } else
+#ifdef _WIN32
+            if((iret<0) && ((errno == ERANGE) || (errno == 0))) {
+#else
+            if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
+#endif
+//                printf("connect error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
+        
+                fd_set fd_write, fd_err;
+                FD_ZERO(&fd_write);
+                FD_ZERO(&fd_err);
+                FD_SET(*sock, &fd_write);
+                FD_SET(*sock, &fd_err);
+
+                iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
+//                printf("select() iret: %d\n", iret);
+                if(FD_ISSET(*sock, &fd_err)) 
+                {	
+                    printf("connecting error: %d !\n", errno);
+                } else
+                if(FD_ISSET(*sock, &fd_write)) 
+                {	
+//                    printf("connected !\n");
+    
+                    //set the socket to blocking mode
+                    if((iret = set_blocking_mode(*sock)) == 0) {
+                        return 1;
+                    }
+                    else{
+                        printf("set_blocking_mode error !\n");
+                    }
+                } else {
+                    printf("ERROR connecting time out\n");
+                }
+
+            } else {
+//                printf("connect other error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
+                perror("connect other ERROR connecting");
+            }
+        } else
+#endif
+
 	if ((ip_ver == 4)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin))
 	        == 0)) {
@@ -8505,6 +8568,64 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	}
 
 #ifdef USE_IPV6
+#ifdef CONNECT_SELECT_TIMEOUT
+        //set the socket to non blocking mode
+        if((ip_ver == 6) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+            iret = connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6));
+//            printf("connect: iret: %d, errno: %d\n", iret, errno);
+
+            if(iret == 0) {
+//                printf("connected !\n");
+    
+                //set the socket to blocking mode
+                if((iret = set_blocking_mode(*sock)) == 0) {
+                    return 1;
+                }
+                else{
+                    printf("set_blocking_mode error !\n");
+                }
+            } else
+#ifdef _WIN32
+            if((iret<0) && ((errno == ERANGE) || (errno == 0))) {
+#else
+            if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
+#endif
+//                printf("connect error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
+        
+                fd_set fd_write, fd_err;
+                FD_ZERO(&fd_write);
+                FD_ZERO(&fd_err);
+                FD_SET(*sock, &fd_write);
+                FD_SET(*sock, &fd_err);
+
+                iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
+//                printf("select() iret: %d\n", iret);
+                if(FD_ISSET(*sock, &fd_err)) 
+                {	
+                    printf("connecting error: %d !\n", errno);
+                } else
+                if(FD_ISSET(*sock, &fd_write)) 
+                {	
+//                    printf("connected !\n");
+    
+                    //set the socket to blocking mode
+                    if((iret = set_blocking_mode(*sock)) == 0) {
+                        return 1;
+                    }
+                    else{
+                        printf("set_blocking_mode error !\n");
+                    }
+                } else {
+                    printf("ERROR connecting time out\n");
+                }
+
+            } else {
+//                printf("connect other error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
+                perror("connect other ERROR connecting");
+            }
+        } else
+#endif
+
 	if ((ip_ver == 6)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6))
 	        == 0)) {
