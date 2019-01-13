@@ -18823,22 +18823,30 @@ mg_check_feature(unsigned feature)
 }
 
 
-/* strcat with additional NULL check to avoid clang scan-build warning. */
-#define strcat0(a, b)                                                          \
-	{                                                                          \
-		if ((a != NULL) && (b != NULL)) {                                      \
-			strcat(a, b);                                                      \
-		}                                                                      \
+static size_t
+mg_str_append(char **dst, char *end, const char *src)
+{
+	size_t len = strlen(src);
+	if (*dst != end) {
+		/* Append src if enough space, or close dst. */
+		if ((size_t)(end - *dst) > len) {
+			strcpy(*dst, src);
+			*dst += len;
+		} else {
+			*dst = end;
+		}
 	}
+	return len;
+}
 
 
 /* Get system information. It can be printed or stored by the caller.
  * Return the size of available information. */
-static int
-mg_get_system_info_impl(char *buffer, int buflen)
+int
+mg_get_system_info(char *buffer, int buflen)
 {
-	char block[256];
-	int system_info_length = 0;
+	char *end, block[256];
+	size_t system_info_length = 0;
 
 #if defined(_WIN32)
 	const char *eol = "\r\n";
@@ -18846,20 +18854,15 @@ mg_get_system_info_impl(char *buffer, int buflen)
 	const char *eol = "\n";
 #endif
 
-	const char *eoobj = "}";
-	int reserved_len = (int)strlen(eoobj) + (int)strlen(eol);
-
 	if ((buffer == NULL) || (buflen < 1)) {
 		buflen = 0;
 	} else {
 		*buffer = 0;
 	}
+	end = buffer + buflen;
 
 	mg_snprintf(NULL, NULL, block, sizeof(block), "{%s", eol);
-	system_info_length += (int)strlen(block);
-	if (system_info_length < buflen) {
-		strcat0(buffer, block);
-	}
+	system_info_length += mg_str_append(&buffer, end, block);
 
 	/* Server version */
 	{
@@ -18871,10 +18874,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            "\"version\" : \"%s\",%s",
 		            version,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* System info */
@@ -18908,10 +18908,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)dwMajorVersion,
 		            (unsigned)dwMinorVersion,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 
 		mg_snprintf(NULL,
 		            NULL,
@@ -18922,10 +18919,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)si.dwNumberOfProcessors,
 		            (unsigned)si.dwActiveProcessorMask,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #else
 		struct utsname name;
 		memset(&name, 0, sizeof(name));
@@ -18941,10 +18935,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            name.release,
 		            name.machine,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #endif
 	}
 
@@ -18969,10 +18960,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            mg_check_feature(MG_FEATURES_CACHE) ? " Cache" : "",
 		            mg_check_feature(MG_FEATURES_STATS) ? " Stats" : "",
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 
 #if defined(USE_LUA)
 		mg_snprintf(NULL,
@@ -18983,10 +18971,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)LUA_VERSION_NUM,
 		            LUA_RELEASE,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #endif
 #if defined(USE_DUKTAPE)
 		mg_snprintf(NULL,
@@ -18998,10 +18983,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            ((unsigned)DUK_VERSION / 100) % 100,
 		            (unsigned)DUK_VERSION % 100,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #endif
 	}
 
@@ -19024,10 +19006,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 #pragma GCC diagnostic pop
 #endif
 
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 	}
 
 
@@ -19043,10 +19022,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)_MSC_VER,
 		            (unsigned)_MSC_FULL_VER,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__MINGW64__)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19056,10 +19032,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)__MINGW64_VERSION_MAJOR,
 		            (unsigned)__MINGW64_VERSION_MINOR,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 		mg_snprintf(NULL,
 		            NULL,
 		            block,
@@ -19068,10 +19041,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)__MINGW32_MAJOR_VERSION,
 		            (unsigned)__MINGW32_MINOR_VERSION,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__MINGW32__)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19081,10 +19051,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)__MINGW32_MAJOR_VERSION,
 		            (unsigned)__MINGW32_MINOR_VERSION,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__clang__)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19096,10 +19063,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            __clang_patchlevel__,
 		            __clang_version__,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__GNUC__)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19110,10 +19074,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)__GNUC_MINOR__,
 		            (unsigned)__GNUC_PATCHLEVEL__,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__INTEL_COMPILER)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19122,10 +19083,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            "\"compiler\" : \"Intel C/C++: %u\",%s",
 		            (unsigned)__INTEL_COMPILER,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__BORLANDC__)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19134,10 +19092,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            "\"compiler\" : \"Borland C: 0x%x\",%s",
 		            (unsigned)__BORLANDC__,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #elif defined(__SUNPRO_C)
 		mg_snprintf(NULL,
 		            NULL,
@@ -19146,10 +19101,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            "\"compiler\" : \"Solaris: 0x%x\",%s",
 		            (unsigned)__SUNPRO_C,
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #else
 		mg_snprintf(NULL,
 		            NULL,
@@ -19157,10 +19109,7 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            sizeof(block),
 		            "\"compiler\" : \"other\",%s",
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 #endif
 	}
 
@@ -19187,34 +19136,25 @@ mg_get_system_info_impl(char *buffer, int buflen)
 		            (unsigned)sizeof(size_t),
 		            (unsigned)sizeof(time_t),
 		            eol);
-		system_info_length += (int)strlen(block);
-		if (system_info_length < buflen) {
-			strcat0(buffer, block);
-		}
+		system_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Terminate string */
-	if ((buflen > 0) && buffer && buffer[0]) {
-		if (system_info_length < buflen) {
-			strcat0(buffer, eoobj);
-			strcat0(buffer, eol);
-		}
-	}
-	system_info_length += reserved_len;
+	mg_snprintf(NULL, NULL, block, sizeof(block), "}%s", eol);
+	system_info_length += mg_str_append(&buffer, end, block);
 
-	return system_info_length;
+	return (int)system_info_length;
 }
 
 
-#if defined(USE_SERVER_STATS)
 /* Get context information. It can be printed or stored by the caller.
  * Return the size of available information. */
-static int
-mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
-
+int
+mg_get_context_info(const struct mg_context *ctx, char *buffer, int buflen)
 {
-	char block[256];
-	int context_info_length = 0;
+#if defined(USE_SERVER_STATS)
+	char *end, block[256];
+	size_t context_info_length = 0;
 
 #if defined(_WIN32)
 	const char *eol = "\r\n";
@@ -19223,20 +19163,15 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 #endif
 	struct mg_memory_stat *ms = get_memory_stat((struct mg_context *)ctx);
 
-	const char *eoobj = "}";
-	int reserved_len = (int)strlen(eoobj) + (int)strlen(eol);
-
 	if ((buffer == NULL) || (buflen < 1)) {
 		buflen = 0;
 	} else {
 		*buffer = 0;
 	}
+	end = buffer + buflen;
 
 	mg_snprintf(NULL, NULL, block, sizeof(block), "{%s", eol);
-	context_info_length += (int)strlen(block);
-	if (context_info_length < buflen) {
-		strcat0(buffer, block);
-	}
+	context_info_length += mg_str_append(&buffer, end, block);
 
 	if (ms) { /* <-- should be always true */
 		/* Memory information */
@@ -19259,10 +19194,7 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 		            (ctx ? "," : ""),
 		            eol);
 
-		context_info_length += (int)strlen(block);
-		if (context_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		context_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	if (ctx) {
@@ -19292,10 +19224,7 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 		            eol,
 		            eol);
 
-		context_info_length += (int)strlen(block);
-		if (context_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		context_info_length += mg_str_append(&buffer, end, block);
 
 		/* Requests information */
 		mg_snprintf(NULL,
@@ -19310,10 +19239,7 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 		            eol,
 		            eol);
 
-		context_info_length += (int)strlen(block);
-		if (context_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		context_info_length += mg_str_append(&buffer, end, block);
 
 		/* Data information */
 		mg_snprintf(NULL,
@@ -19331,10 +19257,7 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 		            eol,
 		            eol);
 
-		context_info_length += (int)strlen(block);
-		if (context_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		context_info_length += mg_str_append(&buffer, end, block);
 
 		/* Execution time information */
 		gmt_time_string(start_time_str,
@@ -19360,39 +19283,37 @@ mg_get_context_info_impl(const struct mg_context *ctx, char *buffer, int buflen)
 		            eol,
 		            eol);
 
-		context_info_length += (int)strlen(block);
-		if (context_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		context_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Terminate string */
-	if ((buflen > 0) && buffer && buffer[0]) {
-		if (context_info_length < buflen) {
-			strcat0(buffer, eoobj);
-			strcat0(buffer, eol);
-		}
-	}
-	context_info_length += reserved_len;
+	mg_snprintf(NULL, NULL, block, sizeof(block), "}%s", eol);
+	context_info_length += mg_str_append(&buffer, end, block);
 
-	return context_info_length;
-}
+	return (int)context_info_length;
+#else
+	(void)ctx;
+	if ((buffer != NULL) && (buflen > 0)) {
+		*buffer = 0;
+	}
+	return 0;
 #endif
+}
 
 
 #if defined(MG_EXPERIMENTAL_INTERFACES)
 /* Get connection information. It can be printed or stored by the caller.
  * Return the size of available information. */
-static int
-mg_get_connection_info_impl(const struct mg_context *ctx,
-                            int idx,
-                            char *buffer,
-                            int buflen)
+int
+mg_get_connection_info(const struct mg_context *ctx,
+                       int idx,
+                       char *buffer,
+                       int buflen)
 {
 	const struct mg_connection *conn;
 	const struct mg_request_info *ri;
-	char block[256];
-	int connection_info_length = 0;
+	char *end, block[256];
+	size_t connection_info_length = 0;
 	int state = 0;
 	const char *state_str = "unknown";
 
@@ -19402,14 +19323,12 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 	const char *eol = "\n";
 #endif
 
-	const char *eoobj = "}";
-	int reserved_len = (int)strlen(eoobj) + (int)strlen(eol);
-
 	if ((buffer == NULL) || (buflen < 1)) {
 		buflen = 0;
 	} else {
 		*buffer = 0;
 	}
+	end = buffer + buflen;
 
 	if ((ctx == NULL) || (idx < 0)) {
 		/* Parameter error */
@@ -19427,10 +19346,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 
 	/* Initialize output string */
 	mg_snprintf(NULL, NULL, block, sizeof(block), "{%s", eol);
-	connection_info_length += (int)strlen(block);
-	if (connection_info_length < buflen) {
-		strcat0(buffer, block);
-	}
+	connection_info_length += mg_str_append(&buffer, end, block);
 
 	/* Init variables */
 	ri = &(conn->request_info);
@@ -19500,10 +19416,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 		            eol,
 		            eol);
 
-		connection_info_length += (int)strlen(block);
-		if (connection_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		connection_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Request info */
@@ -19528,10 +19441,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 		            eol,
 		            eol);
 
-		connection_info_length += (int)strlen(block);
-		if (connection_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		connection_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Execution time information */
@@ -19564,10 +19474,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 		            eol,
 		            eol);
 
-		connection_info_length += (int)strlen(block);
-		if (connection_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		connection_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Remote user name */
@@ -19584,10 +19491,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 		            eol,
 		            eol);
 
-		connection_info_length += (int)strlen(block);
-		if (connection_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		connection_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* Data block */
@@ -19607,10 +19511,7 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 		            eol,
 		            eol);
 
-		connection_info_length += (int)strlen(block);
-		if (connection_info_length + reserved_len < buflen) {
-			strcat0(buffer, block);
-		}
+		connection_info_length += mg_str_append(&buffer, end, block);
 	}
 
 	/* State */
@@ -19622,77 +19523,13 @@ mg_get_connection_info_impl(const struct mg_context *ctx,
 	            state_str,
 	            eol);
 
-	connection_info_length += (int)strlen(block);
-	if (connection_info_length + reserved_len < buflen) {
-		strcat0(buffer, block);
-	}
+	connection_info_length += mg_str_append(&buffer, end, block);
 
 	/* Terminate string */
-	if ((buflen > 0) && buffer && buffer[0]) {
-		if (connection_info_length < buflen) {
-			strcat0(buffer, eoobj);
-			strcat0(buffer, eol);
-		}
-	}
-	connection_info_length += reserved_len;
+	mg_snprintf(NULL, NULL, block, sizeof(block), "}%s", eol);
+	connection_info_length += mg_str_append(&buffer, end, block);
 
-	return connection_info_length;
-}
-#endif
-
-
-/* Get system information. It can be printed or stored by the caller.
- * Return the size of available information. */
-int
-mg_get_system_info(char *buffer, int buflen)
-{
-	if ((buffer == NULL) || (buflen < 1)) {
-		return mg_get_system_info_impl(NULL, 0);
-	} else {
-		/* Reset buffer, so we can always use strcat. */
-		buffer[0] = 0;
-		return mg_get_system_info_impl(buffer, buflen);
-	}
-}
-
-
-/* Get context information. It can be printed or stored by the caller.
- * Return the size of available information. */
-int
-mg_get_context_info(const struct mg_context *ctx, char *buffer, int buflen)
-{
-#if defined(USE_SERVER_STATS)
-	if ((buffer == NULL) || (buflen < 1)) {
-		return mg_get_context_info_impl(ctx, NULL, 0);
-	} else {
-		/* Reset buffer, so we can always use strcat. */
-		buffer[0] = 0;
-		return mg_get_context_info_impl(ctx, buffer, buflen);
-	}
-#else
-	(void)ctx;
-	if ((buffer != NULL) && (buflen > 0)) {
-		buffer[0] = 0;
-	}
-	return 0;
-#endif
-}
-
-
-#if defined(MG_EXPERIMENTAL_INTERFACES)
-int
-mg_get_connection_info(const struct mg_context *ctx,
-                       int idx,
-                       char *buffer,
-                       int buflen)
-{
-	if ((buffer == NULL) || (buflen < 1)) {
-		return mg_get_connection_info_impl(ctx, idx, NULL, 0);
-	} else {
-		/* Reset buffer, so we can always use strcat. */
-		buffer[0] = 0;
-		return mg_get_connection_info_impl(ctx, idx, buffer, buflen);
-	}
+	return (int)connection_info_length;
 }
 #endif
 
