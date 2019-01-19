@@ -559,8 +559,8 @@ typedef long off_t;
 #define fdopen(x, y) (_fdopen((x), (y)))
 #define write(x, y, z) (_write((x), (y), (unsigned)z))
 #define read(x, y, z) (_read((x), (y), (unsigned)z))
-#define flockfile(x) (pthread_mutex_lock(&global_log_file_lock))
-#define funlockfile(x) (pthread_mutex_unlock(&global_log_file_lock))
+#define flockfile(x) ((void)pthread_mutex_lock(&global_log_file_lock))
+#define funlockfile(x) ((void)pthread_mutex_unlock(&global_log_file_lock))
 #define sleep(x) (Sleep((x)*1000))
 #define rmdir(x) (_rmdir(x))
 #if defined(_WIN64) || !defined(__MINGW32__)
@@ -577,7 +577,7 @@ time_t timegm(struct tm *tm);
 #endif /* !fileno MINGW #defines fileno */
 
 typedef struct {
-	CRITICAL_SECTION sec; /* Uncopyable */
+	CRITICAL_SECTION sec; /* Immovable */
 } pthread_mutex_t;
 typedef DWORD pthread_key_t;
 typedef HANDLE pthread_t;
@@ -4873,7 +4873,7 @@ static int
 pthread_cond_init(pthread_cond_t *cv, const void *unused)
 {
 	(void)unused;
-	(void)pthread_mutex_init(&cv->threadIdSec, NULL);
+	(void)pthread_mutex_init(&cv->threadIdSec, &pthread_mutex_attr);
 	cv->waiting_thread = NULL;
 	return 0;
 }
@@ -19575,7 +19575,7 @@ mg_init_library(unsigned features)
 		}
 
 #if defined(_WIN32)
-		(void)pthread_mutex_init(&global_log_file_lock, NULL);
+		(void)pthread_mutex_init(&global_log_file_lock, &pthread_mutex_attr);
 #else
 		pthread_mutexattr_init(&pthread_mutex_attr);
 		pthread_mutexattr_settype(&pthread_mutex_attr, PTHREAD_MUTEX_RECURSIVE);
