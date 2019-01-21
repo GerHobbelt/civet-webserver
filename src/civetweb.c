@@ -21,6 +21,9 @@
  */
 
 #define NO_HTTPS_SERVER   //only work as http server not https server
+#define CONNECT_SELECT_TIMEOUT
+#define CONFIG_CONNECT_TIMEOUT
+
 
 #if defined(_WIN32)
 #if !defined(_CRT_SECURE_NO_WARNINGS)
@@ -2106,6 +2109,9 @@ enum {
 	HIDE_FILES,
 	REQUEST_TIMEOUT,
 	KEEP_ALIVE_TIMEOUT,
+#ifdef CONFIG_CONNECT_TIMEOUT
+        CONNECT_TIMEOUT,
+#endif
 	LINGER_TIMEOUT,
 	SSL_DO_VERIFY_PEER,
 	SSL_CA_PATH,
@@ -2205,6 +2211,9 @@ static struct mg_option config_options[] = {
     {"hide_files_patterns", CONFIG_TYPE_EXT_PATTERN, NULL},
     {"request_timeout_ms", CONFIG_TYPE_NUMBER, "30000"},
     {"keep_alive_timeout_ms", CONFIG_TYPE_NUMBER, "500"},
+#ifdef CONFIG_CONNECT_TIMEOUT
+    {"connect_timeout_ms", CONFIG_TYPE_NUMBER, "10000"},
+#endif
     {"linger_timeout_ms", CONFIG_TYPE_NUMBER, NULL},
 
     /* TODO(Feature): this is no longer a boolean, but yes/no/optional */
@@ -8367,19 +8376,39 @@ mg_inet_pton(int af, const char *src, void *dst, size_t dstlen)
 	return func_ret;
 }
 
-#define CONNECT_SELECT_TIMEOUT
 static int
 connect_socket(struct mg_context *ctx /* may be NULL */,
+#ifdef CONFIG_CONNECT_TIMEOUT
+               const struct mg_client_options *client_options,
+#else
                const char *host,
                int port,
+#endif
                int use_ssl,
                char *ebuf,
                size_t ebuf_len,
                SOCKET *sock /* output: socket, must not be NULL */,
                union usa *sa /* output: socket address, must not be NULL  */
                )
+//connect_socket(struct mg_context *ctx /* may be NULL */,
+//               const char *host,
+//               int port,
+//               int use_ssl,
+//               char *ebuf,
+//               size_t ebuf_len,
+//               SOCKET *sock /* output: socket, must not be NULL */,
+//               union usa *sa /* output: socket address, must not be NULL  */
+//               )
 {
 	int ip_ver = 0;
+#ifdef CONNECT_SELECT_TIMEOUT
+        struct timeval timeout;
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
+        int wsa_errno = 0;
+        int iret = 0;
+#endif
+
 	*sock = INVALID_SOCKET;
 	memset(sa, 0, sizeof(*sa));
 
@@ -8387,6 +8416,27 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 		*ebuf = 0;
 	}
 
+#ifdef CONFIG_CONNECT_TIMEOUT
+	if (client_options->host == NULL) {
+		mg_snprintf(NULL,
+		            NULL, /* No truncation check for ebuf */
+		            ebuf,
+		            ebuf_len,
+		            "%s",
+		            "NULL host");
+		return 0;
+	}
+
+	if ((client_options->port <= 0) || !is_valid_port((unsigned)client_options->port)) {
+		mg_snprintf(NULL,
+		            NULL, /* No truncation check for ebuf */
+		            ebuf,
+		            ebuf_len,
+		            "%s",
+		            "invalid port");
+		return 0;
+	}
+#else   //CONFIG_CONNECT_TIMEOUT
 	if (host == NULL) {
 		mg_snprintf(NULL,
 		            NULL, /* No truncation check for ebuf */
@@ -8406,6 +8456,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 		            "invalid port");
 		return 0;
 	}
+#endif   //CONFIG_CONNECT_TIMEOUT
 
 #if !defined(NO_SSL)
 #if !defined(NO_SSL_DL)
@@ -8438,6 +8489,33 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	(void)use_ssl;
 #endif /* !defined(NO_SSL) */
 
+#ifdef CONFIG_CONNECT_TIMEOUT
+	if (mg_inet_pton(AF_INET, client_options->host, &sa->sin, sizeof(sa->sin))) {
+		sa->sin.sin_family = AF_INET;
+		sa->sin.sin_port = htons((uint16_t)client_options->port);
+		ip_ver = 4;
+#ifdef USE_IPV6
+	} else if (mg_inet_pton(AF_INET6, client_options->host, &sa->sin6, sizeof(sa->sin6))) {
+		sa->sin6.sin6_family = AF_INET6;
+		sa->sin6.sin6_port = htons((uint16_t)client_options->port);
+		ip_ver = 6;
+	} else if (client_options->host[0] == '[') {
+		/* While getaddrinfo on Windows will work with [::1],
+		 * getaddrinfo on Linux only works with ::1 (without []). */
+		size_t l = strlen(client_options->host + 1);
+		char *h = (l > 1) ? mg_strdup(client_options->host + 1) : NULL;
+		if (h) {
+			h[l - 1] = 0;
+			if (mg_inet_pton(AF_INET6, h, &sa->sin6, sizeof(sa->sin6))) {
+				sa->sin6.sin6_family = AF_INET6;
+				sa->sin6.sin6_port = htons((uint16_t)client_options->port);
+				ip_ver = 6;
+			}
+			mg_free(h);
+		}
+#endif
+	}
+#else  //CONFIG_CONNECT_TIMEOUT
 	if (mg_inet_pton(AF_INET, host, &sa->sin, sizeof(sa->sin))) {
 		sa->sin.sin_family = AF_INET;
 		sa->sin.sin_port = htons((uint16_t)port);
@@ -8463,6 +8541,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 		}
 #endif
 	}
+#endif  //CONFIG_CONNECT_TIMEOUT
 
 	if (ip_ver == 0) {
 		mg_snprintf(NULL,
@@ -8496,16 +8575,25 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	set_close_on_exec(*sock, fc(ctx));
 
 #ifdef CONNECT_SELECT_TIMEOUT
-        struct timeval timeout;
-        timeout.tv_sec = 10;
-        timeout.tv_usec = 0;
-        int iret;
 
+#ifdef CONFIG_CONNECT_TIMEOUT
+        if(client_options && (client_options->connect_timeout !=0) ) {
+            timeout.tv_sec = client_options->connect_timeout / 1000;
+//            printf("The passing in CONNECT_TIMEOUT: %ld s\n", timeout.tv_sec);
+        } else if(config_options[CONNECT_TIMEOUT].default_value) {
+            timeout.tv_sec = atoi(config_options[CONNECT_TIMEOUT].default_value) / 1000.0;
+//            printf("the default config CONNECT_TIMEOUT: %ld s\n", timeout.tv_sec);
+        }
+#endif
+        
         //set the socket to non blocking mode
         if((ip_ver == 4) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+            errno = 0;
             iret = connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin));
-//            printf("connect: iret: %d, errno: %d\n", iret, errno);
 
+#ifdef _WIN32
+            wsa_errno = WSAGetLastError();
+#endif
             if(iret == 0) {
 //                printf("connected !\n");
     
@@ -8518,11 +8606,10 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 }
             } else
 #ifdef _WIN32
-            if((iret<0) && ((errno == ERANGE) || (errno == 0))) {
+            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK) || (errno == 0))) {
 #else
             if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
 #endif
-//                printf("connect error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
         
                 fd_set fd_write, fd_err;
                 FD_ZERO(&fd_write);
@@ -8531,13 +8618,30 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 FD_SET(*sock, &fd_err);
 
                 iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
-//                printf("select() iret: %d\n", iret);
-                if(FD_ISSET(*sock, &fd_err)) 
-                {	
+                if(FD_ISSET(*sock, &fd_err)) {	
                     printf("connecting error: %d !\n", errno);
                 } else
-                if(FD_ISSET(*sock, &fd_write)) 
-                {	
+                if(FD_ISSET(*sock, &fd_write)) {	
+#ifndef _WIN32
+                    int so_error;
+                    socklen_t len = sizeof(so_error);
+
+                    getsockopt(*sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+
+                    if (so_error == 0) {
+//                        printf("connected !\n");
+
+                        //set the socket to blocking mode
+                        if((iret = set_blocking_mode(*sock)) == 0) {
+                            return 1;
+                        }
+                        else{
+                            printf("set_blocking_mode error !\n");
+                        }
+                    } else {
+                        printf("ERROR connecting error\n");
+                    }
+#else
 //                    printf("connected !\n");
     
                     //set the socket to blocking mode
@@ -8547,16 +8651,16 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                     else{
                         printf("set_blocking_mode error !\n");
                     }
+#endif
                 } else {
                     printf("ERROR connecting time out\n");
                 }
 
             } else {
-//                printf("connect other error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
-                perror("connect other ERROR connecting");
+                printf("connect other ERROR connecting");
             }
         } else
-#endif
+#endif   //CONNECT_SELECT_TIMEOUT
 
 	if ((ip_ver == 4)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin))
@@ -8571,9 +8675,12 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #ifdef CONNECT_SELECT_TIMEOUT
         //set the socket to non blocking mode
         if((ip_ver == 6) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+            errno = 0;
             iret = connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6));
-//            printf("connect: iret: %d, errno: %d\n", iret, errno);
 
+#ifdef _WIN32
+            wsa_errno = WSAGetLastError();
+#endif
             if(iret == 0) {
 //                printf("connected !\n");
     
@@ -8586,11 +8693,10 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 }
             } else
 #ifdef _WIN32
-            if((iret<0) && ((errno == ERANGE) || (errno == 0))) {
+            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK) || (errno == 0))) {
 #else
             if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
 #endif
-//                printf("connect error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
         
                 fd_set fd_write, fd_err;
                 FD_ZERO(&fd_write);
@@ -8599,13 +8705,30 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 FD_SET(*sock, &fd_err);
 
                 iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
-//                printf("select() iret: %d\n", iret);
-                if(FD_ISSET(*sock, &fd_err)) 
-                {	
+                if(FD_ISSET(*sock, &fd_err)) {	
                     printf("connecting error: %d !\n", errno);
                 } else
-                if(FD_ISSET(*sock, &fd_write)) 
-                {	
+                if(FD_ISSET(*sock, &fd_write)) {	
+#ifndef _WIN32
+                    int so_error;
+                    socklen_t len = sizeof(so_error);
+
+                    getsockopt(*sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+
+                    if (so_error == 0) {
+//                        printf("connected !\n");
+
+                        //set the socket to blocking mode
+                        if((iret = set_blocking_mode(*sock)) == 0) {
+                            return 1;
+                        }
+                        else{
+                            printf("set_blocking_mode error !\n");
+                        }
+                    } else {
+                        printf("ERROR connecting error\n");
+                    }
+#else
 //                    printf("connected !\n");
     
                     //set the socket to blocking mode
@@ -8615,16 +8738,16 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                     else{
                         printf("set_blocking_mode error !\n");
                     }
+#endif
                 } else {
                     printf("ERROR connecting time out\n");
                 }
 
             } else {
-//                printf("connect other error no: %d, EAGAIN: %d, EWOULDBLOCK: %d, EINPROGRESS: %d\n", errno, EAGAIN, EWOULDBLOCK, EINPROGRESS);
-                perror("connect other ERROR connecting");
+                printf("connect other ERROR connecting");
             }
         } else
-#endif
+#endif   //CONNECT_SELECT_TIMEOUT
 
 	if ((ip_ver == 6)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6))
@@ -8642,8 +8765,13 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	            ebuf,
 	            ebuf_len,
 	            "connect(%s:%d): %s",
+#ifdef CONFIG_CONNECT_TIMEOUT
+	            client_options->host,
+	            client_options->port,
+#else
 	            host,
 	            port,
+#endif
 	            strerror(ERRNO));
 	closesocket(*sock);
 	*sock = INVALID_SOCKET;
@@ -15654,8 +15782,12 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 	conn->ctx->context_type = CONTEXT_HTTP_CLIENT;
 
 	if (!connect_socket(&common_client_context,
+#ifdef CONFIG_CONNECT_TIMEOUT
+                            client_options,
+#else
 	                    client_options->host,
 	                    client_options->port,
+#endif
 	                    use_ssl,
 	                    ebuf,
 	                    ebuf_len,
@@ -15804,6 +15936,20 @@ mg_connect_client_secure(const struct mg_client_options *client_options,
 }
 
 
+#ifdef CONFIG_CONNECT_TIMEOUT
+struct mg_connection *
+mg_connect_client_mimik(const struct mg_client_options *client_options,
+                  int use_ssl,
+                  char *error_buffer,
+                  size_t error_buffer_size)
+{
+	return mg_connect_client_impl(client_options,
+	                              use_ssl,
+	                              error_buffer,
+	                              error_buffer_size);
+}
+#endif
+
 struct mg_connection *
 mg_connect_client(const char *host,
                   int port,
@@ -15815,6 +15961,7 @@ mg_connect_client(const char *host,
 	memset(&opts, 0, sizeof(opts));
 	opts.host = host;
 	opts.port = port;
+
 	return mg_connect_client_impl(&opts,
 	                              use_ssl,
 	                              error_buffer,

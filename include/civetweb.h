@@ -1269,9 +1269,16 @@ struct mg_client_options {
 	int port;
 	const char *client_cert;
 	const char *server_cert;
+	int connect_timeout;   //Milisecond
+//	const char *connect_timeout;   //Milisecond
 	/* TODO: add more data */
 };
 
+
+CIVETWEB_API struct mg_connection *mg_connect_client_mimik(const struct mg_client_options *client_options,
+                                                     int use_ssl,
+                                                     char *error_buffer,
+                                                     size_t error_buffer_size);
 
 CIVETWEB_API struct mg_connection *
 mg_connect_client_secure(const struct mg_client_options *client_options,
