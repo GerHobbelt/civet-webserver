@@ -8577,17 +8577,23 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #ifdef CONNECT_SELECT_TIMEOUT
 
 #ifdef CONFIG_CONNECT_TIMEOUT
-        if(client_options && (client_options->connect_timeout !=0) ) {
+        if(client_options && (client_options->connect_timeout >0) ) {
             timeout.tv_sec = client_options->connect_timeout / 1000;
-//            printf("The passing in CONNECT_TIMEOUT: %ld s\n", timeout.tv_sec);
+            timeout.tv_usec = (client_options->connect_timeout % 1000) * 1000;
+//            printf("The passing in CONNECT_TIMEOUT: %ld s, %ld us\n", timeout.tv_sec, timeout.tv_usec);
         } else if(config_options[CONNECT_TIMEOUT].default_value) {
-            timeout.tv_sec = atoi(config_options[CONNECT_TIMEOUT].default_value) / 1000.0;
-//            printf("the default config CONNECT_TIMEOUT: %ld s\n", timeout.tv_sec);
+            int timeout_ms = atoi(config_options[CONNECT_TIMEOUT].default_value);
+
+            if(timeout_ms > 0) {
+                timeout.tv_sec = timeout_ms / 1000;
+                timeout.tv_usec = (timeout_ms % 1000) * 1000;
+            } 
+//            printf("the default config CONNECT_TIMEOUT: %ld s, %ld us\n", timeout.tv_sec, timeout.tv_usec);
         }
 #endif
         
         //set the socket to non blocking mode
-        if((ip_ver == 4) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+        if((client_options->connect_timeout != 0) && (ip_ver == 4) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
             errno = 0;
             iret = connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin));
 
@@ -8606,7 +8612,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 }
             } else
 #ifdef _WIN32
-            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK) || (errno == 0))) {
+            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK))) {
 #else
             if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
 #endif
@@ -8674,7 +8680,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #ifdef USE_IPV6
 #ifdef CONNECT_SELECT_TIMEOUT
         //set the socket to non blocking mode
-        if((ip_ver == 6) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
+        if((client_options->connect_timeout != 0) && (ip_ver == 6) && ((iret = set_non_blocking_mode(*sock)) == 0)) {
             errno = 0;
             iret = connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6));
 
@@ -8693,7 +8699,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                 }
             } else
 #ifdef _WIN32
-            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK) || (errno == 0))) {
+            if((iret<0) && ((wsa_errno == WSAEINPROGRESS) || (wsa_errno == WSAEWOULDBLOCK))) {
 #else
             if((iret<0) && ((errno == EINPROGRESS) || (errno == 0))) {
 #endif
