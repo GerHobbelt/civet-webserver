@@ -8403,10 +8403,11 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 	int ip_ver = 0;
 #ifdef CONNECT_SELECT_TIMEOUT
         struct timeval timeout;
-        timeout.tv_sec = 10;
-        timeout.tv_usec = 0;
         int wsa_errno = 0;
         int iret = 0;
+
+        timeout.tv_sec = 10;
+        timeout.tv_usec = 0;
 #endif
 
 	*sock = INVALID_SOCKET;
@@ -8608,7 +8609,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                     return 1;
                 }
                 else{
-                    printf("set_blocking_mode error !\n");
+                    DEBUG_TRACE("set_blocking_mode error !\n");
                 }
             } else
 #ifdef _WIN32
@@ -8625,7 +8626,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 
                 iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
                 if(FD_ISSET(*sock, &fd_err)) {	
-                    printf("connecting error: %d !\n", errno);
+                    DEBUG_TRACE("connecting error: %d !\n", errno);
                 } else
                 if(FD_ISSET(*sock, &fd_write)) {	
 #ifndef _WIN32
@@ -8642,10 +8643,10 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                             return 1;
                         }
                         else{
-                            printf("set_blocking_mode error !\n");
+                            DEBUG_TRACE("set_blocking_mode error !\n");
                         }
                     } else {
-                        printf("ERROR connecting error\n");
+                        DEBUG_TRACE("ERROR connecting error\n");
                     }
 #else
 //                    printf("connected !\n");
@@ -8655,15 +8656,15 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                         return 1;
                     }
                     else{
-                        printf("set_blocking_mode error !\n");
+                        DEBUG_TRACE("set_blocking_mode error !\n");
                     }
 #endif
                 } else {
-                    printf("ERROR connecting time out\n");
+                    DEBUG_TRACE("ERROR connecting time out\n");
                 }
 
             } else {
-                printf("connect other ERROR connecting");
+                DEBUG_TRACE("connect other ERROR connecting");
             }
         } else
 #endif   //CONNECT_SELECT_TIMEOUT
@@ -8695,7 +8696,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                     return 1;
                 }
                 else{
-                    printf("set_blocking_mode error !\n");
+                    DEBUG_TRACE("set_blocking_mode error !\n");
                 }
             } else
 #ifdef _WIN32
@@ -8712,7 +8713,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 
                 iret = select(*sock + 1,NULL,&fd_write,&fd_err,&timeout);
                 if(FD_ISSET(*sock, &fd_err)) {	
-                    printf("connecting error: %d !\n", errno);
+                    DEBUG_TRACE("connecting error: %d !\n", errno);
                 } else
                 if(FD_ISSET(*sock, &fd_write)) {	
 #ifndef _WIN32
@@ -8729,10 +8730,10 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                             return 1;
                         }
                         else{
-                            printf("set_blocking_mode error !\n");
+                            DEBUG_TRACE("set_blocking_mode error !\n");
                         }
                     } else {
-                        printf("ERROR connecting error\n");
+                        DEBUG_TRACE("ERROR connecting error\n");
                     }
 #else
 //                    printf("connected !\n");
@@ -8742,15 +8743,15 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
                         return 1;
                     }
                     else{
-                        printf("set_blocking_mode error !\n");
+                        DEBUG_TRACE("set_blocking_mode error !\n");
                     }
 #endif
                 } else {
-                    printf("ERROR connecting time out\n");
+                    DEBUG_TRACE("ERROR connecting time out\n");
                 }
 
             } else {
-                printf("connect other ERROR connecting");
+                DEBUG_TRACE("connect other ERROR connecting");
             }
         } else
 #endif   //CONNECT_SELECT_TIMEOUT
