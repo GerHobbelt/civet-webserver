@@ -1883,8 +1883,6 @@ struct ssl_func {
 	SSL_CTX_callback_ctrl(ctx,                                                 \
 	                      SSL_CTRL_SET_TLSEXT_SERVERNAME_CB,                   \
 	                      (void (*)(void))cb)
-#define SSL_CTX_set_tlsext_servername_arg(ctx, arg)                            \
-	SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TLSEXT_SERVERNAME_ARG, 0, (void *)arg)
 
 #define X509_get_notBefore(x) ((x)->cert_info->validity->notBefore)
 #define X509_get_notAfter(x) ((x)->cert_info->validity->notAfter)
@@ -2054,8 +2052,6 @@ static struct ssl_func crypto_sw[] = {{"ERR_get_error", NULL},
 	SSL_CTX_callback_ctrl(ctx,                                                 \
 	                      SSL_CTRL_SET_TLSEXT_SERVERNAME_CB,                   \
 	                      (void (*)(void))cb)
-#define SSL_CTX_set_tlsext_servername_arg(ctx, arg)                            \
-	SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TLSEXT_SERVERNAME_ARG, 0, (void *)arg)
 
 #define X509_get_notBefore(x) ((x)->cert_info->validity->notBefore)
 #define X509_get_notAfter(x) ((x)->cert_info->validity->notAfter)
@@ -15552,10 +15548,6 @@ ssl_info_callback(SSL *ssl, int what, int ret)
 static int
 ssl_servername_callback(SSL *ssl, int *ad, void *arg)
 {
-	struct mg_context *ctx = (struct mg_context *)arg;
-	struct mg_domain_context *dom =
-	    (struct mg_domain_context *)ctx ? &(ctx->dd) : NULL;
-
 #if defined(GCC_DIAGNOSTIC)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-align"
@@ -15571,11 +15563,13 @@ ssl_servername_callback(SSL *ssl, int *ad, void *arg)
 	const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
 
 	(void)ad;
+	(void)arg;
 
-	if ((ctx == NULL) || (conn->phys_ctx == ctx)) {
-		DEBUG_TRACE("%s", "internal error - assertion failed");
+	if ((conn == NULL) || (conn->phys_ctx == NULL)) {
+		DEBUG_ASSERT(0);
 		return SSL_TLSEXT_ERR_NOACK;
 	}
+	conn->dom_ctx = &(conn->phys_ctx->dd);
 
 	/* Old clients (Win XP) will not support SNI. Then, there
 	 * is no server name available in the request - we can
@@ -15585,30 +15579,29 @@ ssl_servername_callback(SSL *ssl, int *ad, void *arg)
 	 */
 	if ((servername == NULL) || (*servername == 0)) {
 		DEBUG_TRACE("%s", "SSL connection not supporting SNI");
-		conn->dom_ctx = &(ctx->dd);
 		SSL_set_SSL_CTX(ssl, conn->dom_ctx->ssl_ctx);
 		return SSL_TLSEXT_ERR_NOACK;
 	}
 
 	DEBUG_TRACE("TLS connection to host %s", servername);
 
-	while (dom) {
-		if (!mg_strcasecmp(servername, dom->config[AUTHENTICATION_DOMAIN])) {
-
+	while (conn->dom_ctx) {
+		if (!mg_strcasecmp(servername,
+		                   conn->dom_ctx->config[AUTHENTICATION_DOMAIN])) {
 			/* Found matching domain */
 			DEBUG_TRACE("TLS domain %s found",
-			            dom->config[AUTHENTICATION_DOMAIN]);
-			SSL_set_SSL_CTX(ssl, dom->ssl_ctx);
-			conn->dom_ctx = dom;
-			return SSL_TLSEXT_ERR_OK;
+			            conn->dom_ctx->config[AUTHENTICATION_DOMAIN]);
+			break;
 		}
-		dom = dom->next;
+		conn->dom_ctx = conn->dom_ctx->next;
 	}
 
-	/* Default domain */
-	DEBUG_TRACE("TLS default domain %s used",
-	            ctx->dd.config[AUTHENTICATION_DOMAIN]);
-	conn->dom_ctx = &(ctx->dd);
+	if (conn->dom_ctx == NULL) {
+		/* Default domain */
+		DEBUG_TRACE("TLS default domain %s used",
+		            conn->phys_ctx->dd.config[AUTHENTICATION_DOMAIN]);
+		conn->dom_ctx = &(conn->phys_ctx->dd);
+	}
 	SSL_set_SSL_CTX(ssl, conn->dom_ctx->ssl_ctx);
 	return SSL_TLSEXT_ERR_OK;
 }
@@ -15693,7 +15686,6 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
 
 	SSL_CTX_set_tlsext_servername_callback(dom_ctx->ssl_ctx,
 	                                       ssl_servername_callback);
-	SSL_CTX_set_tlsext_servername_arg(dom_ctx->ssl_ctx, phys_ctx);
 
 #if defined(GCC_DIAGNOSTIC)
 #pragma GCC diagnostic pop
