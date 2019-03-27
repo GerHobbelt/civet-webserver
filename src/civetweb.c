@@ -8670,6 +8670,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #endif   //CONNECT_SELECT_TIMEOUT
 
 	if ((ip_ver == 4)
+            && (set_blocking_mode(*sock) == 0)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin, sizeof(sa->sin))
 	        == 0)) {
 		/* connected with IPv4 */
@@ -8757,6 +8758,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 #endif   //CONNECT_SELECT_TIMEOUT
 
 	if ((ip_ver == 6)
+            && (set_blocking_mode(*sock) == 0)
 	    && (connect(*sock, (struct sockaddr *)&sa->sin6, sizeof(sa->sin6))
 	        == 0)) {
 		/* connected with IPv6 */
