@@ -40,7 +40,12 @@ endif()
 
 # We need to link OpenSSL if not dynamically loading
 if (CIVETWEB_ENABLE_SLL AND NOT CIVETWEB_ENABLE_OPENSLL_DYNAMIC_LOADING)
-  find_package(OpenSSL)
+  if (USE_SYSTEM_OPENSSL)
+      find_package(OpenSSL)
+  else()
+      find_package(OpenSSL_internal)
+  endif()
+
   target_link_libraries(c-library ${OPENSSL_LIBRARIES})
   target_include_directories(c-library PUBLIC ${OPENSSL_INCLUDE_DIR})
 else()
