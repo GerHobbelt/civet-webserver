@@ -17836,7 +17836,7 @@ mg_stop(struct mg_context *ctx)
 	mg_join_thread(mt);
 
 	if (ctx && (ctx->listen_ctrl_sd > 0)) {
-		close(ctx->listen_ctrl_sd);
+		closesocket(ctx->listen_ctrl_sd);
 		ctx->listen_ctrl_sd = INVALID_SOCKET ;
 	}
 
@@ -18097,7 +18097,7 @@ mg_start(const struct mg_callbacks *callbacks,
 		//set_non_blocking_mode(ctx->listen_ctrl_sd);
 		if (bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
                                                    sizeof(saddr)) < 0) {
-			close(ctx->listen_ctrl_sd);
+			closesocket(ctx->listen_ctrl_sd);
 			ctx->listen_ctrl_sd = INVALID_SOCKET ;
 		}
 	}
