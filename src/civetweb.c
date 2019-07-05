@@ -1328,7 +1328,9 @@ mg_realloc(void *a, size_t b)
 static __inline void
 mg_free(void *a)
 {
+    if (a) {
 	free(a);
+    }
 }
 
 #define mg_malloc_ctx(a, c) mg_malloc(a)
@@ -2335,9 +2337,6 @@ struct mg_context {
 	int context_type;              /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
-	#define MAIN_THREAD_STOP_MSG 1024
-	int listen_ctrl_sd ;
-	struct pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
 	pthread_mutex_t thread_mutex; /* Protects (max|num)_threads */
@@ -3223,31 +3222,6 @@ mg_get_user_connection_data(const struct mg_connection *conn)
 	}
 	return NULL;
 }
-
-
-#if defined(MG_LEGACY_INTERFACE)
-/* Deprecated: Use mg_get_server_ports instead. */
-size_t
-mg_get_ports(const struct mg_context *ctx, size_t size, int *ports, int *ssl)
-{
-	size_t i;
-	if (!ctx) {
-		return 0;
-	}
-	for (i = 0; i < size && i < ctx->num_listening_sockets; i++) {
-		ssl[i] = ctx->listening_sockets[i].is_ssl;
-		ports[i] =
-#if defined(USE_IPV6)
-		    (ctx->listening_sockets[i].lsa.sa.sa_family == AF_INET6)
-		        ? ntohs(ctx->listening_sockets[i].lsa.sin6.sin6_port)
-		        :
-#endif
-		        ntohs(ctx->listening_sockets[i].lsa.sin.sin_port);
-	}
-	return i;
-}
-#endif
-
 
 int
 mg_get_server_ports(const struct mg_context *ctx,
@@ -13763,13 +13737,13 @@ close_all_listening_sockets(struct mg_context *ctx)
 	}
 
 	for (i = 0; i < ctx->num_listening_sockets; i++) {
+            if(ctx->listening_sockets[i].sock != INVALID_SOCKET) {
 		closesocket(ctx->listening_sockets[i].sock);
 		ctx->listening_sockets[i].sock = INVALID_SOCKET;
+            }
 	}
 	mg_free(ctx->listening_sockets);
 	ctx->listening_sockets = NULL;
-	mg_free(ctx->listening_socket_fds);
-	ctx->listening_socket_fds = NULL;
 }
 
 
@@ -13917,6 +13891,71 @@ parse_port_string(const struct vec *vec, struct socket *so, int *ip_version)
 	return 0;
 }
 
+static int set_sock_connect_timeout(SOCKET sd, int sec)
+{
+  int rc = 0;
+#if defined(_WIN32) || defined(_WIN64)
+  DWORD tout = sec * 1000;  //WINDOWS needs timeout in miliiseconds
+#else
+  struct timeval tout;
+  tout.tv_sec = sec;
+  tout.tv_usec = 0;
+#endif
+  rc = setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tout, sizeof(tout));
+  return rc;
+}
+
+static int connect_to_wakeup_master(SOCKET lsd)
+{
+   SOCKET sd = INVALID_SOCKET;
+   struct sockaddr_in serv_addr;
+   struct sockaddr_in to_addr;
+#if defined(_WIN32) || defined(_WIN64)
+   int len = sizeof(serv_addr);
+#else
+   socklen_t len = sizeof(serv_addr);
+#endif
+   int rc = 0 ;
+
+   if ((lsd == INVALID_SOCKET) || (lsd == 0)) {
+     return -1;
+   }
+
+   memset(&serv_addr, 0, sizeof(serv_addr));
+   rc = getsockname(lsd, (struct sockaddr *)&serv_addr, &len);
+   if(rc < 0) {
+       return -1;
+   }
+
+   sd = socket(AF_INET, SOCK_STREAM, 0);
+   if (sd == INVALID_SOCKET) {
+     return -1;
+   }
+
+   memset(&to_addr, 0, sizeof(to_addr));
+   to_addr.sin_family = AF_INET;
+   to_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+   to_addr.sin_port = serv_addr.sin_port;
+
+   rc = set_sock_connect_timeout(sd, 2); // 2 sec more than enough for localhost
+   if ( rc != 0 ) {
+      // set sd to non blocking as we do not want the following connect to block
+      set_non_blocking_mode(sd);
+   }
+
+   // Do not worry about connect error here, as it is just an attempt,
+   // to wake master listen thread from blocking accept() call.
+   rc = connect(sd, (struct sockaddr *)&to_addr,sizeof(to_addr));
+   // if (rc < 0) {
+   //     printf("%s() err in connecting to wakeup listener at port=%u, err=%ld %s \n",
+   //              __func__,ntohs(serv_addr.sin_port),ERRNO,strerror(ERRNO));
+   // }
+
+   shutdown(sd, SHUTDOWN_WR);
+   closesocket(sd);
+
+   return rc;
+}
 
 static int
 set_ports_option(struct mg_context *ctx)
@@ -13929,7 +13968,6 @@ set_ports_option(struct mg_context *ctx)
 	struct vec vec;
 	struct socket so, *ptr;
 
-	struct pollfd *pfd;
 	union usa usa;
 	socklen_t len;
 	int ip_version;
@@ -14127,24 +14165,10 @@ set_ports_option(struct mg_context *ctx)
 			so.sock = INVALID_SOCKET;
 			continue;
 		}
-		/* add 1 more pollfd slot for listen_ctrl_sd socket */
-		if ((pfd = (struct pollfd *)
-		         mg_realloc_ctx(ctx->listening_socket_fds,
-		                        (ctx->num_listening_sockets + 2)
-		                            * sizeof(ctx->listening_socket_fds[0]),
-		                        ctx)) == NULL) {
-
-			mg_cry(fc(ctx), "%s", "Out of memory");
-			closesocket(so.sock);
-			so.sock = INVALID_SOCKET;
-			mg_free(ptr);
-			continue;
-		}
 
 		set_close_on_exec(so.sock, fc(ctx));
 		ctx->listening_sockets = ptr;
 		ctx->listening_sockets[ctx->num_listening_sockets] = so;
-		ctx->listening_socket_fds = pfd;
 		ctx->num_listening_sockets++;
 		portsOk++;
 	}
@@ -17478,15 +17502,20 @@ accept_new_connection(const struct socket *listener, struct mg_context *ctx)
 		return;
 	}
 
-	if ((so.sock = accept(listener->sock, &so.rsa.sa, &len))
-	    == INVALID_SOCKET) {
+	if ((so.sock = accept(listener->sock, &so.rsa.sa, &len)) == INVALID_SOCKET) {
+            return;
 	} else if (!check_acl(ctx, ntohl(*(uint32_t *)&so.rsa.sin.sin_addr))) {
 		sockaddr_to_string(src_addr, sizeof(src_addr), &so.rsa);
 		mg_cry(fc(ctx), "%s: %s is not allowed to connect", __func__, src_addr);
 		closesocket(so.sock);
+                return;
 	} else {
 		/* Put so socket structure into the queue */
 		DEBUG_TRACE("Accepted socket %d", (int)so.sock);
+                if (ctx->stop_flag != 0) {
+		   closesocket(so.sock);
+                   return;
+                }
 		set_close_on_exec(so.sock, fc(ctx));
 		so.is_ssl = listener->is_ssl;
 		so.ssl_redir = listener->ssl_redir;
@@ -17559,7 +17588,6 @@ master_thread_run(void *thread_func_param)
 {
 	struct mg_context *ctx = (struct mg_context *)thread_func_param;
 	struct mg_workerTLS tls;
-	struct pollfd *pfd;
 	unsigned int i;
 	unsigned int ctrlidx = 0 ;
 	unsigned int workerthreadcount;
@@ -17601,42 +17629,8 @@ master_thread_run(void *thread_func_param)
 	ctx->start_time = time(NULL);
 
 	/* Start the server */
-	pfd = ctx->listening_socket_fds;
-	while (ctx->stop_flag == 0) {
-		for (i = 0; i < ctx->num_listening_sockets; i++) {
-			pfd[i].fd = ctx->listening_sockets[i].sock;
-			pfd[i].events = POLLIN;
-		}
-
-		ctrlidx = 0 ; //reset
-		if (ctx->listen_ctrl_sd > 0) {
-			pfd[i].fd = ctx->listen_ctrl_sd ;
-			pfd[i].events = POLLIN;
-			ctrlidx = 1 ;
-		}
-
-                /* change to 5000 ms poll timeout for civetweb-master, than earlier frequent 200ms */
-                #define MASTER_POLL_TIMEOUT_MS 5000
-
-		if (poll(pfd, ctx->num_listening_sockets + ctrlidx, MASTER_POLL_TIMEOUT_MS) > 0) {
-			for (i = 0; i < ctx->num_listening_sockets; i++) {
-				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
-				 * successful poll, and POLLIN is defined as
-				 * (POLLRDNORM | POLLRDBAND)
-				 * Therefore, we're checking pfd[i].revents & POLLIN, not
-				 * pfd[i].revents == POLLIN. */
-				if ((ctx->stop_flag == 0) && (pfd[i].revents & POLLIN)) {
-					accept_new_connection(&ctx->listening_sockets[i], ctx);
-				}
-			}
-
-			if (ctrlidx && (pfd[i].revents & POLLIN) && (pfd[i].fd == ctx->listen_ctrl_sd)) {
-				int rcvd = 0 ;
-				/* At this time not interested in what is recvd,
-				   but rather a way to wake up from poll */
-				recv(ctx->listen_ctrl_sd,(char *)&rcvd,sizeof(rcvd),0);
-			}
-		}
+	while((ctx->stop_flag == 0) && (ctx->listening_sockets[0].sock != INVALID_SOCKET)) {
+		accept_new_connection(&ctx->listening_sockets[0], ctx);
 	}
 
 	/* Here stop_flag is 1 - Initiate shutdown. */
@@ -17814,19 +17808,9 @@ mg_stop(struct mg_context *ctx)
 	/* Set stop flag, so all threads know they have to exit. */
 	ctx->stop_flag = 1;
 
-	if (ctx->listen_ctrl_sd > 0) {
-		struct sockaddr_in to;
-		socklen_t l = sizeof(to);
-		memset(&to, 0, sizeof(to));
-                /* get listen_ctrl_sd bound tuple address using getsockname() */
-		if (!getsockname(ctx->listen_ctrl_sd, (struct sockaddr*)&to, &l)) {
-			int d = MAIN_THREAD_STOP_MSG ;
-		/* Not interested in errors of sendto, as this is just one time 
-		   attempt to wake master listen thread from timed poll i/o wait. */
-			sendto(ctx->listen_ctrl_sd, (char *)&d, sizeof(d), 0, 
-                               (struct sockaddr *) &to, sizeof(struct sockaddr_in));
-		}
-	}
+        if (ctx->listening_sockets[0].sock != INVALID_SOCKET) {
+                connect_to_wakeup_master(ctx->listening_sockets[0].sock);
+        }
 
 	/* Wait until everything has stopped. */
 	while (ctx->stop_flag != 2) {
@@ -17834,11 +17818,6 @@ mg_stop(struct mg_context *ctx)
 	}
 
 	mg_join_thread(mt);
-
-	if (ctx && (ctx->listen_ctrl_sd > 0)) {
-		closesocket(ctx->listen_ctrl_sd);
-		ctx->listen_ctrl_sd = INVALID_SOCKET ;
-	}
 
 	free_context(ctx);
 
@@ -18078,32 +18057,6 @@ mg_start(const struct mg_callbacks *callbacks,
 	    !set_uid_option(ctx) ||
 #endif
 	    !set_acl_option(ctx)) {
-		free_context(ctx);
-		pthread_setspecific(sTlsKey, NULL);
-		return NULL;
-	}
-
-	/* listen_ctrl_sd is used by mg_stop to make master thread
-	   break out safely from i/o wait in poll instead of relying on 
-	   frequent poll timeout to wake up and check the stop flag.
-	*/
-	ctx->listen_ctrl_sd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (ctx->listen_ctrl_sd > 0) {
-		struct sockaddr_in saddr;
-		memset(&saddr, 0, sizeof(saddr));
-		saddr.sin_family = AF_INET;
-		saddr.sin_port = htons(0);
-		saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		//set_non_blocking_mode(ctx->listen_ctrl_sd);
-		if (bind(ctx->listen_ctrl_sd, (struct sockaddr *)&saddr,
-                                                   sizeof(saddr)) < 0) {
-			closesocket(ctx->listen_ctrl_sd);
-			ctx->listen_ctrl_sd = INVALID_SOCKET ;
-		}
-	}
-        /* The following check and return is not mandatory */
-	if (ctx->listen_ctrl_sd < 0) {
-		mg_cry(fc(ctx), "failed to setup listen_ctrl_sd");
 		free_context(ctx);
 		pthread_setspecific(sTlsKey, NULL);
 		return NULL;
