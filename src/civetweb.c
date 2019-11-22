@@ -17031,6 +17031,10 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 static int
 consume_socket(struct mg_context *ctx, struct socket *sp, int thread_index)
 {
+        if (ctx->stop_flag != 0) {
+           // do not proceed with socket consumption if stop is requested for this context
+           return 0;
+        }
 	DEBUG_TRACE("%s", "going idle");
 	ctx->client_socks[thread_index].in_use = 0;
 	event_wait(ctx->client_wait_events[thread_index]);
@@ -17659,6 +17663,8 @@ master_thread_run(void *thread_func_param)
 	workerthreadcount = ctx->cfg_worker_threads;
 	for (i = 0; i < workerthreadcount; i++) {
 		if (ctx->worker_threadids[i] != 0) {
+                        // wake up workers just before joining, in case if they are in event_wait
+		        event_signal(ctx->client_wait_events[i]);
 			mg_join_thread(ctx->worker_threadids[i]);
 		}
 	}
