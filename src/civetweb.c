@@ -20,7 +20,6 @@
  * THE SOFTWARE.
  */
 
-#define NO_HTTPS_SERVER   //only work as http server not https server
 #define CONNECT_SELECT_TIMEOUT
 #define CONFIG_CONNECT_TIMEOUT
 
@@ -14874,7 +14873,7 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 }
 
 #ifdef MEMORY_CERTIFICATE
-#undef NO_HTTPS_SERVER
+#define IS_HTTPS_SERVER
 static int ssl_use_pem_chain_memory(SSL_CTX *ctx, BIO *in)
 {
     X509 *x = NULL;
@@ -15150,7 +15149,7 @@ set_ssl_option(struct mg_context *ctx)
 	if (!ctx) {
 		return 0;
 	}
-#ifdef NO_HTTPS_SERVER
+#ifdef IS_HTTPS_SERVER
 	if ((pem = ctx->config[SSL_CERTIFICATE]) == NULL
 	    && ctx->callbacks.init_ssl == NULL) {
 		return 1;
@@ -17252,6 +17251,11 @@ worker_thread_run(struct worker_thread_args *thread_args)
 					conn->request_info.client_cert = 0;
 				}
 			}
+                        else {
+                            if (conn->client.sock != INVALID_SOCKET) {
+		                close_socket_gracefully(conn);
+	                    }
+	                }
 #endif
 		} else {
 			/* process HTTP connection */
@@ -17420,6 +17424,11 @@ tmp_worker_thread_run(struct tmp_worker_thread_args *thread_args)
 					conn->request_info.client_cert = 0;
 				}
 			}
+                        else {
+                            if (conn->client.sock != INVALID_SOCKET) {
+		                close_socket_gracefully(conn);
+	                     }
+	                }
 #endif
 		} else {
 			/* process HTTP connection */
