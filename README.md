@@ -1,3 +1,21 @@
+==========================================================================
+Cheat Sheet
+* we will only use the web server
+* to make it, check out the code, go to the 'mongoose/examples/simplest_web_server' directory, run 'make'
+* it will compile and result in a binary 'simplest_web_server'.
+* run './simplest_web_server'. By default, use brower to verify it as "http://127.0.0.1:8000"
+
+
+.......................................................................
+
+
+
+
+
+
+==========================================================================
+
+
 # Mongoose - Embedded Web Server / Embedded Networking Library
 
 ![](https://img.shields.io/badge/license-GPL_2-green.svg "License")
