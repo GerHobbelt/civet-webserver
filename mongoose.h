@@ -228,7 +228,7 @@
 #include <windows.h>
 #include <process.h>
 
-#ifndef __cpluplus
+#ifndef __cplusplus
 #if _MSC_VER < 1700
 typedef int bool;
 #else
