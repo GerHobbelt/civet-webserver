@@ -1,11 +1,17 @@
 ==========================================================================
 Cheat Sheet
 * we will only use the web server
-* to make it, check out the code, go to the 'mongoose/examples/simplest_web_server' directory, run 'make'
-* it will compile and result in a binary 'simplest_web_server'.
-* run './simplest_web_server'. By default, use brower to verify it as "http://127.0.0.1:8000"
+* to make it, check out the code, go to the 'mongoose/examples/cware_server' directory, run 'make'
+* it will compile and result in a binary 'cware_server'.
+* copy cware_server to /usr/bin
 
+Test
+* run './cware_server <optional-path>', the default path is "/tmp/cware". Use brower to verify it as "http://127.0.0.1:8000"
 
+Notes:
+cware_server added 2 features compares to simplest_web_server:
+1) File home path support
+2) Daemonize 
 .......................................................................
 
 
