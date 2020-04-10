@@ -2,7 +2,7 @@
 // All rights reserved
 #include <string.h>
 #include "mongoose.h"
-static const char *s_http_port = "8088";
+static char *s_http_port = "8888";
 static struct mg_serve_http_opts s_http_server_opts;
 
 static void ev_handler(struct mg_connection *nc, int ev, void *p) {
@@ -15,19 +15,24 @@ int main(int argc, char *argv[]) {
   struct mg_mgr mgr;
   struct mg_connection *nc;
   char path[100];
-
+  char port[100];
   if (argc == 1) {
     strcpy(path, "/tmp/cware");
+    strcpy(port, s_http_port);
   } else if (argc == 2) {
     strcpy(path, argv[1]);
+    strcpy(port, s_http_port);
+  } else if(argc == 3) {
+    strcpy(path, argv[1]);
+    strcpy(port, argv[2]);
   } else {
     printf("input error");
     return 1;
   }
 
   mg_mgr_init(&mgr, NULL);
-  printf("Starting web server on port %s, path = %s\n", s_http_port, path);
-  nc = mg_bind(&mgr, s_http_port, ev_handler);
+  printf("Starting web server on port=%s, path=%s\n", port, path);
+  nc = mg_bind(&mgr, port, ev_handler);
   if (nc == NULL) {
     printf("Failed to create listener\n");
     return 1;
