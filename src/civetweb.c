@@ -7955,8 +7955,8 @@ remove_dot_segments(char *inout)
 				/* remove last segment */
 				do {
 					out_end--;
-					*out_end = 0;
 				} while ((out_begin != out_end) && (*out_end != '/'));
+				*out_end = 0;
 			}
 		} else if (!strcmp(in, "/..")) {
 			in[1] = 0;
@@ -7964,8 +7964,8 @@ remove_dot_segments(char *inout)
 				/* remove last segment */
 				do {
 					out_end--;
-					*out_end = 0;
 				} while ((out_begin != out_end) && (*out_end != '/'));
+				*out_end = 0;
 			}
 		}
 		/* otherwise */
