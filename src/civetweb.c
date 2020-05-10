@@ -14883,6 +14883,8 @@ set_ports_option(struct mg_context *phys_ctx)
 			                    "%s value \"%s\" is invalid",
 			                    config_options[LISTEN_BACKLOG_SIZE].name,
 			                    opt_txt);
+			closesocket(so.sock);
+			so.sock = INVALID_SOCKET;
 			continue;
 		}
 
