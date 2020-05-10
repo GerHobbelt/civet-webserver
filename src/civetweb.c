@@ -7704,23 +7704,18 @@ interpret_uri(struct mg_connection *conn, /* in/out: request (must be valid) */
 					/* some intermediate directory has an index file */
 					if (extention_matches_script(conn, tmp_str)) {
 
-						char *tmp_str2;
-
 						DEBUG_TRACE("Substitute script %s serving path %s",
 						            tmp_str,
 						            filename);
 
 						/* this index file is a script */
-						tmp_str2 = mg_strdup_ctx(filename + sep_pos + 1,
-						                         conn->phys_ctx);
 						mg_snprintf(conn,
 						            &truncated,
 						            filename,
 						            filename_buf_len,
 						            "%s//%s",
 						            tmp_str,
-						            tmp_str2);
-						mg_free(tmp_str2);
+						            filename + sep_pos + 1);
 
 						if (truncated) {
 							mg_free(tmp_str);
