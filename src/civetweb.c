@@ -625,14 +625,7 @@ typedef long off_t;
 #define funlockfile(x) ((void)pthread_mutex_unlock(&global_log_file_lock))
 #define sleep(x) (Sleep((x)*1000))
 #define rmdir(x) (_rmdir(x))
-#if defined(_WIN64) || !defined(__MINGW32__)
-/* Only MinGW 32 bit is missing this function */
 #define timegm(x) (_mkgmtime(x))
-#else
-time_t timegm(struct tm *tm);
-#define NEED_TIMEGM
-#endif
-
 
 #if !defined(fileno)
 #define fileno(x) (_fileno(x))
