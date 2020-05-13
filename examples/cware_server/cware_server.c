@@ -17,7 +17,8 @@ int main(int argc, char *argv[]) {
   char path[100];
   char port[100];
   if (argc == 1) {
-    strcpy(path, "/tmp/cware");
+    strcpy(path, getenv("HOME"));
+    strcat(path, "/.cware");
     strcpy(port, s_http_port);
   } else if (argc == 2) {
     strcpy(path, argv[1]);
