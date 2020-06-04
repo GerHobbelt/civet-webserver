@@ -1739,36 +1739,27 @@ static void
 DEBUG_TRACE_FUNC(const char *func, unsigned line, const char *fmt, ...)
 {
 	va_list args;
-	uint64_t nsnow;
-	static uint64_t nslast;
 	struct timespec tsnow;
 
 	/* Get some operating system independent thread id */
 	unsigned long thread_id = mg_current_thread_id();
 
 	clock_gettime(CLOCK_REALTIME, &tsnow);
-	nsnow = ((uint64_t)tsnow.tv_sec) * ((uint64_t)1000000000)
-	        + ((uint64_t)tsnow.tv_nsec);
-
-	if (!nslast) {
-		nslast = nsnow;
-	}
 
 	flockfile(DEBUG_TRACE_STREAM);
-	fprintf( DEBUG_TRACE_STREAM,"*** %lu.%09lu %12" INT64_FMT " %lu %s:%u: ",
-	       (unsigned long)tsnow.tv_sec,
-	       (unsigned long)tsnow.tv_nsec,
-	       nsnow - nslast,
-	       thread_id,
-	       func,
-	       line);
+	fprintf(DEBUG_TRACE_STREAM,
+	        "*** %lu.%09lu %lu %s:%u: ",
+	        (unsigned long)tsnow.tv_sec,
+	        (unsigned long)tsnow.tv_nsec,
+	        thread_id,
+	        func,
+	        line);
 	va_start(args, fmt);
 	vfprintf(DEBUG_TRACE_STREAM, fmt, args);
 	va_end(args);
 	putc('\n', DEBUG_TRACE_STREAM);
 	fflush(DEBUG_TRACE_STREAM);
 	funlockfile(DEBUG_TRACE_STREAM);
-	nslast = nsnow;
 }
 #endif /* NEED_DEBUG_TRACE_FUNC */
 
