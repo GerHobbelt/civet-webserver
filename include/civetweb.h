@@ -44,8 +44,9 @@
 #endif
 #endif
 
-#include <stddef.h>
 #include <stdio.h>
+#include <stddef.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -461,7 +462,6 @@ CIVETWEB_API struct mg_context *mg_start(const struct mg_callbacks *callbacks,
    threads are stopped. Context pointer becomes invalid. */
 CIVETWEB_API void mg_stop(struct mg_context *);
 
-
 #if defined(MG_EXPERIMENTAL_INTERFACES)
 /* Add an additional domain to an already running web server.
  *
@@ -484,6 +484,21 @@ CIVETWEB_API int mg_start_domain(struct mg_context *ctx,
                                  const char **configuration_options);
 #endif
 
+#define MG_WS_GET_SOCK_ADDR_IPV4_IPV6(c,pto) mg_ws_get_client_sock_bound_addr(c,pto)
+
+#define MG_WS_GET_SOCK_ADDR(c) mg_ws_get_client_sock_bound_addr(c,NULL)
+
+unsigned int
+mg_ws_get_client_sock_bound_addr(struct mg_connection *conn, void *pto);
+
+
+#define MG_GET_RX_TIME(c) mg_get_rx_time(c)
+time_t mg_get_rx_time(struct mg_connection *conn);
+
+#define MG_CONN_SET_IF_ERR(c,v) mg_conn_set_if_err(c,v)
+void mg_conn_set_if_err(struct mg_connection *conn, int val);
+
+void mg_set_partial_rx(struct mg_connection *conn, int msec, unsigned int bytes);
 
 /* mg_request_handler
 
@@ -817,6 +832,13 @@ mg_get_response_info(const struct mg_connection *);
     >0  number of bytes written on success */
 CIVETWEB_API int mg_write(struct mg_connection *, const void *buf, size_t len);
 
+#define WS_TUNNEL_TCP_SOCK_ERR (-3)
+/* Send data to the client when using wstunnel.
+   Return:
+    <0  on error
+        WS_TUNNEL_TCP_SOCK_ERR implies, ws tcp sock err that tunnel should be torn
+    >0  number of bytes written on success */
+CIVETWEB_API int mg_ws_blocked_write(struct mg_connection *, const char *buf, int len);
 
 /* Send data to a websocket client wrapped in a websocket frame.  Uses
    mg_lock_connection to ensure that the transmission is not interrupted,
@@ -1329,7 +1351,11 @@ CIVETWEB_API int mg_handle_form_request(struct mg_connection *conn,
 
 /* Convenience function -- create detached thread.
    Return: 0 on success, non-0 on error. */
+#ifdef _WIN32
+typedef unsigned (*mg_thread_func_t)(void *) __attribute__((__stdcall__));
+#else   
 typedef void *(*mg_thread_func_t)(void *);
+#endif
 CIVETWEB_API int mg_start_thread(mg_thread_func_t f, void *p);
 
 
@@ -1447,10 +1473,17 @@ struct mg_client_options {
 	int port;
 	const char *client_cert;
 	const char *server_cert;
+	int connect_timeout;   //Milisecond
+//	const char *connect_timeout;   //Milisecond
 	const char *host_name;
 	/* TODO: add more data */
 };
 
+
+CIVETWEB_API struct mg_connection *mg_connect_client_mimik(const struct mg_client_options *client_options,
+                                                     int use_ssl,
+                                                     char *error_buffer,
+                                                     size_t error_buffer_size);
 
 CIVETWEB_API struct mg_connection *
 mg_connect_client_secure(const struct mg_client_options *client_options,
