@@ -20,7 +20,6 @@
  * THE SOFTWARE.
  */
 
-#define CONNECT_SELECT_TIMEOUT
 #define CONFIG_CONNECT_TIMEOUT
 
 #if defined(__GNUC__) || defined(__MINGW32__)
@@ -809,8 +808,6 @@ static void path_to_unicode(const struct mg_connection *conn,
                             size_t wbuf_len);
 
 /* All file operations need to be rewritten to solve #246. */
-
-// #include "file_ops.inl" //VVK_TO_DECIDE
 
 struct mg_file;
 
@@ -6637,7 +6634,6 @@ mg_ws_blocked_write(struct mg_connection *conn, const char *buf, int len)
 	return nwritten;
 }
 
-//VVK : verify if we need int64_t as in previous civetweb version of push_all
 static int
 push_all(struct mg_context *ctx,
          FILE *fp,
@@ -11225,7 +11221,6 @@ read_message(FILE *fp,
 
 
 #if !defined(NO_CGI) || !defined(NO_FILES)
-//VVK: In v1.12, compared to our last version, REQUEST_TIMEOUT has been removed in forward_body_data. 
 static int
 forward_body_data(struct mg_connection *conn, FILE *fp, SOCKET sock, SSL *ssl)
 {
@@ -19330,7 +19325,6 @@ master_thread_run(struct mg_context *ctx)
 		event_signal(ctx->client_wait_events[i]);
 
 		/* Since we know all sockets, we can shutdown the connections. */ 
-                //VVK Is this needed, in the latest one: verfify
 		if (ctx->client_socks[i].in_use) {
 			shutdown(ctx->client_socks[i].sock, SHUTDOWN_BOTH);
 		}
