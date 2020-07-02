@@ -15292,7 +15292,7 @@ load_dll(char *ebuf, size_t ebuf_len, const char *dll_name, struct ssl_func *sw)
 				ok = 0;
 			} else {
 				size_t cur_len = strlen(ebuf);
-				if (!truncated) {
+				if (!truncated && ((ebuf_len - cur_len) > 3)) {
 					mg_snprintf(NULL,
 					            &truncated,
 					            ebuf + cur_len,
