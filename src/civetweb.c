@@ -533,12 +533,14 @@ mg_static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8,
 typedef const char *SOCK_OPT_TYPE;
 
 #if !defined(PATH_MAX)
-#define W_PATH_MAX (MAX_PATH)
-/* at most three UTF-8 chars per wchar_t */
-#define PATH_MAX (W_PATH_MAX * 3)
-#else
-#define W_PATH_MAX ((PATH_MAX + 2) / 3)
+#define PATH_MAX (MAX_PATH)
 #endif
+
+#if !defined(PATH_MAX)
+#define PATH_MAX (4096)
+#endif
+
+#define W_PATH_MAX (PATH_MAX)
 
 mg_static_assert(PATH_MAX >= 1, "path length must be a positive number");
 
