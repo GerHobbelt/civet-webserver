@@ -19269,6 +19269,7 @@ static void
 master_thread_run(struct mg_context *ctx)
 {
 	struct mg_workerTLS tls;
+	struct mg_pollfd *pfd;
 	unsigned int i;
 	unsigned int workerthreadcount;
 
@@ -19311,8 +19312,28 @@ master_thread_run(struct mg_context *ctx)
 	ctx->start_time = time(NULL);
 
 	/* Start the server */
-	while((ctx->stop_flag == 0) && (ctx->listening_sockets[0].sock != INVALID_SOCKET)) {
-		accept_new_connection(&ctx->listening_sockets[0], ctx);
+	pfd = ctx->listening_socket_fds;
+	while (ctx->stop_flag == 0) {
+		for (i = 0; i < ctx->num_listening_sockets; i++) {
+			pfd[i].fd = ctx->listening_sockets[i].sock;
+			pfd[i].events = POLLIN;
+		}
+
+               /* increase 15000ms poll timeout for civetweb-master, than earlier frequent 200ms */
+                #define MASTER_POLL_TIMEOUT_MS 15000
+
+		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
+			for (i = 0; i < ctx->num_listening_sockets; i++) {
+				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
+				 * successful poll, and POLLIN is defined as
+				 * (POLLRDNORM | POLLRDBAND)
+				 * Therefore, we're checking pfd[i].revents & POLLIN, not
+				 * pfd[i].revents == POLLIN. */
+				if ((ctx->stop_flag == 0) && (pfd[i].revents & POLLIN)) {
+					accept_new_connection(&ctx->listening_sockets[i], ctx);
+				}
+			}
+		}
 	}
 
 	/* Here stop_flag is 1 - Initiate shutdown. */
