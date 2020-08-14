@@ -17277,10 +17277,12 @@ mg_close_connection(struct mg_connection *conn)
 		(void)pthread_mutex_destroy(&conn->mutex);
 		mg_free(conn);
 	} else if (conn->phys_ctx->context_type == CONTEXT_HTTP_CLIENT) {
+		(void)pthread_mutex_destroy(&conn->mutex);
 		mg_free(conn);
 	}
 #else
 	if (conn->phys_ctx->context_type == CONTEXT_HTTP_CLIENT) { /* Client */
+		(void)pthread_mutex_destroy(&conn->mutex);
 		mg_free(conn);
 	}
 #endif /* defined(USE_WEBSOCKET) */
@@ -17445,6 +17447,7 @@ conn->dom_ctx->config[WEBSOCKET_TIMEOUT] = "10000";
 				            "Can not use SSL client certificate");
 				SSL_CTX_free(conn->dom_ctx->ssl_ctx);
 				closesocket(sock);
+		                (void)pthread_mutex_destroy(&conn->mutex);
 				mg_free(conn);
 				return NULL;
 			}
@@ -17460,6 +17463,7 @@ conn->dom_ctx->config[WEBSOCKET_TIMEOUT] = "10000";
 				                ssl_error());
 				SSL_CTX_free(conn->dom_ctx->ssl_ctx);
 				closesocket(sock);
+		                (void)pthread_mutex_destroy(&conn->mutex);
 				mg_free(conn);
 				return NULL;
 			}
@@ -17480,6 +17484,7 @@ conn->dom_ctx->config[WEBSOCKET_TIMEOUT] = "10000";
 			            "SSL connection error");
 			SSL_CTX_free(conn->dom_ctx->ssl_ctx);
 			closesocket(sock);
+		        (void)pthread_mutex_destroy(&conn->mutex);
 			mg_free(conn);
 			return NULL;
 		}
