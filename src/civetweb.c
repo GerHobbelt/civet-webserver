@@ -18722,12 +18722,15 @@ produce_socket(struct mg_context *ctx, const struct socket *sp)
 		/* First try limited(2) persistent worker threads */
 		for (i = 0; i < ctx->cfg_worker_threads; i++) {
 			/* find a free worker slot and signal it */
+                        (void)pthread_mutex_lock(&ctx->thread_mutex);
 			if (ctx->client_socks[i].in_use != 1) {
 				ctx->client_socks[i] = *sp;
 				ctx->client_socks[i].in_use = 1;
+                                (void)pthread_mutex_unlock(&ctx->thread_mutex);
 				event_signal(ctx->client_wait_events[i]);
 				return;
 			}
+                        (void)pthread_mutex_unlock(&ctx->thread_mutex);
 		}
 
 		/* Now try temporary worker threads */
@@ -18751,11 +18754,17 @@ consume_socket(struct mg_context *ctx, struct socket *sp, int thread_index)
            return 0;
         }
 	DEBUG_TRACE("%s", "going idle");
+        (void)pthread_mutex_lock(&ctx->thread_mutex);
 	ctx->client_socks[thread_index].in_use = 0;
+        (void)pthread_mutex_unlock(&ctx->thread_mutex);
+
 	event_wait(ctx->client_wait_events[thread_index]);
+
+        (void)pthread_mutex_lock(&ctx->thread_mutex);
 	*sp = ctx->client_socks[thread_index];
-	
-        if (ctx->stop_flag) {
+        (void)pthread_mutex_unlock(&ctx->thread_mutex);
+
+	 if (ctx->stop_flag) {
            if (sp->sock > 0) {
 	      closesocket(sp->sock);
 	      return 0;
