@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30413.136
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_lua", "civetweb_lua\civetweb_lua.vcxproj", "{9BE9C008-E851-42B1-A034-BD4630AE4CD6}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -17,6 +17,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "duktape_lib", "duktape_lib\duktape_lib.vcxproj", "{0A11689C-DB6A-4BF6-97B2-AD32DB863FBD}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ex_embed_cpp", "ex_embed_cpp\ex_embed_cpp.vcxproj", "{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb", "civetweb\civetweb.vcxproj", "{E23B0040-F485-43D6-AA24-B34F9FED8484}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,11 +47,11 @@ Global
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Debug|Win32.ActiveCfg = Debug|Win32
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Debug|Win32.Build.0 = Debug|Win32
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Debug|x64.ActiveCfg = Debug|x64
+		{882EC43C-2EEE-434B-A711-C844108D29C6}.Debug|x64.Build.0 = Debug|x64
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Release|Win32.ActiveCfg = Release|Win32
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Release|Win32.Build.0 = Release|Win32
 		{882EC43C-2EEE-434B-A711-C844108D29C6}.Release|x64.ActiveCfg = Release|x64
 		{1AC4A7A6-0100-4287-97F4-B95807BE5607}.Debug|Win32.ActiveCfg = Debug|Win32
-		{1AC4A7A6-0100-4287-97F4-B95807BE5607}.Debug|Win32.Build.0 = Debug|Win32
 		{1AC4A7A6-0100-4287-97F4-B95807BE5607}.Debug|x64.ActiveCfg = Debug|Win32
 		{1AC4A7A6-0100-4287-97F4-B95807BE5607}.Release|Win32.ActiveCfg = Release|Win32
 		{1AC4A7A6-0100-4287-97F4-B95807BE5607}.Release|Win32.Build.0 = Release|Win32
@@ -65,11 +67,23 @@ Global
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Debug|Win32.ActiveCfg = Debug|Win32
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Debug|Win32.Build.0 = Debug|Win32
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Debug|x64.ActiveCfg = Debug|x64
+		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Debug|x64.Build.0 = Debug|x64
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Release|Win32.ActiveCfg = Release|Win32
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Release|Win32.Build.0 = Release|Win32
 		{4308C5EE-45E4-45D8-9D73-6C4E2587AD78}.Release|x64.ActiveCfg = Release|x64
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Debug|Win32.ActiveCfg = Debug|Win32
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Debug|Win32.Build.0 = Debug|Win32
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Debug|x64.ActiveCfg = Debug|x64
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Debug|x64.Build.0 = Debug|x64
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Release|Win32.ActiveCfg = Release|Win32
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Release|Win32.Build.0 = Release|Win32
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Release|x64.ActiveCfg = Release|x64
+		{E23B0040-F485-43D6-AA24-B34F9FED8484}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {3BC69862-5581-4094-97EA-451A5D6D7D86}
 	EndGlobalSection
 EndGlobal
