@@ -8,8 +8,14 @@ if (${CMAKE_VERSION} VERSION_GREATER 3.1 OR
   cmake_policy(SET CMP0054 NEW)
 endif()
 
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/cpp-pm/hunter/archive/v0.23.283.tar.gz"
+    SHA1 "f445fbb4716e5485e83f6acf110b51d3b8916b2c"
+)
+
 # Set up the project
-project (civetweb)
+project (civetweb VERSION 1.11.0)
 
 # Detect the platform reliably
 if(ZEPHYR_BASE)
@@ -271,135 +277,137 @@ SET(CIVETWEB_ALLOW_WARNINGS YES)
 endif()
 
 # The C and C++ standards to use
-set(CIVETWEB_C_STANDARD auto CACHE STRING
+if (NOT HUNTER_ENABLED)
+  set(CIVETWEB_C_STANDARD auto CACHE STRING
   "The C standard to use; auto determines the latest supported by the compiler")
-set_property(CACHE CIVETWEB_C_STANDARD PROPERTY STRINGS auto c11 c99 c89)
-set(CIVETWEB_CXX_STANDARD auto CACHE STRING
+  set_property(CACHE CIVETWEB_C_STANDARD PROPERTY STRINGS auto c11 c99 c89)
+  set(CIVETWEB_CXX_STANDARD auto CACHE STRING
   "The C++ standard to use; auto determines the latest supported by the compiler")
-set_property(CACHE CIVETWEB_CXX_STANDARD PROPERTY STRINGS auto c++14 c++11 c++98)
+  set_property(CACHE CIVETWEB_CXX_STANDARD PROPERTY STRINGS auto c++14 c++11 c++98)
 
-# Configure the linker
-if ("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
-  find_program(GCC_AR gcc-ar)
-  if (GCC_AR)
-    set(CMAKE_AR ${GCC_AR})
-  endif()
-  find_program(GCC_RANLIB gcc-ranlib)
-  if (GCC_RANLIB)
-    set(CMAKE_RANLIB ${GCC_RANLIB})
-  endif()
-endif()
-
-# Configure the C compiler
-message(STATUS "Configuring C Compiler")
-if ("${CIVETWEB_C_STANDARD}" STREQUAL "auto")
-  add_c_compiler_flag(-std=c11)
-  if (NOT HAVE_C_FLAG_STD_C11)
-    add_c_compiler_flag(-std=c99)
-    if (NOT HAVE_C_FLAG_STD_C99)
-      add_c_compiler_flag(-std=c89)
+  # Configure the linker
+  if ("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU")
+    find_program(GCC_AR gcc-ar)
+    if (GCC_AR)
+      set(CMAKE_AR ${GCC_AR})
+    endif()
+    find_program(GCC_RANLIB gcc-ranlib)
+    if (GCC_RANLIB)
+      set(CMAKE_RANLIB ${GCC_RANLIB})
     endif()
   endif()
-else()
-  add_c_compiler_flag(-std=${CIVETWEB_C_STANDARD})
-endif()
 
-if (MINGW)
-  add_c_compiler_flag(-Wno-format)
-endif()
-if (NOT CIVETWEB_ALLOW_WARNINGS)
-  add_c_compiler_flag(-Werror)
-  add_c_compiler_flag(/WX)
-endif()
-if (${CIVETWEB_ENABLE_LTO})
-  add_c_compiler_flag(-flto RELEASE)
-endif()
-if (${CIVETWEB_ENABLE_ASAN})
-add_c_compiler_flag(-fsanitize=undefined DEBUG)
-add_c_compiler_flag(-fsanitize=address DEBUG)
-if (HAVE_C_FLAG_FSANITIZE_ADDRESS)
-  add_c_compiler_flag(-static-asan DEBUG)
-endif()
-endif()
-if (MINGW)
-  add_c_compiler_flag(-mwindows)
-endif()
+  # Configure the C compiler
+  message(STATUS "Configuring C Compiler")
+  if ("${CIVETWEB_C_STANDARD}" STREQUAL "auto")
+    add_c_compiler_flag(-std=c11)
+    if (NOT HAVE_C_FLAG_STD_C11)
+      add_c_compiler_flag(-std=c99)
+      if (NOT HAVE_C_FLAG_STD_C99)
+        add_c_compiler_flag(-std=c89)
+      endif()
+    endif()
+  else()
+    add_c_compiler_flag(-std=${CIVETWEB_C_STANDARD})
+  endif()
 
-# Coverage build type
-set(CMAKE_C_FLAGS_COVERAGE "${CMAKE_C_FLAGS_DEBUG}" CACHE STRING
+  if (MINGW)
+    add_c_compiler_flag(-Wno-format)
+  endif()
+  if (NOT CIVETWEB_ALLOW_WARNINGS)
+    add_c_compiler_flag(-Werror)
+    add_c_compiler_flag(/WX)
+  endif()
+  if (${CIVETWEB_ENABLE_LTO})
+    add_c_compiler_flag(-flto RELEASE)
+  endif()
+  if (${CIVETWEB_ENABLE_ASAN})
+    add_c_compiler_flag(-fsanitize=undefined DEBUG)
+    add_c_compiler_flag(-fsanitize=address DEBUG)
+    if (HAVE_C_FLAG_FSANITIZE_ADDRESS)
+      add_c_compiler_flag(-static-asan DEBUG)
+    endif()
+  endif()
+  if (MINGW)
+    add_c_compiler_flag(-mwindows)
+  endif()
+
+  # Coverage build type
+  set(CMAKE_C_FLAGS_COVERAGE "${CMAKE_C_FLAGS_DEBUG}" CACHE STRING
     "Flags used by the C compiler during coverage builds."
     FORCE)
-set(CMAKE_EXE_LINKER_FLAGS_COVERAGE
+  set(CMAKE_EXE_LINKER_FLAGS_COVERAGE
     "${CMAKE_EXE_LINKER_FLAGS_DEBUG}" CACHE STRING
     "Flags used for linking binaries during coverage builds."
     FORCE)
-set(CMAKE_SHARED_LINKER_FLAGS_COVERAGE
+  set(CMAKE_SHARED_LINKER_FLAGS_COVERAGE
     "${CMAKE_SHARED_LINKER_FLAGS_DEBUG}" CACHE STRING
     "Flags used by the shared libraries linker during coverage builds."
     FORCE)
-mark_as_advanced(
+  mark_as_advanced(
     CMAKE_CXX_FLAGS_COVERAGE
     CMAKE_C_FLAGS_COVERAGE
     CMAKE_EXE_LINKER_FLAGS_COVERAGE
     CMAKE_SHARED_LINKER_FLAGS_COVERAGE)
-set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING
+  set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING
     "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel Coverage."
     FORCE)
-add_c_compiler_flag(--coverage COVERAGE)
+  add_c_compiler_flag(--coverage COVERAGE)
 
-# Configure the C++ compiler
-if (CIVETWEB_ENABLE_CXX)
-  message(STATUS "Configuring C++ Compiler")
-  if ("${CIVETWEB_CXX_STANDARD}" STREQUAL "auto")
-    add_cxx_compiler_flag(-std=c++14)
-    if (NOT HAVE_CXX_FLAG_STD_CXX14)
-      add_cxx_compiler_flag(-std=c++11)
-      if (NOT HAVE_CXX_FLAG_STD_CXX11)
-        add_cxx_compiler_flag(-std=c++98)
+  # Configure the C++ compiler
+  if (CIVETWEB_ENABLE_CXX)
+    message(STATUS "Configuring C++ Compiler")
+    if ("${CIVETWEB_CXX_STANDARD}" STREQUAL "auto")
+      add_cxx_compiler_flag(-std=c++14)
+      if (NOT HAVE_CXX_FLAG_STD_CXX14)
+        add_cxx_compiler_flag(-std=c++11)
+        if (NOT HAVE_CXX_FLAG_STD_CXX11)
+          add_cxx_compiler_flag(-std=c++98)
+        endif()
+      endif()
+    else()
+      add_cxx_compiler_flag(-std=${CIVETWEB_CXX_STANDARD})
+    endif()
+    add_cxx_compiler_flag(-Wall)
+    add_cxx_compiler_flag(-Wextra)
+    add_cxx_compiler_flag(-Wshadow)
+    add_cxx_compiler_flag(-Wmissing-prototypes)
+    add_cxx_compiler_flag(-Weverything)
+    add_cxx_compiler_flag(/W4)
+    add_cxx_compiler_flag(-Wno-padded)
+    add_cxx_compiler_flag(/Wd4820) # padding
+    add_cxx_compiler_flag(-Wno-unused-macros)
+    add_cxx_compiler_flag(-Wno-format-nonliteral)
+    if (MINGW)
+      add_cxx_compiler_flag(-Wno-format)
+    endif()
+    if (NOT CIVETWEB_ALLOW_WARNINGS)
+      add_cxx_compiler_flag(-Werror)
+      add_cxx_compiler_flag(/WX)
+    endif()
+    add_cxx_compiler_flag(-pedantic-errors)
+    add_cxx_compiler_flag(-fvisibility=hidden)
+    add_cxx_compiler_flag(-fstack-protector-strong RELEASE)
+
+    if (${CIVETWEB_CXX_ENABLE_LTO})
+      add_cxx_compiler_flag(-flto RELEASE)
+    endif()
+    if (${CIVETWEB_ENABLE_ASAN})
+      add_cxx_compiler_flag(-fsanitize=undefined DEBUG)
+      add_cxx_compiler_flag(-fsanitize=address DEBUG)
+      if (HAVE_CXX_FLAG_FSANITIZE_ADDRESS)
+        add_cxx_compiler_flag(-static-asan DEBUG)
       endif()
     endif()
-  else()
-    add_cxx_compiler_flag(-std=${CIVETWEB_CXX_STANDARD})
-  endif()
-  add_cxx_compiler_flag(-Wall)
-  add_cxx_compiler_flag(-Wextra)
-  add_cxx_compiler_flag(-Wshadow)
-  add_cxx_compiler_flag(-Wmissing-prototypes)
-  add_cxx_compiler_flag(-Weverything)
-  add_cxx_compiler_flag(/W4)
-  add_cxx_compiler_flag(-Wno-padded)
-  add_cxx_compiler_flag(/Wd4820) # padding
-  add_cxx_compiler_flag(-Wno-unused-macros)
-  add_cxx_compiler_flag(-Wno-format-nonliteral)
-  if (MINGW)
-    add_cxx_compiler_flag(-Wno-format)
-  endif()
-  if (NOT CIVETWEB_ALLOW_WARNINGS)
-    add_cxx_compiler_flag(-Werror)
-    add_cxx_compiler_flag(/WX)
-  endif()
-  add_cxx_compiler_flag(-pedantic-errors)
-  add_cxx_compiler_flag(-fvisibility=hidden)
-  add_cxx_compiler_flag(-fstack-protector-strong RELEASE)
-
-  if (${CIVETWEB_CXX_ENABLE_LTO})
-    add_cxx_compiler_flag(-flto RELEASE)
-  endif()
-  if (${CIVETWEB_ENABLE_ASAN})
-  add_cxx_compiler_flag(-fsanitize=undefined DEBUG)
-  add_cxx_compiler_flag(-fsanitize=address DEBUG)
-  if (HAVE_CXX_FLAG_FSANITIZE_ADDRESS)
-    add_cxx_compiler_flag(-static-asan DEBUG)
-  endif()
-  endif()
-  add_cxx_compiler_flag(-fstack-protector-all DEBUG)
-  if (MINGW)
-    add_cxx_compiler_flag(-mwindows)
-  endif()
-  set(CMAKE_CXX_FLAGS_COVERAGE "${CMAKE_CXX_FLAGS_DEBUG}" CACHE STRING
+    add_cxx_compiler_flag(-fstack-protector-all DEBUG)
+    if (MINGW)
+      add_cxx_compiler_flag(-mwindows)
+    endif()
+    set(CMAKE_CXX_FLAGS_COVERAGE "${CMAKE_CXX_FLAGS_DEBUG}" CACHE STRING
       "Flags used by the C++ compiler during coverage builds."
       FORCE)
-  add_cxx_compiler_flag(--coverage COVERAGE)
+    add_cxx_compiler_flag(--coverage COVERAGE)
+  endif()
 endif()
 
 if (NOT ZEPHYR)

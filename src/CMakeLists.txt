@@ -6,7 +6,6 @@ endif()
 add_library(civetweb-c-library ${LIB_TYPE} civetweb.c)
 set_target_properties(civetweb-c-library PROPERTIES
   OUTPUT_NAME "civetweb"
-  EXPORT_NAME "civetweb"
   VERSION ${CIVETWEB_VERSION}
   SOVERSION ${CIVETWEB_VERSION}
 )
@@ -53,6 +52,9 @@ if (CIVETWEB_ENABLE_SSL)
       target_link_libraries(civetweb-c-library -ldl)
     endif()
   else()
+    if(HUNTER_ENABLED)
+      hunter_add_package(OpenSSL)
+    endif()
     find_package(OpenSSL)
     include_directories(${OPENSSL_INCLUDE_DIR})
     message(STATUS "OpenSSL include directory: ${OPENSSL_INCLUDE_DIR}")
@@ -112,6 +114,9 @@ if (CIVETWEB_ENABLE_LUA)
     set(LUA_LIBRARIES "${LUA_INSTALL_DIR}/lib/liblua.a")
     add_dependencies(civetweb-c-library lua)
   else()
+    if(HUNTER_ENABLED)
+      hunter_add_package(Lua)
+    endif()
     find_package(Lua)
   endif()
 
@@ -295,7 +300,6 @@ endif()
 if (CIVETWEB_ENABLE_CXX)
   add_library(civetweb-cpp ${LIB_TYPE} CivetServer.cpp)
   set_target_properties(civetweb-cpp PROPERTIES
-    EXPORT_NAME "civetweb-cpp"
     OUTPUT_NAME "civetweb-cpp"
     VERSION ${CIVETWEB_VERSION}
     SOVERSION ${CIVETWEB_VERSION}
