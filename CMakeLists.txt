@@ -350,7 +350,7 @@ set(CMAKE_BUILD_TYPE "${CMAKE_BUILD_TYPE}" CACHE STRING
 add_c_compiler_flag(--coverage COVERAGE)
 
 # Configure the C++ compiler
-if (CIVETWEB_ENABLE_CXX)
+if (CIVETWEB_ENABLE_CXX AND NOT HUNTER_ENABLED)
   message(STATUS "Configuring C++ Compiler")
   if ("${CIVETWEB_CXX_STANDARD}" STREQUAL "auto")
     add_cxx_compiler_flag(-std=c++14)
