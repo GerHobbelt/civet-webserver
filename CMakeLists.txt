@@ -8,8 +8,14 @@ if (${CMAKE_VERSION} VERSION_GREATER 3.1 OR
   cmake_policy(SET CMP0054 NEW)
 endif()
 
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/cpp-pm/hunter/archive/v0.23.283.tar.gz"
+    SHA1 "f445fbb4716e5485e83f6acf110b51d3b8916b2c"
+)
+
 # Set up the project
-project (civetweb)
+project (civetweb VERSION 1.11.0)
 
 # Detect the platform reliably
 if(ZEPHYR_BASE)
