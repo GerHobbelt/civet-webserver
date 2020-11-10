@@ -15,7 +15,7 @@ HunterGate(
 )
 
 # Set up the project
-project (civetweb VERSION 1.11.0)
+project (civetweb VERSION 1.13.0)
 
 # Detect the platform reliably
 if(ZEPHYR_BASE)
