@@ -274,9 +274,9 @@ if (CIVETWEB_ENABLE_SERVER_EXECUTABLE)
     target_include_directories(
         civetweb-c-executable PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
-    target_link_libraries(civetweb-c-executable PUBLIC civetweb-c-library)
+    target_link_libraries(civetweb-c-executable civetweb-c-library)
     if (LIBRT_FOUND)
-        target_link_libraries(civetweb-c-executable PUBLIC LIBRT::LIBRT)
+        target_link_libraries(civetweb-c-executable LIBRT::LIBRT)
     endif()
 endif()
 
