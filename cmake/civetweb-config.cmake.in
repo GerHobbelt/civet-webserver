@@ -1,4 +1,7 @@
 @PACKAGE_INIT@
+
+find_package(Threads CONFIG REQUIRED)
+
 include(CMakeFindDependencyMacro)
 
 set_and_check(civetweb_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
