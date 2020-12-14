@@ -331,51 +331,59 @@ START_TEST(test_remove_dot_segments)
 	struct {
 		const char *input;
 		const char *expected_output;
-	} tests[] = {{"/path/to/file.ext", "/path/to/file.ext"},
-	             {"/file.ext", "/file.ext"},
-	             {"/path/../file.ext", "/file.ext"},
-	             {"/../to/file.ext", "/to/file.ext"},
-	             {"/../../file.ext", "/file.ext"},
-	             {"/./../file.ext", "/file.ext"},
-	             {"/.././file.ext", "/file.ext"},
-	             {"/././file.ext", "/file.ext"},
-	             {"/././file.ext", "/file.ext"},
-	             {"/path/.to/..file.ext", "/path/.to/..file.ext"},
-	             {"/file", "/file"},
-	             {"/path/", "/path/"},
+	} tests[] = {
+	    {"/path/to/file.ext", "/path/to/file.ext"},
+	    {"/file.ext", "/file.ext"},
+	    {"/path/../file.ext", "/file.ext"},
+	    {"/../to/file.ext", "/to/file.ext"},
+	    {"/../../file.ext", "/file.ext"},
+	    {"/./../file.ext", "/file.ext"},
+	    {"/.././file.ext", "/file.ext"},
+	    {"/././file.ext", "/file.ext"},
+	    {"/././file.ext", "/file.ext"},
+	    {"/path/.to/..file.ext", "/path/.to/..file.ext"},
+	    {"/file", "/file"},
+	    {"/path/", "/path/"},
 
-	             {"file.ext", "file.ext"},
-	             {"./file.ext", "file.ext"},
-	             {"../file.ext", "file.ext"},
-	             {".file.ext", ".file.ext"},
-	             {"..file.ext", "..file.ext"},
-	             {"file", "file"},
-	             {"/x/../", "/"},
-	             {"/x/../../", "/"},
-	             {"/x/.././", "/"},
-	             {"/./x/.././", "/"},
+	    {"file.ext", "file.ext"},
+	    {"./file.ext", "file.ext"},
+	    {"../file.ext", "file.ext"},
+	    {".file.ext", ".file.ext"},
+	    {"..file.ext", "..file.ext"},
+	    {"file", "file"},
+	    {"/x/../", "/"},
+	    {"/x/../../", "/"},
+	    {"/x/.././", "/"},
+	    {"/./x/.././", "/"},
 
-	             /* Windows specific */
-	             {"\\file.ext", "/file.ext"},
-	             {"\\..\\file.ext", "/file.ext"},
-	             {"/file.", "/file"},
-	             {"/path\\to.\\.\\file.", "/path/to/file"},
+	    /* Windows specific */
+	    {"\\file.ext", "/file.ext"},
+	    {"\\..\\file.ext", "/file.ext"},
+	    {"/file.", "/file"},
+	    {"/path\\to.\\.\\file.", "/path/to/file"},
 
-	             /* Multiple dots and slashes */
-	             {"\\//\\\\x", "/x"},
-	             {"//", "/"},
-	             {"/./", "/"},
-	             {"/../", "/"},
-	             {"/.../", "/"},
-	             {"/..../", "/"},
-	             {"/...../", "/"},
-	             {"/...../", "/"},
-	             {"/...//", "/"},
-	             {"/..././", "/"},
-	             {"/.../../", "/"},
-	             {"/.../.../", "/"},
+	    /* Multiple dots and slashes */
+	    {"\\//\\\\x", "/x"},
+	    {"//", "/"},
+	    {"/./", "/"},
+	    {"/../", "/"},
+	    {"/.../", "/"},
+	    {"/..../", "/"},
+	    {"/...../", "/"},
+	    {"/...../", "/"},
+	    {"/...//", "/"},
+	    {"/..././", "/"},
+	    {"/.../../", "/"},
+	    {"/.../.../", "/"},
 
-	             {NULL, NULL}};
+	    /* Test cases from issues */
+	    {"/foo/bar/baz/../qux.txt", "/foo/bar/qux.txt"},
+	    {"/../alice/bob/../carol/david/frank/../../grace.ext/hugo/../irene.jpg",
+	     "/alice/carol/grace.ext/irene.jpg"},
+	    {"/a/b/..", "/a/"},
+	    {"/a/b/c/../d/../..", "/a/"},
+
+	    {NULL, NULL}};
 
 	mark_point();
 
@@ -804,6 +812,15 @@ START_TEST(test_encode_decode)
 	ck_assert_int_eq(ret, (int)strlen(nonalpha));
 	ck_assert_str_eq(buf, nonalpha);
 
+	/* Test url_decode_in_place */
+	strcpy(buf, "AbcDef");
+	url_decode_in_place(buf);
+	ck_assert_str_eq(buf, "AbcDef");
+
+	strcpy(buf, "A%20B+C");
+	url_decode_in_place(buf);
+	ck_assert_str_eq(buf, "A B C");
+
 	/* len could be unused, if base64_decode is not tested because USE_LUA is
 	 * not defined */
 	(void)len;
@@ -1043,7 +1060,8 @@ START_TEST(test_config_options)
 	ck_assert_str_eq("keep_alive_timeout_ms",
 	                 config_options[KEEP_ALIVE_TIMEOUT].name);
 	ck_assert_str_eq("linger_timeout_ms", config_options[LINGER_TIMEOUT].name);
-	ck_assert_str_eq("listen_backlog", config_options[LISTEN_BACKLOG_SIZE].name);
+	ck_assert_str_eq("listen_backlog",
+	                 config_options[LISTEN_BACKLOG_SIZE].name);
 	ck_assert_str_eq("ssl_verify_peer",
 	                 config_options[SSL_DO_VERIFY_PEER].name);
 	ck_assert_str_eq("ssl_ca_path", config_options[SSL_CA_PATH].name);

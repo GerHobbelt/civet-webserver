@@ -11,6 +11,8 @@ clang-format -i src/mod_duktape.inl
 clang-format -i src/mod_zlib.inl
 clang-format -i src/timer.inl
 clang-format -i src/handle_form.inl
+clang-format -i src/response.inl
+clang-format -i src/mod_http2.inl
 
 clang-format -i src/third_party/civetweb_lua.h
 
@@ -31,6 +33,8 @@ clang-format -i unittest/timertest.h
 clang-format -i unittest/timertest.c
 clang-format -i unittest/civetweb_check.h
 clang-format -i unittest/main.c
+
+clang-format -i fuzztest/fuzzmain.c
 
 clang-format -i examples/embedded_c/embedded_c.c
 clang-format -i examples/rest/rest.c

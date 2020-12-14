@@ -18,8 +18,10 @@
 | |The callback function `http_error()` is called by CivetWeb just before an HTTP error is to be sent to the client. The function allows the application to send a custom error page. The status code of the error is provided as a parameter. If the application sends their own error page, it must return 0 to signal CivetWeb that no further processing is needed. If the returned value is not 0, CivetWeb will send an error page to the client.|
 |**`init_context`**|**`void (*init_context)( const struct mg_context *ctx );`**|
 | |The callback function `init_context()` is called after the CivetWeb server has been started and initialized, but before any requests are served. This allowes the application to perform some initialization activities before the first requests are handled.|
-|**`init_lua`**|**`void (*init_lua)( const struct mg_connection *conn, void *lua_context );`**|
-| |The callback function `init_lua()` is called just before a Lua server page is to be served. Lua page serving must have been enabled at compile time for this callback function to be called. The parameter `lua_context` is a `lua_State *` pointer.|
+|**`init_lua`**|**`void (*init_lua)( const struct mg_connection *conn, void *lua_context, unsigned context_flags );`**|
+| |The callback function `init_lua()` is called just before a Lua server page is to be served. Lua page serving must have been enabled at compile time for this callback function to be called. The parameter `lua_context` is a `lua_State *` pointer. The parameter `context_flags` indicate the type of Lua environment. |
+|**`exit_lua`**|**`void (*init_lua)( const struct mg_connection *conn, void *lua_context, unsigned context_flags );`**|
+| |The callback function `exit_lua()` is called when a Lua state is about to be closed. Lua page serving must have been enabled at compile time for this callback function to be called. The parameters are identical to `lua_init()`.|
 |**`external_ssl_ctx`**|**`int (*external_ssl_ctx)( void **ssl_ctx, void *user_data );`**|
 | |The callback function `external_ssl_ctx()` is called when civetweb is about to create (`*ssl_ctx` is `NULL`) or free (`*ssl_ctx` is not `NULL`) a SSL context. The parameter `user_data` contains a pointer to the data which was provided to `mg_start()` when the server was started. The callback function can return 0 to signal that CivetWeb should setup the SSL context. With a return value of 1 the callback function signals CivetWeb that the SSL context has already been setup and no further processing is necessary. Also with a return value of 1 other callback functions `init_ssl()` and `init_ssl_domain()` are not called. The value -1 should be returned when the SSL context initialization fails.|
 |**`external_ssl_ctx_domain`**|**`int (*external_ssl_ctx_domain)( const char *server_domain, void **ssl_ctx, void *user_data );`**|
@@ -29,10 +31,11 @@
 |**`init_ssl_domain`**|**`int (*init_ssl_domain)( const char *server_domain, void *ssl_ctx, void *user_data );`**|
 | |The callback function `init_ssl_domain()` is called when CivetWeb initializes the SSL library. The parameter `server_domain` is a pointer to the `authentication_domain` config parameter of the domain being configured. The `ssl_ctx` parameter is a pointer to the SSL context being configure. The parameter `user_data` contains a pointer to the data which was provided to `mg_start()` when the server was started. The callback function can return 0 to signal that CivetWeb should setup the SSL certificate. With a return value of 1 the callback function signals CivetWeb that the certificate has already been setup and no further processing is necessary. The value -1 should be returned when the SSL initialization fails.|
 |**`init_thread`**|**`void * (*init_thread)( const struct mg_context *ctx, int thread_type );`**|
-| |The callback function `init_thread()` is called when a new thread is created by CivetWeb. The `thread_type` parameter indicates which type of thread has been created. following thread types are recognized:|
+| |The callback function `init_thread()` is called when a new thread is created by CivetWeb. It is always called from the newly created thread and can be used to initialize thread local storage data. The `thread_type` parameter indicates which type of thread has been created. following thread types are recognized:|
 | |**0** - The master thread is created |
 | |**1** - A worker thread which handles client connections has been created|
 | |**2** - An internal helper thread (timer thread) has been created|
+| |**3** - A websocket client thread has been created|
 | |The returned `void *` is stored as user defined pointer in the thread local storage.|
 |**`exit_thread`**|**`void (*exit_thread)( const struct mg_context *ctx, int thread_type, void * user_ptr);`**|
 | |The callback function `exit_thread()` is called when a thread is about to exit. The parameters correspond to `init_thread`, with `user_ptr` being the return value.|

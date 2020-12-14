@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018 the Civetweb developers
+/* Copyright (c) 2015-2020 the Civetweb developers
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -45,10 +45,15 @@
 #define test_sleep(x) (sleep(x))
 #endif
 
+
+/* Some environment configuration for the unit test */
 #define SLEEP_BEFORE_MG_START (1)
 #define SLEEP_AFTER_MG_START (3)
 #define SLEEP_BEFORE_MG_STOP (1)
 #define SLEEP_AFTER_MG_STOP (5)
+
+static const char *external_server_ip = "140.82.118.4"; /* github.com */
+
 
 /* This unit test file uses the excellent Check unit testing library.
  * The API documentation is available here:
@@ -785,8 +790,42 @@ START_TEST(test_mg_server_and_client_tls)
 	client_conn =
 	    mg_connect_client("127.0.0.1", 8443, 1, client_err, sizeof(client_err));
 
-	ck_assert_str_ne(client_err, "");
+	/* We tried to connect without client certificate:
+	 * Depending on ???, either mg_conn_client failed entirely, returning NULL.
+	 * or we do get a connection but get an error when we try to use it.
+	 *
+	 * MacOS (Version ?), Ubuntu Bionic and Ububtu Eoan allow to connect,
+	 * while Ubuntu Xenial, Ubuntu Trusty and Windows test containers at
+	 * Travis CI do not. Maybe it is OpenSSL version specific.
+	 */
+#if defined(OPENSSL_API_1_1)
+	if (client_conn) {
+		/* Connect succeeds, but the connection is unusable. */
+		mg_printf(client_conn, "GET / HTTP/1.0\r\n\r\n");
+		client_res =
+		    mg_get_response(client_conn, client_err, sizeof(client_err), 10000);
+		ck_assert_int_lt(client_res, 0); /* response is "error" (-1) */
+		ck_assert_str_ne(client_err, "");
+		client_ri = mg_get_response_info(client_conn);
+		if (client_ri) {
+			/* client_ri == NULL is allowed. However, some versions seem to
+			 * return non-null, but all elements are NULL. */
+			ck_assert_int_eq(client_ri->status_code, 0);
+			ck_assert_int_eq(client_ri->num_headers, 0);
+			ck_assert_ptr_eq(client_ri->http_version, NULL);
+			client_ri = NULL;
+		}
+		ck_assert(client_ri == NULL);
+
+		mg_close_connection(client_conn);
+		client_conn = NULL;
+		strcpy(client_err,
+		       "OpenSSL on MacOS allows to connect without a mandatory client "
+		       "certificate, but not data exchange");
+	}
+#endif
 	ck_assert(client_conn == NULL);
+	ck_assert_str_ne(client_err, "");
 
 	memset(client_err, 0, sizeof(client_err));
 	memset(&client_options, 0, sizeof(client_options));
@@ -900,6 +939,8 @@ request_test_handler2(struct mg_connection *conn, void *cbdata)
 	int err_ret;
 	char url_buffer[128];
 
+	(void)cbdata; /* unused */
+
 	ctx = mg_get_context(conn);
 	ud = mg_get_user_data(ctx);
 	ud2 = mg_get_user_context_data(conn);
@@ -950,7 +991,7 @@ static const size_t websocket_goodbye_msg_len =
     14 /* strlen(websocket_goodbye_msg) */;
 
 
-#if defined(DEBUG)
+#if defined(WS_DEBUG_TRACE)
 static void
 WS_TEST_TRACE(const char *f, ...)
 {
@@ -1447,10 +1488,13 @@ START_TEST(test_request_handlers)
 	client_ri = mg_get_response_info(client_conn);
 
 	ck_assert(client_ri != NULL);
-	ck_assert((client_ri->status_code == 301) || (client_ri->status_code == 302)
-	          || (client_ri->status_code == 303)
-	          || (client_ri->status_code == 307)
-	          || (client_ri->status_code == 308)); /* is a redirect code */
+	if ((client_ri->status_code != 301) && (client_ri->status_code != 302)
+	    && (client_ri->status_code != 303) && (client_ri->status_code != 307)
+	    && (client_ri->status_code != 308)) {
+		/* expect a 30x redirect code */
+		ck_abort_msg("Expected a redirect code, got %i",
+		             client_ri->status_code);
+	}
 	/*
 	// A redirect may have a body, or not
 	i = mg_read(client_conn, buf, sizeof(buf));
@@ -1507,7 +1551,7 @@ START_TEST(test_request_handlers)
 	i = (int)strlen(plain_file_content);
 	ck_assert_int_eq(i, 17);
 
-	fwrite(plain_file_content, i, 1, f);
+	fwrite(plain_file_content, (size_t)i, 1, f);
 	fclose(f);
 
 #ifdef _WIN32
@@ -1597,7 +1641,7 @@ START_TEST(test_request_handlers)
 		        "This file needs to be compiled manually before "
 		        "starting the test\n");
 		fprintf(stderr,
-		        "e.g. by gcc test/cgi_test.c -o output/cgi_test.cgi\n\n");
+		        "e.g. by gcc unittest/cgi_test.c -o output/cgi_test.cgi\n\n");
 
 		/* Abort test with diagnostic message */
 		ck_abort_msg("Mandatory file %s must be built before starting the test "
@@ -1894,7 +1938,7 @@ START_TEST(test_request_handlers)
 
 	mg_printf(client_conn,
 	          "GET /unknown_url HTTP/1.1\r\n"
-	          "Host: localhost\r\n"
+	          "Host: localhost:%u\r\n"
 	          "\r\n",
 	          ipv4_port);
 
@@ -1917,7 +1961,7 @@ START_TEST(test_request_handlers)
 
 	mg_printf(client_conn,
 	          "GET /handler2 HTTP/1.1\r\n"
-	          "Host: localhost\r\n"
+	          "Host: localhost:%u\r\n"
 	          "\r\n",
 	          ipv4_port);
 
@@ -2479,11 +2523,11 @@ field_store(const char *path, long long file_size, void *user_data)
 			char buf[32] = {0};
 			int r, i;
 			for (r = 0; r < myfile_content_rep; r++) {
-				i = (int)fread(buf, 1, myfile_content_len, f);
+				i = (int)fread(buf, 1, (size_t)myfile_content_len, f);
 				ck_assert_int_eq(i, myfile_content_len);
 				ck_assert_str_eq(buf, myfile_content);
 			}
-			i = (int)fread(buf, 1, myfile_content_len, f);
+			i = (int)fread(buf, 1, (size_t)myfile_content_len, f);
 			ck_assert_int_eq(i, 0);
 			fclose(f);
 		}
@@ -4674,12 +4718,13 @@ static void
 minimal_http_https_client_impl(const char *server,
                                uint16_t port,
                                int use_ssl,
-                               const char *uri)
+                               const char *uri,
+                               const char *expected)
 {
 	/* Client var */
 	struct mg_connection *client;
 	char client_err_buf[256];
-	char client_data_buf[256];
+	char client_data_buf[4096];
 	const struct mg_response_info *client_ri;
 	int64_t data_read;
 	int r;
@@ -4726,15 +4771,24 @@ minimal_http_https_client_impl(const char *server,
 
 	data_read = 0;
 	while (data_read < client_ri->content_length) {
-		r = mg_read(client, client_data_buf, sizeof(client_data_buf));
+		r = mg_read(client,
+		            client_data_buf + data_read,
+		            sizeof(client_data_buf) - (size_t)data_read);
 		if (r > 0) {
 			data_read += r;
+			ck_assert_int_lt(data_read, sizeof(client_data_buf));
 		}
 	}
 
 	/* Nothing left to read */
 	r = mg_read(client, client_data_buf, sizeof(client_data_buf));
 	ck_assert_int_eq(r, 0);
+
+	mark_point();
+
+	if (expected) {
+		ck_assert_str_eq(client_data_buf, expected);
+	}
 
 	mark_point();
 
@@ -4745,17 +4799,23 @@ minimal_http_https_client_impl(const char *server,
 
 
 static void
-minimal_http_client_impl(const char *server, uint16_t port, const char *uri)
+minimal_http_client_check(const char *server,
+                          uint16_t port,
+                          const char *uri,
+                          const char *expected)
 {
-	minimal_http_https_client_impl(server, port, 0, uri);
+	minimal_http_https_client_impl(server, port, 0, uri, expected);
 }
 
 
 #if !defined(NO_SSL)
 static void
-minimal_https_client_impl(const char *server, uint16_t port, const char *uri)
+minimal_https_client_check(const char *server,
+                           uint16_t port,
+                           const char *uri,
+                           const char *expected)
 {
-	minimal_http_https_client_impl(server, port, 1, uri);
+	minimal_http_https_client_impl(server, port, 1, uri, expected);
 }
 #endif
 
@@ -4770,9 +4830,10 @@ START_TEST(test_minimal_client)
 	mark_point();
 
 	/* Call a test client */
-	minimal_http_client_impl("192.30.253.113" /* www.github.com */,
-	                         80,
-	                         "/civetweb/civetweb/");
+	minimal_http_client_check(external_server_ip,
+	                          80,
+	                          "/civetweb/civetweb/",
+	                          NULL /* no check */);
 
 	mark_point();
 
@@ -4799,9 +4860,10 @@ START_TEST(test_minimal_tls_client)
 	mark_point();
 
 	/* Call a test client */
-	minimal_https_client_impl("192.30.253.113" /* www.github.com */,
-	                          443,
-	                          "/civetweb/civetweb/");
+	minimal_https_client_check(external_server_ip,
+	                           443,
+	                           "/civetweb/civetweb/",
+	                           NULL /* no check */);
 
 	mark_point();
 
@@ -4820,9 +4882,25 @@ static int
 minimal_test_request_handler(struct mg_connection *conn, void *cbdata)
 {
 	const char *msg = (const char *)cbdata;
-	unsigned long len = (unsigned long)strlen(msg);
+	unsigned long len = (unsigned long)strlen(msg) + 1;
+	const struct mg_request_info *ri = mg_get_request_info(conn);
 
-	mark_point();
+	ck_assert(conn != NULL);
+	ck_assert(ri != NULL);
+	ck_assert(len > 0);
+
+	ck_assert_str_eq(ri->request_method, "GET");
+	ck_assert(ri->request_uri[0] == '/');
+	ck_assert(ri->local_uri[0] == '/');
+	ck_assert(ri->http_version[0] == '1');
+	ck_assert(ri->http_version[1] == '.');
+	ck_assert(ri->http_version[3] == 0);
+	ck_assert(ri->num_headers >= 0);
+
+	if (ri->query_string != NULL) {
+		msg = ri->query_string;
+		len = (unsigned long)strlen(msg) + 1;
+	}
 
 	mg_printf(conn,
 	          "HTTP/1.1 200 OK\r\n"
@@ -4830,6 +4908,8 @@ minimal_test_request_handler(struct mg_connection *conn, void *cbdata)
 	          "Content-Type: text/plain\r\n"
 	          "Connection: close\r\n\r\n",
 	          len);
+
+	mark_point();
 
 	mg_write(conn, msg, len);
 
@@ -4870,9 +4950,24 @@ START_TEST(test_minimal_http_server_callback)
 	test_sleep(10);
 
 	/* Call a test client */
-	minimal_http_client_impl("127.0.0.1", 8080, "/hello");
+	minimal_http_client_check("127.0.0.1", 8080, "/hello", "Hello world");
 
-	/* Run the server for 15 seconds */
+	/* Run the server for 1 second */
+	test_sleep(1);
+
+	/* Call a test client */
+	minimal_http_client_check("127.0.0.1", 8080, "/8", "Number eight");
+
+	/* Run the server for 1 second */
+	test_sleep(1);
+
+	/* Call a test client */
+	minimal_http_client_check("127.0.0.1",
+	                          8080,
+	                          "/8?Altenative=Response",
+	                          "Altenative=Response");
+
+	/* Run the server for 5 seconds */
 	test_sleep(5);
 
 
@@ -4963,9 +5058,24 @@ START_TEST(test_minimal_https_server_callback)
 	test_sleep(10);
 
 	/* Call a test client */
-	minimal_https_client_impl("127.0.0.1", 8443, "/hello");
+	minimal_https_client_check("127.0.0.1", 8443, "/hello", "Hello world");
 
 	/* Run the server for 15 seconds */
+	test_sleep(1);
+
+	/* Call a test client */
+	minimal_https_client_check("127.0.0.1", 8443, "/8", "Number eight");
+
+	/* Run the server for 1 second */
+	test_sleep(1);
+
+	/* Call a test client */
+	minimal_https_client_check("127.0.0.1",
+	                           8443,
+	                           "/8?Altenative=Response",
+	                           "Altenative=Response");
+
+	/* Run the server for 5 seconds */
 	test_sleep(5);
 
 

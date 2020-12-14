@@ -22,6 +22,7 @@
 * cdbishop
 * celeron55
 * Charles Olivi
+* Chris Han
 * Chris Jones
 * Chris Rehn
 * Christian Mauderer
@@ -42,6 +43,8 @@
 * Drew Wells
 * duong2179
 * ehlertjd
+* Elan P. Kugelmass
+* eugene
 * Eric Tsau
 * Erick Vieyra
 * Erik Beran
@@ -52,10 +55,13 @@
 * feneuilflo
 * Fernando G. Aranda
 * Frank Hilliger
+* Gábor Csárdi
+* goodmenzy
 * Grahack
 * Gregor Jasny
 * grenclave
 * grunk
+* guangqing.chen
 * Guilherme Amadio
 * hansipie
 * HariKamath Kamath
@@ -102,6 +108,7 @@
 * Li Peng
 * Lianghui
 * Luka Rahne
+* Lukas Martanovic
 * Maarten Fremouw
 * makrsmark
 * marco
@@ -114,6 +121,7 @@
 * mingodad
 * Morgan McGuire
 * mrdvlpr.xnu
+* Nat!
 * Neil Jensen
 * newsoft
 * nfrmtkr
@@ -134,6 +142,8 @@
 * Philipp Hasper
 * Piotr Zierhoffer
 * pkvamme
+* Ponnuvel Palaniyappan
+* qinch
 * Radoslaw Zarzynski
 * Red54
 * Retallack Mark mark.retallack
@@ -149,9 +159,12 @@
 * Sergey Linev
 * sgmesservey
 * shantanugadgil
+* Sherwyn Sen
+* shreyajaggi8
 * Simon Hailes
 * slidertom
 * SpaceLord
+* Stefan Codrescu
 * sunfch
 * suzukibitman
 * Símal Rasmussen
@@ -171,6 +184,7 @@
 * Uilian Ries
 * Ulrich Hertlein
 * Walt Steverson
+* wangli28
 * webxer
 * William Greathouse
 * xeoshow
@@ -178,6 +192,8 @@
 * Yehuda Sadeh
 * Yury Z
 * zhen.wang
+
+and others.
 
 # Mongoose Contributors
 CivetWeb is based on the Mongoose code.  The following users contributed to the original Mongoose release between 2010 and 2013.  This list was generated from the Mongoose GIT logs.  It does not contain contributions from the Mongoose mailing list.  There is no record for contributors prior to 2010.
@@ -230,4 +246,3 @@ CivetWeb is based on the Mongoose code.  The following users contributed to the 
 * tayS
 * test
 * valenok
-
