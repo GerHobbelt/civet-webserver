@@ -541,10 +541,12 @@ typedef struct {HANDLE signal, broadcast;} pthread_cond_t;
 typedef DWORD pthread_t;
 typedef struct {WORD dummy;} pthread_attr_t;
 
+#if _MSC_VER < 1900
 struct timespec {
   long tv_nsec;
   long tv_sec;
 };
+#endif
 
 #ifdef __cplusplus
 }
