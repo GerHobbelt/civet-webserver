@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="inl Files">
+      <UniqueIdentifier>{14b8d2b9-9fdb-4a01-90ec-6bae554e5fb8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\main.c">
@@ -36,5 +39,42 @@
     <ClInclude Include="..\..\include\civetweb.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\src\CMakeLists.txt">
+      <Filter>Source Files</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\handle_form.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\md5.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_duktape.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_http2.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_lua.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_lua_shared.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_zlib.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\sha1.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\timer.inl">
+      <Filter>inl Files</Filter>
+    </None>
+    <None Include="..\..\src\wolfssl_extras.inl">
+      <Filter>inl Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
