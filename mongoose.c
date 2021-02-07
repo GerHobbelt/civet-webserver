@@ -136,7 +136,7 @@ static LPFN_DISCONNECTEX get_DisconnectEx_funcptr(SOCKET sock) {
 
   if (!DisconnectExPtr && sock) {
     GUID dcex = WSAID_DISCONNECTEX;
-    LPFN_DISCONNECTEX DisconnectExPtr = 0;
+    DisconnectExPtr = 0;
     DWORD len = 0;
     int rv;
 
