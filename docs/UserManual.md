@@ -436,7 +436,23 @@ environment - in some cases, you might need to resort to a fixed IP address.
 If you want to use an ephemeral port (i.e. let the operating system choose
 a port number), use `0` for the port number. This will make it necessary to
 communicate the port number to clients via other means, for example mDNS
-(or Zeroconf, Bonjour or Avahi).
+(Zeroconf, Bonjour, Avahi).
+
+In case the server has been built with the `USE_X_DOM_SOCKET` option set,
+it can listen to unix domain sockets as well. They are specified by a
+lower case `x` followed by the domain socket path, e.g. `x/tmp/sockname`.
+Domain sockets do not require a port number, always use HTTP (not HTTPS) 
+and never redirect. Thus `:` is not allowed, while `r` or `s` at the end 
+of the configuration is interpreted as part of the domain socket path.
+The domain sochet path must be a valid path to a non-existing file on a 
+Unix/Linux system. The CivetWeb process needs write/create access rights
+to create the domain socket in the Unix/Linux file system. 
+Use only alphanumerical characters, underscore and `/` in a domain socket
+path (in particular, `,;:` must be avoided).
+
+All socket/protocol types may be combined, separated by `,`.
+E.g.: `127.0.0.1:80,[::1]:80,x/tmp/sockname` will listen to localhost
+http connections using IPv4, IPv6 and the domain socket `/tmp/sockname`.
 
 ### lua\_background\_script
 Experimental feature, and subject to change.
@@ -446,16 +462,14 @@ It can be used to prepare the document root (e.g., update files, compress
 files, ...), check for external resources, remove old log files, etc.
 
 The Lua state remains open until the server is stopped.
-In the future, some callback functions will be available to notify the
-script on changes of the server state. See example lua script :
-[background.lua](https://github.com/civetweb/civetweb/blob/master/test/background.lua).
 
-Additional functions available in background script :
-sleep, root path, script name, is terminated
+For a detailed descriotion of available Lua callbacks see section 
+"Lua background script" below. 
 
-### lua\_background\_script\_params `param1=1,param2=2`
+### lua\_background\_script\_params
 Can add dynamic parameters to background script.
-Parameters mapped to global 'mg' table 'params' field.
+Parameters mapped into 'mg.params' as table.
+Example: `paramName1=paramValue1,paramName2=2`
 
 ### lua\_preload\_file
 This configuration option can be used to specify a Lua script file, which
@@ -586,7 +600,7 @@ certificate with the same subject name they should have extensions ".0", ".1",
 ### ssl\_cache\_timeout `-1`
 Allow caching of SSL/TLS sessions, so HTTPS connection from the same client
 to the same server can be established faster. A configuration value >0 activates
-session caching. The configuration value is the maximum lifetime of a cached 
+session caching. The configuration value is the maximum lifetime of a cached
 session in seconds.
 The default is to deactivated session caching.
 
@@ -869,37 +883,73 @@ mg (table):
 
     mg.read()                   -- reads a chunk from POST data, returns it as a string
     mg.write(str)               -- writes string to the client
+    mg.cry(str)                 -- logs error string to stderr
     mg.include(filename, [pathtype]) -- include another Lua Page file (Lua Pages only)
                                 -- pathtype can be "abs", "rel"/"file" or "virt[ual]"
                                 -- like defined for SSI #include
-    mg.redirect(uri)            -- internal redirect to a given URI
+    mg.redirect(uri)            -- redirect to internal URI
     mg.onerror(msg)             -- error handler, can be overridden
-    mg.version                  -- a string that holds CivetWeb version
-    mg.document_root            -- a string that holds the document root directory
     mg.auth_domain              -- a string that holds the HTTP authentication domain
-    mg.get_var(str, varname)    -- extract variable from (query) string
+    mg.document_root            -- a string that holds the document root directory
+    mg.lua_type                 -- a string that holds the lua script type
+    mg.system                   -- a string that holds the operating system name
+    mg.version                  -- a string that holds CivetWeb version
     mg.get_cookie(str, cookie)  -- extract cookie from a string
-    mg.get_mime_type(filename)  -- get MIME type of a file
     mg.get_info(infotype)       -- get server status information
+    mg.get_mime_type(filename)  -- get MIME type of a file
+    mg.get_option(name)         -- get configuration option value from name
+    mg.get_response_code_text(n)-- get response code text for n, nil otherwise
+    mg.get_var(str, varname, [occurance])  -- extract the first occurance of variable from (query) string
+                                --     otherwise the nth occurance if supplied, nil if not found
     mg.send_file(filename)      -- send a file, including all required HTTP headers
     mg.send_file_body(filename) -- send a file, excluding HTTP headers
+    mg.send_http_error(n,str)   -- send http error code n with string body
+    mg.send_http_ok(mime,body)  -- send http 200 OK with content-type mime and string body
+    mg.send_http_ok(mime,length)-- send http 200 OK with content-type mime and integer content-length length
+    mg.send_http_redirect(url,n)-- redirect to url with status code n
+    mg.split_form_data(form)    -- returns a table of the split form data
     mg.url_encode(str)          -- URL encode a string
     mg.url_decode(str, [form])  -- URL decode a string. If form=true, replace + by space.
     mg.base64_encode(str)       -- BASE64 encode a string
     mg.base64_decode(str)       -- BASE64 decode a string
     mg.md5(str)                 -- return the MD5 hash of a string
     mg.keep_alive(bool)         -- allow/forbid to use http keep-alive for this request
+    mg.time([bool])             -- get the current unix timestamp with milliseconds
+                                --     if bool is true then it is the time since startup
+    mg.trace(n,message,...)     -- trace level n messages into tracefile
+    mg.uuid()                   -- generate a uuid
+    mg.random()                 -- get a random floating point number
     mg.request_info             -- a table with the following request information
+         .content_length        -- Request content-length as a float
+         .content_type          -- Request content-type, nil otherwise
+         .request_link          -- Requested link
+         .request_uri           -- Request URI
+         .uri                   -- Local request URI
+         .path_info             -- Request URI, nil otherwise
+         .status                -- Request status code, nil otherwise
          .remote_addr           -- IP address of the client as string
          .remote_port           -- remote port number
          .server_port           -- server port number
          .request_method        -- HTTP method (e.g.: GET, POST)
          .http_version          -- HTTP protocol version (e.g.: 1.1)
-         .uri                   -- resource name
+         .http_headers          -- Table of HTTP headers
+         .num_headers           -- Number of headers
          .query_string          -- query string if present, nil otherwise
-         .script_name           -- name of the Lua script
+         .script_name           -- name of the Lua script, nil otherwise
          .https                 -- true if accessed by https://, false otherwise
          .remote_user           -- user name if authenticated, nil otherwise
+         .auth_type             -- Digest
+         .client_cert           -- Table with ssl certificate infomation
+              .subject          -- Certificate subject
+              .issuer           -- Certificate issuer
+              .serial           -- Certificate serial number
+              .finger           -- Certificate finger
+
+If websocket and timers support is enabled then the following is also available:
+
+    mg.set_timeout(fn,delay,[interval])  -- call function after delay at an interval
+    mg.set_interval(fn,delay,[interval]) -- call function after delay at an interval
+    mg.websocket_root                    -- a string that holds the websocket root
 
 connect (function):
 
@@ -953,7 +1003,7 @@ or using Lua code:
 
 or Lua Server Pages generating HTML content MAY skip the HTTP header lines.
 In this case, CivetWeb automatically creates a "200 OK"/"Content-Type: text/html"
-reply header. In this case, the document should start with "<!DOCTYPE html>"
+reply header. In this case, the document must start with "<!DOCTYPE html>"
 or "<html".
 
 Currently the extended "Kepler Syntax" is available only for text/html pages
@@ -966,8 +1016,7 @@ header and generate any kind of file.
 CivetWeb offers support for websockets in Lua as well. In contrast to plain
 Lua scripts and Lua server pages, Lua websocket scripts are shared by all clients.
 
-Lua websocket scripts must define a few functions:
-    open(arg)    -- callback to accept or reject a connection
+Lua websocket scripts must define the following functions:
     ready(arg)   -- called after a connection has been established
     data(arg)    -- called when the server receives data from the client
     close(arg)   -- called when a websocket connection is closed
@@ -982,6 +1031,28 @@ Lua websocket pages do support single shot (timeout) and interval timers.
 An example is shown in
 [websocket.lua](https://github.com/civetweb/civetweb/blob/master/test/websocket.lua).
 
+## Lua background script
+The Lua background script is loaded when the server is starting,
+before any client is able to connect. It can be used for preparation and
+maintenance tasks, e.g., for preparing the web contents, cleaning log files,
+etc.
+
+The Name of the script file including path is configured as `lua_background_script`. 
+Additional parameters can be supplied using `lua_background_script_params`.
+
+The background script is loaded before the server is ready to start.
+It may return a boolean value. If "false" in returned, the server will
+not be started. Since the server is not fully initialized when the script is loaded,
+some features of the "mg" library are not available yet. Use the "start()" callbacks
+function instead.
+
+A Lua background script may define the following functions:
+    start()      -- called wnen the server is started
+    stop()       -- called when the server is stopped
+
+
+See example Lua script :
+[background.lua](https://github.com/civetweb/civetweb/blob/master/test/lua_backbround_script_timer.lua).
 
 # Using CGI
 

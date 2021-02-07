@@ -71,7 +71,7 @@ ifdef WITH_CFLAGS
   CFLAGS += $(WITH_CFLAGS)
 endif
 
-LIBS = -lpthread -lm
+LIBS = -lpthread -lm $(LOPT)
 
 ifdef WITH_DEBUG
   CFLAGS += -g -DDEBUG
@@ -93,6 +93,13 @@ endif
 
 ifdef NO_SSL
   CFLAGS += -DNO_SSL
+else ifdef WITH_OPENSSL_API_1_0
+  CFLAGS += -DOPENSSL_API_1_0
+else ifdef WITH_OPENSSL_API_1_1
+  CFLAGS += -DOPENSSL_API_1_1
+else
+  #Use OpenSSL 1.1 API version as default
+  CFLAGS += -DOPENSSL_API_1_1
 endif
 ifdef NO_CGI
   CFLAGS += -DNO_CGI
@@ -110,6 +117,7 @@ else
   LCC = $(CC)
 endif
 
+
 ifdef WITH_ALL
   WITH_WEBSOCKET = 1
   WITH_IPV6 = 1
@@ -117,6 +125,8 @@ ifdef WITH_ALL
   WITH_DUKTAPE = 1
   WITH_SERVER_STATS = 1
   WITH_ZLIB = 1
+  WITH_HTTP2 = 1
+  WITH_X_DOM_SOCKET = 1
   WITH_EXPERIMENTAL = 1
   #WITH_CPP is not defined, ALL means only real features, not wrappers
 endif
@@ -167,6 +177,10 @@ ifdef WITH_ZLIB
   CFLAGS += -DUSE_ZLIB
 endif
 
+ifdef WITH_HTTP2
+  CFLAGS += -DUSE_HTTP2
+endif
+
 # Other features
 ifdef WITH_EXPERIMENTAL
   CFLAGS += -DMG_EXPERIMENTAL_INTERFACES
@@ -181,6 +195,12 @@ ifdef WITH_WEBSOCKET
 endif
 ifdef WITH_WEBSOCKETS
   CFLAGS += -DUSE_WEBSOCKET
+endif
+ifdef WITH_X_DOM_SOCKET
+  CFLAGS += -DUSE_X_DOM_SOCKET
+endif
+ifdef WITH_X_DOM_SOCKETS
+  CFLAGS += -DUSE_X_DOM_SOCKET
 endif
 
 ifdef WITH_SERVER_STAT
@@ -272,6 +292,8 @@ help:
 	@echo "   WITH_CPP=1            build library with c++ classes"
 	@echo "   WITH_EXPERIMENTAL=1   build with experimental features"
 	@echo "   WITH_DAEMONIZE=1      build with daemonize."
+	@echo "   WITH_OPENSSL_API_1_0=1 build with OpenSSL 1.0.x support."
+	@echo "   WITH_OPENSSL_API_1_1=1 build with OpenSSL 1.1.x support."
 	@echo "   NO_SSL=1              build without SSL support. Build will not need libcrypto/libssl."
 	@echo "   NO_CGI=1              build without CGI support."
 	@echo "   NO_CACHING=1          disable caching. Send no-cache/no-store headers."
@@ -284,6 +306,7 @@ help:
 	@echo "   CRYPTO_LIB=libcrypto.so.0 system versioned CRYPTO library"
 	@echo "   PREFIX=/usr/local     sets the install directory"
 	@echo "   COPT='-DNO_SSL'       method to insert compile flags"
+	@echo "   LOPT='-lxxx'          method to link xxx library"
 	@echo ""
 	@echo " Compile Flags"
 	@echo "   NDEBUG                strip off all debug code"

@@ -8,8 +8,8 @@ CivetWeb uses an [MIT license](https://github.com/civetweb/civetweb/blob/master/
 
 It can also be used by end users as a stand-alone web server. It is available as single executable, no installation is required.
 
-The current stable version is 1.12 - [release notes](https://github.com/civetweb/civetweb/blob/master/RELEASE_NOTES.md)
-1.13 is work in progress
+The current stable version is 1.13 - [release notes](https://github.com/civetweb/civetweb/blob/master/RELEASE_NOTES.md)
+Version 1.14 is under construction.
 
 End users can download CivetWeb at SourceForge
 [https://sourceforge.net/projects/civetweb/](https://sourceforge.net/projects/civetweb/)
@@ -20,10 +20,11 @@ Developers can contribute to CivetWeb via GitHub
 Trouble tickets should be filed on GitHub
 [https://github.com/civetweb/civetweb/issues](https://github.com/civetweb/civetweb/issues)
 
-Announcements are at Google Groups
+New releases are announced at Google Groups
 [https://groups.google.com/d/forum/civetweb](https://groups.google.com/d/forum/civetweb)
 
-While older support question and discussion threads have been at [Google groups](https://groups.google.com/d/forum/civetweb), most newer ones are [GitHub issues](https://github.com/civetweb/civetweb/issues).
+Formerly some support question and discussion threads have been at [Google groups](https://groups.google.com/d/forum/civetweb).
+Recent questions and discussions use [GitHub issues](https://github.com/civetweb/civetweb/issues).
 
 Source releases can be found on GitHub
 [https://github.com/civetweb/civetweb/releases](https://github.com/civetweb/civetweb/releases)

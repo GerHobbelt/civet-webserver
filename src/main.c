@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2020 the Civetweb developers
+/* Copyright (c) 2013-2021 the Civetweb developers
  * Copyright (c) 2004-2013 Sergey Lyubka
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -34,6 +34,14 @@
 
 #else
 
+#if defined(__clang__) /* GCC does not (yet) support this pragma */
+/* We must set some flags for the headers we include. These flags
+ * are reserved ids according to C99, so we need to disable a
+ * warning for that. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-id-macro"
+#endif
+#if !defined(_XOPEN_SOURCE)
 #define _XOPEN_SOURCE 600 /* For PATH_MAX on linux */
 /* This should also be sufficient for "realpath", according to
  * http://man7.org/linux/man-pages/man3/realpath.3.html, but in
@@ -42,6 +50,7 @@
  * #pragma GCC diagnostic ignored "-Wimplicit-function-declaration"
  * #pragma clang diagnostic ignored "-Wimplicit-function-declaration"
  */
+#endif
 #endif
 
 #if !defined(IGNORE_UNUSED_RESULT)
@@ -70,6 +79,11 @@
 #endif
 #if !defined(__STDC_LIMIT_MACROS)
 #define __STDC_LIMIT_MACROS /* C++ wants that for INT64_MAX */
+#endif
+
+#if defined(__clang__)
+/* Enable reserved-id-macro warning again. */
+#pragma GCC diagnostic pop
 #endif
 
 #include <ctype.h>
@@ -255,6 +269,25 @@ die(const char *fmt, ...)
 }
 
 
+static void
+warn(const char *fmt, ...)
+{
+	va_list ap;
+	char msg[512] = "";
+
+	va_start(ap, fmt);
+	(void)vsnprintf(msg, sizeof(msg) - 1, fmt, ap);
+	msg[sizeof(msg) - 1] = 0;
+	va_end(ap);
+
+#if defined(_WIN32)
+	MessageBox(NULL, msg, "Warning", MB_OK);
+#else
+	fprintf(stderr, "%s\n", msg);
+#endif
+}
+
+
 #if defined(WIN32)
 static int MakeConsole(void);
 #endif
@@ -263,11 +296,16 @@ static int MakeConsole(void);
 static void
 show_server_name(void)
 {
+#if defined(BUILD_DATE)
+	const char *bd = BUILD_DATE;
+#else
+	const char *bd = __DATE__;
+#endif
 #if defined(WIN32)
 	(void)MakeConsole();
 #endif
 
-	fprintf(stderr, "CivetWeb v%s, built on %s\n", mg_version(), __DATE__);
+	fprintf(stderr, "CivetWeb v%s, built on %s\n", mg_version(), bd);
 }
 
 
@@ -975,7 +1013,7 @@ is_path_absolute(const char *path)
 }
 
 
-static void
+static int
 verify_existence(char **options, const char *option_name, int must_be_dir)
 {
 	struct stat st;
@@ -1000,12 +1038,14 @@ verify_existence(char **options, const char *option_name, int must_be_dir)
 	if (path != NULL
 	    && (stat(path, &st) != 0
 	        || ((S_ISDIR(st.st_mode) ? 1 : 0) != must_be_dir))) {
-		die("Invalid path for %s: [%s]: (%s). Make sure that path is either "
-		    "absolute, or it is relative to civetweb executable.",
-		    option_name,
-		    path,
-		    strerror(errno));
+		warn("Invalid path for %s: [%s]: (%s). Make sure that path is either "
+		     "absolute, or it is relative to civetweb executable.",
+		     option_name,
+		     path,
+		     strerror(errno));
+		return 0;
 	}
+	return 1;
 }
 
 
@@ -1233,10 +1273,12 @@ run_client(const char *url_arg)
 	return 1;
 }
 
-static void
+
+static int
 sanitize_options(char *options[] /* server options */,
                  const char *arg0 /* argv[0] */)
 {
+	int ok = 1;
 	/* Make sure we have absolute paths for files and directories */
 	set_absolute_path(options, "document_root", arg0);
 	set_absolute_path(options, "put_delete_auth_file", arg0);
@@ -1250,14 +1292,21 @@ sanitize_options(char *options[] /* server options */,
 	set_absolute_path(options, "ssl_certificate", arg0);
 
 	/* Make extra verification for certain options */
-	verify_existence(options, "document_root", 1);
-	verify_existence(options, "cgi_interpreter", 0);
-	verify_existence(options, "ssl_certificate", 0);
-	verify_existence(options, "ssl_ca_path", 1);
-	verify_existence(options, "ssl_ca_file", 0);
+	if (!verify_existence(options, "document_root", 1))
+		ok = 0;
+	if (!verify_existence(options, "cgi_interpreter", 0))
+		ok = 0;
+	if (!verify_existence(options, "ssl_certificate", 0))
+		ok = 0;
+	if (!verify_existence(options, "ssl_ca_path", 1))
+		ok = 0;
+	if (!verify_existence(options, "ssl_ca_file", 0))
+		ok = 0;
 #if defined(USE_LUA)
-	verify_existence(options, "lua_preload_file", 0);
+	if (!verify_existence(options, "lua_preload_file", 0))
+		ok = 0;
 #endif
+	return ok;
 }
 
 
@@ -1366,7 +1415,10 @@ start_civetweb(int argc, char *argv[])
 	/* Update config based on command line arguments */
 	process_command_line_arguments(argc, argv, options);
 
-	sanitize_options(options, argv[0]);
+	i = sanitize_options(options, argv[0]);
+	if (!i) {
+		die("Invalid options");
+	}
 
 	/* Setup signal handler: quit on Ctrl-C */
 	signal(SIGTERM, signal_handler);
@@ -1417,6 +1469,7 @@ start_civetweb(int argc, char *argv[])
 		    g_server_name,
 		    ((g_user_data.first_message == NULL) ? "unknown reason"
 		                                         : g_user_data.first_message));
+		/* TODO: Edit file g_config_file_name */
 	}
 
 #if defined(MG_EXPERIMENTAL_INTERFACES)
@@ -1432,7 +1485,10 @@ start_civetweb(int argc, char *argv[])
 			    strerror(errno));
 		}
 
-		sanitize_options(options, argv[0]);
+		j = sanitize_options(options, argv[0]);
+		if (!j) {
+			die("Invalid options");
+		}
 
 		j = mg_start_domain(g_ctx, (const char **)options);
 		if (j < 0) {
@@ -1501,6 +1557,7 @@ static SERVICE_STATUS ss;
 static SERVICE_STATUS_HANDLE hStatus;
 static const char *service_magic_argument = "--";
 static NOTIFYICONDATA TrayIcon;
+static UINT msg_taskbar_created;
 
 static void WINAPI
 ControlHandler(DWORD code)
@@ -2853,6 +2910,25 @@ manage_service(int action)
 }
 
 
+static void
+add_icon_to_systray(HWND hWnd)
+{
+	/* tray icon is entry point to the menu */
+	if (!g_hide_tray) {
+		TrayIcon.cbSize = sizeof(TrayIcon);
+		TrayIcon.uID = ID_ICON;
+		TrayIcon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+		TrayIcon.hIcon = hIcon;
+		TrayIcon.hWnd = hWnd;
+		snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", g_server_name);
+		TrayIcon.uCallbackMessage = WM_USER;
+		Shell_NotifyIcon(NIM_ADD, &TrayIcon);
+	} else {
+		TrayIcon.cbSize = 0;
+	}
+}
+
+
 /* Window proc for taskbar icon */
 static LRESULT CALLBACK
 WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -2976,6 +3052,12 @@ WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		g_exit_flag = 1;
 		PostQuitMessage(0);
 		return 0; /* We've just sent our own quit message, with proper hwnd. */
+
+	default:
+		if (msg == msg_taskbar_created) {
+			add_icon_to_systray(hWnd);
+		}
+		break;
 	}
 
 	return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -3057,8 +3139,11 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show)
 
 	init_server_name();
 	init_system_info();
+	msg_taskbar_created = RegisterWindowMessage("TaskbarCreated");
+
 	memset(&cls, 0, sizeof(cls));
-	cls.lpfnWndProc = (WNDPROC)WindowProc;
+	cls.lpfnWndProc = WindowProc;
+	cls.hInstance = GetModuleHandle(NULL);
 	cls.hIcon = LoadIcon(NULL, IDI_APPLICATION);
 	cls.lpszClassName = g_server_base_name;
 
@@ -3072,7 +3157,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show)
 	                    0,
 	                    NULL,
 	                    NULL,
-	                    NULL,
+	                    cls.hInstance,
 	                    NULL);
 	ShowWindow(hWnd, SW_HIDE);
 
@@ -3089,19 +3174,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show)
 		                         0);
 	}
 
-	/* add icon to systray; tray icon is entry point to the menu */
-	if (!g_hide_tray) {
-		TrayIcon.cbSize = sizeof(TrayIcon);
-		TrayIcon.uID = ID_ICON;
-		TrayIcon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-		TrayIcon.hIcon = hIcon;
-		TrayIcon.hWnd = hWnd;
-		snprintf(TrayIcon.szTip, sizeof(TrayIcon.szTip), "%s", g_server_name);
-		TrayIcon.uCallbackMessage = WM_USER;
-		Shell_NotifyIcon(NIM_ADD, &TrayIcon);
-	} else {
-		TrayIcon.cbSize = 0;
-	}
+	add_icon_to_systray(hWnd);
 
 	/* Message loop */
 	while (GetMessage(&msg, hWnd, 0, 0) > 0) {
@@ -3262,3 +3335,4 @@ main(int argc, char *argv[])
 	return EXIT_SUCCESS;
 }
 #endif /* _WIN32 */
+#undef printf

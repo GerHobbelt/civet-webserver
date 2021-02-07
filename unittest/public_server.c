@@ -41,6 +41,10 @@
 #include <windows.h>
 #define test_sleep(x) (Sleep((x)*1000))
 #else
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #define test_sleep(x) (sleep(x))
 #endif
@@ -52,7 +56,48 @@
 #define SLEEP_BEFORE_MG_STOP (1)
 #define SLEEP_AFTER_MG_STOP (5)
 
-static const char *external_server_ip = "140.82.118.4"; /* github.com */
+
+/* Try to communicate with an external http server. */
+static const char *
+get_external_server_ip(void)
+{
+#define no_of_testhosts (4)
+	const char *testhost[no_of_testhosts] = {"github.com",
+	                                         "google.com",
+	                                         "sourceforge.net",
+	                                         "microsoft.com"};
+	static char external_ip[64] = {0};
+	int testhostidx;
+
+	if (external_ip[0]) {
+		/* Get IP of external server only once, then reuse it */
+		return external_ip;
+	}
+	mark_point();
+
+	for (testhostidx = 0; testhostidx < no_of_testhosts; testhostidx++) {
+		struct hostent *hostentry;
+		struct in_addr **in_addr_list;
+		const char *ip;
+
+		hostentry = gethostbyname(testhost[testhostidx]);
+
+		if (hostentry != NULL) {
+			in_addr_list = (struct in_addr **)hostentry->h_addr_list;
+			if (in_addr_list[0] != NULL) {
+				ip = inet_ntoa(*in_addr_list[0]);
+				if (ip != NULL) {
+					mark_point();
+					strcpy(external_ip, ip);
+					return external_ip;
+				}
+			}
+		}
+	}
+
+	ck_abort_msg("Could not determine IP of any external server");
+	return "0.0.0.0";
+}
 
 
 /* This unit test file uses the excellent Check unit testing library.
@@ -807,6 +852,14 @@ START_TEST(test_mg_server_and_client_tls)
 		ck_assert_int_lt(client_res, 0); /* response is "error" (-1) */
 		ck_assert_str_ne(client_err, "");
 		client_ri = mg_get_response_info(client_conn);
+		if (client_ri) {
+			/* client_ri == NULL is allowed. However, some versions seem to
+			 * return non-null, but all elements are NULL. */
+			ck_assert_int_eq(client_ri->status_code, 0);
+			ck_assert_int_eq(client_ri->num_headers, 0);
+			ck_assert_ptr_eq(client_ri->http_version, NULL);
+			client_ri = NULL;
+		}
 		ck_assert(client_ri == NULL);
 
 		mg_close_connection(client_conn);
@@ -971,7 +1024,7 @@ request_test_handler2(struct mg_connection *conn, void *cbdata)
 }
 
 
-#ifdef USE_WEBSOCKET
+#if defined(USE_WEBSOCKET)
 /****************************************************************************/
 /* WEBSOCKET SERVER                                                         */
 /****************************************************************************/
@@ -983,7 +1036,7 @@ static const size_t websocket_goodbye_msg_len =
     14 /* strlen(websocket_goodbye_msg) */;
 
 
-#if defined(DEBUG)
+#if defined(WS_DEBUG_TRACE)
 static void
 WS_TEST_TRACE(const char *f, ...)
 {
@@ -1379,7 +1432,7 @@ START_TEST(test_request_handlers)
 	        ipv4_port);
 	mg_set_request_handler(ctx, "/handler2", request_test_handler2, NULL);
 
-#ifdef USE_WEBSOCKET
+#if defined(USE_WEBSOCKET)
 	mg_set_websocket_handler(ctx,
 	                         "/websocket",
 	                         websock_server_connect,
@@ -1972,7 +2025,7 @@ START_TEST(test_request_handlers)
 
 
 /* Websocket test */
-#ifdef USE_WEBSOCKET
+#if defined(USE_WEBSOCKET)
 	/* Then connect a first client */
 	ws_client1_conn =
 	    mg_connect_websocket_client("localhost",
@@ -2023,7 +2076,7 @@ START_TEST(test_request_handlers)
 	ws_client1_data.len = 0;
 
 /* Now connect a second client */
-#ifdef USE_IPV6
+#if defined(USE_IPV6)
 	ws_client2_conn =
 	    mg_connect_websocket_client("[::1]",
 	                                ipv6_port,
@@ -2268,7 +2321,7 @@ START_TEST(test_request_handlers)
 	test_mg_stop(ctx, __LINE__);
 	mark_point();
 
-#ifdef USE_WEBSOCKET
+#if defined(USE_WEBSOCKET)
 	for (i = 0; i < 100; i++) {
 		test_sleep(1);
 		if (ws_client3_data.closed != 0) {
@@ -3690,7 +3743,7 @@ START_TEST(test_error_handling)
 	ck_assert_str_eq(errmsg, "Invalid number of worker threads");
 
 /* Set to a number - but use a number above the limit */
-#ifdef MAX_WORKER_THREADS
+#if defined(MAX_WORKER_THREADS)
 	sprintf(bad_thread_num, "%u", MAX_WORKER_THREADS + 1);
 #else
 	sprintf(bad_thread_num, "%lu", 1000000000lu);
@@ -4814,6 +4867,9 @@ minimal_https_client_check(const char *server,
 
 START_TEST(test_minimal_client)
 {
+	const char *external_server_ip;
+	mark_point();
+	external_server_ip = get_external_server_ip();
 	mark_point();
 
 	/* Initialize the library */
@@ -4839,6 +4895,9 @@ END_TEST
 
 START_TEST(test_minimal_tls_client)
 {
+	const char *external_server_ip;
+	mark_point();
+	external_server_ip = get_external_server_ip();
 	mark_point();
 
 #if !defined(NO_SSL) /* dont run https test if SSL is not enabled */

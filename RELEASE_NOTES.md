@@ -1,10 +1,45 @@
-Release Notes v1.13
+Release Notes v1.14 (under construction)
 ===
-### *work in progress*
+### Objectives: *TO BE DEFINED*
 
 Changes
 -------
 
+- Improve documentation
+- Fix HTTP range requests
+- All some functions for Lua scripts/LSP
+- Build system specific fixes (CMake, MinGW)
+- Update 3rd party components (Lua, lfs, sqlite)
+- Allow Lua background scripts to use timers
+- Update version number
+
+
+Release Notes v1.13
+===
+### Objectives: *Various updates and fixes, additional API functions*
+
+Changes
+-------
+
+- Add arguments for CGI interpreters
+- Support multiple CGi interpreters
+- Buffering HTTP response headers, including API functions mg_response_header_* in C and Lua
+- Additional C API functions
+- Fix some memory leaks
+- Extended use of atomic operations (e.g., for server stats)
+- Add fuzz tests
+- Set OpenSSL 1.1 API as default (from 1.0)
+- Add Lua 5.4 support and deprecate Lua 5.1
+- Provide additional Lua API functions
+- Fix Lua websocket memory leak when closing the server
+- Remove obsolete "file in memory" implementation
+- Improvements and fixes in documentation
+- Fixes from static source code analysis
+- Additional unit tests
+- Various small bug fixes
+- Experimental support for some HTTP2 features (not ready for production)
+- Experimental support for websocket compression
+- Remove legacy interfaces declared obsolete since more than 3 years
 - Update version number
 
 
@@ -193,6 +228,7 @@ Changes
 - Fix bug in timer logic (for Lua Websockets)
 - Updated version number
 
+
 Release Notes v1.8
 ===
 ### Objectives: *CMake integration and continuous integration tests, Support client certificates, bug fixes*
@@ -241,6 +277,7 @@ Changes
 - Add status badges to the GitHub project main page
 - Updated version number
 
+
 Release Notes v1.7
 ===
 ### Objectives: *Examples, documentation, additional API functions, some functions rewritten, bug fixes and updates*
@@ -288,6 +325,7 @@ Changes
 - Fix compiler warnings
 - Updated version number
 
+
 Release Notes v1.6
 ===
 ### Objectives: *Enhance Lua support, configuration dialog for windows, new examples, bug fixes and updates*
@@ -331,6 +369,7 @@ Changes
 - Fixed Posix locking functions for Windows (bel2125)
 - Updated version number
 
+
 Release Notes v1.5
 ===
 ### Objectives: *Bug fixes and updates, repository restoration*
@@ -364,6 +403,7 @@ Changes
 - Updated version numbers.
 - Added contributor credits file.
 
+
 Release Notes v1.4
 ===
 ### Objectives: *New URI handler interface, feature enhancements, C++ extensions*
@@ -389,6 +429,7 @@ Changes
 - Conformed source files to UNIX line endings for consistency.
 - Unified the coding style to improve reability.
 
+
 Release Notes v1.3
 ===
 ### Objectives: *Buildroot Integration*
@@ -400,6 +441,7 @@ Changes
 - Validated build without SQLITE3 large file support
 - Updated documentation
 - Updated Buildroot config example
+
 
 Release Notes v1.2
 ===
@@ -424,6 +466,7 @@ Known Issues
 -----
 
 - The prebuilt Window's version requires [Visual C++ Redistributable for Visual Studio 2012](http://www.microsoft.com/en-us/download/details.aspx?id=30679)
+
 
 Release Notes v1.1
 ===
@@ -468,6 +511,7 @@ Known Issues
     + Need to find out what is actually in demand.
 - Build changes may impact current users.
     + As with any change of this type, changes may impact some users.
+
 
 Release Notes v1.0
 ===
