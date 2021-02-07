@@ -116,9 +116,9 @@ static void test_http_hdr_value_unquoting(void) {
   struct mg_context ctx_fake = {0};
   struct mg_context *ctx = &ctx_fake;
 
-  char *e;
+  char *e = NULL;
   char *buf;
-  char sep;
+  char sep = 0;
   int rv;
   int tt, n;
 
