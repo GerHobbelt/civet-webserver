@@ -1283,6 +1283,11 @@ CIVETWEB_API const char *mg_get_builtin_mime_type(const char *file_name);
 CIVETWEB_API const char *
 mg_get_response_code_text(const struct mg_connection *conn, int response_code);
 
+/* Get the client side socket of the connection.
+   Return:
+    associated clientside socket of the connection
+*/
+CIVETWEB_API unsigned int mg_getclient_socket(const struct mg_connection *conn);
 
 /* Return CivetWeb version. */
 CIVETWEB_API const char *mg_version(void);
@@ -1479,9 +1484,9 @@ CIVETWEB_API int mg_get_system_info(char *buffer, int buflen);
      one byte more than the returned value. However, since the available
      context information changes, you should allocate a few bytes more.
 */
+
 CIVETWEB_API int
 mg_get_context_info(const struct mg_context *ctx, char *buffer, int buflen);
-
 
 #ifdef MG_EXPERIMENTAL_INTERFACES
 /* Get connection information. Useful for server diagnosis.
