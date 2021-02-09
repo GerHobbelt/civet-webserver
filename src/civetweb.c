@@ -513,15 +513,15 @@ mg_static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8,
 
 typedef const char *SOCK_OPT_TYPE;
 
-#if !defined(MG_PATH_MAX)
-#define W_PATH_MAX (MAX_PATH)
+#if !defined(UTF8_PATH_MAX)
+#define UTF16_PATH_MAX (MAX_PATH)
 /* at most three UTF-8 chars per wchar_t */
-#define MG_PATH_MAX (W_PATH_MAX * 3)
+#define UTF8_PATH_MAX (UTF16_PATH_MAX * 3)
 #else
-#define W_PATH_MAX ((MG_PATH_MAX + 2) / 3)
+#define UTF16_PATH_MAX ((UTF8_PATH_MAX + 2) / 3)
 #endif
 
-mg_static_assert(MG_PATH_MAX >= 1, "path length must be a positive number");
+mg_static_assert(UTF8_PATH_MAX >= 1, "path length must be a positive number");
 
 #if !defined(_IN_PORT_T)
 #if !defined(in_port_t)
@@ -796,7 +796,7 @@ mg_fgets(char *buf, size_t size, struct mg_file *filep);
 
 /* POSIX dirent interface */
 struct dirent {
-	char d_name[MG_PATH_MAX];
+	char d_name[UTF8_PATH_MAX];
 };
 
 typedef struct DIR {
@@ -826,7 +826,7 @@ struct mg_pollfd {
 
 typedef const void *SOCK_OPT_TYPE;
 
-#define MG_PATH_MAX PATH_MAX
+#define UTF8_PATH_MAX PATH_MAX
 
 #if defined(ANDROID)
 typedef unsigned short int in_port_t;
@@ -1150,8 +1150,8 @@ FUNCTION_MAY_BE_UNUSED
 static int
 rename(const char *a, const char *b)
 {
-	wchar_t wa[W_PATH_MAX];
-	wchar_t wb[W_PATH_MAX];
+	wchar_t wa[UTF16_PATH_MAX];
+	wchar_t wb[UTF16_PATH_MAX];
 	path_to_unicode(NULL, a, wa, ARRAY_SIZE(wa));
 	path_to_unicode(NULL, b, wb, ARRAY_SIZE(wb));
 
@@ -1169,7 +1169,7 @@ FUNCTION_MAY_BE_UNUSED
 static int
 stat(const char *name, struct stat *st)
 {
-	wchar_t wbuf[W_PATH_MAX];
+	wchar_t wbuf[UTF16_PATH_MAX];
 	WIN32_FILE_ATTRIBUTE_DATA attr;
 	time_t creation_time, write_time;
 
@@ -3186,7 +3186,7 @@ mg_fopen(const struct mg_connection *conn,
 
 #if defined(_WIN32)
 		{
-			wchar_t wbuf[W_PATH_MAX];
+			wchar_t wbuf[UTF16_PATH_MAX];
 			path_to_unicode(conn, path, wbuf, ARRAY_SIZE(wbuf));
 			switch (mode) {
 			case MG_FOPEN_MODE_READ:
@@ -4553,7 +4553,7 @@ mg_send_http_error_impl(struct mg_connection *conn,
 	char date[64];
 	time_t curtime = time(NULL);
 #if !defined(NO_FILESYSTEMS)
-	char path_buf[MG_PATH_MAX];
+	char path_buf[UTF8_PATH_MAX];
 	int len, i, page_handler_found, scope, truncated;
 	const char *error_handler = NULL;
 	struct mg_file error_page_file = STRUCT_FILE_INITIALIZER;
@@ -5139,8 +5139,8 @@ path_to_unicode(const struct mg_connection *conn,
                 wchar_t *wbuf,
                 size_t wbuf_len)
 {
-	char buf[MG_PATH_MAX], buf2[MG_PATH_MAX];
-	wchar_t wbuf2[W_PATH_MAX + 1];
+	char buf[UTF8_PATH_MAX], buf2[UTF8_PATH_MAX];
+	wchar_t wbuf2[UTF16_PATH_MAX + 1];
 	DWORD long_len, err;
 	int (*fcompare)(const wchar_t *, const wchar_t *) = mg_wcscasecmp;
 
@@ -5209,7 +5209,7 @@ mg_stat(const struct mg_connection *conn,
         const char *path,
         struct mg_file_stat *filep)
 {
-	wchar_t wbuf[W_PATH_MAX];
+	wchar_t wbuf[UTF16_PATH_MAX];
 	WIN32_FILE_ATTRIBUTE_DATA info;
 	time_t creation_time;
 	size_t len;
@@ -5253,7 +5253,7 @@ mg_stat(const struct mg_connection *conn,
 static int
 mg_remove(const struct mg_connection *conn, const char *path)
 {
-	wchar_t wbuf[W_PATH_MAX];
+	wchar_t wbuf[UTF16_PATH_MAX];
 	path_to_unicode(conn, path, wbuf, ARRAY_SIZE(wbuf));
 	return DeleteFileW(wbuf) ? 0 : -1;
 }
@@ -5262,7 +5262,7 @@ mg_remove(const struct mg_connection *conn, const char *path)
 static int
 mg_mkdir(const struct mg_connection *conn, const char *path, int mode)
 {
-	wchar_t wbuf[W_PATH_MAX];
+	wchar_t wbuf[UTF16_PATH_MAX];
 	(void)mode;
 	path_to_unicode(conn, path, wbuf, ARRAY_SIZE(wbuf));
 	return CreateDirectoryW(wbuf, NULL) ? 0 : -1;
@@ -5284,7 +5284,7 @@ static DIR *
 mg_opendir(const struct mg_connection *conn, const char *name)
 {
 	DIR *dir = NULL;
-	wchar_t wpath[W_PATH_MAX];
+	wchar_t wpath[UTF16_PATH_MAX];
 	DWORD attrs;
 
 	if (name == NULL) {
@@ -5523,7 +5523,7 @@ FUNCTION_MAY_BE_UNUSED
 static HANDLE
 dlopen(const char *dll_name, int flags)
 {
-	wchar_t wbuf[W_PATH_MAX];
+	wchar_t wbuf[UTF16_PATH_MAX];
 	(void)flags;
 	path_to_unicode(NULL, dll_name, wbuf, ARRAY_SIZE(wbuf));
 	return LoadLibraryW(wbuf);
@@ -5616,8 +5616,8 @@ spawn_process(struct mg_connection *conn,
               const char *dir)
 {
 	HANDLE me;
-	char *interp, full_interp[MG_PATH_MAX], full_dir[MG_PATH_MAX],
-	    cmdline[MG_PATH_MAX], buf[MG_PATH_MAX];
+	char *interp, full_interp[UTF8_PATH_MAX], full_dir[UTF8_PATH_MAX],
+	    cmdline[UTF8_PATH_MAX], buf[UTF8_PATH_MAX];
 	int truncated;
 	struct mg_file file = STRUCT_FILE_INITIALIZER;
 	STARTUPINFOA si;
@@ -7234,7 +7234,7 @@ interpret_uri(struct mg_connection *conn, /* in/out: request (must be valid) */
 	const char *rewrite;
 	struct vec a, b;
 	ptrdiff_t match_len;
-	char gz_path[MG_PATH_MAX];
+	char gz_path[UTF8_PATH_MAX];
 	int truncated;
 #if !defined(NO_CGI) || defined(USE_LUA) || defined(USE_DUKTAPE)
 	char *tmp_str;
@@ -7402,7 +7402,8 @@ interpret_uri(struct mg_connection *conn, /* in/out: request (must be valid) */
 	/* Step 10: Script resources may handle sub-resources */
 	/* Support PATH_INFO for CGI scripts. */
 	tmp_str_len = strlen(filename);
-	tmp_str = (char *)mg_malloc_ctx(tmp_str_len + MG_PATH_MAX + 1, conn->phys_ctx);
+	tmp_str =
+	    (char *)mg_malloc_ctx(tmp_str_len + UTF8_PATH_MAX + 1, conn->phys_ctx);
 	if (!tmp_str) {
 		/* Out of memory */
 		goto interpret_cleanup;
@@ -7440,7 +7441,7 @@ interpret_uri(struct mg_connection *conn, /* in/out: request (must be valid) */
 
 			if (allow_substitute_script_subresources) {
 				if (substitute_index_file(
-				        conn, tmp_str, tmp_str_len + MG_PATH_MAX, filestat)) {
+				        conn, tmp_str, tmp_str_len + UTF8_PATH_MAX, filestat)) {
 
 					/* some intermediate directory has an index file */
 					if (extention_matches_script(conn, tmp_str)) {
@@ -8028,7 +8029,7 @@ open_auth_file(struct mg_connection *conn,
                struct mg_file *filep)
 {
 	if ((conn != NULL) && (conn->dom_ctx != NULL)) {
-		char name[MG_PATH_MAX];
+		char name[UTF8_PATH_MAX];
 		const char *p, *e,
 		    *gpass = conn->dom_ctx->config[GLOBAL_PASSWORDS_FILE];
 		int truncated;
@@ -8420,7 +8421,7 @@ static int
 check_authorization(struct mg_connection *conn, const char *path)
 {
 #if !defined(NO_FILESYSTEMS)
-	char fname[MG_PATH_MAX];
+	char fname[UTF8_PATH_MAX];
 	struct vec uri_vec, filename_vec;
 	const char *list;
 	struct mg_file file = STRUCT_FILE_INITIALIZER;
@@ -8556,7 +8557,7 @@ mg_modify_passwords_file(const char *fname,
                          const char *pass)
 {
 	int found, i;
-	char line[512], u[512] = "", d[512] = "", ha1[33], tmp[MG_PATH_MAX + 8];
+	char line[512], u[512] = "", d[512] = "", ha1[33], tmp[UTF8_PATH_MAX + 8];
 	FILE *fp, *fp2;
 
 	found = 0;
@@ -8602,7 +8603,7 @@ mg_modify_passwords_file(const char *fname,
 	}
 
 	/* The maximum length of the path to the password file is limited */
-	if ((strlen(fname) + 4) >= MG_PATH_MAX) {
+	if ((strlen(fname) + 4) >= UTF8_PATH_MAX) {
 		return 0;
 	}
 
@@ -9122,7 +9123,7 @@ scan_directory(struct mg_connection *conn,
                void *data,
                int (*cb)(struct de *, void *))
 {
-	char path[MG_PATH_MAX];
+	char path[UTF8_PATH_MAX];
 	struct dirent *dp;
 	DIR *dirp;
 	struct de de;
@@ -9179,7 +9180,7 @@ scan_directory(struct mg_connection *conn,
 static int
 remove_directory(struct mg_connection *conn, const char *dir)
 {
-	char path[MG_PATH_MAX];
+	char path[UTF8_PATH_MAX];
 	struct dirent *dp;
 	DIR *dirp;
 	struct de de;
@@ -9552,7 +9553,7 @@ handle_static_file_request(struct mg_connection *conn,
 	int64_t cl, r1, r2;
 	struct vec mime_vec;
 	int n, truncated;
-	char gz_path[MG_PATH_MAX];
+	char gz_path[UTF8_PATH_MAX];
 	const char *encoding = "";
 	const char *origin_hdr;
 	const char *cors_orig_cfg;
@@ -9927,7 +9928,7 @@ mg_send_mime_file2(struct mg_connection *conn,
 static int
 put_dir(struct mg_connection *conn, const char *path)
 {
-	char buf[MG_PATH_MAX];
+	char buf[UTF8_PATH_MAX];
 	const char *s, *p;
 	struct mg_file file = STRUCT_FILE_INITIALIZER;
 	size_t len;
@@ -10931,7 +10932,7 @@ handle_cgi_request(struct mg_connection *conn, const char *prog)
 	int headers_len, data_len, i, truncated;
 	int fdin[2] = {-1, -1}, fdout[2] = {-1, -1}, fderr[2] = {-1, -1};
 	const char *status, *status_text, *connection_state;
-	char *pbuf, dir[MG_PATH_MAX], *p;
+	char *pbuf, dir[UTF8_PATH_MAX], *p;
 	struct mg_request_info ri;
 	struct cgi_environment blk;
 	FILE *in = NULL, *out = NULL, *err = NULL;
@@ -13609,7 +13610,7 @@ static void
 handle_request(struct mg_connection *conn)
 {
 	struct mg_request_info *ri = &conn->request_info;
-	char path[MG_PATH_MAX];
+	char path[UTF8_PATH_MAX];
 	int uri_len, ssl_index;
 	int is_found = 0, is_script_resource = 0, is_websocket_request = 0,
 	    is_put_or_delete_request = 0, is_callback_resource = 0;
