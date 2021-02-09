@@ -2081,7 +2081,7 @@ static struct ssl_func crypto_sw[] = {{"ERR_get_error", NULL},
 #define SSL_set_fd (*(int (*)(SSL *, SOCKET))ssl_sw[6].ptr)
 #define SSL_new (*(SSL * (*)(SSL_CTX *)) ssl_sw[7].ptr)
 #define SSL_CTX_new (*(SSL_CTX * (*)(SSL_METHOD *)) ssl_sw[8].ptr)
-#define SSLv23_server_method (*(SSL_METHOD * (*)(void)) ssl_sw[9].ptr)
+#define TLS_server_method (*(SSL_METHOD * (*)(void)) ssl_sw[9].ptr)
 #define SSL_library_init (*(int (*)(void))ssl_sw[10].ptr)
 #define SSL_CTX_use_PrivateKey_file                                            \
 	(*(int (*)(SSL_CTX *, const char *, int))ssl_sw[11].ptr)
@@ -2093,7 +2093,7 @@ static struct ssl_func crypto_sw[] = {{"ERR_get_error", NULL},
 #define SSL_load_error_strings (*(void (*)(void))ssl_sw[15].ptr)
 #define SSL_CTX_use_certificate_chain_file                                     \
 	(*(int (*)(SSL_CTX *, const char *))ssl_sw[16].ptr)
-#define SSLv23_client_method (*(SSL_METHOD * (*)(void)) ssl_sw[17].ptr)
+#define TLS_client_method (*(SSL_METHOD * (*)(void)) ssl_sw[17].ptr)
 #define SSL_pending (*(int (*)(SSL *))ssl_sw[18].ptr)
 #define SSL_CTX_set_verify                                                     \
 	(*(void (*)(SSL_CTX *,                                                     \
@@ -2207,7 +2207,7 @@ static struct ssl_func ssl_sw[] = {{"SSL_free", NULL},
                                    {"SSL_set_fd", NULL},
                                    {"SSL_new", NULL},
                                    {"SSL_CTX_new", NULL},
-                                   {"SSLv23_server_method", NULL},
+                                   {"TLS_server_method", NULL},
                                    {"SSL_library_init", NULL},
                                    {"SSL_CTX_use_PrivateKey_file", NULL},
                                    {"SSL_CTX_use_certificate_file", NULL},
@@ -2215,7 +2215,7 @@ static struct ssl_func ssl_sw[] = {{"SSL_free", NULL},
                                    {"SSL_CTX_free", NULL},
                                    {"SSL_load_error_strings", NULL},
                                    {"SSL_CTX_use_certificate_chain_file", NULL},
-                                   {"SSLv23_client_method", NULL},
+                                   {"TLS_client_method", NULL},
                                    {"SSL_pending", NULL},
                                    {"SSL_CTX_set_verify", NULL},
                                    {"SSL_shutdown", NULL},
@@ -8752,7 +8752,6 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 
 #if !defined(NO_SSL)
 #if !defined(NO_SSL_DL)
-#if defined(OPENSSL_API_1_1)
 	if (use_ssl && (TLS_client_method == NULL)) {
 		mg_snprintf(NULL,
 		            NULL, /* No truncation check for ebuf */
@@ -8762,18 +8761,6 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 		            "SSL is not initialized");
 		return 0;
 	}
-#else
-	if (use_ssl && (SSLv23_client_method == NULL)) {
-		mg_snprintf(NULL,
-		            NULL, /* No truncation check for ebuf */
-		            ebuf,
-		            ebuf_len,
-		            "%s",
-		            "SSL is not initialized");
-		return 0;
-	}
-
-#endif /* OPENSSL_API_1_1 */
 #else
 	(void)use_ssl;
 #endif /* NO_SSL_DL */
@@ -15395,35 +15382,10 @@ static int cryptolib_users = 0; /* Reference counter for crypto library. */
 static int
 initialize_ssl(char *ebuf, size_t ebuf_len)
 {
-#if defined(OPENSSL_API_1_1)
-	if (ebuf_len > 0) {
-		ebuf[0] = 0;
-	}
-
-#if !defined(NO_SSL_DL)
-	if (!cryptolib_dll_handle) {
-		cryptolib_dll_handle = load_dll(ebuf, ebuf_len, CRYPTO_LIB, crypto_sw);
-		if (!cryptolib_dll_handle) {
-			mg_snprintf(NULL,
-			            NULL, /* No truncation check for ebuf */
-			            ebuf,
-			            ebuf_len,
-			            "%s: error loading library %s",
-			            __func__,
-			            CRYPTO_LIB);
-			DEBUG_TRACE("%s", ebuf);
-			return 0;
-		}
-	}
-#endif /* NO_SSL_DL */
-
-	if (mg_atomic_inc(&cryptolib_users) > 1) {
-		return 1;
-	}
-
-#else /* not OPENSSL_API_1_1 */
+#if !defined(OPENSSL_API_1_1)
 	int i, num_locks;
 	size_t size;
+#endif
 
 	if (ebuf_len > 0) {
 		ebuf[0] = 0;
@@ -15450,6 +15412,7 @@ initialize_ssl(char *ebuf, size_t ebuf_len)
 		return 1;
 	}
 
+#if !defined(OPENSSL_API_1_1)
 	/* Initialize locking callbacks, needed for thread safety.
 	 * http://www.openssl.org/support/faq.html#PROG1
 	 */
@@ -15591,30 +15554,12 @@ ssl_use_pem_file(struct mg_context *phys_ctx,
 
 #if defined(OPENSSL_API_1_1)
 static unsigned long
-ssl_get_protocol(int version_id)
-{
-	long unsigned ret = (long unsigned)SSL_OP_ALL;
-	if (version_id > 0)
-		ret |= SSL_OP_NO_SSLv2;
-	if (version_id > 1)
-		ret |= SSL_OP_NO_SSLv3;
-	if (version_id > 2)
-		ret |= SSL_OP_NO_TLSv1;
-	if (version_id > 3)
-		ret |= SSL_OP_NO_TLSv1_1;
-	if (version_id > 4)
-		ret |= SSL_OP_NO_TLSv1_2;
-#if defined(SSL_OP_NO_TLSv1_3)
-	if (version_id > 5)
-		ret |= SSL_OP_NO_TLSv1_3;
-#endif
-	return ret;
-}
 #else
 static long
+#endif
 ssl_get_protocol(int version_id)
 {
-	long ret = (long)SSL_OP_ALL;
+	unsigned long ret = (unsigned long)SSL_OP_ALL;
 	if (version_id > 0)
 		ret |= SSL_OP_NO_SSLv2;
 	if (version_id > 1)
@@ -15629,9 +15574,12 @@ ssl_get_protocol(int version_id)
 	if (version_id > 5)
 		ret |= SSL_OP_NO_TLSv1_3;
 #endif
+#if defined(OPENSSL_API_1_1)
 	return ret;
+#else
+	return (long)ret;
+#endif
 }
-#endif /* OPENSSL_API_1_1 */
 
 
 /* SSL callback documentation:
@@ -15747,21 +15695,12 @@ init_ssl_ctx_impl(struct mg_context *phys_ctx,
 	md5_state_t md5state;
 	int protocol_ver;
 
-#if defined(OPENSSL_API_1_1)
 	if ((dom_ctx->ssl_ctx = SSL_CTX_new(TLS_server_method())) == NULL) {
 		mg_cry_ctx_internal(phys_ctx,
 		                    "SSL_CTX_new (server) error: %s",
 		                    ssl_error());
 		return 0;
 	}
-#else
-	if ((dom_ctx->ssl_ctx = SSL_CTX_new(SSLv23_server_method())) == NULL) {
-		mg_cry_ctx_internal(phys_ctx,
-		                    "SSL_CTX_new (server) error: %s",
-		                    ssl_error());
-		return 0;
-	}
-#endif /* OPENSSL_API_1_1 */
 
 	SSL_CTX_clear_options(dom_ctx->ssl_ctx,
 	                      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1
@@ -16503,7 +16442,6 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 	}
 
 #if !defined(NO_SSL)
-#if defined(OPENSSL_API_1_1)
 	if (use_ssl
 	    && (conn->dom_ctx->ssl_ctx = SSL_CTX_new(TLS_client_method()))
 	           == NULL) {
@@ -16517,21 +16455,6 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 		mg_free(conn);
 		return NULL;
 	}
-#else
-	if (use_ssl
-	    && (conn->dom_ctx->ssl_ctx = SSL_CTX_new(SSLv23_client_method()))
-	           == NULL) {
-		mg_snprintf(NULL,
-		            NULL, /* No truncation check for ebuf */
-		            ebuf,
-		            ebuf_len,
-		            "SSL_CTX_new error: %s",
-		            ssl_error());
-		closesocket(sock);
-		mg_free(conn);
-		return NULL;
-	}
-#endif /* OPENSSL_API_1_1 */
 #endif /* NO_SSL */
 
 
