@@ -2895,6 +2895,7 @@ struct mg_connection {
 	char rxfbuf[RX_SZ_32K + 1] ; /* buffer used by mg_handle_form_request */
 	void *tls_user_ptr; /* User defined pointer in thread local storage,
 	                     * for quick access */
+        struct mg_conn_stop_ctx * psctrl;
 };
 
 
@@ -6284,6 +6285,12 @@ mg_poll(struct mg_pollfd *pfd,
 			return -2;
 		}
 
+                if (conn && conn->psctrl && (conn->psctrl->stop_now > 0)) {
+                     //printf("%s() psctrl->stop_now conn=%p ctx=%p \n",__func__,conn,conn->phys_ctx);
+			/* per connection Shut down signal */
+			return -2;
+		}
+
 		if ((milliseconds >= 0) && (milliseconds < ms_now)) {
 			ms_now = milliseconds;
 		}
@@ -6750,15 +6757,37 @@ pull_inner(FILE *fp,
 
 	} else if (conn->ssl != NULL) {
 
-		struct mg_pollfd pfd[1];
+		struct mg_pollfd pfd[2] = {0};
 		int pollres;
+                int n = 1;
 
 		pfd[0].fd = conn->client.sock;
 		pfd[0].events = POLLIN;
+                if (conn->psctrl && (conn->psctrl->sd > 0)) {
+		   pfd[1].fd = conn->psctrl->sd;
+		   pfd[1].events = POLLIN;
+                   n++;
+                   //printf("%s() conn=%p ctx=%p added psctrl->sd=%d \n", __func__,conn,conn->phys_ctx,conn->psctrl->sd);
+                }
 		pollres = mg_poll(pfd,
-		                  1,
+		                  n,
 		                  (int)(timeout * 1000.0),
 		                  &(conn->phys_ctx->stop_flag), conn);
+                if (conn->psctrl && (conn->psctrl->stop_now > 0)) {
+                    //printf("%s(STOP_NOW)  conn=%p ctx=%p stop_now\n", __func__,conn,conn->phys_ctx);
+
+                    //Drain the data just in case, also we can check if the
+                    //received data value is same as received from socket
+		    if ((pollres > 0) && (conn->psctrl->sd > 0) && (n == 2) && (pfd[1].revents & POLLIN)) {
+                           int val = 0;
+                           int r = recvfrom(conn->psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
+                           //if ( r < 0 ) {
+                               // printf("%s(STOP_NOW) conn=%p ctx=%p r=%d ERRNO=%d\n",__func__,conn,conn->phys_ctx,r,ERRNO);
+                           //}
+                           //printf("%s(STOP_NOW) conn=%p ctx=%p val=%d rsz=%d\n", __func__,conn,conn->phys_ctx,val,r);
+                     }
+                     return -2;
+		}
 		if (conn->phys_ctx->stop_flag) {
 			return -2;
 		}
@@ -15239,6 +15268,126 @@ static int connect_to_wakeup_master(SOCKET lsd)
    return rc;
 }
 
+//NOTE do not worry about any socket error, it is only an
+//additional attempt to wakeup from pull_inner() faster
+int mg_conn_stop_ctx_init(struct mg_conn_stop_ctx *psctrl, int immediate)
+{
+   if (!psctrl) {
+     return -1;
+   }
+
+   memset(psctrl, 0, sizeof(struct mg_conn_stop_ctx));
+
+   if (immediate) {
+
+      // initialize i/o notification through udp socket 
+      // bind to a random port
+      SOCKET sd = INVALID_SOCKET;
+      struct sockaddr_in bound_addr;
+      struct sockaddr_in src_addr;
+      #if defined(_WIN32) || defined(_WIN64)
+      int len = sizeof(bound_addr);
+      #else
+      socklen_t len = sizeof(bound_addr);
+      #endif
+      int rc = 0 ;
+      unsigned short bport = 0;
+
+      sd = socket(AF_INET, SOCK_DGRAM, 0);
+      if (sd == INVALID_SOCKET) {
+	//printf("%s(), socket creation failed , ERRNO = %d \n", __func__,(int)ERRNO);
+	return -1;
+      }
+
+      // set sd to non blocking as we do not want to block on this ctrl socket 
+      set_non_blocking_mode(sd);
+
+      // bind socket to get a name associated with it.
+      memset(&src_addr, 0, sizeof(src_addr));
+      src_addr.sin_family = AF_INET;
+      src_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      src_addr.sin_port = htons(0);
+      rc = bind(sd, (struct sockaddr *)&src_addr, sizeof(src_addr));
+      if (rc < 0) {
+	 //printf("%s(), bind failed , ERRNO = %d \n", __func__,(int)ERRNO);
+	 closesocket(sd);
+	 return -1;
+      }
+
+      rc = getsockname(sd, (struct sockaddr *)&bound_addr, &len);
+      if (rc < 0) {
+	 //printf("%s(), getsockname failed , ERRNO = %d \n", __func__,(int)ERRNO);
+	 closesocket(sd);
+	 return -1;
+      }
+      bport = ntohs(bound_addr.sin_port);
+
+      //printf("%s() sd=%d bounded to port=%u \n",__func__,sd, bport);
+
+      if (bport > 0) {
+	 psctrl->bound_port = bport;
+      }
+      else {
+	 closesocket(sd);
+	 return -1;
+      }
+      psctrl->sd = sd;
+  }
+
+   return 0;
+}
+
+int mg_signal_stop_ctx(struct mg_conn_stop_ctx *psctrl)
+{
+
+   struct sockaddr_in to_addr;
+   int rc = 0 ;
+
+   if (!psctrl) {
+     return -1;
+   }
+
+   //first:  set stop_now to 1;
+   psctrl->stop_now = 1 ;
+   
+   //second: try to send some data, so that poll will wake up
+   if ((psctrl->sd > 0) && (psctrl->bound_port > 0)) {
+      //self send a udp with its 4 bytes sd value as payload
+      struct sockaddr_in to_addr;
+      memset(&to_addr, 0, sizeof(to_addr));
+      to_addr.sin_family = AF_INET;
+      to_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+      to_addr.sin_port = htons(psctrl->bound_port);
+      rc = sendto(psctrl->sd, (char *)&psctrl->sd, sizeof(int), 0,
+              (struct sockaddr *)&to_addr, sizeof(to_addr));
+      if (rc < 0) {
+          //printf("%s(), sendto failed , ERRNO = %d \n", __func__,(int)ERRNO);
+          return -1;
+      }
+      //printf("%s(), sent successfully rc = %d \n", __func__,rc);
+   }
+
+   return 0;
+}
+
+int mg_close_stop_ctx(struct mg_conn_stop_ctx *psctrl)
+{
+
+   if (!psctrl) {
+     return -1;
+   }
+
+   if (psctrl->sd > 0) {
+      //printf("%s(), closing sd = %d \n", __func__,psctrl->sd );
+      closesocket(psctrl->sd);
+   }
+
+   memset(psctrl, 0, sizeof(struct mg_conn_stop_ctx));
+   psctrl->sd = INVALID_SOCKET; 
+
+   return 0;
+}
+
 /* Is there any SSL port in use? */
 static int
 is_ssl_port_used(const char *ports)
@@ -17170,6 +17319,11 @@ close_connection(struct mg_connection *conn)
 	//conn->rx_partial_ms = 0 ;
 	conn->rx_partial_bytes = 0 ;
 
+        if (conn->psctrl) {
+           //printf("%s() conn=%p conn->psctrl=%p\n",__func__,conn,conn->psctrl);
+           mg_close_stop_ctx(conn->psctrl);
+        }
+
 	mg_lock_connection(conn);
 
 	/* Set close flag, so keep-alive loops will stop */
@@ -17338,6 +17492,11 @@ mg_connect_client_impl(const struct mg_client_options *client_options,
 	conn->buf_size = (int)max_req_size;
 	conn->phys_ctx->context_type = CONTEXT_HTTP_CLIENT;
 	conn->dom_ctx = &(conn->phys_ctx->dd);
+
+        // printf("%s() conn=%p ctx=%p psctrl=%p\n",__func__,conn,conn->phys_ctx,client_options->psctrl);
+
+        // update stop_ctrl pointer if given in option
+        conn->psctrl = client_options->psctrl;
 
 	if (!connect_socket(conn->phys_ctx,
 	                    client_options,
