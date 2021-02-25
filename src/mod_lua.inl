@@ -104,7 +104,7 @@ reg_llstring(struct lua_State *L,
 
 
 #define reg_string(L, name, val)                                               \
-	reg_lstring(L, name, val, val ? strlen(val) : 0)
+	reg_lstring(L, name, val, (val != NULL) ? strlen(val) : 0)
 
 
 static void
@@ -1240,7 +1240,7 @@ lsp_split_form_urlencoded(lua_State *L)
 	in = lua_tolstring(L, 1, &len);
 
 	/* Create a modifyable copy */
-	buf = mg_malloc_ctx(len + 1, ctx);
+	buf = (char *)mg_malloc_ctx(len + 1, ctx);
 	if (buf == NULL) {
 		return luaL_error(L, "out of memory in invalid split_form_data() call");
 	}
@@ -2210,7 +2210,7 @@ lwebsocket_set_timer(lua_State *L, int is_periodic)
 		/* Argument for timer */
 		arg->L = L;
 		arg->script = (ws ? ws->script : NULL);
-		arg->pmutex = (ws ? &(ws->ws_mutex) : NULL);
+		arg->pmutex = (ws ? &(ws->ws_mutex) : &(ctx->lua_bg_mutex));
 		memcpy(arg->txt, "return(", 7);
 		memcpy(arg->txt + 7, action_txt, action_txt_len);
 		arg->txt[action_txt_len + 7] = ')';
@@ -2245,7 +2245,7 @@ lwebsocket_set_timer(lua_State *L, int is_periodic)
 		/* Argument for timer */
 		arg->L = L;
 		arg->script = (ws ? ws->script : NULL);
-		arg->pmutex = (ws ? &(ws->ws_mutex) : NULL);
+		arg->pmutex = (ws ? &(ws->ws_mutex) : &(ctx->lua_bg_mutex));
 		arg->funcref = funcref;
 		if (0
 		    == timer_add(ctx,
@@ -3466,6 +3466,12 @@ mg_lua_context_script_run(lua_State *L,
 		int ret = lua_toboolean(L, -1);
 		if (ret == 0) {
 			/* Script returned false */
+			mg_snprintf(NULL,
+			            NULL, /* No truncation check for ebuf */
+			            ebuf,
+			            ebuf_len,
+			            "Script %s returned false\n",
+			            file_name);
 			lua_close(L);
 			return 0;
 		}

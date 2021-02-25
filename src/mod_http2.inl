@@ -673,7 +673,7 @@ hpack_decode(const uint8_t *buf, int *i, struct mg_context *ctx)
 	/* Now read the string */
 	if (!is_huff) {
 		/* Not huffman encoded: Copy directly */
-		char *result = mg_malloc_ctx(byte_len + 1, ctx);
+		char *result = (char *)mg_malloc_ctx(byte_len + 1, ctx);
 		if (result) {
 			memcpy(result, buf + (*i), byte_len);
 			result[byte_len] = 0;
@@ -948,7 +948,7 @@ http2_send_response_headers(struct mg_connection *conn)
 	uint8_t header_bin[1024];
 	uint16_t header_len = 0;
 	int has_date = 0;
-	int has_connection = 0;
+	int has_connection_header = 0;
 	int i;
 
 	if ((conn->status_code < 100) || (conn->status_code > 999)) {
@@ -995,7 +995,7 @@ http2_send_response_headers(struct mg_connection *conn)
 		/* Filter headers not valid in HTTP/2 */
 		if (!mg_strcasecmp("Connection",
 		                   conn->response_info.http_headers[i].name)) {
-			has_connection = 1;
+			has_connection_header = 1;
 			continue; /* do not send */
 		}
 
@@ -1062,6 +1062,10 @@ http2_send_response_headers(struct mg_connection *conn)
 	mg_xwrite(conn, header_bin, header_len);
 
 	DEBUG_TRACE("HTTP2 response header sent: stream %u", conn->http2.stream_id);
+
+
+	(void)has_connection_header; /* ignore for the moment */
+
 
 	return 42; /* TODO */
 }
@@ -1156,25 +1160,13 @@ http2_must_use_http1(struct mg_connection *conn)
 static int mem_h_count = 0;
 static int mem_d_count = 0;
 #define CHECK_LEAK_HDR_ALLOC(ptr)                                              \
-	DEBUG_TRACE("H NEW %08x (%i): %s",                                         \
-	            (uint32_t)ptr,                                                 \
-	            ++mem_h_count,                                                 \
-	            (const char *)ptr)
+	DEBUG_TRACE("H NEW %p (%i): %s", ptr, ++mem_h_count, (const char *)ptr)
 #define CHECK_LEAK_HDR_FREE(ptr)                                               \
-	DEBUG_TRACE("H DEL %08x (%i): %s",                                         \
-	            (uint32_t)ptr,                                                 \
-	            --mem_h_count,                                                 \
-	            (const char *)ptr)
+	DEBUG_TRACE("H DEL %p (%i): %s", ptr, --mem_h_count, (const char *)ptr)
 #define CHECK_LEAK_DYN_ALLOC(ptr)                                              \
-	DEBUG_TRACE("D NEW %08x (%i): %s",                                         \
-	            (uint32_t)ptr,                                                 \
-	            ++mem_d_count,                                                 \
-	            (const char *)ptr)
+	DEBUG_TRACE("D NEW %p (%i): %s", ptr, ++mem_d_count, (const char *)ptr)
 #define CHECK_LEAK_DYN_FREE(ptr)                                               \
-	DEBUG_TRACE("D DEL %08x (%i): %s",                                         \
-	            (uint32_t)ptr,                                                 \
-	            --mem_d_count,                                                 \
-	            (const char *)ptr)
+	DEBUG_TRACE("D DEL %p (%i): %s", ptr, --mem_d_count, (const char *)ptr)
 #else
 #define CHECK_LEAK_HDR_ALLOC(ptr)
 #define CHECK_LEAK_HDR_FREE(ptr)
@@ -1250,7 +1242,6 @@ handle_http2(struct mg_connection *conn)
 	int bytes_read;
 	uint8_t *buf;
 	int my_settings_accepted = 0;
-	int my_settings_sent;
 	const char *my_hpack_headers[128];
 
 	struct http2_settings client_settings = http2_default_settings;
@@ -1258,7 +1249,6 @@ handle_http2(struct mg_connection *conn)
 
 	/* Send own settings */
 	http2_send_settings(conn, &http2_civetweb_server_settings);
-	my_settings_sent = 1;
 	// http2_send_window(conn, 0, /* 0x3fff0001 */ 1024*1024);
 
 	/* initialize hpack header table with predefined header fields */
@@ -1331,7 +1321,7 @@ handle_http2(struct mg_connection *conn)
 
 		case 0: /* DATA */
 		{
-			int i = 0; /* TODO */
+			/* TODO */
 			DEBUG_TRACE("%s", "HTTP2 DATA frame?");
 		} break;
 
@@ -1728,6 +1718,11 @@ handle_http2(struct mg_connection *conn)
 			DEBUG_TRACE("%s", "Unknown frame type");
 			goto clean_http2;
 		}
+
+		/* not used in the moment */
+		(void)frame_is_end_stream;
+		(void)frame_is_end_headers;
+		(void)client_settings;
 	}
 
 clean_http2:
