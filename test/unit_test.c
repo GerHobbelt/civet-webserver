@@ -948,7 +948,7 @@ static void test_IPaddr_parsing() {
   ASSERT(parse_port_string(&v, &s));
   ASSERT(s.lsa.u.sa.sa_family == AF_INET);
   ASSERT(s.lsa.u.sa.sa_data[0] == 0);
-  ASSERT(s.lsa.u.sa.sa_data[1] == (char)180);
+  ASSERT((unsigned char)s.lsa.u.sa.sa_data[1] == (unsigned char)180);
   ASSERT(s.lsa.u.sa.sa_data[2] == 10);
   ASSERT(s.lsa.u.sa.sa_data[3] == 11);
   ASSERT(s.lsa.u.sa.sa_data[4] == 12);

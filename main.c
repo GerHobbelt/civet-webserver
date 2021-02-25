@@ -60,11 +60,12 @@ static int error_dialog_shown_previously = 0;
 
 void die(const char *fmt, ...) {
   va_list ap;
-  char msg[200];
+  char msg[1000];
 
   va_start(ap, fmt);
   vsnprintf(msg, sizeof(msg), fmt, ap);
   va_end(ap);
+  msg[sizeof(msg) - 1] = 0;
 
 #if defined(_WIN32)
   if (!error_dialog_shown_previously)
