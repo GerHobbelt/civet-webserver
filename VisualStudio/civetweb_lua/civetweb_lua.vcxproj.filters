@@ -30,8 +30,6 @@
     <None Include="..\..\src\mod_zlib.inl">
       <Filter>inl files</Filter>
     </None>
-    <None Include="..\..\src\wolfssl_extras.inl">
-      <Filter>inl files</Filter>
-    </None>
+    <None Include="..\..\src\wolfssl_extras.inl" />
   </ItemGroup>
 </Project>
