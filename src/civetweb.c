@@ -6687,7 +6687,7 @@ static void handle_request(struct mg_connection *);
 #define USE_ALPN
 #include "mod_http2.inl"
 /* Not supported with HTTP/2 */
-#define HTTP1_only                                                             \
+#define HTTP1_only()                                                           \
 	{                                                                          \
 		if (conn->protocol_type == PROTOCOL_TYPE_HTTP2) {                      \
 			http2_must_use_http1(conn);                                        \
@@ -6695,7 +6695,7 @@ static void handle_request(struct mg_connection *);
 		}                                                                      \
 	}
 #else
-#define HTTP1_only
+#define HTTP1_only()
 #endif
 
 
@@ -10649,7 +10649,7 @@ parse_http_request(char *buf, int len, struct mg_request_info *ri)
 	    NULL;
 	ri->num_headers = 0;
 
-	/* RFC says that all initial whitespaces should be ingored */
+	/* RFC says that all initial whitespaces should be ignored */
 	/* This included all leading \r and \n (isspace) */
 	/* See table: http://www.cplusplus.com/reference/cctype/ */
 	while ((len > 0) && isspace((unsigned char)*buf)) {
@@ -11780,7 +11780,7 @@ put_file(struct mg_connection *conn, const char *path)
 	}
 
 	/* A file should be created or overwritten. */
-	/* Currently CivetWeb does not nead read+write access. */
+	/* Currently CivetWeb does not need read+write access. */
 	if (!mg_fopen(conn, path, MG_FOPEN_MODE_WRITE, &file)
 	    || file.access.fp == NULL) {
 		(void)mg_fclose(&file.access);
@@ -14202,7 +14202,7 @@ handle_request(struct mg_connection *conn)
 #endif /* defined(USE_WEBSOCKET) */
 
 	if (is_websocket_request) {
-		HTTP1_only;
+		HTTP1_only();
 	}
 
 	/* 5.2. check if the request will be handled by a callback */
@@ -14263,7 +14263,7 @@ handle_request(struct mg_connection *conn)
 		}
 	} else if (is_put_or_delete_request && !is_script_resource
 	           && !is_callback_resource) {
-		HTTP1_only;
+		HTTP1_only();
 		/* 6.2. this request is a PUT/DELETE to a real file */
 		/* 6.2.1. thus, the server must have real files */
 #if defined(NO_FILES)
@@ -14311,7 +14311,7 @@ handle_request(struct mg_connection *conn)
 
 	/* 7. check if there are request handlers for this uri */
 	if (is_callback_resource) {
-		HTTP1_only;
+		HTTP1_only();
 		if (!is_websocket_request) {
 			i = callback_handler(conn, callback_data);
 
@@ -14385,7 +14385,7 @@ handle_request(struct mg_connection *conn)
 	/* 8. handle websocket requests */
 #if defined(USE_WEBSOCKET)
 	if (is_websocket_request) {
-		HTTP1_only;
+		HTTP1_only();
 		if (is_script_resource) {
 
 			if (is_in_script_path(conn, path)) {
@@ -14426,14 +14426,14 @@ handle_request(struct mg_connection *conn)
 
 	/* 10. Request is handled by a script */
 	if (is_script_resource) {
-		HTTP1_only;
+		HTTP1_only();
 		handle_file_based_request(conn, path, &file);
 		return;
 	}
 
 	/* 11. Handle put/delete/mkcol requests */
 	if (is_put_or_delete_request) {
-		HTTP1_only;
+		HTTP1_only();
 		/* 11.1. PUT method */
 		if (!strcmp(ri->request_method, "PUT")) {
 			put_file(conn, path);
@@ -14534,7 +14534,7 @@ handle_request(struct mg_connection *conn)
 
 	/* 15. Files with search/replace patterns: LSP and SSI */
 	if (is_template_text_file) {
-		HTTP1_only;
+		HTTP1_only();
 		handle_file_based_request(conn, path, &file);
 		return;
 	}
