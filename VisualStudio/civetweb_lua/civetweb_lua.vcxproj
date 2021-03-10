@@ -106,7 +106,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>NO_HTTP2;STOP_FLAG_NEEDS_LOCK;OPENSSL_API_1_0;MG_EXPERIMENTAL_INTERFACES;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_LUA_LUAXML;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_HTTP2;OPENSSL_API_1_0;STOP_FLAG_NEEDS_LOCK;OPENSSL_API_1_0;MG_EXPERIMENTAL_INTERFACES;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_LUA_LUAXML;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\include;$(ProjectDir)..\..\src\third_party;$(ProjectDir)..\..\src\third_party\lua-5.2.4\src;$(ProjectDir)..\..\src\third_party\duktape-1.5.2\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -124,7 +124,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>NO_HTTP2;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_HTTP2;OPENSSL_API_1_0;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\include;$(ProjectDir)..\..\src\third_party;$(ProjectDir)..\..\src\third_party\lua-5.2.4\src;$(ProjectDir)..\..\src\third_party\duktape-1.5.2\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -154,7 +154,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NO_HTTP2;OPENSSL_API_1_0;MG_EXPERIMENTAL_INTERFACES;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_LUA_LUAXML;USE_WEBSOCKET;WIN32;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_HTTP2;OPENSSL_API_1_0;OPENSSL_API_1_0;MG_EXPERIMENTAL_INTERFACES;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_LUA_LUAXML;USE_WEBSOCKET;WIN32;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\include;$(ProjectDir)..\..\src\third_party;$(ProjectDir)..\..\src\third_party\lua-5.2.4\src;$(ProjectDir)..\..\src\third_party\duktape-1.5.2\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -176,7 +176,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NO_HTTP2;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NO_HTTP2;OPENSSL_API_1_0;USE_SERVER_STATS;USE_DUKTAPE;USE_IPV6;LUA_COMPAT_ALL;USE_LUA;USE_LUA_SQLITE3;USE_LUA_FILE_SYSTEM;USE_WEBSOCKET;WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\..\include;$(ProjectDir)..\..\src\third_party;$(ProjectDir)..\..\src\third_party\lua-5.2.4\src;$(ProjectDir)..\..\src\third_party\duktape-1.5.2\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
