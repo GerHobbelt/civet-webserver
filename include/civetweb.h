@@ -151,9 +151,13 @@ struct mg_request_info {
 	const char *request_method;  /* "GET", "POST", etc */
 	const char *request_uri;     /* URL-decoded URI (absolute or relative,
 	                              * as in the request) */
-	const char *local_uri;       /* URL-decoded URI (relative). Can be NULL
+	const char *local_uri_raw;   /* URL-decoded URI (relative). Can be NULL
 	                              * if the request_uri does not address a
 	                              * resource at the server host. */
+	const char *local_uri;       /* Same as local_uri_raw, however, cleaned
+	                              * so a path like
+	                              *   allowed_dir/../forbidden_file
+	                              * is not possible. */
 #if defined(MG_LEGACY_INTERFACE) /* 2017-02-04, deprecated 2014-09-14 */
 	const char *uri;             /* Deprecated: use local_uri instead */
 #endif
@@ -329,14 +333,14 @@ struct mg_callbacks {
 	*/
 	void (*connection_close)(const struct mg_connection *);
 
-       /* Called after civetweb has closed a connection.  The per-context mutex is
-          locked when this is invoked.
+	/* Called after civetweb has closed a connection.  The per-context mutex is
+	   locked when this is invoked.
 
-	   Connection specific data:
-	   If memory has been allocated for the connection specific user data
-	   (mg_request_info->conn_data, mg_get_user_connection_data),
-	   this is the last chance to free it.
-	*/
+	Connection specific data:
+	If memory has been allocated for the connection specific user data
+	(mg_request_info->conn_data, mg_get_user_connection_data),
+	this is the last chance to free it.
+ */
 	void (*connection_closed)(const struct mg_connection *);
 
 

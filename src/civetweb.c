@@ -317,7 +317,7 @@ __cyg_profile_func_exit(void *this_fn, void *call_site)
 #endif
 
 
-/* Some ANSI #includes are not available on Windows CE */
+/* Some ANSI #includes are not available on Windows CE and Zephyr */
 #if !defined(_WIN32_WCE) && !defined(__ZEPHYR__)
 #include <errno.h>
 #include <fcntl.h>
@@ -2077,8 +2077,6 @@ enum {
 	CASE_SENSITIVE_FILES,
 #endif
 	THROTTLE,
-	ACCESS_LOG_FILE,
-	ERROR_LOG_FILE,
 	ENABLE_KEEP_ALIVE,
 	REQUEST_TIMEOUT,
 	KEEP_ALIVE_TIMEOUT,
@@ -2097,6 +2095,9 @@ enum {
 
 	/* Once for each domain */
 	DOCUMENT_ROOT,
+
+	ACCESS_LOG_FILE,
+	ERROR_LOG_FILE,
 
 	CGI_EXTENSIONS,
 	CGI_ENVIRONMENT,
@@ -2188,9 +2189,6 @@ enum {
 #endif
 	ADDITIONAL_HEADER,
 	ALLOW_INDEX_SCRIPT_SUB_RES,
-#if defined(DAEMONIZE)
-	ENABLE_DAEMONIZE,
-#endif
 
 	NUM_OPTIONS
 };
@@ -2217,8 +2215,6 @@ static const struct mg_option config_options[] = {
     {"case_sensitive", MG_CONFIG_TYPE_BOOLEAN, "no"},
 #endif
     {"throttle", MG_CONFIG_TYPE_STRING_LIST, NULL},
-    {"access_log_file", MG_CONFIG_TYPE_FILE, NULL},
-    {"error_log_file", MG_CONFIG_TYPE_FILE, NULL},
     {"enable_keep_alive", MG_CONFIG_TYPE_BOOLEAN, "no"},
     {"request_timeout_ms", MG_CONFIG_TYPE_NUMBER, "30000"},
     {"keep_alive_timeout_ms", MG_CONFIG_TYPE_NUMBER, "500"},
@@ -2237,6 +2233,9 @@ static const struct mg_option config_options[] = {
 
     /* Once for each domain */
     {"document_root", MG_CONFIG_TYPE_DIRECTORY, NULL},
+
+    {"access_log_file", MG_CONFIG_TYPE_FILE, NULL},
+    {"error_log_file", MG_CONFIG_TYPE_FILE, NULL},
 
     {"cgi_pattern", MG_CONFIG_TYPE_EXT_PATTERN, "**.cgi$|**.pl$|**.php$"},
     {"cgi_environment", MG_CONFIG_TYPE_STRING_LIST, NULL},
@@ -2348,9 +2347,6 @@ static const struct mg_option config_options[] = {
 #endif
     {"additional_header", MG_CONFIG_TYPE_STRING_MULTILINE, NULL},
     {"allow_index_script_resource", MG_CONFIG_TYPE_BOOLEAN, "no"},
-#if defined(DAEMONIZE)
-    {"daemonize", MG_CONFIG_TYPE_BOOLEAN, "no"},
-#endif
 
     {NULL, MG_CONFIG_TYPE_UNKNOWN, NULL}};
 
@@ -2539,8 +2535,9 @@ struct mg_context {
 
 	/* Lua specific: Background operations and shared websockets */
 #if defined(USE_LUA)
-	void *lua_background_state;
+	void *lua_background_state;   /* lua_State (here as void *) */
 	pthread_mutex_t lua_bg_mutex; /* Protect background state */
+	int lua_bg_log_available;     /* Use Lua background state for access log */
 #endif
 
 	/* Server nonce */
@@ -3119,7 +3116,7 @@ mg_fclose(struct mg_file_access *fileacc)
 
 
 static void
-mg_strlcpy(register char *dst, register const char *src, size_t n)
+mg_strlcpy(char *dst, const char *src, size_t n)
 {
 	for (; *src != '\0' && n > 1; n--) {
 		*dst++ = *src++;
@@ -3677,8 +3674,11 @@ mg_get_request_info(const struct mg_connection *conn)
 		}
 
 		((struct mg_connection *)conn)->request_info.local_uri =
-		    ((struct mg_connection *)conn)->request_info.request_uri =
-		        tls->txtbuf; /* use thread safe buffer */
+		    tls->txtbuf; /* use thread safe buffer */
+		((struct mg_connection *)conn)->request_info.local_uri_raw =
+		    tls->txtbuf; /* use the same thread safe buffer */
+		((struct mg_connection *)conn)->request_info.request_uri =
+		    tls->txtbuf; /* use  the same thread safe buffer */
 
 		((struct mg_connection *)conn)->request_info.num_headers =
 		    conn->response_info.num_headers;
@@ -6366,7 +6366,7 @@ pull_inner(FILE *fp,
 
 #if defined(USE_MBEDTLS)
 	} else if (conn->ssl != NULL) {
-		struct pollfd pfd[1];
+		struct mg_pollfd pfd[1];
 		int to_read;
 		int pollres;
 
@@ -11131,6 +11131,7 @@ prepare_cgi_environment(struct mg_connection *conn,
 
 	addenv(env, "REQUEST_URI=%s", conn->request_info.request_uri);
 	addenv(env, "LOCAL_URI=%s", conn->request_info.local_uri);
+	addenv(env, "LOCAL_URI_RAW=%s", conn->request_info.local_uri_raw);
 
 	/* SCRIPT_NAME */
 	uri_len = (int)strlen(conn->request_info.local_uri);
@@ -13449,7 +13450,7 @@ get_host_from_request_info(struct vec *host, const struct mg_request_info *ri)
 	host->len = 0;
 
 	if (host_header != NULL) {
-		char *pos;
+		const char *pos;
 
 		/* If the "Host" is an IPv6 address, like [::1], parse until ]
 		 * is found. */
@@ -14039,6 +14040,7 @@ handle_request(struct mg_connection *conn)
 	int handler_type;
 	time_t curtime = time(NULL);
 	char date[64];
+	char *tmp;
 
 	path[0] = 0;
 
@@ -14084,9 +14086,19 @@ handle_request(struct mg_connection *conn)
 		}
 	}
 
-	/* 1.4. clean URIs, so a path like allowed_dir/../forbidden_file is
-	 * not possible */
-	remove_dot_segments((char *)ri->local_uri);
+	/* 1.4. clean URIs, so a path like allowed_dir/../forbidden_file is not
+	 * possible. The fact that we cleaned the URI is stored in that the
+	 * pointer to ri->local_ur and ri->local_uri_raw are now different.
+	 * ri->local_uri_raw still points to memory allocated in
+	 * worker_thread_run(). ri->local_uri is private to the request so we
+	 * don't have to use preallocated memory here. */
+	tmp = mg_strdup(ri->local_uri_raw);
+	if (!tmp) {
+		/* Out of memory. We cannot do anything reasonable here. */
+		return;
+	}
+	remove_dot_segments(tmp);
+	ri->local_uri = tmp;
 
 	/* step 1. completed, the url is known now */
 	uri_len = (int)strlen(ri->local_uri);
@@ -14472,7 +14484,7 @@ handle_request(struct mg_connection *conn)
 
 		size_t len = strlen(ri->request_uri);
 		size_t lenQS = ri->query_string ? strlen(ri->query_string) + 1 : 0;
-		char *new_path = mg_malloc_ctx(len + lenQS + 2, conn->phys_ctx);
+		char *new_path = (char *)mg_malloc_ctx(len + lenQS + 2, conn->phys_ctx);
 		if (!new_path) {
 			mg_send_http_error(conn, 500, "out or memory");
 		} else {
@@ -15260,11 +15272,56 @@ log_access(const struct mg_connection *conn)
 	const char *referer;
 	const char *user_agent;
 
-	char buf[4096];
+	char log_buf[4096];
 
 	if (!conn || !conn->dom_ctx) {
 		return;
 	}
+
+	/* Set log message to "empty" */
+	log_buf[0] = 0;
+
+#if defined(USE_LUA)
+	if (conn->phys_ctx->lua_bg_log_available) {
+		int ret;
+		struct mg_context *ctx = conn->phys_ctx;
+		lua_State *lstate = (lua_State *)ctx->lua_background_state;
+		pthread_mutex_lock(&ctx->lua_bg_mutex);
+		/* call "log()" in Lua */
+		lua_getglobal(lstate, "log");
+		prepare_lua_request_info_inner(conn, lstate);
+
+		ret = lua_pcall(lstate, /* args */ 1, /* results */ 1, 0);
+		if (ret == 0) {
+			int t = lua_type(lstate, -1);
+			if (t == LUA_TBOOLEAN) {
+				if (lua_toboolean(lstate, -1) == 0) {
+					/* log() returned false: do not log */
+					pthread_mutex_unlock(&ctx->lua_bg_mutex);
+					return;
+				}
+				/* log returned true: continue logging */
+			} else if (t == LUA_TSTRING) {
+				size_t len;
+				const char *txt = lua_tolstring(lstate, -1, &len);
+				if ((len == 0) || (*txt == 0)) {
+					/* log() returned empty string: do not log */
+					pthread_mutex_unlock(&ctx->lua_bg_mutex);
+					return;
+				}
+				/* Copy test from Lua into log_buf */
+				if (len >= sizeof(log_buf)) {
+					len = sizeof(log_buf) - 1;
+				}
+				memcpy(log_buf, txt, len);
+				log_buf[len] = 0;
+			}
+		} else {
+			lua_cry(conn, ret, lstate, "lua_background_script", "log");
+		}
+		pthread_mutex_unlock(&ctx->lua_bg_mutex);
+	}
+#endif
 
 	if (conn->dom_ctx->config[ACCESS_LOG_FILE] != NULL) {
 		if (mg_fopen(conn,
@@ -15285,46 +15342,58 @@ log_access(const struct mg_connection *conn)
 		return;
 	}
 
-	tm = localtime(&conn->conn_birth_time);
-	if (tm != NULL) {
-		strftime(date, sizeof(date), "%d/%b/%Y:%H:%M:%S %z", tm);
-	} else {
-		mg_strlcpy(date, "01/Jan/1970:00:00:00 +0000", sizeof(date));
-		date[sizeof(date) - 1] = '\0';
+	/* If we did not get a log message from Lua, create it here. */
+	if (!log_buf[0]) {
+		tm = localtime(&conn->conn_birth_time);
+		if (tm != NULL) {
+			strftime(date, sizeof(date), "%d/%b/%Y:%H:%M:%S %z", tm);
+		} else {
+			mg_strlcpy(date, "01/Jan/1970:00:00:00 +0000", sizeof(date));
+			date[sizeof(date) - 1] = '\0';
+		}
+
+		ri = &conn->request_info;
+
+		sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
+		referer = header_val(conn, "Referer");
+		user_agent = header_val(conn, "User-Agent");
+
+		mg_snprintf(conn,
+		            NULL, /* Ignore truncation in access log */
+		            log_buf,
+		            sizeof(log_buf),
+		            "%s - %s [%s] \"%s %s%s%s HTTP/%s\" %d %" INT64_FMT
+		            " %s %s",
+		            src_addr,
+		            (ri->remote_user == NULL) ? "-" : ri->remote_user,
+		            date,
+		            ri->request_method ? ri->request_method : "-",
+		            ri->request_uri ? ri->request_uri : "-",
+		            ri->query_string ? "?" : "",
+		            ri->query_string ? ri->query_string : "",
+		            ri->http_version,
+		            conn->status_code,
+		            conn->num_bytes_sent,
+		            referer,
+		            user_agent);
 	}
 
-	ri = &conn->request_info;
-
-	sockaddr_to_string(src_addr, sizeof(src_addr), &conn->client.rsa);
-	referer = header_val(conn, "Referer");
-	user_agent = header_val(conn, "User-Agent");
-
-	mg_snprintf(conn,
-	            NULL, /* Ignore truncation in access log */
-	            buf,
-	            sizeof(buf),
-	            "%s - %s [%s] \"%s %s%s%s HTTP/%s\" %d %" INT64_FMT " %s %s",
-	            src_addr,
-	            (ri->remote_user == NULL) ? "-" : ri->remote_user,
-	            date,
-	            ri->request_method ? ri->request_method : "-",
-	            ri->request_uri ? ri->request_uri : "-",
-	            ri->query_string ? "?" : "",
-	            ri->query_string ? ri->query_string : "",
-	            ri->http_version,
-	            conn->status_code,
-	            conn->num_bytes_sent,
-	            referer,
-	            user_agent);
-
+	/* Here we have a log message in log_buf. Call the callback */
 	if (conn->phys_ctx->callbacks.log_access) {
-		conn->phys_ctx->callbacks.log_access(conn, buf);
+		if (conn->phys_ctx->callbacks.log_access(conn, log_buf)) {
+			/* do not log if callack returns non-zero */
+			if (fi.access.fp) {
+				mg_fclose(&fi.access);
+			}
+			return;
+		}
 	}
 
+	/* Store in file */
 	if (fi.access.fp) {
 		int ok = 1;
 		flockfile(fi.access.fp);
-		if (fprintf(fi.access.fp, "%s\n", buf) < 1) {
+		if (fprintf(fi.access.fp, "%s\n", log_buf) < 1) {
 			ok = 0;
 		}
 		if (fflush(fi.access.fp) != 0) {
@@ -15342,7 +15411,7 @@ log_access(const struct mg_connection *conn)
 	}
 }
 #else
-#error Must either enable filesystems or provide a custom log_access implementation
+#error "Either enable filesystems or provide a custom log_access implementation"
 #endif /* Externally provided function */
 
 
@@ -15476,7 +15545,7 @@ mg_sslctx_init(struct mg_context *phys_ctx, struct mg_domain_context *dom_ctx)
 		return 1;
 	}
 
-	dom_ctx->ssl_ctx = mg_calloc(1, sizeof(*dom_ctx->ssl_ctx));
+	dom_ctx->ssl_ctx = (SSL_CTX *)mg_calloc(1, sizeof(*dom_ctx->ssl_ctx));
 	if (dom_ctx->ssl_ctx == NULL) {
 		fprintf(stderr, "ssl_ctx malloc failed\n");
 		return 0;
@@ -16814,6 +16883,12 @@ reset_per_request_attributes(struct mg_connection *conn)
 	conn->request_info.remote_user = NULL;
 	conn->request_info.request_method = NULL;
 	conn->request_info.request_uri = NULL;
+
+	/* Free cleaned local URI (if any) */
+	if (conn->request_info.local_uri != conn->request_info.local_uri_raw) {
+		mg_free((void *)conn->request_info.local_uri);
+		conn->request_info.local_uri = NULL;
+	}
 	conn->request_info.local_uri = NULL;
 
 #if defined(MG_LEGACY_INTERFACE)
@@ -17907,7 +17982,8 @@ mg_get_response(struct mg_connection *conn,
 	 *       2) here, ri.uri is the http response code */
 	conn->request_info.uri = conn->request_info.request_uri;
 #endif
-	conn->request_info.local_uri = conn->request_info.request_uri;
+	conn->request_info.local_uri_raw = conn->request_info.request_uri;
+	conn->request_info.local_uri = conn->request_info.local_uri_raw;
 
 	/* TODO (mid): Define proper return values - maybe return length?
 	 * For the first test use <0 for error and >0 for OK */
@@ -18166,7 +18242,8 @@ mg_connect_websocket_client_impl(const struct mg_client_options *client_options,
 		mg_close_connection(conn);
 		return NULL;
 	}
-	conn->request_info.local_uri = conn->request_info.request_uri;
+	conn->request_info.local_uri_raw = conn->request_info.request_uri;
+	conn->request_info.local_uri = conn->request_info.local_uri_raw;
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
@@ -18457,12 +18534,13 @@ process_new_connection(struct mg_connection *conn)
 			switch (uri_type) {
 			case 1:
 				/* Asterisk */
-				conn->request_info.local_uri = 0;
+				conn->request_info.local_uri_raw = 0;
 				/* TODO: Deal with '*'. */
 				break;
 			case 2:
 				/* relative uri */
-				conn->request_info.local_uri = conn->request_info.request_uri;
+				conn->request_info.local_uri_raw =
+				    conn->request_info.request_uri;
 				break;
 			case 3:
 			case 4:
@@ -18470,9 +18548,9 @@ process_new_connection(struct mg_connection *conn)
 				hostend = get_rel_url_at_current_server(
 				    conn->request_info.request_uri, conn);
 				if (hostend) {
-					conn->request_info.local_uri = hostend;
+					conn->request_info.local_uri_raw = hostend;
 				} else {
-					conn->request_info.local_uri = NULL;
+					conn->request_info.local_uri_raw = NULL;
 				}
 				break;
 			default:
@@ -18482,9 +18560,11 @@ process_new_connection(struct mg_connection *conn)
 				            sizeof(ebuf),
 				            "Invalid URI");
 				mg_send_http_error(conn, 400, "%s", ebuf);
-				conn->request_info.local_uri = NULL;
+				conn->request_info.local_uri_raw = NULL;
 				break;
 			}
+			conn->request_info.local_uri =
+			    (char *)conn->request_info.local_uri_raw;
 
 #if defined(MG_LEGACY_INTERFACE)
 			/* Legacy before split into local_uri and request_uri */
@@ -18870,7 +18950,7 @@ worker_thread_run(struct mg_connection *conn)
 			/* HTTPS connection */
 			if (mbed_ssl_accept(&(conn->ssl),
 			                    conn->dom_ctx->ssl_ctx,
-			                    &(conn->client.sock),
+			                    (int *)&(conn->client.sock),
 			                    conn->phys_ctx)
 			    == 0) {
 				/* conn->dom_ctx is set in get_request */
@@ -18972,6 +19052,12 @@ worker_thread_run(struct mg_connection *conn)
 	conn->buf_size = 0;
 	mg_free(conn->buf);
 	conn->buf = NULL;
+
+	/* Free cleaned URI (if any) */
+	if (conn->request_info.local_uri != conn->request_info.local_uri_raw) {
+		mg_free((void *)conn->request_info.local_uri);
+		conn->request_info.local_uri = NULL;
+	}
 
 #if defined(USE_SERVER_STATS)
 	conn->conn_state = 9; /* done */
@@ -19144,9 +19230,30 @@ master_thread_run(struct mg_context *ctx)
 	if (ctx->lua_background_state) {
 		lua_State *lstate = (lua_State *)ctx->lua_background_state;
 		pthread_mutex_lock(&ctx->lua_bg_mutex);
+
 		/* call "start()" in Lua */
 		lua_getglobal(lstate, "start");
-		(void)lua_pcall(lstate, /* args */ 0, /* results */ 0, 0);
+		if (lua_type(lstate, -1) == LUA_TFUNCTION) {
+			int ret = lua_pcall(lstate, /* args */ 0, /* results */ 0, 0);
+			if (ret != 0) {
+				struct mg_connection fc;
+				lua_cry(fake_connection(&fc, ctx),
+				        ret,
+				        lstate,
+				        "lua_background_script",
+				        "start");
+			}
+		} else {
+			lua_pop(lstate, 1);
+		}
+
+		/* determine if there is a "log()" function in Lua background script */
+		lua_getglobal(lstate, "log");
+		if (lua_type(lstate, -1) == LUA_TFUNCTION) {
+			ctx->lua_bg_log_available = 1;
+		}
+		lua_pop(lstate, 1);
+
 		pthread_mutex_unlock(&ctx->lua_bg_mutex);
 	}
 #endif
@@ -19206,11 +19313,24 @@ master_thread_run(struct mg_context *ctx)
 	/* Free Lua state of lua background task */
 	if (ctx->lua_background_state) {
 		lua_State *lstate = (lua_State *)ctx->lua_background_state;
+		ctx->lua_bg_log_available = 0;
+
 		/* call "stop()" in Lua */
 		pthread_mutex_lock(&ctx->lua_bg_mutex);
 		lua_getglobal(lstate, "stop");
-		(void)lua_pcall(lstate, /* args */ 0, /* results */ 0, 0);
+		if (lua_type(lstate, -1) == LUA_TFUNCTION) {
+			int ret = lua_pcall(lstate, /* args */ 0, /* results */ 0, 0);
+			if (ret != 0) {
+				struct mg_connection fc;
+				lua_cry(fake_connection(&fc, ctx),
+				        ret,
+				        lstate,
+				        "lua_background_script",
+				        "stop");
+			}
+		}
 		lua_close(lstate);
+
 		ctx->lua_background_state = 0;
 		pthread_mutex_unlock(&ctx->lua_bg_mutex);
 	}
@@ -19750,6 +19870,7 @@ static
 
 #if defined(USE_LUA)
 	/* If a Lua background script has been configured, start it. */
+	ctx->lua_bg_log_available = 0;
 	if (ctx->dd.config[LUA_BACKGROUND_SCRIPT] != NULL) {
 		char ebuf[256];
 		struct vec opt_vec;
@@ -19772,7 +19893,7 @@ static
 				            error->text,
 				            error->text_buffer_size,
 				            "Error in script %s: %s",
-				            config_options[DOCUMENT_ROOT].name,
+				            config_options[LUA_BACKGROUND_SCRIPT].name,
 				            ebuf);
 			}
 			pthread_mutex_unlock(&ctx->lua_bg_mutex);
@@ -20301,7 +20422,7 @@ mg_start_domain2(struct mg_context *ctx,
 	new_dom->shared_lua_websockets = NULL;
 #endif
 
-#if !defined(NO_SSL)
+#if !defined(NO_SSL) && !defined(USE_MBEDTLS)
 	if (!init_ssl_ctx(ctx, new_dom)) {
 		/* Init SSL failed */
 		if ((error != NULL) && (error->text_buffer_size > 0)) {
