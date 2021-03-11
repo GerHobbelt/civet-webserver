@@ -1,0 +1,153 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "mongoose_book_samples_server.resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+//#include "../../mongoose_sys_porting.h"
+#include <windows.h>
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (United States) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON                ICON                    "mongoose_book_samples_server.systray.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// RCDATA
+//
+
+IDR_FAVICON             RCDATA                  "mongoose_book_samples_server.favicon.ico"
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "mongoose_book_samples_server.resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "//#include ""../../mongoose_sys_porting.h""\r\n"
+    "#include <windows.h>\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_FORMVIEW60 DIALOGEX 0, 0, 413, 253
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+EXSTYLE WS_EX_ACCEPTFILES | WS_EX_APPWINDOW
+CAPTION "xxx"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
+    GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
+    CONTROL         "",IDC_RICHEDIT4LOG,"RICHEDIT60W",WS_BORDER | WS_VSCROLL | WS_TABSTOP | 0x844,9,86,394,143
+    PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
+    PUSHBUTTON      "Clear Log",IDC_BUTTON_CLEAR_LOG,6,233,114,16
+    PUSHBUTTON      "Generate the VHosts' directories now",IDC_BUTTON_CREATE_VHOSTS_DIRS,236,233,170,16
+END
+
+IDD_FORMVIEW50 DIALOGEX 0, 0, 413, 253
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+EXSTYLE WS_EX_ACCEPTFILES | WS_EX_APPWINDOW
+CAPTION "xxx"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
+    GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
+    CONTROL         "",IDC_RICHEDIT4LOG,"RICHEDIT50W",WS_BORDER | WS_VSCROLL | WS_TABSTOP | 0x844,9,86,394,143
+    PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
+    PUSHBUTTON      "Clear Log",IDC_BUTTON_CLEAR_LOG,6,233,114,16
+    PUSHBUTTON      "Generate the VHosts' directories now",IDC_BUTTON_CREATE_VHOSTS_DIRS,236,233,170,16
+END
+
+IDD_FORMVIEW20 DIALOGEX 0, 0, 413, 253
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+EXSTYLE WS_EX_ACCEPTFILES | WS_EX_APPWINDOW
+CAPTION "xxx"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    GROUPBOX        "General Message",IDC_STATIC,7,7,399,46
+    CTEXT           "(Drag and) drop the directory or HTML file you wish to serve anywhere in here...",IDC_STATIC,51,15,350,34,SS_CENTERIMAGE | SS_WORDELLIPSIS | SS_REALSIZECONTROL
+    ICON            IDI_ICON,IDC_STATIC_LOGO,22,23,20,20
+    GROUPBOX        "Server log messages",IDC_EDIT_WRAPPER,7,74,399,157
+    CONTROL         "",IDC_RICHEDIT4LOG,"RichEdit20W",ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER | WS_VSCROLL | WS_TABSTOP,9,86,394,143
+    PUSHBUTTON      "Visit URL",IDC_BUTTON_VISIT_URL,7,58,399,16
+    PUSHBUTTON      "Clear Log",IDC_BUTTON_CLEAR_LOG,6,233,114,16
+    PUSHBUTTON      "Generate the VHosts' directories now",IDC_BUTTON_CREATE_VHOSTS_DIRS,236,233,170,16
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_FORMVIEW60, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 252
+    END
+
+    IDD_FORMVIEW20, DIALOG
+    BEGIN
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// HTML
+//
+
+IDR_HTML_HELP_OVERVIEW			HTML                    "mongoose_book_samples_server/_help/help_overview.html"
+IDR_HTML_DEVELOPER_INFO			HTML                    "mongoose_book_samples_server/_help/developer_info.html"
+IDR_RC_BIOHAZARD_RED_BG_SVG		RCDATA					"mongoose_book_samples_server/_help/images/biohazard-red-bg.svg"
+IDR_HTML_ERROR_404				HTML					"mongoose_book_samples_server/_help/error/404.shtml"
+IDR_HTML_ERROR_GENERAL	    	HTML					"mongoose_book_samples_server/_help/error/error.shtml"
+
+#endif    // English (United States) resources
+/////////////////////////////////////////////////////////////////////////////
+
+

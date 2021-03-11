@@ -1,0 +1,66 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+<!-- #BeginEditable "doctitle" -->
+<title>XYZ</title>
+<!-- #EndEditable -->
+<link href="../styles/style3.css" media="screen" rel="stylesheet" title="CSS" type="text/css" />
+</head>
+
+<body>
+<!-- Begin Container -->
+<div id="container">
+	<!-- Begin Masthead -->
+	<div id="masthead">
+		<h1>Pythons For Dinner</h1>
+		<h3>Documentation for the mongoose library and web server</h3>
+	</div>
+	<!-- End Masthead -->
+	<!-- Begin Navigation -->
+	<div id="navigation">
+		<ul>
+			<li><a href="../default.html">Overview</a></li>
+			<li><a href="../MongooseManual.html">Manual</a></li>
+			<li><a href="../development-info.html">Development Info</a></li>
+			<li><a href="../UsefulResources.html">Resources</a></li>
+		</ul>
+	</div>
+	<!-- End Navigation -->
+	<!-- Begin content_container -->
+	<div id="content_container">
+		<!-- Begin Left Column -->
+		<div id="column_left">
+			<!-- #BeginEditable "content" -->
+			<h2>Headline 2</h2>
+			<p>insert content here...</p>
+			<!-- #EndEditable -->
+		</div>
+		<!-- End Left Column -->
+		<!-- Begin Right Column -->
+		<div id="column_right">
+			<!-- #BeginEditable "sidebar" -->
+			<h3>Headline 3</h3>
+			<p>insert content here</p>
+			<!-- #EndEditable -->
+		</div>
+		<!-- End Right Column -->
+		<!-- Begin Footer -->
+		<div id="footer">
+			<div id="copyright">
+				<p>Copyright © 2012. All Rights Reserved.</p>
+			</div>
+			<p>
+			<a href="../default.html">Overview</a> |
+			<a href="../MongooseManual.html">Manual</a> |
+			<a href="../development-info.html">Development Info</a> |
+			<a href="../UsefulResources.html">Resources</a>
+			</p>
+		</div>
+		<!-- End Footer -->
+	</div>
+	<!-- End content_container -->
+</div>
+<!-- End Container -->
+</body>
+</html>

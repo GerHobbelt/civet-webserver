@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=utf-8>
+    <title>Mongoose Doing the B0rk B0rk B0rk In <!--#echo var="REDIRECT_STATUS"--> Time</title>
+    <base href="/error/" />
+    <style>
+#biohazard
+{
+	width: 415px;
+	height: 393px;
+}
+div#biohazdiv
+{
+	float: left;
+	margin: 0 1em 1em 0;
+}
+    </style>
+</head>
+<body>
+    <div id="biohazdiv">            
+        <img id="biohazard" src="../images/biohazard-red-bg.svg">
+    </div>
+    <div id="infosec">
+    <h1>Robbery!</h1>
+        <p>What you ask for isn't in store. We don't know who nabbed it or whether it's been around <em>at all</em>. Definitely <dfn>bad joss</dfn>.</p>
+
+        <p>All we can say is: <!--#echo var="REDIRECT_ERROR_NOTES" --></p>
+    </div>
+</body>
+</html>

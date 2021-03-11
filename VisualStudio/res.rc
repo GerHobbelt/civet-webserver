@@ -1,0 +1,4 @@
+#include "resource.h"
+
+IDI_ICON ICON DISCARDABLE "systray.ico"
+IDR_FAVICON RCDATA "favicon.ico"

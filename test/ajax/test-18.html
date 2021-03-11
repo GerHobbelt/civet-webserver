@@ -1,0 +1,108 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <title>Test</title>
+    <script type='application/javascript' src='jquery.js'></script>
+    <script type='application/javascript'>
+
+    var totalCount = 10;
+    var pendingCount = 0;
+    var errorCount = 0;
+
+    $(function() {
+      $('#totalCount').text(totalCount);
+      for (var i = 0; i < totalCount; ++i) {
+        var id = i+1;
+        $('#results > tbody').append('<tr><td>' + id + '</td><td id="status_' + id + '">n/a</td><td id="statusCode_' + id + '">n/a</td></tr>');
+      }
+    });
+
+    function test() {
+
+      errorCount = 0;
+      pendingCount = totalCount;
+
+      $('#testButton').attr('disabled', 'true');
+      $('#pendingCount').text(pendingCount);
+      $('#errorCount').text(errorCount);
+
+      for (var i = 0; i < totalCount; ++i) {
+        var data = [];
+        for (var j = 0; j < 100; ++j) {
+          data.push({
+            key: (1000 * i) + j
+          });
+        }
+        var id = i+1;
+        fetch(data, id);
+      }
+    }
+
+    function fetch(data, id) {
+    
+      $('#status_' + id).text('pending');
+      $('#statusCode_' + id).text('?');
+
+      $.ajax({
+        /*async: false,*/
+        url: '/echo_' + id,
+        type: 'POST',
+        timeout: 10000,
+        contentType: 'application/json',
+        data: JSON.stringify(data, null, 2),
+        dataType: 'json',
+        succes: function(data) {
+        },
+        error: function() {
+          ++errorCount;
+        },
+        complete: function(jqXHR, textStatus) {
+          
+          --pendingCount;
+
+          $('#pendingCount').text(pendingCount);
+          $('#status_' + id).text(textStatus);
+          $('#statusCode_' + id).text(jqXHR.status);
+
+          if (pendingCount == 0) {
+            $('#errorCount').text(errorCount);
+            $('#testButton').removeAttr('disabled');
+          }
+        }
+      });
+    }
+
+    </script>
+  </head>
+  <body>
+    <input id="testButton" type="button" onclick="test()" value="Test"></input>
+    <br>
+    <br>
+    <table id="statistic" border="1">
+      <tr>
+        <td>Total</td>
+        <td id="totalCount">n/a</td>
+      </tr>
+      <tr>
+        <td>Pending</td>
+        <td id="pendingCount">n/a</td>
+      </tr>
+      <tr>
+        <td>Errors</td>
+        <td id="errorCount">n/a</td>
+      </tr>
+    </table>
+    <br>
+    <table id="results" border="1">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Status</th>
+          <th>Status Code</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </body>
+</html>
