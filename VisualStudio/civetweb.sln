@@ -20,6 +20,34 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ex_embed_cpp", "ex_embed_cp
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb", "civetweb\civetweb.vcxproj", "{E23B0040-F485-43D6-AA24-B34F9FED8484}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_service", "civetweb_service.vcxproj", "{640A834B-DBF3-C057-F78E-DDF6020A036B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_testclient", "civetweb_testclient.vcxproj", "{F275CE2E-B17A-5F58-25D0-498ADF588A55}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "upskirt", "upskirt", "{DD218416-C5C4-47BC-A031-D2E3032505F1}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libupskirt", "..\..\upskirt\mvc\2019\libupskirt.vcxproj", "{BEF78878-99B5-47FC-AE1B-210EDF9643F8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "smartypants", "..\..\upskirt\mvc\2019\smartypants.vcxproj", "{B682A9FC-8C10-CE85-1083-3C42CA82502D}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "upskirt", "..\..\upskirt\mvc\2019\upskirt.vcxproj", "{17794A55-DE45-431F-BAEE-B92226BF831E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_vhost_sample", "civetweb_vhost_sample.vcxproj", "{F5209267-8284-83BD-73F0-DBD7E0EC729F}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_pthread", "civetweb_pthread.vcxproj", "{5DA681A2-3C45-2E42-0E35-0D24831144D8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pthread", "pthread", "{E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_lib", "..\..\pthread-win32\pthread_lib.2019.vcxproj", "{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\..\pthread-win32\pthread.2019.vcxproj", "{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\..\pthread-win32\tests\Debug.2019.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_restarting_server", "civetweb_restarting_server.vcxproj", "{279FCCD2-0D90-2CE4-BD05-E91BD3373266}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_book_samples_server", "civetweb_book_samples_server.vcxproj", "{48067AB8-2260-730B-17CA-C5B76C3CF0EA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
