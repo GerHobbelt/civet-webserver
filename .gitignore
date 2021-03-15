@@ -30,7 +30,6 @@ win32/msvc2013/ipch/
 win32/msvc2019/bin/
 win32/msvc2019/obj/
 win32/msvc2019/.vs/
-/VisualStudio/
 
 *.suo
 *.sdf
