@@ -1,11 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\..\examples\book_samples_server.c" />
-    <ClCompile Include="..\..\mongoose.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\mongoose_ex.c">
+    <ClCompile Include="..\..\examples\book_samples_server\book_samples_server.c">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
@@ -27,48 +23,42 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\examples\mongoose_book_samples_server.favicon.ico">
-      <Filter>Resources</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server.systray.ico">
-      <Filter>Resources</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server\_help\developer_info.html">
-      <Filter>HTML Files</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server\_help\help_overview.html">
-      <Filter>HTML Files</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.ai">
-      <Filter>HTML Files\images</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.svg">
-      <Filter>HTML Files\images</Filter>
-    </None>
-    <None Include="..\examples\mongoose_book_samples_server\_help\error\404.shtml">
+    <None Include="..\..\examples\book_samples_server\_help\error\404.shtml">
       <Filter>HTML Files\error</Filter>
     </None>
-    <None Include="..\examples\mongoose_book_samples_server\_help\error\error.shtml">
+    <None Include="..\..\examples\book_samples_server\_help\images\biohazard-red-bg.svg">
+      <Filter>HTML Files\images</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\_help\images\biohazard-red-bg.ai">
+      <Filter>HTML Files\images</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\civetweb_book_samples_server.favicon.ico">
+      <Filter>Resources</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\civetweb_book_samples_server.systray.ico">
+      <Filter>Resources</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\_help\error\error.shtml">
       <Filter>HTML Files\error</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\_help\developer_info.html">
+      <Filter>HTML Files</Filter>
+    </None>
+    <None Include="..\..\examples\book_samples_server\_help\help_overview.html">
+      <Filter>HTML Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\examples\mongoose_book_samples_server.rc">
+    <ClInclude Include="..\..\src\civetweb.h">
+      <Filter>Sources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\examples\book_samples_server\civetweb_book_samples_server.resource.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\examples\book_samples_server\civetweb_book_samples_server.rc">
       <Filter>Resources</Filter>
     </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\examples\mongoose_book_samples_server.resource.h">
-      <Filter>Resources</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\mongoose.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\mongoose_ex.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\mongoose_sys_porting.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
   </ItemGroup>
 </Project>

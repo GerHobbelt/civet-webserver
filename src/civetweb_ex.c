@@ -21,9 +21,9 @@
 
 // 'Extends' mongoose by exporting additional functions
 
-#include "mongoose_ex.h"
+#include "civetweb_ex.h"
 
-#include "mongoose.c"
+#include "civetweb.c"
 
 
 struct socket *mg_get_socket(struct mg_connection *conn)

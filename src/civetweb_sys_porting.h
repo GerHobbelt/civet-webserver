@@ -21,27 +21,105 @@
 #ifndef MONGOOSE_SYS_PORTING_INCLUDE
 #define MONGOOSE_SYS_PORTING_INCLUDE
 
+#if defined(__GNUC__) || defined(__MINGW32__)
+#define GCC_VERSION                                                            \
+	(__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+#if GCC_VERSION >= 40500
+/* gcc diagnostic pragmas available */
+#define GCC_DIAGNOSTIC
+#endif
+#endif
+
+#if defined(GCC_DIAGNOSTIC)
+/* Disable unused macros warnings - not all defines are required
+ * for all systems and all compilers. */
+#pragma GCC diagnostic ignored "-Wunused-macros"
+/* A padding warning is just plain useless */
+#pragma GCC diagnostic ignored "-Wpadded"
+#endif
+
+#if defined(__clang__) /* GCC does not (yet) support this pragma */
+/* We must set some flags for the headers we include. These flags
+ * are reserved ids according to C99, so we need to disable a
+ * warning for that. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-id-macro"
+#endif
+
 #if defined(_WIN32)
+#if !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS // Disable deprecation warning in VS2005
+#endif
+#if !defined(_WIN32_WINNT) /* defined for tdm-gcc so we can use getnameinfo */
+#define _WIN32_WINNT 0x0502
+#endif
 #ifdef WIN32_LEAN_AND_MEAN
 #undef WIN32_LEAN_AND_MEAN      // Disable WIN32_LEAN_AND_MEAN, if necessary
 #endif
 #else
-#ifdef __linux__
-#define _XOPEN_SOURCE 600       // For PATH_MAX and flockfile() on Linux
-#else
-#define _XOPEN_SOURCE           // BSD
+#if !defined(_GNU_SOURCE)
+#define _GNU_SOURCE /* for setgroups(), pthread_setname_np() */
 #endif
-#define _LARGEFILE_SOURCE       // Enable 64-bit file offsets
+#if defined(__linux__) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 600 /* For flockfile() on Linux */
 #endif
-#define __STDC_FORMAT_MACROS    // <inttypes.h> wants this for C++
-#define __STDC_LIMIT_MACROS     // C++ wants that for INT64_MAX
-
+#if defined(__LSB_VERSION__) || defined(__sun)
+#define NEED_TIMEGM
+#define NO_THREAD_NAME
+#endif
+#if !defined(_LARGEFILE_SOURCE)
+#define _LARGEFILE_SOURCE /* For fseeko(), ftello() */
+#endif
+#if !defined(_FILE_OFFSET_BITS)
+#define _FILE_OFFSET_BITS 64 /* Use 64-bit file offsets by default */
+#endif
+#if !defined(__STDC_FORMAT_MACROS)
+#define __STDC_FORMAT_MACROS /* <inttypes.h> wants this for C++ */
+#endif
+#if !defined(__STDC_LIMIT_MACROS)
+#define __STDC_LIMIT_MACROS /* C++ wants that for INT64_MAX */
+#endif
+#if !defined(_DARWIN_UNLIMITED_SELECT)
+#define _DARWIN_UNLIMITED_SELECT
+#endif
+#if defined(__sun)
+#define __EXTENSIONS__  /* to expose flockfile and friends in stdio.h */
+#define __inline inline /* not recognized on older compiler versions */
+#endif
 #if defined(__SYMBIAN32__)
 #define NO_SSL // SSL is not supported
 #define NO_CGI // CGI is not supported
 #define PATH_MAX FILENAME_MAX
 #endif // __SYMBIAN32__
+#endif
+
+#if defined(__clang__)
+/* Enable reserved-id-macro warning again. */
+#pragma GCC diagnostic pop
+#endif
+
+
+#if defined(USE_LUA)
+#define USE_TIMERS
+#endif
+
+#if defined(_MSC_VER)
+/* 'type cast' : conversion from 'int' to 'HANDLE' of greater size */
+#pragma warning(disable : 4306)
+/* conditional expression is constant: introduced by FD_SET(..) */
+#pragma warning(disable : 4127)
+/* non-constant aggregate initializer: issued due to missing C99 support */
+#pragma warning(disable : 4204)
+/* padding added after data member */
+#pragma warning(disable : 4820)
+/* not defined as a preprocessor macro, replacing with '0' for '#if/#elif' */
+#pragma warning(disable : 4668)
+/* no function prototype given: converting '()' to '(void)' */
+#pragma warning(disable : 4255)
+/* function has been selected for automatic inline expansion */
+#pragma warning(disable : 4711)
+#endif
+
 
 /*
  * improve memory debugging on WIN32 by using crtdbg.h (only MSVC
@@ -160,29 +238,29 @@ typedef _off_t off_t;
 
 #endif // _WIN32_WCE
 
-#define MAKEUQUAD(lo, hi) ((uint64_t)(((uint32_t)(lo)) | \
-      ((uint64_t)((uint32_t)(hi))) << 32))
-#define RATE_DIFF 10000000 // 100 nsecs
-#define EPOCH_DIFF MAKEUQUAD(0xd53e8000, 0x019db1de)
-#define SYS2UNIX_TIME(lo, hi) \
-  (time_t) ((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF)
+#define MAKEUQUAD(lo, hi)                                                      \
+	((uint64_t)(((uint32_t)(lo)) | ((uint64_t)((uint32_t)(hi))) << 32))
+#define RATE_DIFF (10000000) /* 100 nsecs */
+#define EPOCH_DIFF (MAKEUQUAD(0xd53e8000, 0x019db1de))
+#define SYS2UNIX_TIME(lo, hi)                                                  \
+	((time_t)((MAKEUQUAD((lo), (hi)) - EPOCH_DIFF) / RATE_DIFF))
 
 // Visual Studio 6 does not know __func__ or __FUNCTION__
 // The rest of MS compilers use __FUNCTION__, not C99 __func__
 // Also use _strtoui64 on modern M$ compilers
 #if defined(_MSC_VER)
-#if _MSC_VER < 1300
+#if (_MSC_VER < 1300)
 #define STRX(x) #x
 #define STR(x) STRX(x)
-#define __func__ "line " STR(__LINE__)
-#define strtoull(x, y, z) strtoul(x, y, z)
-#define strtoll(x, y, z) strtol(x, y, z)
+#define __func__ __FILE__ ":" STR(__LINE__)
+#define strtoull(x, y, z) ((unsigned __int64)_atoi64(x))
+#define strtoll(x, y, z) (_atoi64(x))
 #else
-#define __func__  __FUNCTION__
-#define strtoull(x, y, z) _strtoui64(x, y, z)
-#define strtoll(x, y, z) _strtoi64(x, y, z)
-#endif // _MSC_VER
-#endif // _MSC_VER
+#define __func__ __FUNCTION__
+#define strtoull(x, y, z) (_strtoui64(x, y, z))
+#define strtoll(x, y, z) (_strtoi64(x, y, z))
+#endif
+#endif /* _MSC_VER */
 
 #define ERRNO   mgW32_get_errno()
 #if !(defined(_MSC_VER) && (_MSC_VER >= 1600) && defined(_WINSOCK2API_)) // Microsoft: socklen_t exists in ws2tcpip.h in Windows SDK 7.0A+

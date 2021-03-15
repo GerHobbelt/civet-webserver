@@ -27,7 +27,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_book_samples_server</ProjectName>
+    <ProjectName>civetweb_book_samples_server</ProjectName>
     <RootNamespace>book_samples_server</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{48067AB8-2260-730B-17CA-C5B76C3CF0EA}</ProjectGuid>
@@ -153,7 +153,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\src\thirdparty\pthread-win32;..\..\src\thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WIN32_WINNT=0x0600;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -217,7 +217,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\src\thirdparty\pthread-win32;..\..\src\thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WIN32_WINNT=0x0600;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;NDEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Async</ExceptionHandling>
@@ -331,7 +331,7 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\src\thirdparty\pthread-win32;..\..\src\thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WIN32_WINNT=0x0600;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -388,7 +388,7 @@
       <Optimization>Disabled</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>..\..\;..\..\pthread-win32;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src;..\..\src\thirdparty\pthread-win32;..\..\src\thirdparty;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WIN32_WINNT=0x0600;USE_IPV6;PTW32_STATIC_LIB;HAVE_PTHREAD;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_DEBUG;WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
@@ -485,43 +485,32 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\pthread-win32\pthread_lib.2019.vcxproj">
+    <ProjectReference Include="..\..\src\thirdparty\pthread-win32\pthread_lib.2019.vcxproj">
       <Project>{a063dfad-6995-4e1a-afff-e43dc11e95b1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\upskirt\mvc\2019\libupskirt.vcxproj">
+    <ProjectReference Include="..\..\src\thirdparty\upskirt\mvc\2019\libupskirt.vcxproj">
       <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\book_samples_server.c" />
-    <ClCompile Include="..\..\mongoose.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Itanium'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Itanium'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="..\..\mongoose_ex.c" />
+    <ClCompile Include="..\..\examples\book_samples_server\book_samples_server.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\mongoose.h" />
-    <ClInclude Include="..\..\mongoose_ex.h" />
-    <ClInclude Include="..\..\mongoose_sys_porting.h" />
-    <ClInclude Include="..\examples\mongoose_book_samples_server.resource.h" />
+    <ClInclude Include="..\..\src\civetweb.h" />
+    <ClInclude Include="..\..\examples\book_samples_server\civetweb_book_samples_server.resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\examples\mongoose_book_samples_server.rc" />
+    <ResourceCompile Include="..\..\examples\book_samples_server\civetweb_book_samples_server.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\examples\mongoose_book_samples_server.favicon.ico" />
-    <None Include="..\examples\mongoose_book_samples_server.systray.ico" />
-    <None Include="..\examples\mongoose_book_samples_server\_help\developer_info.html" />
-    <None Include="..\examples\mongoose_book_samples_server\_help\error\404.shtml" />
-    <None Include="..\examples\mongoose_book_samples_server\_help\error\error.shtml" />
-    <None Include="..\examples\mongoose_book_samples_server\_help\help_overview.html" />
-    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.ai" />
-    <None Include="..\examples\mongoose_book_samples_server\_images\biohazard-red-bg.svg" />
+    <None Include="..\..\examples\book_samples_server\civetweb_book_samples_server.favicon.ico" />
+    <None Include="..\..\examples\book_samples_server\civetweb_book_samples_server.systray.ico" />
+    <None Include="..\..\examples\book_samples_server\_help\developer_info.html" />
+    <None Include="..\..\examples\book_samples_server\_help\error\404.shtml" />
+    <None Include="..\..\examples\book_samples_server\_help\error\error.shtml" />
+    <None Include="..\..\examples\book_samples_server\_help\help_overview.html" />
+    <None Include="..\..\examples\book_samples_server\_help\images\biohazard-red-bg.ai" />
+    <None Include="..\..\examples\book_samples_server\_help\images\biohazard-red-bg.svg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

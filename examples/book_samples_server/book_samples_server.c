@@ -42,10 +42,10 @@ void srv_signal_assert(const char *expr, const char *filepath, unsigned int line
 
 
 
-#include "mongoose_ex.h"
+#include "civetweb.h"
 
 #ifdef _WIN32
-#include "win32/examples/mongoose_book_samples_server.resource.h"
+#include "civetweb_book_samples_server.resource.h"
 #define _RICHEDIT_VER 0x0800
 #include <richedit.h>
 #ifndef AURL_ENABLEURL
@@ -1628,7 +1628,7 @@ static BOOL MoveChildControl(HWND hControl, LPCRECT parent_client_rc, MOVE_MODE 
   LONG ctrl_id = GetWindowLong(hControl, GWL_ID);
   OFFSETS *offsets = getControlOffsets(ctrl_id);
 
-  switch (mode)
+  switch ((int)mode)
   {
   default:
     // do nothing
