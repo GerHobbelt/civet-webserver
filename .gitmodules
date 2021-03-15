@@ -16,3 +16,9 @@
 [submodule "extra-support-libs/popt"]
 	path = src/thirdparty/popt
 	url = git@github.com:GerHobbelt/POPT.git
+[submodule "src/thirdparty/lua"]
+	path = src/thirdparty/lua
+	url = git@github.com:GerHobbelt/lua.git
+[submodule "src/thirdparty/duktape"]
+	path = src/thirdparty/duktape
+	url = git@github.com:GerHobbelt/duktape.git
