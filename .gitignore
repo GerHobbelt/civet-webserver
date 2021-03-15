@@ -115,6 +115,7 @@ x64/
 *.pidb
 *.log
 *.scc
+/VisualStudio/.vs
 
 # Visual C++ cache files
 ipch/

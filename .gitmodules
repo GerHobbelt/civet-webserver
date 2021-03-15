@@ -22,3 +22,6 @@
 [submodule "src/thirdparty/duktape"]
 	path = src/thirdparty/duktape
 	url = git@github.com:GerHobbelt/duktape.git
+[submodule "src/thirdparty/luafilesystem"]
+	path = src/thirdparty/luafilesystem
+	url = git@github.com:GerHobbelt/luafilesystem.git
