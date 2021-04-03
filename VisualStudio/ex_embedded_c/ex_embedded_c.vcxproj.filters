@@ -21,10 +21,66 @@
     <ClCompile Include="..\..\examples\embedded_c\embedded_c.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\civetweb_ex.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\civetweb.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\civetweb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\civetweb_ex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\civetweb_private_lua.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\civetweb_sys_porting.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\src\handle_form.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\md5.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_duktape.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_http2.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_lua.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_lua_shared.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_mbedtls.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\mod_zlib.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\openssl_dl.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\response.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\sha1.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\timer.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="..\..\src\wolfssl_extras.inl">
+      <Filter>Header Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

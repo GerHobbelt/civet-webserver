@@ -21,7 +21,7 @@
 #ifndef MONGOOSE_EX_HEADER_INCLUDED
 #define MONGOOSE_EX_HEADER_INCLUDED
 
-#include "mongoose.h"
+#include "civetweb.h"
 
 #ifdef __cplusplus
 extern "C" {

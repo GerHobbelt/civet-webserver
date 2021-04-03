@@ -217,11 +217,9 @@ static int zephyr_worker_stack_index;
 
 #endif
 
-#if !defined(CIVETWEB_HEADER_INCLUDED)
 /* Include the header file here, so the CivetWeb interface is defined for the
  * entire implementation, including the following forward definitions. */
 #include "civetweb.h"
-#endif
 
 #if !defined(DEBUG_TRACE)
 #if defined(DEBUG)
