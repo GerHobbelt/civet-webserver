@@ -140,6 +140,8 @@ struct mg_connection; /* Handle for the individual connection */
 /* Maximum number of headers */
 #define MG_MAX_HEADERS  64
 
+// A HTTP header:
+//   Name: <value>
 struct mg_header {
 	const char *name;  /* HTTP header name */
 	const char *value; /* HTTP header value */

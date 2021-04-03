@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-#include "mongoose.h"
+#include "civetweb.h"
 
 #ifdef _WIN32
 #include "win32/resource.h"
@@ -33,10 +33,10 @@
 static volatile int exit_flag = 0;
 static char server_name[40];          // Set by init_server_name()
 static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
-static struct mg_context *ctx = NULL; // Set by start_mongoose()
+static struct mg_context *ctx = NULL; // Set by start_civetweb()
 
 #if !defined(CONFIG_FILE)
-#define CONFIG_FILE "mongoose.conf"
+#define CONFIG_FILE "civetweb.conf"
 #endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num) {
@@ -84,12 +84,12 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built %s\n",
+  fprintf(stderr, "CivetWeb version %s (c) Sergey Lyubka, built %s\n",
           mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
-  fprintf(stderr, "  mongoose <config_file>\n");
-  fprintf(stderr, "  mongoose [-option value ...]\n");
+  fprintf(stderr, "  civetweb -A <htpasswd_file> <realm> <user> <passwd>\n");
+  fprintf(stderr, "  civetweb <config_file>\n");
+  fprintf(stderr, "  civetweb [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
@@ -98,9 +98,9 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
             (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
   }
-  fprintf(stderr, "\nSee  http://code.google.com/p/mongoose/wiki/MongooseManual"
+  fprintf(stderr, "\nSee  http://code.google.com/p/civetweb/wiki/CivetWebManual"
           " for more details.\n");
-  fprintf(stderr, "Example:\n  mongoose -s cert.pem -p 80,443s -d no\n");
+  fprintf(stderr, "Example:\n  civetweb -s cert.pem -p 80,443s -d no\n");
   exit(EXIT_FAILURE);
 }
 
@@ -217,7 +217,7 @@ static void process_command_line_arguments(char *argv[], char **options) {
 }
 
 static void init_server_name(void) {
-  snprintf(server_name, sizeof(server_name), "Mongoose web server v%s",
+  snprintf(server_name, sizeof(server_name), "CivetWeb web server v%s",
            mg_version());
 }
 
@@ -231,7 +231,7 @@ static void init_server_name(void) {
 #endif
 
 
-static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) {
+static void *civetweb_callback(enum mg_event event, struct mg_connection *conn) {
   const struct mg_request_info *request_info = mg_get_request_info(conn);
 
   if (event == MG_INIT0)
@@ -326,7 +326,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn) 
     MG_ASSERT(request_info->phys_path);
     file_found = (0 == mg_stat(request_info->phys_path, &fst) && !fst.is_directory);
     if (file_found) {
-      return NULL; // let mongoose handle the default of 'file exists'...
+      return NULL; // let civetweb handle the default of 'file exists'...
     }
 
 #ifdef _WIN32
@@ -386,12 +386,12 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 #endif
 
 
-static void start_mongoose(int argc, char *argv[]) {
+static void start_civetweb(int argc, char *argv[]) {
   char *options[MAX_OPTIONS * 2] = { NULL };
   int i;
   struct mg_user_class_t userdef = {
       0,
-      &mongoose_callback
+      &civetweb_callback
   };
 
   /* Edit passwords file if -A option is specified */
@@ -427,20 +427,20 @@ static void start_mongoose(int argc, char *argv[]) {
   }
 #endif
 
-  /* Start Mongoose */
+  /* Start CivetWeb */
   ctx = mg_start(&userdef, (const char **)options);
   for (i = 0; options[i] != NULL; i++) {
     free(options[i]);
   }
 
   if (ctx == NULL) {
-    die("Failed to start Mongoose. Maybe some options are "
+    die("Failed to start CivetWeb. Maybe some options are "
         "assigned bad values?\nTry to run with '-e error_log.txt' "
         "and check error_log.txt for more information.");
   }
 }
 
-#if defined(_WIN32) && defined(MONGOOSE_AS_SERVICE)
+#if defined(_WIN32) && defined(CIVETWEB_AS_SERVICE)
 static SERVICE_STATUS ss;
 static SERVICE_STATUS_HANDLE hStatus;
 static const char *service_magic_argument = "--";
@@ -491,10 +491,10 @@ static void edit_config_file(struct mg_context *ctx) {
     mg_fclose(fp);
   } else if ((fp = fopen(config_file, "a+")) != NULL) {
     fprintf(fp,
-            "# Mongoose web server configuration file.\n"
+            "# CivetWeb web server configuration file.\n"
             "# Lines starting with '#' and empty lines are ignored.\n"
             "# For detailed description of every option, visit\n"
-            "# http://code.google.com/p/mongoose/wiki/MongooseManual\n\n");
+            "# http://code.google.com/p/civetweb/wiki/CivetWebManual\n\n");
     names = mg_get_valid_option_names();
     for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION) {
       value = mg_get_option(ctx, names[i + 1]);
@@ -517,7 +517,7 @@ static void show_error(void) {
 }
 
 static int manage_service(int action) {
-  static const char *service_name = "Mongoose";
+  static const char *service_name = "CivetWeb";
   SC_HANDLE hSCM = NULL, hService = NULL;
   SERVICE_DESCRIPTIONA descr = {server_name};
   char path[PATH_MAX + 20];  // Path to executable plus magic argument
@@ -571,11 +571,11 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
     case WM_CREATE:
       if (__argv[1] != NULL &&
           !strcmp(__argv[1], service_magic_argument)) {
-        start_mongoose(1, service_argv);
+        start_civetweb(1, service_argv);
         StartServiceCtrlDispatcherA(service_table);
         exit(EXIT_SUCCESS);
       } else {
-        start_mongoose(__argc, __argv);
+        start_civetweb(__argc, __argv);
       }
       break;
     case WM_COMMAND:
@@ -668,7 +668,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show) {
 #else
 int main(int argc, char *argv[]) {
   init_server_name();
-  start_mongoose(argc, argv);
+  start_civetweb(argc, argv);
   printf("%s started on port(s) %s with web root [%s]\n",
          server_name, mg_get_option(ctx, "listening_ports"),
          mg_get_option(ctx, "document_root"));

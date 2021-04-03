@@ -11,7 +11,7 @@ Generally, there are three ways of writing web apps:
 
 I believe the third way is most clean, efficient and effective because it allows to keep business logic entirely decoupled from the GUI. Business logic and GUI thus could be tested, deployed and updated separately.
 
-I will fully explain the application architecture and an implementation of simple using Mongoose web server.
+I will fully explain the application architecture and an implementation of simple using CivetWeb web server.
 
 ## Application architecture 
 
@@ -48,7 +48,7 @@ In this scenario, frontend must be configurable to make a redirect based on cook
 
 ### Web app with authentication, our example 
 
-For the sake of simplicity, in my example I combine all three servers -- frontend, backend and login -- into one, Mongoose based. To make clear logical distinction between the components, static content will live at URLs that start with `/static/` prefix, backend requests will have `/ajax/` prefix, and authentication requests will start with `/auth` prefix. And here's the diagram:
+For the sake of simplicity, in my example I combine all three servers -- frontend, backend and login -- into one, CivetWeb based. To make clear logical distinction between the components, static content will live at URLs that start with `/static/` prefix, backend requests will have `/ajax/` prefix, and authentication requests will start with `/auth` prefix. And here's the diagram:
 
 http://docs.google.com/drawings/pub?id=1nDBp_V5U953yZzOHLvMwcnXSYIbUQJrnS80dqbHn4Po&w=720&h=560&pic=x.png
 
@@ -56,7 +56,7 @@ http://docs.google.com/drawings/pub?id=1nDBp_V5U953yZzOHLvMwcnXSYIbUQJrnS80dqbHn
 
 We build very simple chat server, where users can login, send messages and see messages from the other users. It will be single common chat room. 
 
-To run an example, [http://code.google.com/p/mongoose/source/checkout checkout Mongoose code], go to the `examples/web_app` directory and run `make`.  Start your browser and point your browser at http://127.0.0.1:8080/
+To run an example, [http://code.google.com/p/civetweb/source/checkout checkout CivetWeb code], go to the `examples/web_app` directory and run `make`.  Start your browser and point your browser at http://127.0.0.1:8080/
 
 There is a live version running at [TODO]
 

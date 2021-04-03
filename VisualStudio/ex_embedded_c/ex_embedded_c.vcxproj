@@ -25,10 +25,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\civetweb.h" />
-    <ClInclude Include="..\..\src\civetweb.h" />
-    <ClInclude Include="..\..\src\civetweb_ex.h" />
-    <ClInclude Include="..\..\src\civetweb_private_lua.h" />
-    <ClInclude Include="..\..\src\civetweb_sys_porting.h" />
+    <ClInclude Include="..\..\include\civetweb_ex.h" />
+    <ClInclude Include="..\..\include\civetweb_legacy.h" />
+    <ClInclude Include="..\..\include\civetweb_private_lua.h" />
+    <ClInclude Include="..\..\include\civetweb_sys_porting.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\handle_form.inl" />

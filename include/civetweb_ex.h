@@ -18,8 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef MONGOOSE_EX_HEADER_INCLUDED
-#define MONGOOSE_EX_HEADER_INCLUDED
+#ifndef CIVETWEB_EX_HEADER_INCLUDED
+#define CIVETWEB_EX_HEADER_INCLUDED
 
 #include "civetweb.h"
 
@@ -83,7 +83,7 @@ int mg_getsockopt(struct mg_connection *conn, int level, int optname, void *optv
 // Same as FD_SET() but also keeps track of the maximum handle value in *max_fd for use with, for example, select()
 void mg_FD_SET(struct mg_connection *conn, fd_set *set, int *max_fd);
 
-// Same as FD_ISSET but now for mongoose sockets (struct socket)
+// Same as FD_ISSET but now for civetweb sockets (struct socket)
 int mg_FD_ISSET(struct mg_connection *conn, fd_set *set);
 
 // for those occasions where you need to edit the uri, query string or request method.
@@ -145,7 +145,7 @@ int mg_vec_matches_string(const struct mg_mime_vec *vec, const char *str);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 #if !defined(HAVE_PTHREAD)
-#pragma message("You are advised to use pthread-Win32 library (with its own pthread.h header) and then set the HAVE_PTHREAD #define. The mongoose pthread-internal replacements have not been tested to the same extend as this external library has.")
+#pragma message("You are advised to use pthread-Win32 library (with its own pthread.h header) and then set the HAVE_PTHREAD #define. The civetweb pthread-internal replacements have not been tested to the same extend as this external library has.")
 #endif
 #endif
 
@@ -154,4 +154,4 @@ int mg_vec_matches_string(const struct mg_mime_vec *vec, const char *str);
 }
 #endif // __cplusplus
 
-#endif // MONGOOSE_HEADER_INCLUDED
+#endif // CIVETWEB_HEADER_INCLUDED

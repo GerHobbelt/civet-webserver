@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_authentication_sample</ProjectName>
-    <RootNamespace>mongoose_authentication_sample</RootNamespace>
+    <ProjectName>civetweb_authentication_sample</ProjectName>
+    <RootNamespace>civetweb_authentication_sample</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{32080287-2D50-ECB0-7402-4443A0858715}</ProjectGuid>
   </PropertyGroup>
@@ -485,7 +485,7 @@
     <ClCompile Include="..\..\examples\authentication.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="mongoose.vcxproj">
+    <ProjectReference Include="civetweb.vcxproj">
       <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
     </ProjectReference>
   </ItemGroup>

@@ -9415,7 +9415,7 @@ scan_directory(struct mg_connection *conn,
 			 * garbage and strftime() will segfault later on in
 			 * print_dir_entry(). memset is required only if mg_stat()
 			 * fails. For more details, see
-			 * http://code.google.com/p/mongoose/issues/detail?id=79 */
+			 * http://code.google.com/p/civetweb/issues/detail?id=79 */
 			memset(&de.file, 0, sizeof(de.file));
 
 			if (truncated) {
@@ -9473,7 +9473,7 @@ remove_directory(struct mg_connection *conn, const char *dir)
 			 * garbage and strftime() will segfault later on in
 			 * print_dir_entry(). memset is required only if mg_stat()
 			 * fails. For more details, see
-			 * http://code.google.com/p/mongoose/issues/detail?id=79 */
+			 * http://code.google.com/p/civetweb/issues/detail?id=79 */
 			memset(&de.file, 0, sizeof(de.file));
 
 			if (truncated) {
@@ -12720,7 +12720,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 
 	/* Note that POSIX/Winsock's send() is threadsafe
 	 * http://stackoverflow.com/questions/1981372/are-parallel-calls-to-send-recv-on-the-same-socket-valid
-	 * but mongoose's mg_printf/mg_write is not (because of the loop in
+	 * but civetweb's mg_printf/mg_write is not (because of the loop in
 	 * push(), although that is only a problem if the packet is large or
 	 * outgoing buffer is full). */
 

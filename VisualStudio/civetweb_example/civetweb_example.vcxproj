@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_example</ProjectName>
-    <RootNamespace>mongoose_example</RootNamespace>
+    <ProjectName>civetweb_example</ProjectName>
+    <RootNamespace>civetweb_example</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{9324AC18-C6C1-43F5-8F0B-D5A28C337C49}</ProjectGuid>
   </PropertyGroup>
@@ -482,7 +482,7 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ProjectReference Include="mongoose.vcxproj">
+    <ProjectReference Include="civetweb.vcxproj">
       <Project>{fc4eff85-2c41-4ed6-a13e-eb98409de435}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>

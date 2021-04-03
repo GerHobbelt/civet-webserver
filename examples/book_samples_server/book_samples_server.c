@@ -1,4 +1,4 @@
-// Mongoose is Copyright (c) 2004-2012 Sergey Lyubka
+// CivetWeb is Copyright (c) 2004-2012 Sergey Lyubka
 // Book Samples Server code is Copyright (c) 2012-2015 Ger Hobbelt
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,7 +20,7 @@
 // THE SOFTWARE.
 
 /*
-    Shows/tests how to completely restart the mongoose server:
+    Shows/tests how to completely restart the civetweb server:
     when someone visits the '/restart' URL, the server is stopped and restarted after waiting
     3 seconds.
 */
@@ -74,7 +74,7 @@ static volatile int exit_flag = 0;
 static volatile int should_restart = 0;
 static char server_name[40];          // Set by init_server_name()::recallDocumentRoot()
 static char config_file[PATH_MAX];    // Set by process_command_line_arguments()
-static struct mg_context *ctx = NULL; // Set by start_mongoose()
+static struct mg_context *ctx = NULL; // Set by start_civetweb()
 #if defined(_WIN32)
 static HWND app_hwnd = NULL;
 static int edit_control_version = 0;
@@ -89,7 +89,7 @@ static char server_url[256] = "";
 static char document_root_dir[PATH_MAX];		// Set by init_server_name()::recallDocumentRoot()
 
 #if !defined(CONFIG_FILE)
-#define CONFIG_FILE "mongoose.conf"
+#define CONFIG_FILE "civetweb.conf"
 #endif /* !CONFIG_FILE */
 
 static void WINCDECL signal_handler(int sig_num)
@@ -398,12 +398,12 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
   const char **names;
   int i;
 
-  fprintf(stderr, "Mongoose version %s (c) Sergey Lyubka, built %s\n",
+  fprintf(stderr, "CivetWeb version %s (c) Sergey Lyubka, built %s\n",
           mg_version(), __DATE__);
   fprintf(stderr, "Usage:\n");
-  fprintf(stderr, "  mongoose -A <htpasswd_file> <realm> <user> <passwd>\n");
-  fprintf(stderr, "  mongoose <config_file>\n");
-  fprintf(stderr, "  mongoose [-option value ...]\n");
+  fprintf(stderr, "  civetweb -A <htpasswd_file> <realm> <user> <passwd>\n");
+  fprintf(stderr, "  civetweb <config_file>\n");
+  fprintf(stderr, "  civetweb [-option value ...]\n");
   fprintf(stderr, "\nOPTIONS:\n");
 
   names = mg_get_valid_option_names();
@@ -413,9 +413,9 @@ static void show_usage_and_exit(const struct mg_context *ctx) {
             (names[i][0] ? "-" : "  "),
             names[i], names[i + 1], names[i + 2] == NULL ? "" : names[i + 2]);
   }
-  fprintf(stderr, "\nSee  http://code.google.com/p/mongoose/wiki/MongooseManual"
+  fprintf(stderr, "\nSee  http://code.google.com/p/civetweb/wiki/CivetWebManual"
           " for more details.\n");
-  fprintf(stderr, "Example:\n  mongoose -s cert.pem -p 80,443s -d no\n");
+  fprintf(stderr, "Example:\n  civetweb -s cert.pem -p 80,443s -d no\n");
   exit(EXIT_FAILURE);
 }
 
@@ -560,7 +560,7 @@ static void init_server_name(void)
 {
   char buf[PATH_MAX];
 
-  snprintf(server_name, sizeof(server_name), "Mongoose web server v%s",
+  snprintf(server_name, sizeof(server_name), "CivetWeb web server v%s",
            mg_version());
 
   getcwd(buf, sizeof(buf));
@@ -771,12 +771,12 @@ static int send_requested_resource(struct mg_context *ctx, struct mg_connection 
 
   When you have your local DNS (or hosts file for that matter) configured to
   point the 'localhost-9.lan' domain name at IP address 127.0.0.9 and then run
-  mongoose on your localhost and visit
+  civetweb on your localhost and visit
     http://127.0.0.2/
   for an example of IP-based Virtual Hosting, or
     http://localhost-9.lan/
   for an example of Host-based Virtual Hosting, you will see another website
-  located in ./documentation: the mongoose documentation pages.
+  located in ./documentation: the civetweb documentation pages.
   If you visit
     http://127.0.0.1/
   or
@@ -787,8 +787,8 @@ static int send_requested_resource(struct mg_context *ctx, struct mg_connection 
 
   Off Topic: one can override other options on a per-connection / request basis
              as well. This applies to all options which' values are fetched by
-             mongoose through the internal get_conn_option() call - grep
-             mongoose.c for that one if you like.
+             civetweb through the internal get_conn_option() call - grep
+             civetweb.c for that one if you like.
 */
 // typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 static const char *option_get_callback(struct mg_context *ctx, struct mg_connection *conn, const char *name)
@@ -826,12 +826,12 @@ static const char *option_get_callback(struct mg_context *ctx, struct mg_connect
       return docu_site_docroot;
     }
   }
-  return NULL; // let mongoose handle it by himself
+  return NULL; // let civetweb handle it by himself
 }
 
 
 
-static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
+static void *civetweb_callback(enum mg_event event, struct mg_connection *conn)
 {
   struct mg_context *ctx = mg_get_context(conn);
   const struct mg_request_info *request_info = mg_get_request_info(conn);
@@ -924,7 +924,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
         serve_a_markdown_page(conn, &st, (event == MG_SSI_INCLUDE_REQUEST));
         return "";
       }
-      return NULL; // let mongoose handle the default of 'file exists'...
+      return NULL; // let civetweb handle the default of 'file exists'...
     }
   }
 
@@ -1165,7 +1165,7 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
     MG_ASSERT(request_info->phys_path);
     if (0 == mg_stat(request_info->phys_path, &fst))
     {
-      return NULL; // let mongoose handle the default of 'file exists/directory listing'...
+      return NULL; // let civetweb handle the default of 'file exists/directory listing'...
     }
 
     if (strstr(uri, "/restart"))
@@ -1238,14 +1238,14 @@ static void *mongoose_callback(enum mg_event event, struct mg_connection *conn)
       mg_get_mime_type(ctx, uri, NULL, &mime_vec);
       if (mime_vec.ptr && mime_vec.len && !mg_vec_matches_string(&mime_vec, "text/html"))
       {
-        return 0; // let mongoose handle the default of 'file exists'...
+        return 0; // let civetweb handle the default of 'file exists'...
       }
-	  return 0; // let mongoose handle the default of 'file exists'...
+	  return 0; // let civetweb handle the default of 'file exists'...
 
       content_length = mg_snprintf(conn, content, sizeof(content),
                    "<html><body>"
                    "<h1>404 - File not found!</h1>"
-                   "<p>Hello from mongoose! Your browser's IP address & port: %s : %d. You requested the file: '<code>%s</code>'."
+                   "<p>Hello from civetweb! Your browser's IP address & port: %s : %d. You requested the file: '<code>%s</code>'."
                                    "<p><a href=\"/restart\">Click here</a> to restart "
                                    "the server."
                                    "<p><a href=\"/quit\">Click here</a> to stop "
@@ -1369,14 +1369,14 @@ static BOOL WINAPI mg_win32_break_handler(DWORD signal_type)
 #endif
 
 
-static void start_mongoose(int argc, char *argv[])
+static void start_civetweb(int argc, char *argv[])
 {
   char *options[MAX_OPTIONS * 2] = { NULL };
   int i;
   struct mg_user_class_t userdef =
   {
     0,
-    &mongoose_callback,
+    &civetweb_callback,
     0,
     0,
     option_get_callback
@@ -1431,7 +1431,7 @@ static void start_mongoose(int argc, char *argv[])
     userdef.user_data = pUser_arg;
   }
 
-  /* Start Mongoose */
+  /* Start CivetWeb */
   ctx = mg_start(&userdef, (const char **)options);
   for (i = 0; options[i] != NULL; i++)
   {
@@ -1440,14 +1440,14 @@ static void start_mongoose(int argc, char *argv[])
 
   if (ctx == NULL)
   {
-    die("Failed to start Mongoose. Maybe some options are "
+    die("Failed to start CivetWeb. Maybe some options are "
         "assigned bad values?\nTry to run with '-e error_log.txt' "
         "and check error_log.txt for more information.");
   }
 }
 
 #if defined(_WIN32)
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
 static SERVICE_STATUS ss;
 static SERVICE_STATUS_HANDLE hStatus;
 static const char *service_magic_argument = "--";
@@ -1482,16 +1482,16 @@ static void WINAPI ServiceMain(void)
   ss.dwWin32ExitCode = (DWORD) -1;
   SetServiceStatus(hStatus, &ss);
 }
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
 
 #define ID_TRAYICON        100
 #define ID_QUIT            101
 #define ID_EDIT_CONFIG     102
 #define ID_SEPARATOR       103
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
 #define ID_INSTALL_SERVICE 104
 #define ID_REMOVE_SERVICE  105
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
 
 static NOTIFYICONDATAA TrayIcon;
 
@@ -1510,10 +1510,10 @@ static void edit_config_file(struct mg_context *ctx)
   else if ((fp = fopen(config_file, "a+")) != NULL)
   {
     fprintf(fp,
-            "# Mongoose web server configuration file.\n"
+            "# CivetWeb web server configuration file.\n"
             "# Lines starting with '#' and empty lines are ignored.\n"
             "# For detailed description of every option, visit\n"
-            "# http://code.google.com/p/mongoose/wiki/MongooseManual\n\n");
+            "# http://code.google.com/p/civetweb/wiki/CivetWebManual\n\n");
     names = mg_get_valid_option_names();
     for (i = 0; names[i] != NULL; i += MG_ENTRIES_PER_CONFIG_OPTION)
     {
@@ -1758,10 +1758,10 @@ BOOL CALLBACK EnumControlsToResizeThem(HWND hWndChild, LPARAM lParam)
 }
 
 
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
 static int manage_service(int action)
 {
-  static const char *service_name = "Mongoose";
+  static const char *service_name = "CivetWeb";
   SC_HANDLE hSCM = NULL, hService = NULL;
   SERVICE_DESCRIPTIONA descr = {server_name};
   char path[PATH_MAX + 20];  // Path to executable plus magic argument
@@ -1810,12 +1810,12 @@ static int manage_service(int action)
 
   return success;
 }
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
 
 static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
                                    LPARAM lParam)
 {
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
   static SERVICE_TABLE_ENTRYA service_table[] =
   {
     {server_name, (LPSERVICE_MAIN_FUNCTIONA) ServiceMain},
@@ -1823,7 +1823,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
   };
   int service_installed;
   char *service_argv[] = {__argv[0], NULL};
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
   char buf[256];
   POINT pt;
   HMENU hMenu;
@@ -1890,7 +1890,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
 
   case WM_START_SERVER:
     if (ctx == NULL) {
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
       if (__argv[1] != NULL &&
           !strcmp(__argv[1], service_magic_argument))
       {
@@ -1902,7 +1902,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
       {
 #else
       {
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
         PostMessage(hWnd, WM_RESTART_SERVER, 0, 0);
       }
     }
@@ -1986,12 +1986,12 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
       edit_config_file(ctx);
       break;
 
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
     case ID_INSTALL_SERVICE:
     case ID_REMOVE_SERVICE:
       manage_service(LOWORD(wParam));
       break;
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
 
     case IDC_BUTTON_VISIT_URL:
       ShellExecuteA(NULL, "open", server_url, NULL, NULL, SW_SHOWNORMAL);
@@ -2062,7 +2062,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
       hMenu = CreatePopupMenu();
       AppendMenuA(hMenu, MF_STRING | MF_GRAYED, ID_SEPARATOR, server_name);
       AppendMenuA(hMenu, MF_SEPARATOR, ID_SEPARATOR, "");
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
       service_installed = manage_service(0);
       snprintf(buf, sizeof(buf), "NT service: %s installed",
                service_installed ? "" : "not");
@@ -2072,7 +2072,7 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
       AppendMenuA(hMenu, MF_STRING | (!service_installed ? MF_GRAYED : 0),
                  ID_REMOVE_SERVICE, "Deinstall service");
       AppendMenuA(hMenu, MF_SEPARATOR, ID_SEPARATOR, "");
-#endif // MONGOOSE_AS_SERVICE
+#endif // CIVETWEB_AS_SERVICE
       AppendMenuA(hMenu, MF_STRING, ID_EDIT_CONFIG, "Edit config file");
       AppendMenuA(hMenu, MF_STRING, ID_QUIT, "Exit");
       GetCursorPos(&pt);
@@ -2244,19 +2244,19 @@ static BOOL CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
     return TRUE;
 
   case WM_RESTART_SERVER:
-#if defined(MONGOOSE_AS_SERVICE)
+#if defined(CIVETWEB_AS_SERVICE)
     if (__argv[1] != NULL &&
       !strcmp(__argv[1], service_magic_argument))
     {
-      start_mongoose(1, service_argv);
+      start_civetweb(1, service_argv);
       report_server_started();
     }
     else
     {
 #else
     {
-#endif // MONGOOSE_AS_SERVICE
-      start_mongoose(__argc, __argv);
+#endif // CIVETWEB_AS_SERVICE
+      start_civetweb(__argc, __argv);
       report_server_started();
     }
     break;
@@ -2395,7 +2395,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdline, int show)
   MSG msg;
   HRESULT rv;
 
-  //WM_SERVER_IS_STOPPING = RegisterWindowMessageA("mongoose_server_stopping");
+  //WM_SERVER_IS_STOPPING = RegisterWindowMessageA("civetweb_server_stopping");
 
   rv = initRichEditControl(hInst);
   if (rv != S_OK)
@@ -2473,7 +2473,7 @@ int main(int argc, char *argv[])
   should_restart = 0;
   do
   {
-    start_mongoose(argc, argv);
+    start_civetweb(argc, argv);
 
     printf("Restartable server %s started on port(s) %s with web root [%s]\n",
            server_name, mg_get_option(ctx, "listening_ports"),

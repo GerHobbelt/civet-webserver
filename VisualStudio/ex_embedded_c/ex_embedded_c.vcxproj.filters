@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Extensions">
+      <UniqueIdentifier>{2a8c9473-ced2-4925-a586-1b6bdcb64d97}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\civetweb.c">
@@ -29,58 +32,58 @@
     <ClInclude Include="..\..\include\civetweb.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\civetweb.h">
+    <ClInclude Include="..\..\include\civetweb_ex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\civetweb_ex.h">
+    <ClInclude Include="..\..\include\civetweb_legacy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\civetweb_private_lua.h">
+    <ClInclude Include="..\..\include\civetweb_private_lua.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\civetweb_sys_porting.h">
+    <ClInclude Include="..\..\include\civetweb_sys_porting.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\src\wolfssl_extras.inl">
+      <Filter>Extensions</Filter>
+    </None>
     <None Include="..\..\src\handle_form.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\md5.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_duktape.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_http2.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_lua.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_lua_shared.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_mbedtls.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\mod_zlib.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\openssl_dl.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\response.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\sha1.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
     <None Include="..\..\src\timer.inl">
-      <Filter>Header Files</Filter>
-    </None>
-    <None Include="..\..\src\wolfssl_extras.inl">
-      <Filter>Header Files</Filter>
+      <Filter>Extensions</Filter>
     </None>
   </ItemGroup>
 </Project>

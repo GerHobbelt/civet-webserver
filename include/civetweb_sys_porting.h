@@ -18,8 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef MONGOOSE_SYS_PORTING_INCLUDE
-#define MONGOOSE_SYS_PORTING_INCLUDE
+#ifndef CIVETWEB_SYS_PORTING_INCLUDE
+#define CIVETWEB_SYS_PORTING_INCLUDE
 
 #if defined(__GNUC__) || defined(__MINGW32__)
 #define GCC_VERSION                                                            \
@@ -571,8 +571,8 @@ We also check whether someone else has gone before us setting up these C99 defin
 #define fseeko(x, y, z) _lseeki64(fileno(x), (y), (z))
 #endif
 
-// prevent collisions / odd replacements outside mongoose.c + mongoose_ex.c:
-#if defined(INSIDE_MONGOOSE_C)
+// prevent collisions / odd replacements outside civetweb.c + civetweb_ex.c:
+#if defined(INSIDE_CIVETWEB_C)
 #define close _close
 #define write _write
 #define read  _read
@@ -757,7 +757,7 @@ typedef int SOCKET;
  * the Samba project.  It may not be sufficient for some
  * esoteric implementations of va_list (i.e. it may need
  * something involving a memcpy) but (hopefully) will be
- * sufficient for mongoose (code taken from libxml2 and augmented).
+ * sufficient for civetweb (code taken from libxml2 and augmented).
  */
 #ifndef VA_COPY
   #if defined(HAVE_VA_COPY) || defined(va_copy) /* Linux stdarg.h 'regular' flavor */
@@ -803,7 +803,7 @@ typedef int SOCKET;
       0x0200:          URL and other HTTP encoding / decoding
       0x0400:          file system / web server ops (PUT, DELETE, ...)
       0x0800:          web server request handling
-      0x1000:          mongoose config options
+      0x1000:          civetweb config options
   0x00010000..onwards: application specific
 */
 unsigned int *mg_trace_level(void);
@@ -1001,5 +1001,5 @@ extern "C" {
 #endif
 
 
-#endif // MONGOOSE_SYS_PORTING_INCLUDE
+#endif // CIVETWEB_SYS_PORTING_INCLUDE
 

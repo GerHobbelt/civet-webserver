@@ -9,10 +9,10 @@
 	url = git@github.com:GerHobbelt/pthread-win32.git
 [submodule "documentation/wiki"]
 	path = docs/wiki
-	url = git@github.com:GerHobbelt/mongoose.wiki.git
+	url = git@github.com:GerHobbelt/civetweb.wiki.git
 [submodule "documentation/wiki-vanilla"]
 	path = docs/wiki-vanilla
-	url = git@github.com:GerHobbelt/mongoose-vanilla.wiki.git
+	url = git@github.com:GerHobbelt/civetweb-vanilla.wiki.git
 [submodule "extra-support-libs/popt"]
 	path = src/thirdparty/popt
 	url = git@github.com:GerHobbelt/POPT.git

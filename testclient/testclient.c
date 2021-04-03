@@ -1,5 +1,5 @@
 
-#include "mongoose_sys_porting.h"
+#include "civetweb_sys_porting.h"
 
 
 char * HOST = "127.0.0.1";
@@ -436,7 +436,7 @@ int WINAPI ClientMain(void * clientNo) {
   if (verbose == 1) fputc('>', stdout);
 
   /*
-  You MUST flush the TCP write buffer or mongoose to receive the transmitted data -- or part or whole of
+  You MUST flush the TCP write buffer or civetweb to receive the transmitted data -- or part or whole of
   it will sit in your own TX buffer for EVER, or rather, until the socket 'times out'.
 
   The classic approach here is to do a half-close, but you can be nasty and disable Nagle, i.e. act
@@ -462,7 +462,7 @@ int WINAPI ClientMain(void * clientNo) {
   help from select(): essentially we do the linger timeout in userland entirely by fetching
   pending (surplus) RX data with a timeout upper bound of the configured linger timeout.
 
-  See below and mongoose.c code in close_socket_gracefully().
+  See below and civetweb.c code in close_socket_gracefully().
 
   The major point is that:
 

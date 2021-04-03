@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_vhost_sample</ProjectName>
-    <RootNamespace>mongoose_vhost_sample</RootNamespace>
+    <ProjectName>civetweb_vhost_sample</ProjectName>
+    <RootNamespace>civetweb_vhost_sample</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{F5209267-8284-83BD-73F0-DBD7E0EC729F}</ProjectGuid>
   </PropertyGroup>
@@ -502,7 +502,7 @@
     <ProjectReference Include="..\..\upskirt\mvc\2019\libupskirt.vcxproj">
       <Project>{bef78878-99b5-47fc-ae1b-210edf9643f8}</Project>
     </ProjectReference>
-    <ProjectReference Include="mongoose_pthread.vcxproj">
+    <ProjectReference Include="civetweb_pthread.vcxproj">
       <Project>{5da681a2-3c45-2e42-0e35-0d24831144d8}</Project>
     </ProjectReference>
   </ItemGroup>

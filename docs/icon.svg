@@ -17,7 +17,7 @@
    inkscape:version="0.48.1 "
    sodipodi:docname="icon.svg">
   <title
-     id="title3023">Mongoose Icon</title>
+     id="title3023">CivetWeb Icon</title>
   <defs
      id="defs4">
     <linearGradient
@@ -268,7 +268,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>Mongoose Icon</dc:title>
+        <dc:title>CivetWeb Icon</dc:title>
         <dc:creator>
           <cc:Agent>
             <dc:title>Colin Leitner</dc:title>

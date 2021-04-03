@@ -19,7 +19,7 @@
 // THE SOFTWARE.
 
 
-// 'Extends' mongoose by exporting additional functions
+// 'Extends' civetweb by exporting additional functions
 
 #include "civetweb_ex.h"
 

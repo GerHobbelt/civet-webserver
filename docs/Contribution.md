@@ -20,7 +20,7 @@ Contributions to CivetWeb are welcome, provided all contributions carry the MIT 
 
   please first create an issue on GitHub to discuss the planned changed.
 
-- In case you think you found a security issue that should be evaluated and fixed before public disclosure, feel free to write an email.  Although CivetWeb is a fork from Mongoose from 2013, the code bases are different now, so security vulnerabilities of Mongoose usually do not affect CivetWeb. See also [SECURITY.md](https://github.com/civetweb/civetweb/blob/master/SECURITY.md).
+- In case you think you found a security issue that should be evaluated and fixed before public disclosure, feel free to write an email.  Although CivetWeb is a fork from CivetWeb from 2013, the code bases are different now, so security vulnerabilities of CivetWeb usually do not affect CivetWeb. See also [SECURITY.md](https://github.com/civetweb/civetweb/blob/master/SECURITY.md).
 
 
 Why does a pull request need a description?

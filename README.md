@@ -99,7 +99,7 @@ simplicity by a carefully selected list of features:
   [MIT license](http://en.wikipedia.org/wiki/MIT_License)
 - Free from copy-left licenses, like GPL, because you should innovate without
   restrictions.
-- Forked from [Mongoose](https://code.google.com/p/mongoose/) in 2013, before
+- Forked from [CivetWeb](https://code.google.com/p/civetweb/) in 2013, before
   it changed the licence from MIT to commercial + GPL. A lot of enhancements
   have been added since that time, see
   [RELEASE_NOTES.md](https://github.com/civetweb/civetweb/blob/master/RELEASE_NOTES.md).
@@ -159,8 +159,8 @@ Contributions
 
 Contributions are welcome provided all contributions carry the MIT license.
 
-DO NOT APPLY fixes copied from Mongoose to this project to prevent GPL tainting.
-Since 2013, CivetWeb and Mongoose are developed independently.
+DO NOT APPLY fixes copied from CivetWeb to this project to prevent GPL tainting.
+Since 2013, CivetWeb and CivetWeb are developed independently.
 By now the code base differs, so patches cannot be safely transferred in either direction.
 
 Some guidelines can be found in [docs/Contribution.md](https://github.com/civetweb/civetweb/blob/master/docs/Contribution.md).
@@ -168,18 +168,18 @@ Some guidelines can be found in [docs/Contribution.md](https://github.com/civetw
 
 ### Authors
 
-CivetWeb has been forked from the last MIT version of Mongoose in 2013.
+CivetWeb has been forked from the last MIT version of CivetWeb in 2013.
 Since then, CivetWeb has seen many improvements from various authors
 (Copyright (c) 2013-2021 the CivetWeb developers, MIT license).
 
 A list of authors can be found in [CREDITS.md](https://github.com/civetweb/civetweb/blob/master/CREDITS.md).
 
-CivetWeb is based on the Mongoose project.  The original author of Mongoose was
+CivetWeb is based on the CivetWeb project.  The original author of CivetWeb was
 Sergey Lyubka (Copyright (c) 2004-2013 Sergey Lyubka, MIT license).
-However, on August 16, 2013, the [license of Mongoose has been changed](https://groups.google.com/forum/#!topic/mongoose-users/aafbOnHonkI)
+However, on August 16, 2013, the [license of CivetWeb has been changed](https://groups.google.com/forum/#!topic/civetweb-users/aafbOnHonkI)
 after writing and distributing the original code this project is based on.
-The license change and CivetWeb used to be mentioned on the Mongoose
-[Wikipedia](https://en.wikipedia.org/wiki/Mongoose_(web_server))
+The license change and CivetWeb used to be mentioned on the CivetWeb
+[Wikipedia](https://en.wikipedia.org/wiki/CivetWeb_(web_server))
 page as well, but it's getting deleted (and added again) there every
 now and then.
 

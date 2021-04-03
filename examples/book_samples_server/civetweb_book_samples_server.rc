@@ -1,13 +1,13 @@
 // Microsoft Visual C++ generated resource script.
 //
-#include "mongoose_book_samples_server.resource.h"
+#include "civetweb_book_samples_server.resource.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-//#include "../../mongoose_sys_porting.h"
+//#include "../../civetweb_sys_porting.h"
 #include <windows.h>
 
 /////////////////////////////////////////////////////////////////////////////
@@ -27,14 +27,14 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON                ICON                    "mongoose_book_samples_server.systray.ico"
+IDI_ICON                ICON                    "civetweb_book_samples_server.systray.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
 // RCDATA
 //
 
-IDR_FAVICON             RCDATA                  "mongoose_book_samples_server.favicon.ico"
+IDR_FAVICON             RCDATA                  "civetweb_book_samples_server.favicon.ico"
 
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
@@ -44,12 +44,12 @@ IDR_FAVICON             RCDATA                  "mongoose_book_samples_server.fa
 
 1 TEXTINCLUDE 
 BEGIN
-    "mongoose_book_samples_server.resource.h\0"
+    "civetweb_book_samples_server.resource.h\0"
 END
 
 2 TEXTINCLUDE 
 BEGIN
-    "//#include ""../../mongoose_sys_porting.h""\r\n"
+    "//#include ""../../civetweb_sys_porting.h""\r\n"
     "#include <windows.h>\r\n"
     "\0"
 END
@@ -141,11 +141,11 @@ END
 // HTML
 //
 
-IDR_HTML_HELP_OVERVIEW			HTML                    "mongoose_book_samples_server/_help/help_overview.html"
-IDR_HTML_DEVELOPER_INFO			HTML                    "mongoose_book_samples_server/_help/developer_info.html"
-IDR_RC_BIOHAZARD_RED_BG_SVG		RCDATA					"mongoose_book_samples_server/_help/images/biohazard-red-bg.svg"
-IDR_HTML_ERROR_404				HTML					"mongoose_book_samples_server/_help/error/404.shtml"
-IDR_HTML_ERROR_GENERAL	    	HTML					"mongoose_book_samples_server/_help/error/error.shtml"
+IDR_HTML_HELP_OVERVIEW			HTML                    "civetweb_book_samples_server/_help/help_overview.html"
+IDR_HTML_DEVELOPER_INFO			HTML                    "civetweb_book_samples_server/_help/developer_info.html"
+IDR_RC_BIOHAZARD_RED_BG_SVG		RCDATA					"civetweb_book_samples_server/_help/images/biohazard-red-bg.svg"
+IDR_HTML_ERROR_404				HTML					"civetweb_book_samples_server/_help/error/404.shtml"
+IDR_HTML_ERROR_GENERAL	    	HTML					"civetweb_book_samples_server/_help/error/error.shtml"
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////

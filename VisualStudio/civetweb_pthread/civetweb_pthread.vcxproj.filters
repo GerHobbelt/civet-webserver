@@ -4,23 +4,13 @@
     <ClCompile Include="..\..\selectable-socketpair\socketpair.c">
       <Filter>submodule: socketpair</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\mongoose.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\mongoose_ex.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
+    <ClCompile Include="..\..\civetweb.c" />
+    <ClCompile Include="..\..\civetweb_ex.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\mongoose.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\mongoose_ex.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\mongoose_sys_porting.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
+    <ClInclude Include="..\..\civetweb.h" />
+    <ClInclude Include="..\..\civetweb_ex.h" />
+    <ClInclude Include="..\..\civetweb_sys_porting.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\selectable-socketpair\Makefile">
@@ -35,12 +25,10 @@
     <None Include="..\..\Makefile">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose.1">
-      <Filter>Misc Files</Filter>
-    </None>
     <None Include="..\..\LICENSE">
       <Filter>Misc Files</Filter>
     </None>
+    <None Include="..\..\civetweb.1" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="submodule: socketpair">
