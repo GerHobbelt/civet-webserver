@@ -94,12 +94,15 @@ pushd $(dirname $0)                                                            2
 # The registered repositories:
 #
 
-git_repo_checkout_branch "../docs/wiki" e3f84c6a123bb764416d5ac1ac67e0592fe521fc master
-git_repo_checkout_branch "../docs/wiki-vanilla" e099d4dc6c9e1c3a02fd31069294c902df9a020c master
-git_repo_checkout_branch "../src/thirdparty/popt" 45795290fce544204939166cea6677ed9165c29a master
-git_repo_checkout_branch "../src/thirdparty/pthread-win32" 034d9bd32260ccb534576da39b950dd740ec02df master
-git_repo_checkout_branch "../src/thirdparty/selectable-socketpair" 8a5ff916643d2674414dcf7ada62c5dab708c01b master
-git_repo_checkout_branch "../src/thirdparty/upskirt" bcd5a37d11226907c5003e9b54002832d342d852 master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/docs/wiki" e3f84c6a123bb764416d5ac1ac67e0592fe521fc master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/docs/wiki-vanilla" e099d4dc6c9e1c3a02fd31069294c902df9a020c master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/duktape" 5252b7a50611a3cb8bfcd6856b6a4a899bc622ed master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/lua" ef9f07c408cedff07da40fb430b12b6cc120cae1 master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/luafilesystem" 7c6e1b013caec0602ca4796df3b1d7253a2dd258 master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/popt" 45795290fce544204939166cea6677ed9165c29a master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/pthread-win32" 034d9bd32260ccb534576da39b950dd740ec02df master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/selectable-socketpair" 8a5ff916643d2674414dcf7ada62c5dab708c01b master
+git_repo_checkout_branch "../../../../../../../../../w/Projects/sites/library.visyond.gov/80/lib/tooling/qiqqa/MuPDF/thirdparty/owemdjee/civet-webserver/src/thirdparty/upskirt" 739b2f0a0d7dc416d47b3c5976154e23f39d6b9c master
 
 # --- all done ---
 
