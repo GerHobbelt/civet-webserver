@@ -15,9 +15,6 @@
     <None Include="..\..\LICENSE">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose.1">
-      <Filter>Misc Files</Filter>
-    </None>
     <None Include="..\..\.gitmodules">
       <Filter>Misc Files</Filter>
     </None>
@@ -30,6 +27,7 @@
     <None Include="..\..\win32\systray.ico">
       <Filter>Resources</Filter>
     </None>
+    <None Include="..\..\civetweb.1" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\win32\res.rc">

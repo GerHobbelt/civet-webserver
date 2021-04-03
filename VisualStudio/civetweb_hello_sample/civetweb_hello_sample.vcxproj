@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_hello</ProjectName>
-    <RootNamespace>mongoose_hello</RootNamespace>
+    <ProjectName>civetweb_hello</ProjectName>
+    <RootNamespace>civetweb_hello</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{11090A1C-83F7-9D0D-301F-5EFBAB779D0D}</ProjectGuid>
   </PropertyGroup>
@@ -485,7 +485,7 @@
     <ClCompile Include="..\..\examples\hello.c" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="mongoose.vcxproj">
+    <ProjectReference Include="civetweb.vcxproj">
       <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
     </ProjectReference>
   </ItemGroup>

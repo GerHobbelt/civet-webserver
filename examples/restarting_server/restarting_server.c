@@ -1,10 +1,10 @@
 /*
-Shows/tests how to completely restart the mongoose server:
+Shows/tests how to completely restart the civetweb server:
 when someone visits the '/restart' URL, the server is stopped and restarted after waiting
 3 seconds.
 */
 
-#include "mongoose_ex.h"
+#include "civetweb_ex.h"
 
 volatile int should_restart = 0;
 
@@ -61,7 +61,7 @@ static void *callback(enum mg_event event,
     return "";
   } else if (event == MG_NEW_REQUEST) {
     content_length = mg_snprintf(conn, content, sizeof(content),
-                                 "<html><body><p>Hello from mongoose! Remote port: %d."
+                                 "<html><body><p>Hello from civetweb! Remote port: %d."
                                  "<p><a href=\"/restart\">Click here</a> to restart "
                                  "the server."
                                  "<p><a href=\"/quit\">Click here</a> to stop "

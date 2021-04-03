@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_NoSSL</ProjectName>
-    <RootNamespace>mongoose</RootNamespace>
+    <ProjectName>civetweb_NoSSL</ProjectName>
+    <RootNamespace>civetweb</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{C489E36F-CCB9-0C96-D054-0DCC2029399F}</ProjectGuid>
   </PropertyGroup>
@@ -498,8 +498,8 @@
     <None Include="..\..\documentation\icon.svg" />
     <None Include="..\..\documentation\images\leftphoto.jpg" />
     <None Include="..\..\documentation\master.dwt" />
-    <None Include="..\..\documentation\MongooseManual.html" />
-    <None Include="..\..\documentation\MongooseManual.wiki" />
+    <None Include="..\..\documentation\CivetWebManual.html" />
+    <None Include="..\..\documentation\CivetWebManual.wiki" />
     <None Include="..\..\documentation\styles\layout.css" />
     <None Include="..\..\documentation\styles\style0.css" />
     <None Include="..\..\documentation\styles\style1.css" />
@@ -513,7 +513,7 @@
     <None Include="..\..\documentation\WritingWebApplications.wiki" />
     <None Include="..\..\LICENSE" />
     <None Include="..\..\Makefile" />
-    <None Include="..\..\mongoose.1" />
+    <None Include="..\..\civetweb.1" />
     <None Include="..\..\test\.leading.dot.txt" />
     <None Include="..\..\test\100images.htm">
       <DeploymentContent>true</DeploymentContent>
@@ -649,7 +649,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\main.c" />
-    <ClCompile Include="..\..\mongoose_ex.c" />
+    <ClCompile Include="..\..\civetweb_ex.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\win32\resource.h" />

@@ -1,28 +1,28 @@
 # Describes all configurable options
 
 <pre>
-mongoose(1)               BSD General Commands Manual              mongoose(1)
+civetweb(1)               BSD General Commands Manual              civetweb(1)
 
 NAME
-     mongoose -- lightweight web server
+     civetweb -- lightweight web server
 
 SYNOPSIS
-     mongoose [config_file] [OPTIONS]
-     mongoose -A htpasswd_file domain_name user_name password
+     civetweb [config_file] [OPTIONS]
+     civetweb -A htpasswd_file domain_name user_name password
 
 DESCRIPTION
-     mongoose is small, fast and easy to use web server with CGI, SSL, MD5
+     civetweb is small, fast and easy to use web server with CGI, SSL, MD5
      authorization, and basic SSI support.
 
-     mongoose does not detach from terminal, and uses current working direc-
+     civetweb does not detach from terminal, and uses current working direc-
      tory as the web root, unless -r option is specified.  It is possible to
-     specify multiple ports to listen on. For example, to make mongoose listen
-     on HTTP port 80 and HTTPS port 443, one should start it as: mongoose -s
+     specify multiple ports to listen on. For example, to make civetweb listen
+     on HTTP port 80 and HTTPS port 443, one should start it as: civetweb -s
      cert.pem -p 80,443s
 
-     Unlike other web servers, mongoose does not require CGI scripts be put in
+     Unlike other web servers, civetweb does not require CGI scripts be put in
      a special directory. CGI scripts can be anywhere. CGI (and SSI) files are
-     recognized by the file name pattern.  mongoose uses shell-like glob pat-
+     recognized by the file name pattern.  civetweb uses shell-like glob pat-
      terns with the following syntax:
      **      Matches everything
      *       Matches everything but slash character, '/'
@@ -32,8 +32,8 @@ DESCRIPTION
              Pattern on the left side is matched first
      All other characters in the pattern match themselves.
 
-     If no arguments are given, mongoose searches for a configuration file
-     called "mongoose.conf" in the same directory where mongoose binary is
+     If no arguments are given, civetweb searches for a configuration file
+     called "civetweb.conf" in the same directory where civetweb binary is
      located. Alternatively, a file name could be specified in the command
      line. Format of the configuration file is the same as for the command
      line options except that each option must be specified on a separate
@@ -64,7 +64,7 @@ OPTIONS
 
      -I cgi_interpreter
              Use cgi_interpreter as a CGI interpreter for all CGI scripts
-             regardless script extension.  Mongoose decides which interpreter
+             regardless script extension.  CivetWeb decides which interpreter
              to use by looking at the first line of a CGI script.  Default:
              "".
 
@@ -109,12 +109,12 @@ OPTIONS
              "-1.2.3.4", then it means single IP address. Mask may vary from 0
              to 32 inclusive. On each request, full list is traversed, and
              last match wins. Default setting is to allow all. For example, to
-             allow only 192.168/16 subnet to connect, run "mongoose
+             allow only 192.168/16 subnet to connect, run "civetweb
              -0.0.0.0/0,+192.168/16".  Default: ""
 
      -m extra_mime_types
              Extra mime types to recognize, in form "extension1=type1,exten-
-             sion2=type2,...". Extension must include dot.  Example: "mongoose
+             sion2=type2,...". Extension must include dot.  Example: "civetweb
              -m .cpp=plain/text,.java=plain/text". Default: ""
 
      -p listening_ports
@@ -124,7 +124,7 @@ OPTIONS
              It is possible to specify an IP address to bind to. In this case,
              an IP address and a colon must be prepended to the port number.
              For example, to bind to a loopback interface on port 80 and to
-             all interfaces on HTTPS port 443, use "mongoose -p
+             all interfaces on HTTPS port 443, use "civetweb -p
              127.0.0.1:80,443s". Default: "8080"
 
      -r document_root
@@ -151,27 +151,27 @@ OPTIONS
              Default: ""
 
 EMBEDDING
-     mongoose was designed to be embeddable into C/C++ applications. Since the
+     civetweb was designed to be embeddable into C/C++ applications. Since the
      source code is contained in single C file, it is fairly easy to embed it
-     and follow the updates. Please refer to http://code.google.com/p/mongoose
+     and follow the updates. Please refer to http://code.google.com/p/civetweb
      for details.
 
 EXAMPLES
-     mongoose -r /var/www -s /etc/cert.pem -p 8080,8043s
+     civetweb -r /var/www -s /etc/cert.pem -p 8080,8043s
              Start serving files from /var/www. Listen on port 8080 for HTTP,
              and 8043 for HTTPS connections.  Use /etc/cert.pem as SSL cer-
              tificate file.
 
-     mongoose -l -0.0.0.0/0,+10.0.0.0/8,+1.2.3.4
+     civetweb -l -0.0.0.0/0,+10.0.0.0/8,+1.2.3.4
              Deny connections from everywhere, allow only IP address 1.2.3.4
              and all IP addresses from 10.0.0.0/8 subnet to connect.
 
-     mongoose -w **=/my/script.cgi
+     civetweb -w **=/my/script.cgi
              Invoke /my/script.cgi for every incoming request, regardless of
              the URL.
 
 COPYRIGHT
-     mongoose is licensed under the terms of the MIT license.
+     civetweb is licensed under the terms of the MIT license.
 
 AUTHOR
      Sergey Lyubka <valenok@gmail.com>.

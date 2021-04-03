@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_main</ProjectName>
-    <RootNamespace>mongoose</RootNamespace>
+    <ProjectName>civetweb_main</ProjectName>
+    <RootNamespace>civetweb</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{C459B541-F064-72CE-427A-59C3966CE84D}</ProjectGuid>
   </PropertyGroup>
@@ -494,7 +494,7 @@
     <None Include="..\..\documentation\icon.svg" />
     <None Include="..\..\documentation\images\leftphoto.jpg" />
     <None Include="..\..\documentation\master.dwt" />
-    <None Include="..\..\documentation\MongooseManual.html" />
+    <None Include="..\..\documentation\CivetWebManual.html" />
     <None Include="..\..\documentation\styles\layout.css" />
     <None Include="..\..\documentation\styles\style0.css" />
     <None Include="..\..\documentation\styles\style1.css" />
@@ -505,7 +505,7 @@
     <None Include="..\..\documentation\WritingWebApplications.html" />
     <None Include="..\..\LICENSE" />
     <None Include="..\..\Makefile" />
-    <None Include="..\..\mongoose.1" />
+    <None Include="..\..\civetweb.1" />
     <None Include="..\..\test\.leading.dot.txt" />
     <None Include="..\..\test\100images.htm">
       <DeploymentContent>true</DeploymentContent>
@@ -649,7 +649,7 @@
     <ResourceCompile Include="..\..\win32\res.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="mongoose.vcxproj">
+    <ProjectReference Include="civetweb.vcxproj">
       <Project>{97722804-cc3f-33c5-5548-40260c09c0dc}</Project>
     </ProjectReference>
   </ItemGroup>

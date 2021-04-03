@@ -18,8 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef MONGOOSE_HEADER_INCLUDED
-#define MONGOOSE_HEADER_INCLUDED
+#ifndef CIVETWEB_HEADER_INCLUDED
+#define CIVETWEB_HEADER_INCLUDED
 
 #include "civetweb_sys_porting.h"
 
@@ -48,6 +48,7 @@ struct mg_header {
   char *value;                   // HTTP header value
 };
 
+
 // This structure contains information about the HTTP request.
 struct mg_request_info {
   void *req_user_data;             // optional reference to user-defined data that's specific for this request. (The user_data reference passed to mg_start() is available through connection->ctx->user_functions in any user event handler!)
@@ -59,9 +60,9 @@ struct mg_request_info {
   char *query_string;              // URL part after '?' (not including '?') or ""
   char *path_info;                 // PATH_INFO part of the URL
   char *remote_user;               // Authenticated user, or NULL if no auth used
-  const char *log_message;         // Mongoose error/warn/... log message, MG_EVENT_LOG only
-  const char *log_severity;        // Mongoose log severity: error, warning, ..., MG_EVENT_LOG only
-  const char *log_dstfile;         // Mongoose preferred log file path, MG_EVENT_LOG only
+  const char *log_message;         // CivetWeb error/warn/... log message, MG_EVENT_LOG only
+  const char *log_severity;        // CivetWeb log severity: error, warning, ..., MG_EVENT_LOG only
+  const char *log_dstfile;         // CivetWeb preferred log file path, MG_EVENT_LOG only
   time_t log_timestamp;            // log timestamp (UTC), MG_EVENT_LOG only
   struct mg_ip_address remote_ip;  // Client's IP address
   int remote_port;                 // Client's port
@@ -77,51 +78,51 @@ struct mg_request_info {
   struct mg_header response_headers[64];  // Headers to be sent with HTTP response. Provided by user.
 };
 
-// Various events on which user-defined function is called by Mongoose.
+// Various events on which user-defined function is called by CivetWeb.
 enum mg_event {
   MG_NEW_REQUEST,           // New HTTP request has arrived from the client
-  MG_REQUEST_COMPLETE,      // Mongoose has finished handling the request
+  MG_REQUEST_COMPLETE,      // CivetWeb has finished handling the request
   MG_SSI_INCLUDE_REQUEST,   // Page includes an SSI request (file is specified in request_info::phys_path)
   MG_HTTP_ERROR,            // HTTP error must be returned to the client
-  MG_EVENT_LOG,             // Mongoose logs an event, request_info.log_message
-  MG_INIT_SSL,              // Mongoose initializes SSL. The SSL context is passed
+  MG_EVENT_LOG,             // CivetWeb logs an event, request_info.log_message
+  MG_INIT_SSL,              // CivetWeb initializes SSL. The SSL context is passed
                             // to the callback function as part of a 'faked/empty'
                             // mg_connection struct (no ugly type casting required
                             // any more!)
-  MG_INIT0,                 // Mongoose starts and has just initialized the network
-                            // stack and is about to start the mongoose threads.
-  MG_INIT_CLIENT_CONN,      // Mongoose has opened a connection to a client.
+  MG_INIT0,                 // CivetWeb starts and has just initialized the network
+                            // stack and is about to start the civetweb threads.
+  MG_INIT_CLIENT_CONN,      // CivetWeb has opened a connection to a client.
                             // This is the first time that the 'conn' parameter is
                             // valid for the given thread: now is the start of
                             // this connection's lifetime.
-  MG_EXIT_CLIENT_CONN,      // Mongoose is going to close the client connection.
+  MG_EXIT_CLIENT_CONN,      // CivetWeb is going to close the client connection.
                             // Note that you won't receive the EXIT1 event when
                             // a thread crashes; also note that you may receive
                             // this event for a connection for which you haven't
                             // received a 'init' event! The latter happens when
-                            // mongoose has its reasons to not serve the client.
+                            // civetweb has its reasons to not serve the client.
                             // This event is also the end of this particular 'conn'
                             // connection's lifetime.
-  MG_ENTER_MASTER,          // Mongoose started the master thread
+  MG_ENTER_MASTER,          // CivetWeb started the master thread
   MG_EXIT_MASTER,           // The master thread is about to close
   MG_IDLE_MASTER,           // The master thread has been idle for 200ms, i.e.
                             // there's not been any HTTP connections very recently.
   MG_RESTART_MASTER_BEGIN,  // The master thread failed (accept() barfed) and
-                            // mongoose is going to re-init the listeners. This
+                            // civetweb is going to re-init the listeners. This
                             // event is fired just before the current listeners
                             // are shut down.
   MG_RESTART_MASTER_END,    // Paired with MG_RESTART_MASTER_BEGIN: invoked once
                             // the listeners have been re-initialized again.
   MG_EXIT_SERVER,
   // MG_*_MASTER fix: issue 345 for the master thread
-  // fix: numbers were added to fix the ABI in case mongoose core and callback
+  // fix: numbers were added to fix the ABI in case civetweb core and callback
 
-  MG_EXIT0                  // Mongoose terminates and has already terminated its
+  MG_EXIT0                  // CivetWeb terminates and has already terminated its
                             // threads. This one is the counterpart of MG_INIT0, so
                             // to speak.
 };
 
-// Prototype for the user-defined function. Mongoose calls this function
+// Prototype for the user-defined function. CivetWeb calls this function
 // on every MG_* event.
 //
 // Parameters:
@@ -131,15 +132,15 @@ enum mg_event {
 //
 // Return:
 //   If handler returns non-NULL, that means that handler has processed the
-//   request by sending appropriate HTTP reply to the client. Mongoose treats
+//   request by sending appropriate HTTP reply to the client. CivetWeb treats
 //   the request as served.
 //   If handler returns NULL, that means that handler has not processed
 //   the request. Handler must not send any data to the client in this case.
-//   Mongoose proceeds with request handling as if nothing happened.
+//   CivetWeb proceeds with request handling as if nothing happened.
 typedef void * (*mg_callback_t)(enum mg_event event,
                                 struct mg_connection *conn);
 
-// Prototype for the user-defined function. Mongoose calls this function
+// Prototype for the user-defined function. CivetWeb calls this function
 // each time it needs a password in order to perform Digest Authentication
 // of the received request.
 //
@@ -178,7 +179,7 @@ typedef int (*mg_password_callback_t)(struct mg_connection *conn,
                                       char hash[],
                                       size_t hash_bufsize);
 
-// Prototype for the user-defined function. Mongoose calls this function
+// Prototype for the user-defined function. CivetWeb calls this function
 // each time it receives a part of the request body from the network.
 //
 // In order to deduce if the whole body has been received, accumulate value of 'len_buff'
@@ -201,7 +202,7 @@ typedef int (*mg_write_callback_t)(struct mg_connection *conn,
                                    const char *buf,
                                    size_t bufsize);
 
-// Prototype for the user-defined function. Mongoose calls this function
+// Prototype for the user-defined function. CivetWeb calls this function
 // each time it sends part of the content body while processing the GET request.
 //
 // This callback is called at least twice per request. The first time in order
@@ -251,7 +252,7 @@ typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk
 
 // Invoked when a HTTP chunk header is being read.
 // The user may choose to either read an entirely custom chunk header, using the
-// provided buffer and mg_read(), and return the header length, or have mongoose read the HTTP
+// provided buffer and mg_read(), and return the header length, or have civetweb read the HTTP
 // chunk header, and return 0.
 //
 // The user MUST call mg_set_rx_chunk_size() before returning when reading a custom
@@ -259,7 +260,7 @@ typedef int (*mg_write_chunk_header_t)(struct mg_connection *conn, int64_t chunk
 //
 // In order to facilitate reading fully custom chunk headers (e.g. WebSockets),
 // this callback is invoked at the start of the chunk read process.
-// When the user simply returns 0 then, mongoose will proceed with the default
+// When the user simply returns 0 then, civetweb will proceed with the default
 // behaviour and invoke the process_rx_chunk_header callback once the complete
 // HTTP chunk header has been loaded into the buffer.
 //
@@ -281,7 +282,7 @@ typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, 
 // will be only valid for the duration of this call.
 //
 // The chunk_extensions buffer is NUL-terminated like a regular C string and may be
-// modified by the user; this data is discarded by mongoose after this call.
+// modified by the user; this data is discarded by civetweb after this call.
 //
 // Return:
 // 0   on success,
@@ -289,7 +290,7 @@ typedef int (*mg_read_chunk_header_t)(struct mg_connection *conn, char *dstbuf, 
 typedef int (*mg_process_rx_chunk_header_t)(struct mg_connection *conn, int64_t chunk_size, char *chunk_extensions, struct mg_header *chunk_headers, int header_count);
 
 
-// Prototype for the user-defined option decoder/processing function. Mongoose
+// Prototype for the user-defined option decoder/processing function. CivetWeb
 // calls this function for every unidentified (global) option.
 //
 // Parameters:
@@ -304,7 +305,7 @@ typedef int (*mg_process_rx_chunk_header_t)(struct mg_connection *conn, int64_t 
 //   the option.
 typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *name, const char *value);
 
-// Prototype for the final user-defined option processing function. Mongoose
+// Prototype for the final user-defined option processing function. CivetWeb
 // calls this function once after all (global) options have been processed: this callback
 // is usually used to set the default values for any user options which have not
 // been configured yet.
@@ -316,7 +317,7 @@ typedef int (*mg_option_decode_callback_t)(struct mg_context *ctx, const char *n
 //   If handler returns zero, that means that the handler has detected a terminal error.
 typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 
-// Prototype for the user-defined option fetch function. Mongoose and user code
+// Prototype for the user-defined option fetch function. CivetWeb and user code
 // call this function through mg_get_option() to obtain the (string) value of the given option.
 //
 // Parameters:
@@ -330,7 +331,7 @@ typedef int (*mg_option_fill_callback_t)(struct mg_context *ctx);
 //   the option (and possibly a default value is used instead).
 typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct mg_connection *conn, const char *name);
 
-// Prototype for the user-defined SSI command processing function. Mongoose invokes this function
+// Prototype for the user-defined SSI command processing function. CivetWeb invokes this function
 // when a SSI tag is found in a SSI include file. This function offers the user first pick in
 // how to process the SSI tag.
 //
@@ -341,7 +342,7 @@ typedef const char * (*mg_option_get_callback_t)(struct mg_context *ctx, struct 
 //   include_level: the SSI include depth (1..N)
 //
 // Return:
-//   = 0: Mongoose should apply the default SSI handler; the user did not process this command.
+//   = 0: CivetWeb should apply the default SSI handler; the user did not process this command.
 //   > 0: The callback processed the tag (any output has been written to the connection).
 //   < 0: The callback reported an error. SSI processing will be aborted immediately.
 typedef int (*mg_ssi_command_callback_t)(struct mg_connection *conn, const char *ssi_commandline, const char *ssi_filepath, int include_level);
@@ -379,7 +380,7 @@ typedef struct mg_user_class_t {
 //                   Any of the function references listed in this structure
 //                   may be NULL. The 'user_functions' reference itself may be NULL.
 //   options:        NULL terminated list of option_name, option_value pairs that
-//                   specify Mongoose configuration parameters.
+//                   specify CivetWeb configuration parameters.
 //
 // Side-effects: on UNIX, ignores SIGCHLD and SIGPIPE signals. If custom
 //    processing is required for these, signal handlers must be set up
@@ -395,7 +396,7 @@ typedef struct mg_user_class_t {
 //   struct mg_user_class_t ufs = { &my_func, NULL };
 //   struct mg_context *ctx = mg_start(&ufs, options);
 //
-// Please refer to http://code.google.com/p/mongoose/wiki/MongooseManual
+// Please refer to http://code.google.com/p/civetweb/wiki/CivetWebManual
 // for the list of valid option and their possible values.
 //
 // Return:
@@ -407,13 +408,13 @@ struct mg_context *mg_start(const struct mg_user_class_t *user_functions,
 // Stop the web server.
 //
 // Must be called last, when an application wants to stop the web server and
-// release all associated resources. This function blocks until all Mongoose
+// release all associated resources. This function blocks until all CivetWeb
 // threads are stopped. Context pointer becomes invalid.
 void mg_stop(struct mg_context *);
 
 
 // Get the value of particular configuration parameter.
-// The value returned is read-only. Mongoose does not allow changing
+// The value returned is read-only. CivetWeb does not allow changing
 // configuration at run time.
 // If given parameter name is not valid, NULL is returned. For valid
 // names, return value is guaranteed to be non-NULL. If parameter is not
@@ -422,7 +423,7 @@ const char *mg_get_option(struct mg_context *ctx, const char *name);
 
 
 // Get the value of particular (possibly connection specific) configuration parameter.
-// The value returned is read-only. Mongoose does not allow changing
+// The value returned is read-only. CivetWeb does not allow changing
 // configuration for a connection at run time.
 // If given parameter name is not valid, NULL is returned. For valid
 // names, return value is guaranteed to be non-NULL. If parameter is not
@@ -430,7 +431,7 @@ const char *mg_get_option(struct mg_context *ctx, const char *name);
 const char *mg_get_conn_option(struct mg_connection *conn, const char *name);
 
 
-// Return array of strings that represent all mongoose configuration options.
+// Return array of strings that represent all civetweb configuration options.
 // For each option, a short name, long name, and default value is returned
 // (i.e. a total of MG_ENTRIES_PER_CONFIG_OPTION elements per entry).
 //
@@ -537,7 +538,7 @@ int mg_have_headers_been_sent(const struct mg_connection *conn);
 // when built with MSVC, as that environment offers the _vscprintf() API.
 //
 // mg_printf() is guaranteed to return 0 when an error occurs or when
-// and empty string was written, otherwise the function returns the
+// an empty string was written, otherwise the function returns the
 // number of bytes in the formatted output, excluding the NUL sentinel.
 int mg_printf(struct mg_connection *, PRINTF_FORMAT_STRING(const char *fmt), ...) PRINTF_ARGS(2, 3);
 
@@ -568,15 +569,15 @@ int mg_is_read_data_available(struct mg_connection *conn);
 typedef enum mg_iomode_t {
   MG_IOMODE_UNKNOWN = -1,
 
-  // mg_read() will read up to connection::content_len bytes of content data from an mongoose
+  // mg_read() will read up to connection::content_len bytes of content data from an civetweb
   // HTTP request connection; mg_read() will read an unlimited (2^63) number of bytes
   // from any other connection (mg_socketpair(), mg_connect())
   // mg_write() will write an unlimited number of bytes to any connection, HTTP or other.
   //
-  // NOTE: this has always been the 'standard' behaviour of Mongoose's mg_read/mg_write.
+  // NOTE: this has always been the 'standard' behaviour of CivetWeb's mg_read/mg_write.
   MG_IOMODE_STANDARD = 0,
 
-  // mg_read() will read content data bytes until either Mongoose itself or the user chunk callback
+  // mg_read() will read content data bytes until either CivetWeb itself or the user chunk callback
   // reports they encountered the End-Of-File header/zero-length chunk. When this mode is
   // set, mg_read() expects to read at least one 'chunk header', which MAY be the End-Of-File
   // header.
@@ -593,7 +594,7 @@ typedef enum mg_iomode_t {
 
   // mg_read() and mg_write() read and write to the socket without any restriction, nor do they
   // account for the bytes written in this mode. This mode may be returned by the functions
-  // mg_get_tx_mode() / mg_get_rx_mode() to inform the user whether mongoose is currently
+  // mg_get_tx_mode() / mg_get_rx_mode() to inform the user whether civetweb is currently
   // expecting to transmit/receive a chunk header or data, respectively.
   // Used anywhere else, this mode is considered identical to having specified
   // MG_IOMODE_CHUNKED_DATA and acts accordingly.
@@ -714,7 +715,7 @@ const char *mg_get_header(const struct mg_connection *, const char *name);
 // of the original input string.
 // A good way to use the 'sentinel' char value (which is only NUL when the entire
 // input string has been processed to the very end by this call) is shown in
-// mongoose's parse_auth_header(), or:
+// civetweb's parse_auth_header(), or:
 //
 //   char sep;
 //   ...
@@ -905,7 +906,7 @@ typedef enum mg_connect_flags_t {
   MG_CONNECT_BASIC = 0,
   // set up and use a SSL encrypted connection
   MG_CONNECT_USE_SSL = 0x0001,
-  // tell Mongoose we're going to connect to a HTTP server; this allows us
+  // tell CivetWeb we're going to connect to a HTTP server; this allows us
   // the usage of the built-in HTTP specific features such as mg_get_header(), etc.
   //
   // Note: as the mg_add_response_header(), mg_get_header(), etc. calls are named
@@ -1002,7 +1003,7 @@ int mg_start_thread(struct mg_context *ctx, mg_thread_func_t func, void *param);
 const char *mg_get_builtin_mime_type(const char *file_name);
 
 
-// Return Mongoose version.
+// Return CivetWeb version.
 const char *mg_version(void);
 
 
@@ -1185,7 +1186,7 @@ const char *mg_strerror(int errcode);
 // Obtain the user-defined data & functions as set up at the start of the thread (i.e. the context)
 struct mg_user_class_t *mg_get_user_data(struct mg_context *ctx);
 
-// Obtain the mongoose context definition for the given connection.
+// Obtain the civetweb context definition for the given connection.
 struct mg_context *mg_get_context(struct mg_connection *conn);
 
 // Get connection-specific user data reference; returns NULL when connection is not valid.
@@ -1197,7 +1198,7 @@ void mg_set_request_user_data(struct mg_connection *conn, void *user_data);
 // Returns a string useful as Connection: header value, depending on the current state of connection
 const char *mg_suggest_connection_header(struct mg_connection *conn);
 
-// signal mongoose that the server should close the connection with the client once the current request has been serviced.
+// signal civetweb that the server should close the connection with the client once the current request has been serviced.
 void mg_connection_must_close(struct mg_connection *conn);
 
 // Set the HTTP version to use for this connection from now on.
@@ -1250,7 +1251,7 @@ void mg_gmt_time_string(char *buf, size_t bufsize, const time_t *tm);
 
 // Return the current 'stop_flag' state value for the given thread context.
 //
-// When this is non-zero, it means the mongoose server is terminating and all threads it has created
+// When this is non-zero, it means the civetweb server is terminating and all threads it has created
 // should be / are already terminating.
 int mg_get_stop_flag(struct mg_context *ctx);
 
@@ -1262,4 +1263,4 @@ void mg_signal_stop(struct mg_context *ctx);
 }
 #endif // __cplusplus
 
-#endif // MONGOOSE_HEADER_INCLUDED
+#endif // CIVETWEB_HEADER_INCLUDED

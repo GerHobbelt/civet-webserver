@@ -42,7 +42,7 @@
     <None Include="..\..\LICENSE">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\mongoose.1">
+    <None Include="..\..\civetweb.1">
       <Filter>Misc Files</Filter>
     </None>
     <None Include="..\..\win32\favicon.ico">
@@ -72,7 +72,7 @@
     <None Include="..\..\documentation\master.dwt">
       <Filter>Misc Files\documentation</Filter>
     </None>
-    <None Include="..\..\documentation\MongooseManual.html">
+    <None Include="..\..\documentation\CivetWebManual.html">
       <Filter>Misc Files\documentation</Filter>
     </None>
     <None Include="..\..\documentation\UsefulResources.html">

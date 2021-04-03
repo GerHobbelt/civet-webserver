@@ -23,10 +23,10 @@
 #ifndef CIVETWEB_HEADER_INCLUDED
 #define CIVETWEB_HEADER_INCLUDED
 
-#define CIVETWEB_VERSION "1.14"
-#define CIVETWEB_VERSION_MAJOR (1)
-#define CIVETWEB_VERSION_MINOR (14)
-#define CIVETWEB_VERSION_PATCH (0)
+#define CIVETWEB_VERSION_MAJOR 1
+#define CIVETWEB_VERSION_MINOR 14
+#define CIVETWEB_VERSION_PATCH 0
+#define CIVETWEB_VERSION       #CIVETWEB_VERSION_MAJOR "." #CIVETWEB_VERSION_MINOR "." #CIVETWEB_VERSION_PATCH
 
 #ifndef CIVETWEB_API
 #if defined(_WIN32)
@@ -138,8 +138,10 @@ struct mg_connection; /* Handle for the individual connection */
 
 
 /* Maximum number of headers */
-#define MG_MAX_HEADERS (64)
+#define MG_MAX_HEADERS  64
 
+// A HTTP header:
+//   Name: <value>
 struct mg_header {
 	const char *name;  /* HTTP header name */
 	const char *value; /* HTTP header value */

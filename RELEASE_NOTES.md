@@ -9,6 +9,7 @@ Changes
 - Add local_uri_raw field (not sanitized URI) to request_info
 - Additional API functions and a callback after closing connections
 - Allow mbedTLS as OpenSSL alternative (basic functionality)
+- Add OpenSSL 3.0 support (OpenSSL 3.0 Alpha 13)
 - Support UNIX/Linux domain sockets
 - Fuzz tests and ossfuzz integration
 - Compression for websockets
@@ -19,6 +20,7 @@ Changes
 - Build system specific fixes (CMake, MinGW)
 - Update 3rd party components (Lua, lfs, sqlite)
 - Allow Lua background script to use timers, format and filter logs
+- Remove WinCE code
 - Update version number
 
 
@@ -393,7 +395,7 @@ Changes
 - Use C style comments to enable compiling most of civetweb with -ansi. (F-Secure Corporation)
 - Allow directories with non ASCII characters in Windows in UTF-8 encoded (bel2125)
 - Added Lua File System support (bel2125)
-- Added mongoose history back in repository thanks to (Paul Sokolovsky)
+- Added civetweb history back in repository thanks to (Paul Sokolovsky)
 - Fixed keep alive (bel2125)
 - Updated of MIME types (bel2125)
 - Updated lsqlite (bel2125)
@@ -525,12 +527,12 @@ Release Notes v1.0
 ===
 
 ### Objectives: *MIT License Preservation, Rebranding*
-The objective of this release is to establish a version of the Mongoose software distribution that still retains the MIT license.
+The objective of this release is to establish a version of the CivetWeb software distribution that still retains the MIT license.
 
 Changes
 -------
 
-- Renamed Mongoose to Civetweb in the code and documentation.
+- Renamed CivetWeb to Civetweb in the code and documentation.
 - Replaced copyrighted images with new images
 - Created a new code repository at https://github.com/civetweb/civetweb
 - Created a distribution site at https://sourceforge.net/projects/civetweb/

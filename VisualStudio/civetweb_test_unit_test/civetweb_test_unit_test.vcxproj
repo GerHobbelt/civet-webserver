@@ -27,8 +27,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>mongoose_unit_test</ProjectName>
-    <RootNamespace>mongoose_unit_test</RootNamespace>
+    <ProjectName>civetweb_unit_test</ProjectName>
+    <RootNamespace>civetweb_unit_test</RootNamespace>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{622F5DC3-8BA6-AB0E-07EC-A927B505E703}</ProjectGuid>
   </PropertyGroup>

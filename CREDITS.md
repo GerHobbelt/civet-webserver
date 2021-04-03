@@ -209,8 +209,8 @@
 
 and others.
 
-# Mongoose Contributors
-CivetWeb is based on the Mongoose code.  The following users contributed to the original Mongoose release between 2010 and 2013.  This list was generated from the Mongoose GIT logs.  It does not contain contributions from the Mongoose mailing list.  There is no record for contributors prior to 2010.
+# CivetWeb Contributors
+CivetWeb is based on the CivetWeb code.  The following users contributed to the original CivetWeb release between 2010 and 2013.  This list was generated from the CivetWeb GIT logs.  It does not contain contributions from the CivetWeb mailing list.  There is no record for contributors prior to 2010.
 
 * Sergey Lyubka
 * Arnout Vandecappelle (Essensium/Mind)

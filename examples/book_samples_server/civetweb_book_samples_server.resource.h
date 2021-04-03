@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by mongoose_book_samples_server.rc
+// Used by civetweb_book_samples_server.rc
 //
 #define IDD_FORMVIEW60                  101
 #define IDD_FORMVIEW50                  102
