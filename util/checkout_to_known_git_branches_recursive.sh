@@ -94,15 +94,15 @@ pushd $(dirname $0)                                                            2
 # The registered repositories:
 #
 
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/docs/wiki" bff7d05c87ce16fb0debd80272eac238984fd905 master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/docs/wiki-vanilla" 41351a9d314ff29c5c83f0ee2478583b33f58e31 master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/duktape" 5252b7a50611a3cb8bfcd6856b6a4a899bc622ed master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/lua" ef9f07c408cedff07da40fb430b12b6cc120cae1 master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/luafilesystem" 7c6e1b013caec0602ca4796df3b1d7253a2dd258 master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/popt" 45795290fce544204939166cea6677ed9165c29a master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/pthread-win32" 17a7464505e683cfa127a7a2ca4ba88ba899f2c7 master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/selectable-socketpair" 8a5ff916643d2674414dcf7ada62c5dab708c01b master
-git_repo_checkout_branch "../../../../../w/Projects/sites/library.visyond.gov/80/lib/CS/civet-webserver/src/thirdparty/upskirt" 739b2f0a0d7dc416d47b3c5976154e23f39d6b9c master
+git_repo_checkout_branch "../docs/wiki" bff7d05c87ce16fb0debd80272eac238984fd905 master
+git_repo_checkout_branch "../docs/wiki-vanilla" 41351a9d314ff29c5c83f0ee2478583b33f58e31 master
+git_repo_checkout_branch "../src/thirdparty/duktape" 5252b7a50611a3cb8bfcd6856b6a4a899bc622ed master
+git_repo_checkout_branch "../src/thirdparty/lua" ef9f07c408cedff07da40fb430b12b6cc120cae1 master
+git_repo_checkout_branch "../src/thirdparty/luafilesystem" 7c6e1b013caec0602ca4796df3b1d7253a2dd258 master
+git_repo_checkout_branch "../src/thirdparty/popt" 45795290fce544204939166cea6677ed9165c29a master
+git_repo_checkout_branch "../src/thirdparty/pthread-win32" 17a7464505e683cfa127a7a2ca4ba88ba899f2c7 master
+git_repo_checkout_branch "../src/thirdparty/selectable-socketpair" 8a5ff916643d2674414dcf7ada62c5dab708c01b master
+git_repo_checkout_branch "../src/thirdparty/upskirt" 739b2f0a0d7dc416d47b3c5976154e23f39d6b9c master
 
 # --- all done ---
 
