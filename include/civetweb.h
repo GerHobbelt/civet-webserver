@@ -1468,6 +1468,12 @@ CIVETWEB_API struct mg_connection *mg_connect_client(const char *host,
                                                      size_t error_buffer_size);
 
 
+typedef struct mg_conn_stop_ctx {
+      int sd;
+      int stop_now;
+      unsigned short bound_port;
+}mg_conn_stop_ctx;
+
 struct mg_client_options {
 	const char *host;
 	int port;
@@ -1476,9 +1482,13 @@ struct mg_client_options {
 	int connect_timeout;   //Milisecond
 //	const char *connect_timeout;   //Milisecond
 	const char *host_name;
+        struct mg_conn_stop_ctx *psctrl;
 	/* TODO: add more data */
 };
 
+int mg_conn_stop_ctx_init(struct mg_conn_stop_ctx *psctrl, int immediate);
+int mg_signal_stop_ctx(struct mg_conn_stop_ctx *psctrl);
+int mg_close_stop_ctx(struct mg_conn_stop_ctx *psctrl);
 
 CIVETWEB_API struct mg_connection *mg_connect_client_mimik(const struct mg_client_options *client_options,
                                                      int use_ssl,
