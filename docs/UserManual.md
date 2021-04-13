@@ -242,8 +242,6 @@ Note that PHP scripts must use `php-cgi.exe` as executable, not `php.exe`.
 ### cgi\_interpreter\_args
 Optional additional arguments passed to a Windows CGI interpreter program.
 
-(Currently experimental - https://github.com/civetweb/civetweb/issues/854)
-
 ### cgi\_pattern `**.cgi$|**.pl$|**.php$`
 All files that match `cgi_pattern` are treated as CGI files. The default pattern
 allows CGI files be anywhere. To restrict CGIs to a certain directory,
@@ -467,12 +465,13 @@ E.g.: `127.0.0.1:80,[::1]:80,x/tmp/sockname` will listen to localhost
 http connections using IPv4, IPv6 and the domain socket `/tmp/sockname`.
 
 ### lua\_background\_script
-Experimental feature, and subject to change.
 Run a Lua script in the background, independent from any connection.
 The script is started before network access to the server is available.
 It can be used to prepare the document root (e.g., update files, compress
 files, ...), check for external resources, remove old log files, etc.
 
+The script can define callbacks to be notified when the server starts
+or stops. Furthermore, it can be used for log filtering or formatting. 
 The Lua state remains open until the server is stopped.
 
 For a detailed descriotion of available Lua callbacks see section
@@ -1092,6 +1091,9 @@ A Lua background script may define the following functions:
     `start()`        -- called wnen the server is started
     `stop()`         -- called when the server is stopped
     `log(req, res)`  -- called when an access log entry is created
+
+The return values of `start` and `stop` are ignored. The `start` callback can be used
+to create timers.
 
 The optional function `log` may be used to filter or format access log file entries.
 The `request_info` table is supplied as first argument (content of this table: see above).
