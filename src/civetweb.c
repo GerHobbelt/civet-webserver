@@ -8025,6 +8025,7 @@ static const struct {
     {".sil", 4, "application/font-sfnt"},
     {".pfr", 4, "application/font-tdpfr"},
     {".woff", 5, "application/font-woff"},
+    {".woff2", 6, "application/font-woff2"},
 
     /* audio */
     {".mp3", 4, "audio/mpeg"},
@@ -8081,6 +8082,7 @@ static const struct {
     {".aac",
      4,
      "audio/aac"}, /* http://en.wikipedia.org/wiki/Advanced_Audio_Coding */
+    {".flac", 5, "audio/flac"},
     {".aif", 4, "audio/x-aif"},
     {".m3u", 4, "audio/x-mpegurl"},
     {".mid", 4, "audio/x-midi"},
@@ -12543,8 +12545,8 @@ read_websocket(struct mg_connection *conn,
 							    data_len
 							    * 4; // Initial guess of the inflated message
 							         // size. We double the memory when needed.
-							Bytef *inflated;
-							Bytef *new_mem;
+							Bytef *inflated = NULL;
+							Bytef *new_mem = NULL;
 							conn->websocket_inflate_state.avail_in =
 							    (uInt)(data_len + 4);
 							conn->websocket_inflate_state.next_in = data;
@@ -12555,12 +12557,14 @@ read_websocket(struct mg_connection *conn,
 							data[data_len + 3] = '\xff';
 							do {
 								if (inflate_buf_size_old == 0) {
-									new_mem = mg_calloc(inflate_buf_size,
-									                    sizeof(Bytef));
+									new_mem =
+									    (Bytef *)mg_calloc(inflate_buf_size,
+									                       sizeof(Bytef));
 								} else {
 									inflate_buf_size *= 2;
 									new_mem =
-									    mg_realloc(inflated, inflate_buf_size);
+									    (Bytef *)mg_realloc(inflated,
+									                        inflate_buf_size);
 								}
 								if (new_mem == NULL) {
 									mg_cry_internal(
@@ -12748,7 +12752,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 		header[0] = 0xC0u | (unsigned char)((unsigned)opcode & 0xf);
 		conn->websocket_deflate_state.avail_in = (uInt)dataLen;
 		conn->websocket_deflate_state.next_in = (unsigned char *)data;
-		deflated_size = compressBound((uLong)dataLen);
+		deflated_size = (Bytef *)compressBound((uLong)dataLen);
 		deflated = mg_calloc(deflated_size, sizeof(Bytef));
 		if (deflated == NULL) {
 			mg_cry_internal(
@@ -17705,6 +17709,15 @@ get_request(struct mg_connection *conn, char *ebuf, size_t ebuf_len, int *err)
 		return 0;
 	}
 
+#if USE_ZLIB
+	if (((cl = get_header(conn->request_info.http_headers,
+	                      conn->request_info.num_headers,
+	                      "Accept-Encoding"))
+	     != NULL)
+	    && strstr(cl, "gzip")) {
+		conn->accept_gzip = 1;
+	}
+#endif
 	if (((cl = get_header(conn->request_info.http_headers,
 	                      conn->request_info.num_headers,
 	                      "Transfer-Encoding"))
