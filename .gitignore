@@ -28,6 +28,8 @@ log.out
 /CMakeFiles
 /mingw-builds
 
+/build/
+
 #################
 ## Eclipse
 #################
