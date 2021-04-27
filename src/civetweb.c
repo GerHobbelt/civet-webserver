@@ -5172,9 +5172,11 @@ mg_readdir(DIR *dir)
 #undef POLLIN
 #undef POLLPRI
 #undef POLLOUT
+#undef POLLERR
 #define POLLIN (1)  /* Data ready - read will not block. */
 #define POLLPRI (2) /* Priority data ready. */
 #define POLLOUT (4) /* Send queue not full - write will not block. */
+#define POLLERR (8) /* Error event */
 
 FUNCTION_MAY_BE_UNUSED
 static int
@@ -5183,6 +5185,7 @@ poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 	struct timeval tv;
 	fd_set rset;
 	fd_set wset;
+	fd_set eset;
 	unsigned int i;
 	int result;
 	SOCKET maxfd = 0;
@@ -5192,6 +5195,7 @@ poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 	tv.tv_usec = (milliseconds % 1000) * 1000;
 	FD_ZERO(&rset);
 	FD_ZERO(&wset);
+	FD_ZERO(&eset);
 
 	for (i = 0; i < n; i++) {
 		if (pfd[i].events & POLLIN) {
@@ -5200,6 +5204,9 @@ poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 		if (pfd[i].events & POLLOUT) {
 			FD_SET(pfd[i].fd, &wset);
 		}
+		if (pfd[i].events & POLLERR) {
+			FD_SET(pfd[i].fd, &eset);
+		}
 		pfd[i].revents = 0;
 
 		if (pfd[i].fd > maxfd) {
@@ -5207,13 +5214,16 @@ poll(struct mg_pollfd *pfd, unsigned int n, int milliseconds)
 		}
 	}
 
-	if ((result = select((int)maxfd + 1, &rset, &wset, NULL, &tv)) > 0) {
+	if ((result = select((int)maxfd + 1, &rset, &wset, &eset, &tv)) > 0) {
 		for (i = 0; i < n; i++) {
 			if (FD_ISSET(pfd[i].fd, &rset)) {
 				pfd[i].revents |= POLLIN;
 			}
 			if (FD_ISSET(pfd[i].fd, &wset)) {
 				pfd[i].revents |= POLLOUT;
+			}
+			if (FD_ISSET(pfd[i].fd, &eset)) {
+				pfd[i].revents |= POLLERR;
 			}
 		}
 	}
@@ -5900,6 +5910,13 @@ mg_poll(struct mg_pollfd *pfd,
 	 * of having to wait for a long socket timeout. */
 	int ms_now = SOCKET_TIMEOUT_QUANTUM; /* Sleep quantum in ms */
 
+	int check_pollerr = 0;
+	if ((n == 1) && ((pfd[0].events & POLLERR) == 0)) {
+		/* If we wait for only one file descriptor, wait on error as well */
+		pfd[0].events |= POLLERR;
+		check_pollerr = 1;
+	}
+
 	do {
 		int result;
 
@@ -5916,6 +5933,12 @@ mg_poll(struct mg_pollfd *pfd,
 		if (result != 0) {
 			/* Poll returned either success (1) or error (-1).
 			 * Forward both to the caller. */
+			if ((check_pollerr)
+			    && ((pfd[0].revents & (POLLIN | POLLOUT | POLLERR))
+			        == POLLERR)) {
+				/* One and only file descriptor returned error */
+				return -1;
+			}
 			return result;
 		}
 
@@ -19162,7 +19185,11 @@ master_thread_run(struct mg_context *ctx)
 			pfd[i].events = POLLIN;
 		}
 
-		if (poll(pfd, ctx->num_listening_sockets, 200) > 0) {
+		if (mg_poll(pfd,
+		            ctx->num_listening_sockets,
+		            SOCKET_TIMEOUT_QUANTUM,
+		            &(ctx->stop_flag))
+		    > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
 				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
 				 * successful poll, and POLLIN is defined as
