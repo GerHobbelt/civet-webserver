@@ -28,8 +28,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "upskirt", "upskirt", "{DD21
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libupskirt", "..\src\thirdparty\upskirt\mvc\2019\libupskirt.vcxproj", "{BEF78878-99B5-47FC-AE1B-210EDF9643F8}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "smartypants", "..\src\thirdparty\upskirt\mvc\2019\smartypants.vcxproj", "{B682A9FC-8C10-CE85-1083-3C42CA82502D}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "upskirt", "..\src\thirdparty\upskirt\mvc\2019\upskirt.vcxproj", "{17794A55-DE45-431F-BAEE-B92226BF831E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_vhost_sample", "civetweb_vhost_sample\civetweb_vhost_sample.vcxproj", "{F5209267-8284-83BD-73F0-DBD7E0EC729F}"
@@ -38,15 +36,17 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_pthread", "civetwe
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pthread", "pthread", "{E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_lib", "..\src\thirdparty\pthread-win32\pthread_lib.2019.vcxproj", "{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_static_lib", "..\src\thirdparty\pthread-win32\windows\VS2019\pthread_lib.2019.vcxproj", "{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\src\thirdparty\pthread-win32\pthread.2019.vcxproj", "{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_dll", "..\src\thirdparty\pthread-win32\windows\VS2019\pthread.2019.vcxproj", "{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\src\thirdparty\pthread-win32\tests\Debug.2019.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pthread_test", "..\src\thirdparty\pthread-win32\windows\VS2019\Debug.2019.vcxproj", "{510AAB56-492A-4EF6-85AC-AD0F02BF5639}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_restarting_server", "civetweb_restarting_server\civetweb_restarting_server.vcxproj", "{279FCCD2-0D90-2CE4-BD05-E91BD3373266}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "civetweb_book_samples_server", "civetweb_book_samples_server\civetweb_book_samples_server.vcxproj", "{48067AB8-2260-730B-17CA-C5B76C3CF0EA}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libupskirtDLL", "..\src\thirdparty\upskirt\mvc\2019\libupskirtDLL.vcxproj", "{F099715B-7AF7-499F-BE80-4DFD234E0C12}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -348,36 +348,6 @@ Global
 		{BEF78878-99B5-47FC-AE1B-210EDF9643F8}.Upskirt|Win32.Build.0 = Upskirt|Win32
 		{BEF78878-99B5-47FC-AE1B-210EDF9643F8}.Upskirt|x64.ActiveCfg = Upskirt|x64
 		{BEF78878-99B5-47FC-AE1B-210EDF9643F8}.Upskirt|x64.Build.0 = Upskirt|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|Itanium.ActiveCfg = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|Itanium.Build.0 = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|Win32.ActiveCfg = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|Win32.Build.0 = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|x64.ActiveCfg = Debug|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Debug|x64.Build.0 = Debug|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|Itanium.ActiveCfg = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|Itanium.Build.0 = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|Win32.ActiveCfg = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|Win32.Build.0 = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|x64.ActiveCfg = Debug|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.DebugDll|x64.Build.0 = Debug|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|Itanium.ActiveCfg = Release|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|Itanium.Build.0 = Release|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|Win32.ActiveCfg = Release|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|Win32.Build.0 = Release|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|x64.ActiveCfg = Release|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Release|x64.Build.0 = Release|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|Itanium.ActiveCfg = Release|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|Itanium.Build.0 = Release|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|Win32.ActiveCfg = Release|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|Win32.Build.0 = Release|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|x64.ActiveCfg = Release|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.ReleaseDll|x64.Build.0 = Release|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|Itanium.ActiveCfg = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|Itanium.Build.0 = Debug|Itanium
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|Win32.ActiveCfg = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|Win32.Build.0 = Debug|Win32
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|x64.ActiveCfg = Debug|x64
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D}.Upskirt|x64.Build.0 = Debug|x64
 		{17794A55-DE45-431F-BAEE-B92226BF831E}.Debug|Itanium.ActiveCfg = Debug|Itanium
 		{17794A55-DE45-431F-BAEE-B92226BF831E}.Debug|Itanium.Build.0 = Debug|Itanium
 		{17794A55-DE45-431F-BAEE-B92226BF831E}.Debug|Win32.ActiveCfg = Debug|Win32
@@ -618,17 +588,43 @@ Global
 		{48067AB8-2260-730B-17CA-C5B76C3CF0EA}.Upskirt|Win32.Build.0 = Release|Win32
 		{48067AB8-2260-730B-17CA-C5B76C3CF0EA}.Upskirt|x64.ActiveCfg = Release|x64
 		{48067AB8-2260-730B-17CA-C5B76C3CF0EA}.Upskirt|x64.Build.0 = Release|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Debug|Itanium.ActiveCfg = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Debug|Win32.ActiveCfg = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Debug|Win32.Build.0 = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Debug|x64.ActiveCfg = Debug|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Debug|x64.Build.0 = Debug|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.DebugDll|Itanium.ActiveCfg = DebugDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.DebugDll|Win32.ActiveCfg = DebugDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.DebugDll|Win32.Build.0 = DebugDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.DebugDll|x64.ActiveCfg = DebugDll|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.DebugDll|x64.Build.0 = DebugDll|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Release|Itanium.ActiveCfg = Release|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Release|Win32.ActiveCfg = Release|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Release|Win32.Build.0 = Release|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Release|x64.ActiveCfg = Release|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Release|x64.Build.0 = Release|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.ReleaseDll|Itanium.ActiveCfg = ReleaseDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.ReleaseDll|Win32.ActiveCfg = ReleaseDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.ReleaseDll|Win32.Build.0 = ReleaseDll|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.ReleaseDll|x64.ActiveCfg = ReleaseDll|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.ReleaseDll|x64.Build.0 = ReleaseDll|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|Itanium.ActiveCfg = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|Itanium.Build.0 = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|Win32.ActiveCfg = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|Win32.Build.0 = Debug|Win32
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|x64.ActiveCfg = Debug|x64
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12}.Upskirt|x64.Build.0 = Debug|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{BEF78878-99B5-47FC-AE1B-210EDF9643F8} = {DD218416-C5C4-47BC-A031-D2E3032505F1}
-		{B682A9FC-8C10-CE85-1083-3C42CA82502D} = {DD218416-C5C4-47BC-A031-D2E3032505F1}
 		{17794A55-DE45-431F-BAEE-B92226BF831E} = {DD218416-C5C4-47BC-A031-D2E3032505F1}
 		{A063DFAD-6995-4E1A-AFFF-E43DC11E95B1} = {E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}
 		{5D459BA0-5EEB-47D3-A1C4-6B55C8D37EC0} = {E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}
 		{510AAB56-492A-4EF6-85AC-AD0F02BF5639} = {E1E2CF46-3C8D-4C55-9C9C-C844C2E15551}
+		{F099715B-7AF7-499F-BE80-4DFD234E0C12} = {DD218416-C5C4-47BC-A031-D2E3032505F1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3BC69862-5581-4094-97EA-451A5D6D7D86}

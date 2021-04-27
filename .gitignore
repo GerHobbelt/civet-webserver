@@ -118,6 +118,8 @@ x64/
 *.log
 *.scc
 /VisualStudio/.vs
+/VisualStudio/Debug-*/
+/VisualStudio/Release-*/
 
 # Visual C++ cache files
 ipch/
