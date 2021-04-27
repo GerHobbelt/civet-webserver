@@ -21,7 +21,7 @@ f )
   git submodule update --init
   git submodule update --init --recursive
 
-  util/git_checkout_submodules_head.sh
+  tools/git_checkout_submodules_head.sh
   ;;
 
 "?" )
@@ -124,7 +124,6 @@ register_remote .                                                             fg
 register_remote .                                                             jdblair                                  git@github.com:jdblair/civetweb.git                                              $# $@
 register_remote .                                                             jesperes                                 git@github.com:jesperes/civetweb.git                                             $# $@
 register_remote .                                                             leonardosantos                           git@github.com:leonardosantos/civetta.git                                        $# $@
-register_remote .                                                             local-server                             ../../../../../hundman-photography.gov/80/__server/htdocs/lib/civet-webserver/   $# $@
 register_remote .                                                             rpetrich                                 git@github.com:rpetrich/civetweb.git                                             $# $@
 register_remote .                                                             rzarzynski                               git@github.com:rzarzynski/civetweb.git                                           $# $@
 register_remote .                                                             samcrow                                  git@github.com:samcrow/civetweb.git                                              $# $@
