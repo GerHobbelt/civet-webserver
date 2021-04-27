@@ -20,9 +20,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\websocket_client\websocket_client.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\civetweb.c">
       <Filter>Source Files</Filter>
     </ClCompile>

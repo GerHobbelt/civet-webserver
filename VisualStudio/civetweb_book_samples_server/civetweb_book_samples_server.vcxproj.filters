@@ -49,9 +49,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\src\civetweb.h">
-      <Filter>Sources</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\examples\book_samples_server\civetweb_book_samples_server.resource.h">
       <Filter>Resources</Filter>
     </ClInclude>

@@ -1,34 +1,16 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="..\..\selectable-socketpair\socketpair.c">
-      <Filter>submodule: socketpair</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\civetweb.c" />
-    <ClCompile Include="..\..\civetweb_ex.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\civetweb.h" />
-    <ClInclude Include="..\..\civetweb_ex.h" />
-    <ClInclude Include="..\..\civetweb_sys_porting.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\..\selectable-socketpair\Makefile">
-      <Filter>submodule: socketpair</Filter>
-    </None>
-    <None Include="..\..\selectable-socketpair\README">
-      <Filter>submodule: socketpair</Filter>
-    </None>
-    <None Include="..\..\.gitmodules">
-      <Filter>Misc Files</Filter>
-    </None>
-    <None Include="..\..\Makefile">
-      <Filter>Misc Files</Filter>
-    </None>
-    <None Include="..\..\LICENSE">
-      <Filter>Misc Files</Filter>
-    </None>
-    <None Include="..\..\civetweb.1" />
+    <None Include="..\..\src\handle_form.inl" />
+    <None Include="..\..\src\md5.inl" />
+    <None Include="..\..\src\mod_duktape.inl" />
+    <None Include="..\..\src\mod_http2.inl" />
+    <None Include="..\..\src\mod_lua.inl" />
+    <None Include="..\..\src\mod_lua_shared.inl" />
+    <None Include="..\..\src\mod_zlib.inl" />
+    <None Include="..\..\src\sha1.inl" />
+    <None Include="..\..\src\timer.inl" />
+    <None Include="..\..\src\wolfssl_extras.inl" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="submodule: socketpair">
@@ -40,5 +22,21 @@
     <Filter Include="Misc Files">
       <UniqueIdentifier>{5042f70a-552f-4261-9e2c-aabd9ac50b08}</UniqueIdentifier>
     </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\civetweb.c" />
+    <ClCompile Include="..\..\src\main.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\include\civetweb.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\resources\res.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\resources\systray.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\..\src\CMakeLists.txt" />
   </ItemGroup>
 </Project>

@@ -29,6 +29,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\virtualhosting.c" />
+    <ClCompile Include="..\..\examples\virtualhosting\virtualhosting.c" />
   </ItemGroup>
 </Project>

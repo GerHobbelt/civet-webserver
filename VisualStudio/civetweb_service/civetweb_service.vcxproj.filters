@@ -21,27 +21,5 @@
     <None Include="..\..\Makefile">
       <Filter>Misc Files</Filter>
     </None>
-    <None Include="..\..\win32\favicon.ico">
-      <Filter>Resources</Filter>
-    </None>
-    <None Include="..\..\win32\systray.ico">
-      <Filter>Resources</Filter>
-    </None>
-    <None Include="..\..\civetweb.1" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\..\win32\res.rc">
-      <Filter>Resources</Filter>
-    </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\win32\resource.h">
-      <Filter>Resources</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\main.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
   </ItemGroup>
 </Project>

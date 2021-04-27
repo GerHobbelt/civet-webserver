@@ -497,9 +497,4 @@
       <Filter>Resources</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\main.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-  </ItemGroup>
 </Project>

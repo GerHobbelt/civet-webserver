@@ -156,9 +156,7 @@
     <ClInclude Include="..\..\include\civetweb.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\websocket\WebSockCallbacks.c" />
     <ClCompile Include="..\..\src\civetweb.c" />
-    <ClCompile Include="..\..\examples\websocket\websocket.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
