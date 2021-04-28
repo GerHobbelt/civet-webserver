@@ -9567,7 +9567,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
            //for timed connect using synchronous I/O multiplexing, set the socket to non blocking mode
            set_non_blocking_mode(*sock);
 
-           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms);
+           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms,client_options->psctrl);
 
            //revert back to socket blocking mode as other operation needs it to be blocking
            set_blocking_mode(*sock);
