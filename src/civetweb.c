@@ -2914,8 +2914,8 @@ static int is_websocket_protocol(const struct mg_connection *conn);
 #endif
 
 static int set_sock_connect_timeout_ms(SOCKET sd, int timeout_ms);
-static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr,
-                                             socklen_t addrLen, int timeout_ms);
+static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, socklen_t addrLen,
+                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl);
 
 #define mg_cry_internal(conn, fmt, ...)                                        \
 	mg_cry_internal_wrap(conn, NULL, __func__, __LINE__, fmt, __VA_ARGS__)
@@ -9303,7 +9303,8 @@ mg_inet_pton(int af, const char *src, void *dst, size_t dstlen)
 }
 
 //connect_socket_with_timeout() returns 0 on successful connect and -1 on connect failure or timeout
-static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, socklen_t addrLen, int timeout_ms)
+static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, socklen_t addrLen,
+                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl)
 {
     struct timeval tout = {0};
     int rc = 0;
@@ -9315,7 +9316,7 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
     //not needed, but may be better to set some(say 8 secs) select timeout(if not given)
     tout.tv_sec = 8;
 
-    if (timeout_ms> 0) {
+    if (timeout_ms > 0) {
 	tout.tv_sec = timeout_ms / 1000;
 	tout.tv_usec = (timeout_ms % 1000) * 1000;
     }
@@ -9338,10 +9339,31 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
        if (io_wait > 0) {
 	 //connect() in progress, likely if socket is non blocking.
 	    fd_set writefd;
+            int num_sds = sd + 1;
+
+	    fd_set *psctrl_rdfd = NULL;
+	    fd_set ctrl_rdfd;
+
 	    FD_ZERO(&writefd);
 	    FD_SET(sd, &writefd);
 
-	    rc = select(sd + 1, NULL, &writefd, NULL, &tout);
+            if (psctrl) {
+	       if (psctrl->stop_now > 0) {
+		  /* per connection Shut down signal */
+		  printf("%s(CONNECT_STOP_NOW) psctrl=%p psctrl->stop_now=%d \n",__func__,psctrl,psctrl->stop_now);
+		  return -1;
+	       }
+               if (psctrl->sd > 0) {
+	          FD_ZERO(&ctrl_rdfd);
+	          psctrl_rdfd = &ctrl_rdfd;
+	          FD_SET(psctrl->sd, psctrl_rdfd);
+                  if (psctrl->sd > sd) {
+                    //adjust num_sds if ctrl_sd is greater than sd to be monitored.
+                    num_sds = psctrl->sd + 1;
+                  }
+               }
+	    }
+	    rc = select(num_sds, psctrl_rdfd, &writefd, NULL, &tout);
 	    if ((rc > 0) && (FD_ISSET(sd, &writefd))) {
 #ifndef _WIN32
 	       int so_err = 0 ;
@@ -9357,6 +9379,21 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
 		return 0;
 #endif
 	    }
+
+            // check in select i/o connect wait has been signalled to return using psctrl control socket
+            if (psctrl && (psctrl->stop_now > 0)) {
+               //printf("%s(CONNECT_STOP_NOW)  psctrl=%p stop_now\n", __func__,psctrl);
+               //Drain the data for now, just incase. If needed we can also further validate recived data.
+	       if (psctrl_rdfd && (rc > 0) && (psctrl->sd > 0) && (FD_ISSET(psctrl->sd, psctrl_rdfd))) {
+                  int val = 0;
+                  int r = recvfrom(psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
+                   if (r < 0) {
+                      //printf("%s(CONNECT_STOP_NOW) psctrl=%p r=%d ERRNO=%d\n",__func__,psctrl,r,ERRNO);
+                   }
+                   //printf("%s(CONNECT_STOP_NOW) psctrl=%p val=%d rsz=%d\n", __func__,psctrl,val,r);
+               }
+               return -1;
+	   }
 	}
     }
     return -1;
@@ -9530,7 +9567,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
            //for timed connect using synchronous I/O multiplexing, set the socket to non blocking mode
            set_non_blocking_mode(*sock);
 
-           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms);
+           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms,client_options->psctrl);
 
            //revert back to socket blocking mode as other operation needs it to be blocking
            set_blocking_mode(*sock);
@@ -15324,7 +15361,7 @@ static int connect_to_wakeup_master(SOCKET lsd)
 
    // Do not worry about connect error here, as it is just an attempt,
    // to wake master listen thread from blocking accept() call.
-   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 1000);
+   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 1000, NULL);
    // if (rc < 0) {
    //     printf("%s() err in connecting to wakeup listener at port=%u, err=%ld %s \n",
    //              __func__,ntohs(serv_addr.sin_port),ERRNO,strerror(ERRNO));
