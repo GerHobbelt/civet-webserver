@@ -2728,6 +2728,7 @@ struct mg_context {
 	int context_type; /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
+        mg_conn_stop_ctx listen_stop;
 	struct mg_pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
@@ -15361,7 +15362,7 @@ static int connect_to_wakeup_master(SOCKET lsd)
 
    // Do not worry about connect error here, as it is just an attempt,
    // to wake master listen thread from blocking accept() call.
-   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 1000, NULL);
+   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 10, NULL);
    // if (rc < 0) {
    //     printf("%s() err in connecting to wakeup listener at port=%u, err=%ld %s \n",
    //              __func__,ntohs(serv_addr.sin_port),ERRNO,strerror(ERRNO));
@@ -15800,9 +15801,10 @@ set_ports_option(struct mg_context *phys_ctx)
 			continue;
 		}
 
+		// add 1 more pollfd slot for listen_stop socket
 		if ((pfd = (struct mg_pollfd *)
 		         mg_realloc_ctx(phys_ctx->listening_socket_fds,
-		                        (phys_ctx->num_listening_sockets + 1)
+		                        (phys_ctx->num_listening_sockets + 2)
 		                            * sizeof(phys_ctx->listening_socket_fds[0]),
 		                        phys_ctx))
 		    == NULL) {
@@ -19549,6 +19551,8 @@ master_thread_run(struct mg_context *ctx)
 	struct mg_workerTLS tls;
 	struct mg_pollfd *pfd;
 	unsigned int i;
+	unsigned int ctrlidx = 0;
+	unsigned int ctrlfd_cnt = 0;
 	unsigned int workerthreadcount;
 
 	if (!ctx) {
@@ -19597,10 +19601,19 @@ master_thread_run(struct mg_context *ctx)
 			pfd[i].events = POLLIN;
 		}
 
+		ctrlidx = 0; //reset
+		ctrlfd_cnt = 0;
+		if ((i > 0) && (ctx->listen_stop.sd > 0)) {
+		   pfd[i].fd = ctx->listen_stop.sd;
+		   pfd[i].events = POLLIN;
+		   ctrlidx = i;
+		   ctrlfd_cnt = 1;
+		}
+
                /* increase 15000ms poll timeout for civetweb-master, than earlier frequent 200ms */
                 #define MASTER_POLL_TIMEOUT_MS 15000
 
-		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
+		if (poll(pfd, ctx->num_listening_sockets + ctrlfd_cnt, MASTER_POLL_TIMEOUT_MS) > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
 				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
 				 * successful poll, and POLLIN is defined as
@@ -19611,11 +19624,28 @@ master_thread_run(struct mg_context *ctx)
 					accept_new_connection(&ctx->listening_sockets[i], ctx);
 				}
 			}
+
+			if ((ctrlidx <= i) && ctrlfd_cnt && (pfd[ctrlidx].revents & POLLIN) &&
+                             (pfd[ctrlidx].fd == ctx->listen_stop.sd)) {
+			       // At this time not interested in what is recvd,
+			       // but rather a way to wake up from poll.
+                               // Just drain the datagram for now. Also we can check if the
+                               // received data value is same as received from socket in future
+                               int val = 0;
+                               int r = recvfrom(ctx->listen_stop.sd, &val, sizeof(int), 0, NULL, NULL);
+                               if ( r < 0 ) {
+                                 // printf("%s() listen_stop r=%d ERRNO=%d\n",__func__,r,ERRNO);
+                               }
+                              // printf("%s() time=%ld listen_stop.sd=%d, stop_now=%d, stop_flag=%d ctrlidx=%d i=%d rcvd=%d r=%d\n",
+                              //   __func__,time(NULL),ctx->listen_stop.sd,ctx->listen_stop.stop_now,ctx->stop_flag,ctrlidx,i,val,r);
+			}
 		}
 	}
 
 	/* Here stop_flag is 1 - Initiate shutdown. */
 	DEBUG_TRACE("%s", "stopping workers");
+
+        mg_close_stop_ctx(&ctx->listen_stop);
 
 	/* Stop signal received: somebody called mg_stop. Quit. */
 	close_all_listening_sockets(ctx);
@@ -19712,6 +19742,8 @@ free_context(struct mg_context *ctx)
 	if (ctx == NULL) {
 		return;
 	}
+
+        mg_close_stop_ctx(&ctx->listen_stop);
 
 	if (ctx->callbacks.exit_context) {
 		ctx->callbacks.exit_context(ctx);
@@ -19813,6 +19845,8 @@ mg_stop(struct mg_context *ctx)
 
 	/* Set stop flag, so all threads know they have to exit. */
 	ctx->stop_flag = 1;
+
+        mg_signal_stop_ctx(&ctx->listen_stop);
 
         if (ctx->listening_sockets[0].sock != INVALID_SOCKET) {
                 connect_to_wakeup_master(ctx->listening_sockets[0].sock);
@@ -20265,6 +20299,8 @@ static
 		pthread_setspecific(sTlsKey, NULL);
 		return NULL;
 	}
+
+        mg_conn_stop_ctx_init(&ctx->listen_stop, 1);
 
 	ctx->cfg_worker_threads = ((unsigned int)(workerthreadcount));
 
