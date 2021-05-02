@@ -3,6 +3,9 @@
 # Remove GNU/cesanta branches so we cannot accidentally merge or cherrypick from them!
 # 
 
+pushd $(dirname $0)                                                             2> /dev/null   > /dev/null
+cd ..
+
 # commit hash is first GNU commit
 R=218428662e6f8d30a83cf8a89f531553f1156d25
 
@@ -20,3 +23,5 @@ for f in $( git tag -l ; git branch -a ) ; do
 		echo CIVETWEB 
 	fi
 done
+
+popd                                                                            2> /dev/null   > /dev/null
