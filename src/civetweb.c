@@ -21436,5 +21436,17 @@ mg_exit_library(void)
 	return 1;
 }
 
+unsigned int
+mg_getclient_socket(const struct mg_connection * conn)
+{
+	if (conn)
+	{
+		return conn->client.sock;
+	}
+	else
+	{
+		return 0;
+	}
+}
 
 /* End of civetweb.c */
