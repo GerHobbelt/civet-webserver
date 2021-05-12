@@ -6784,7 +6784,7 @@ pull_inner(FILE *fp,
                     //received data value is same as received from socket
 		    if ((pollres > 0) && (conn->psctrl->sd > 0) && (n == 2) && (pfd[1].revents & POLLIN)) {
                            int val = 0;
-                           int r = recvfrom(conn->psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
+                           int r = recvfrom(conn->psctrl->sd, (char *)&val, sizeof(int), 0, NULL, NULL);
                            //if ( r < 0 ) {
                                // printf("%s(STOP_NOW) conn=%p ctx=%p r=%d ERRNO=%d\n",__func__,conn,conn->phys_ctx,r,ERRNO);
                            //}
@@ -9403,7 +9403,7 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
                //Drain the data for now, just in case. If needed we can also further validate received data.
 	       if (psctrl_rdfd && (rc > 0) && (psctrl->sd > 0) && (FD_ISSET(psctrl->sd, psctrl_rdfd))) {
                   int val = 0;
-                  int r = recvfrom(psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
+                  int r = recvfrom(psctrl->sd, (char *)&val, sizeof(int), 0, NULL, NULL);
                    //if (r < 0) {
                       //printf("%s(CONNECT_STOP_NOW) psctrl=%p r=%d ERRNO=%d\n",__func__,psctrl,r,ERRNO);
                    //}
@@ -19669,7 +19669,7 @@ master_thread_run(struct mg_context *ctx)
                                // Just drain the datagram for now. Also we can check if the
                                // received data value is same as received from socket in future
                                int val = 0;
-                               int r = recvfrom(ctx->listen_stop.sd, &val, sizeof(int), 0, NULL, NULL);
+                               int r = recvfrom(ctx->listen_stop.sd, (char *)&val, sizeof(int), 0, NULL, NULL);
                                //if ( r < 0 ) {
                                  // printf("%s() listen_stop r=%d ERRNO=%d\n",__func__,r,ERRNO);
                                //}
