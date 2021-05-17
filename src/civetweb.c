@@ -2728,6 +2728,7 @@ struct mg_context {
 	int context_type; /* See CONTEXT_* above */
 
 	struct socket *listening_sockets;
+        mg_conn_stop_ctx listen_stop;
 	struct mg_pollfd *listening_socket_fds;
 	unsigned int num_listening_sockets;
 
@@ -2915,7 +2916,8 @@ static int is_websocket_protocol(const struct mg_connection *conn);
 
 static int set_sock_connect_timeout_ms(SOCKET sd, int timeout_ms);
 static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, socklen_t addrLen,
-                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl);
+                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl,
+                                        char *conn_err, int conn_err_len);
 
 #define mg_cry_internal(conn, fmt, ...)                                        \
 	mg_cry_internal_wrap(conn, NULL, __func__, __LINE__, fmt, __VA_ARGS__)
@@ -6782,7 +6784,7 @@ pull_inner(FILE *fp,
                     //received data value is same as received from socket
 		    if ((pollres > 0) && (conn->psctrl->sd > 0) && (n == 2) && (pfd[1].revents & POLLIN)) {
                            int val = 0;
-                           int r = recvfrom(conn->psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
+                           int r = recvfrom(conn->psctrl->sd, (char *)&val, sizeof(int), 0, NULL, NULL);
                            //if ( r < 0 ) {
                                // printf("%s(STOP_NOW) conn=%p ctx=%p r=%d ERRNO=%d\n",__func__,conn,conn->phys_ctx,r,ERRNO);
                            //}
@@ -9303,14 +9305,22 @@ mg_inet_pton(int af, const char *src, void *dst, size_t dstlen)
 }
 
 //connect_socket_with_timeout() returns 0 on successful connect and -1 on connect failure or timeout
+// If conn_err buffer is not NULL it tries to fill with failed connection error details -- upto conn_err_len bytes.
+#define MG_STRING_ERR_CONNECT_PENDING_TIMEDOUT "pending connection not completed in requested timeout "
+#define MG_STRING_ERR_CONNECT_STOPPED "pending connection stop requested."
+#define MG_STRING_ERR_INVALID_PARM "invalid parameter. "
 static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, socklen_t addrLen,
-                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl)
+                                        int timeout_ms, struct mg_conn_stop_ctx * psctrl,
+                                        char *conn_err, int conn_err_len)
 {
     struct timeval tout = {0};
     int rc = 0;
 
     if (!pSaddr) {
-	return 0;
+        if (conn_err && (conn_err_len > 0)) {
+	   mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s", MG_STRING_ERR_INVALID_PARM);
+        }
+	return -1;
     }
 
     //not needed, but may be better to set some(say 8 secs) select timeout(if not given)
@@ -9350,7 +9360,10 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
             if (psctrl) {
 	       if (psctrl->stop_now > 0) {
 		  /* per connection Shut down signal */
-		  printf("%s(CONNECT_STOP_NOW) psctrl=%p psctrl->stop_now=%d \n",__func__,psctrl,psctrl->stop_now);
+		  // printf("%s(CONNECT_STOP_NOW) psctrl=%p psctrl->stop_now=%d \n",__func__,psctrl,psctrl->stop_now);
+		  if (conn_err && (conn_err_len > 0)) {
+		     mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s", MG_STRING_ERR_CONNECT_STOPPED);
+		  }
 		  return -1;
 	       }
                if (psctrl->sd > 0) {
@@ -9373,6 +9386,10 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
 		   //connect() success-2, as indicated by select/sockopt
 		    return 0;
 		}
+		if (conn_err && (conn_err_len > 0)) {
+		   mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s", strerror(so_err));
+		}
+                return -1;
 	       //printf("\n%s() rc=%d sd=%d connect so_err=%d %s \n", __func__, rc, sd, so_err, strerror(so_err));
 #else
 	       //connect successful-WIN as indicated by select
@@ -9383,18 +9400,33 @@ static int connect_socket_with_timeout(SOCKET sd, struct sockaddr * pSaddr, sock
             // check in select i/o connect wait has been signalled to return using psctrl control socket
             if (psctrl && (psctrl->stop_now > 0)) {
                //printf("%s(CONNECT_STOP_NOW)  psctrl=%p stop_now\n", __func__,psctrl);
-               //Drain the data for now, just incase. If needed we can also further validate recived data.
+               //Drain the data for now, just in case. If needed we can also further validate received data.
 	       if (psctrl_rdfd && (rc > 0) && (psctrl->sd > 0) && (FD_ISSET(psctrl->sd, psctrl_rdfd))) {
                   int val = 0;
-                  int r = recvfrom(psctrl->sd, &val, sizeof(int), 0, NULL, NULL);
-                   if (r < 0) {
+                  int r = recvfrom(psctrl->sd, (char *)&val, sizeof(int), 0, NULL, NULL);
+                   //if (r < 0) {
                       //printf("%s(CONNECT_STOP_NOW) psctrl=%p r=%d ERRNO=%d\n",__func__,psctrl,r,ERRNO);
-                   }
+                   //}
                    //printf("%s(CONNECT_STOP_NOW) psctrl=%p val=%d rsz=%d\n", __func__,psctrl,val,r);
                }
+
+	       if (conn_err && (conn_err_len > 0)) {
+		  mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s", MG_STRING_ERR_CONNECT_STOPPED);
+	       }
+
                return -1;
 	   }
+
+	   if (rc == 0) {
+              //select i/o has timed-out
+              mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s(%d millisec).", MG_STRING_ERR_CONNECT_PENDING_TIMEDOUT, timeout_ms);
+              return -1;
+           }
 	}
+    }
+    if (conn_err && (conn_err_len > 0) && (ERRNO != 0)) {
+       //ERRNO is unlikely to be 0 here, but check before getting system error to string.
+       mg_snprintf(NULL, NULL, conn_err, conn_err_len, "%s", strerror(ERRNO));
     }
     return -1;
 }
@@ -9412,7 +9444,8 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 {
 	int ip_ver = 0;
 	int conn_ret = -1;
-	int sockerr = 0;
+        #define MAX_CONN_ERR_SZ 255
+	char conn_err[MAX_CONN_ERR_SZ+1] = {0};
 	const char *host;
         int port;
         int timeout_ms = 0;
@@ -9567,7 +9600,8 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
            //for timed connect using synchronous I/O multiplexing, set the socket to non blocking mode
            set_non_blocking_mode(*sock);
 
-           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms,client_options->psctrl);
+           conn_ret = connect_socket_with_timeout(*sock, pSaddr, addrLen, timeout_ms, client_options->psctrl,
+                                                           conn_err, sizeof(conn_err));
 
            //revert back to socket blocking mode as other operation needs it to be blocking
            set_blocking_mode(*sock);
@@ -9575,6 +9609,10 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
         else {
           //regular blocking connect
 	  conn_ret = connect(*sock, pSaddr, addrLen);
+          if ((conn_ret != 0) && (ERRNO != 0)) {
+              // get connection failure error
+              mg_snprintf(NULL, NULL, conn_err, sizeof(conn_err), "%s", strerror(ERRNO));
+          }
         }
 
 	if (conn_ret != 0) {
@@ -9586,7 +9624,7 @@ connect_socket(struct mg_context *ctx /* may be NULL */,
 		            "connect(%s:%d): error %s",
 		            host,
 		            port,
-		            strerror(sockerr));
+		            conn_err);
 		closesocket(*sock);
 		*sock = INVALID_SOCKET;
 		return 0;
@@ -15361,7 +15399,7 @@ static int connect_to_wakeup_master(SOCKET lsd)
 
    // Do not worry about connect error here, as it is just an attempt,
    // to wake master listen thread from blocking accept() call.
-   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 1000, NULL);
+   rc = connect_socket_with_timeout(sd, (struct sockaddr *)&to_addr, sizeof(to_addr), 10, NULL, NULL, 0);
    // if (rc < 0) {
    //     printf("%s() err in connecting to wakeup listener at port=%u, err=%ld %s \n",
    //              __func__,ntohs(serv_addr.sin_port),ERRNO,strerror(ERRNO));
@@ -15800,9 +15838,10 @@ set_ports_option(struct mg_context *phys_ctx)
 			continue;
 		}
 
+		// add 1 more pollfd slot for listen_stop socket
 		if ((pfd = (struct mg_pollfd *)
 		         mg_realloc_ctx(phys_ctx->listening_socket_fds,
-		                        (phys_ctx->num_listening_sockets + 1)
+		                        (phys_ctx->num_listening_sockets + 2)
 		                            * sizeof(phys_ctx->listening_socket_fds[0]),
 		                        phys_ctx))
 		    == NULL) {
@@ -19549,6 +19588,8 @@ master_thread_run(struct mg_context *ctx)
 	struct mg_workerTLS tls;
 	struct mg_pollfd *pfd;
 	unsigned int i;
+	unsigned int ctrlidx = 0;
+	unsigned int ctrlfd_cnt = 0;
 	unsigned int workerthreadcount;
 
 	if (!ctx) {
@@ -19597,10 +19638,19 @@ master_thread_run(struct mg_context *ctx)
 			pfd[i].events = POLLIN;
 		}
 
+		ctrlidx = 0; //reset
+		ctrlfd_cnt = 0;
+		if ((i > 0) && (ctx->listen_stop.sd > 0)) {
+		   pfd[i].fd = ctx->listen_stop.sd;
+		   pfd[i].events = POLLIN;
+		   ctrlidx = i;
+		   ctrlfd_cnt = 1;
+		}
+
                /* increase 15000ms poll timeout for civetweb-master, than earlier frequent 200ms */
                 #define MASTER_POLL_TIMEOUT_MS 15000
 
-		if (poll(pfd, ctx->num_listening_sockets, MASTER_POLL_TIMEOUT_MS) > 0) {
+		if (poll(pfd, ctx->num_listening_sockets + ctrlfd_cnt, MASTER_POLL_TIMEOUT_MS) > 0) {
 			for (i = 0; i < ctx->num_listening_sockets; i++) {
 				/* NOTE(lsm): on QNX, poll() returns POLLRDNORM after the
 				 * successful poll, and POLLIN is defined as
@@ -19611,11 +19661,28 @@ master_thread_run(struct mg_context *ctx)
 					accept_new_connection(&ctx->listening_sockets[i], ctx);
 				}
 			}
+
+			if ((ctrlidx <= i) && ctrlfd_cnt && (pfd[ctrlidx].revents & POLLIN) &&
+                             (pfd[ctrlidx].fd == ctx->listen_stop.sd)) {
+			       // At this time not interested in what is recvd,
+			       // but rather a way to wake up from poll.
+                               // Just drain the datagram for now. Also we can check if the
+                               // received data value is same as received from socket in future
+                               int val = 0;
+                               int r = recvfrom(ctx->listen_stop.sd, (char *)&val, sizeof(int), 0, NULL, NULL);
+                               //if ( r < 0 ) {
+                                 // printf("%s() listen_stop r=%d ERRNO=%d\n",__func__,r,ERRNO);
+                               //}
+                              // printf("%s() time=%ld listen_stop.sd=%d, stop_now=%d, stop_flag=%d ctrlidx=%d i=%d rcvd=%d r=%d\n",
+                              //   __func__,time(NULL),ctx->listen_stop.sd,ctx->listen_stop.stop_now,ctx->stop_flag,ctrlidx,i,val,r);
+			}
 		}
 	}
 
 	/* Here stop_flag is 1 - Initiate shutdown. */
 	DEBUG_TRACE("%s", "stopping workers");
+
+        mg_close_stop_ctx(&ctx->listen_stop);
 
 	/* Stop signal received: somebody called mg_stop. Quit. */
 	close_all_listening_sockets(ctx);
@@ -19713,6 +19780,8 @@ free_context(struct mg_context *ctx)
 		return;
 	}
 
+        mg_close_stop_ctx(&ctx->listen_stop);
+
 	if (ctx->callbacks.exit_context) {
 		ctx->callbacks.exit_context(ctx);
 	}
@@ -19798,6 +19867,8 @@ void
 mg_stop(struct mg_context *ctx)
 {
 	pthread_t mt;
+        // int lsd = INVALID_SOCKET;
+
 	if (!ctx) {
 		return;
 	}
@@ -19811,12 +19882,18 @@ mg_stop(struct mg_context *ctx)
 
 	ctx->masterthreadid = 0;
 
+        // lsd = ctx->listening_sockets[0].sock; //get it before setting stop_flag
+
 	/* Set stop flag, so all threads know they have to exit. */
 	ctx->stop_flag = 1;
 
-        if (ctx->listening_sockets[0].sock != INVALID_SOCKET) {
-                connect_to_wakeup_master(ctx->listening_sockets[0].sock);
-        }
+        // Enable this and above lsd values, if we also want to signal master_thread_run using connect_to_wakeup_master
+        // if (lsd != INVALID_SOCKET) {
+        //    connect_to_wakeup_master(lsd);
+        // }
+
+        // mg_signal_stop_ctx() is now enough to wakeup master_thread_run waiting in listen i/o
+        mg_signal_stop_ctx(&ctx->listen_stop);
 
 	/* Wait until everything has stopped. */
 	while (ctx->stop_flag != 2) {
@@ -20265,6 +20342,8 @@ static
 		pthread_setspecific(sTlsKey, NULL);
 		return NULL;
 	}
+
+        mg_conn_stop_ctx_init(&ctx->listen_stop, 1);
 
 	ctx->cfg_worker_threads = ((unsigned int)(workerthreadcount));
 
