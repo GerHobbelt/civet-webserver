@@ -31,9 +31,8 @@ zfree(void *opaque, void *address)
 static void
 send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 {
-
 	int zret;
-	z_stream zstream;
+	zng_stream zstream;
 	int do_flush;
 	unsigned bytes_avail;
 	unsigned char in_buf[MG_BUF_LEN];
@@ -47,7 +46,7 @@ send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 	zstream.opaque = (void *)conn;
 
 	/* Initialize for GZIP compression (MAX_WBITS | 16) */
-	zret = deflateInit2(&zstream,
+	zret = zng_deflateInit2(&zstream,
 	                    Z_BEST_COMPRESSION,
 	                    Z_DEFLATED,
 	                    MAX_WBITS | 16,
@@ -59,7 +58,7 @@ send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 		                "GZIP init failed (%i): %s",
 		                zret,
 		                (zstream.msg ? zstream.msg : "<no error message>"));
-		deflateEnd(&zstream);
+		zng_deflateEnd(&zstream);
 		return;
 	}
 
@@ -68,7 +67,7 @@ send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 		zstream.avail_in = fread(in_buf, 1, MG_BUF_LEN, in_file);
 		if (ferror(in_file)) {
 			mg_cry_internal(conn, "fread failed: %s", strerror(ERRNO));
-			(void)deflateEnd(&zstream);
+			(void)zng_deflateEnd(&zstream);
 			return;
 		}
 
@@ -80,7 +79,7 @@ send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 		do {
 			zstream.avail_out = MG_BUF_LEN;
 			zstream.next_out = out_buf;
-			zret = deflate(&zstream, do_flush);
+			zret = zng_deflate(&zstream, do_flush);
 
 			if (zret == Z_STREAM_ERROR) {
 				/* deflate error */
@@ -120,7 +119,7 @@ send_compressed_data(struct mg_connection *conn, struct mg_file *filep)
 		                (zstream.msg ? zstream.msg : "<no error message>"));
 	}
 
-	deflateEnd(&zstream);
+	zng_deflateEnd(&zstream);
 
 	/* Send "end of chunked data" marker */
 	mg_write(conn, "0\r\n\r\n", 5);
@@ -132,7 +131,7 @@ static int
 websocket_deflate_initialize(struct mg_connection *conn, int server)
 {
 	int zret =
-	    deflateInit2(&conn->websocket_deflate_state,
+		zng_deflateInit2(&conn->websocket_deflate_state,
 	                 Z_BEST_COMPRESSION,
 	                 Z_DEFLATED,
 	                 server
@@ -147,11 +146,11 @@ websocket_deflate_initialize(struct mg_connection *conn, int server)
 		                (conn->websocket_deflate_state.msg
 		                     ? conn->websocket_deflate_state.msg
 		                     : "<no error message>"));
-		deflateEnd(&conn->websocket_deflate_state);
+		zng_deflateEnd(&conn->websocket_deflate_state);
 		return zret;
 	}
 
-	zret = inflateInit2(
+	zret = zng_inflateInit2(
 	    &conn->websocket_inflate_state,
 	    server ? -1 * conn->websocket_deflate_client_max_windows_bits
 	           : -1 * conn->websocket_deflate_server_max_windows_bits);
@@ -162,7 +161,7 @@ websocket_deflate_initialize(struct mg_connection *conn, int server)
 		                (conn->websocket_inflate_state.msg
 		                     ? conn->websocket_inflate_state.msg
 		                     : "<no error message>"));
-		inflateEnd(&conn->websocket_inflate_state);
+		zng_inflateEnd(&conn->websocket_inflate_state);
 		return zret;
 	}
 	if ((conn->websocket_deflate_server_no_context_takeover && server)

@@ -445,6 +445,10 @@ _civet_safe_clock_gettime(int clk_id, struct timespec *t)
 #include "zlib.h"
 #endif
 
+#if defined(USE_ZLIB_NG)
+#include "zconf-ng.h"
+#include "zlib-ng.h"
+#endif
 
 /********************************************************************/
 /* CivetWeb configuration defines */
@@ -2508,8 +2512,8 @@ struct mg_connection {
 	int websocket_deflate_client_no_context_takeover;
 	int websocket_deflate_initialized;
 	int websocket_deflate_flush;
-	z_stream websocket_deflate_state;
-	z_stream websocket_inflate_state;
+	zng_stream websocket_deflate_state;
+	zng_stream websocket_inflate_state;
 #endif
 	int handled_requests; /* Number of requests handled by this connection
 	                       */
@@ -12612,7 +12616,7 @@ read_websocket(struct mg_connection *conn,
 								           - inflate_buf_size_old);
 								conn->websocket_inflate_state.next_out =
 								    inflated + inflate_buf_size_old;
-								ret = inflate(&conn->websocket_inflate_state,
+								ret = zng_inflate(&conn->websocket_inflate_state,
 								              Z_SYNC_FLUSH);
 								if (ret == Z_NEED_DICT || ret == Z_DATA_ERROR
 								    || ret == Z_MEM_ERROR) {
@@ -12783,7 +12787,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 		header[0] = 0xC0u | (unsigned char)((unsigned)opcode & 0xf);
 		conn->websocket_deflate_state.avail_in = (uInt)dataLen;
 		conn->websocket_deflate_state.next_in = (unsigned char *)data;
-		deflated_size = (Bytef *)compressBound((uLong)dataLen);
+		deflated_size = (Bytef *)zng_compressBound((uLong)dataLen);
 		deflated = mg_calloc(deflated_size, sizeof(Bytef));
 		if (deflated == NULL) {
 			mg_cry_internal(
@@ -12795,7 +12799,7 @@ mg_websocket_write_exec(struct mg_connection *conn,
 		}
 		conn->websocket_deflate_state.avail_out = (uInt)deflated_size;
 		conn->websocket_deflate_state.next_out = deflated;
-		deflate(&conn->websocket_deflate_state, conn->websocket_deflate_flush);
+		zng_deflate(&conn->websocket_deflate_state, conn->websocket_deflate_flush);
 		dataLen = deflated_size - conn->websocket_deflate_state.avail_out
 		          - 4; // Strip trailing 0x00 0x00 0xff 0xff bytes
 	} else
@@ -13139,8 +13143,8 @@ handle_websocket_request(struct mg_connection *conn,
 #if defined(USE_ZLIB) && defined(MG_EXPERIMENTAL_INTERFACES)
 	/* Step 8: Close the deflate & inflate buffers */
 	if (conn->websocket_deflate_initialized) {
-		deflateEnd(&conn->websocket_deflate_state);
-		inflateEnd(&conn->websocket_inflate_state);
+		zng_deflateEnd(&conn->websocket_deflate_state);
+		zng_inflateEnd(&conn->websocket_inflate_state);
 	}
 #endif
 
